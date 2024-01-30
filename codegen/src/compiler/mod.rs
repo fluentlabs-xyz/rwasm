@@ -1,4 +1,5 @@
 use crate::{
+    alloc::string::ToString,
     binary_format::{BinaryFormat, BinaryFormatError, BinaryFormatWriter},
     compiler::drop_keep::{translate_drop_keep, DropKeepWithReturnParam},
     instruction::INSTRUCTION_SIZE_BYTES,
