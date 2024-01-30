@@ -14,6 +14,7 @@ mod platform;
 mod reduced_module;
 
 pub use self::{binary_format::*, compiler::*, instruction_set::*, platform::*, reduced_module::*};
+pub use fluentbase_rwasm as rwasm;
 
 #[cfg(test)]
 mod tests {
