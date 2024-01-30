@@ -7,7 +7,7 @@ use crate::{
 };
 use alloc::{boxed::Box, collections::BTreeMap, rc::Rc, string::String, vec::Vec};
 use core::{cell::RefCell, ops::Deref};
-use fluentbase_rwasm::{
+use rwasm::{
     arena::ArenaIndex,
     common::{Pages, UntypedValue, ValueType},
     engine::{

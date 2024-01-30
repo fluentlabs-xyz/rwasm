@@ -1,7 +1,7 @@
 use crate::{BinaryFormat, BinaryFormatWriter, N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES};
 use alloc::{slice::SliceIndex, string::String, vec::Vec};
 use byteorder::{ByteOrder, LittleEndian};
-use fluentbase_rwasm::{
+use rwasm::{
     common::UntypedValue,
     engine::{
         bytecode::{
@@ -565,16 +565,16 @@ macro_rules! instruction_set_internal {
     // Nothing left to do
     ($code:ident, ) => {};
     ($code:ident, $x:ident [$v:expr] $($rest:tt)*) => {{
-        $code.push(fluentbase_rwasm::engine::bytecode::Instruction::$x($v.into()));
+        $code.push(rwasm::engine::bytecode::Instruction::$x($v.into()));
         $crate::instruction_set_internal!($code, $($rest)*);
     }};
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {{
-        $code.push(fluentbase_rwasm::engine::bytecode::Instruction::$x($v.into()));
+        $code.push(rwasm::engine::bytecode::Instruction::$x($v.into()));
         $crate::instruction_set_internal!($code, $($rest)*);
     }};
     // Default opcode without any inputs
     ($code:ident, $x:ident $($rest:tt)*) => {{
-        $code.push(fluentbase_rwasm::engine::bytecode::Instruction::$x);
+        $code.push(rwasm::engine::bytecode::Instruction::$x);
         $crate::instruction_set_internal!($code, $($rest)*);
     }};
     // Function calls

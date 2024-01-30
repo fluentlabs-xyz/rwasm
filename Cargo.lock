@@ -605,34 +605,12 @@ version = "0.1.0"
 source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#90a26bf9595c66dfb9d86b43de74a7089d7d581a"
 dependencies = [
  "fluentbase-poseidon",
- "fluentbase-rwasm 0.30.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
+ "fluentbase-rwasm",
  "fluentbase-types",
  "fluentbase-zktrie",
  "halo2curves 0.3.1",
  "k256",
  "keccak-hash",
-]
-
-[[package]]
-name = "fluentbase-rwasm"
-version = "0.30.0"
-dependencies = [
- "anyhow",
- "assert_matches",
- "byteorder",
- "criterion",
- "downcast-rs",
- "libm",
- "num-traits",
- "paste",
- "rand",
- "smallvec",
- "spin 0.9.8",
- "strum",
- "strum_macros",
- "wasmparser-nostd",
- "wast 52.0.3",
- "wat",
 ]
 
 [[package]]
@@ -658,7 +636,7 @@ version = "0.1.0"
 source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#90a26bf9595c66dfb9d86b43de74a7089d7d581a"
 dependencies = [
  "alloy-primitives",
- "fluentbase-rwasm 0.30.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
+ "fluentbase-rwasm",
  "hashbrown 0.14.3",
  "strum",
  "strum_macros",
@@ -1315,6 +1293,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ffc183a10b4478d04cbbbfc96d0873219d962dd5accaff2ffbd4ceb7df837f4"
 
 [[package]]
+name = "rwasm"
+version = "0.30.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "byteorder",
+ "criterion",
+ "downcast-rs",
+ "libm",
+ "num-traits",
+ "paste",
+ "rand",
+ "smallvec",
+ "spin 0.9.8",
+ "strum",
+ "strum_macros",
+ "wasmparser-nostd",
+ "wast 52.0.3",
+ "wat",
+]
+
+[[package]]
 name = "rwasm-bin"
 version = "0.1.0"
 dependencies = [
@@ -1322,9 +1322,9 @@ dependencies = [
  "ctor",
  "env_logger",
  "fluentbase-runtime",
- "fluentbase-rwasm 0.30.0",
  "lazy_static",
  "log",
+ "rwasm",
  "rwasm-codegen",
  "wat",
 ]
@@ -1334,7 +1334,7 @@ name = "rwasm-codegen"
 version = "0.30.0"
 dependencies = [
  "byteorder",
- "fluentbase-rwasm 0.30.0",
+ "rwasm",
  "strum",
  "strum_macros",
  "wat",
@@ -1346,7 +1346,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "byteorder",
- "fluentbase-rwasm 0.30.0",
+ "rwasm",
  "rwasm-codegen",
  "serial_test",
  "wast 62.0.1",

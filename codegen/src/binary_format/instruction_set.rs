@@ -1,6 +1,3 @@
-use fluentbase_rwasm::{
-    engine::bytecode::Instruction,
-};
 use crate::{
     binary_format::{
         reader_writer::{BinaryFormatReader, BinaryFormatWriter},
@@ -9,6 +6,7 @@ use crate::{
     },
     instruction_set::InstructionSet,
 };
+use rwasm::engine::bytecode::Instruction;
 
 impl<'a> BinaryFormat<'a> for InstructionSet {
     type SelfType = InstructionSet;

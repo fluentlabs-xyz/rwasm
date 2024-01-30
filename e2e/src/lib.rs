@@ -12,7 +12,7 @@ use self::{
     error::TestError,
     profile::TestProfile,
 };
-use fluentbase_rwasm::Config;
+use rwasm::Config;
 use serial_test::serial;
 
 macro_rules! define_tests {

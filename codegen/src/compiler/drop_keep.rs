@@ -1,14 +1,12 @@
-use fluentbase_rwasm::{
-    engine::{
-        bytecode::{Instruction, LocalDepth},
-        DropKeep,
-    },
-};
 use crate::{
     compiler::{CompilerError, Translator},
     instruction_set::InstructionSet,
 };
 use alloc::vec::Vec;
+use rwasm::engine::{
+    bytecode::{Instruction, LocalDepth},
+    DropKeep,
+};
 
 pub(crate) fn translate_drop_keep(drop_keep: DropKeep) -> Result<Vec<Instruction>, CompilerError> {
     let mut result = Vec::new();
@@ -61,10 +59,8 @@ impl Translator for DropKeepWithReturnParam {
 
 #[cfg(test)]
 mod tests {
-    use fluentbase_rwasm::{
-        engine::{bytecode::Instruction, DropKeep},
-    };
     use crate::compiler::drop_keep::translate_drop_keep;
+    use rwasm::engine::{bytecode::Instruction, DropKeep};
 
     #[test]
     fn test_drop_keep_translation() {

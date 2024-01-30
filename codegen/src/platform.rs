@@ -1,9 +1,9 @@
-use fluentbase_rwasm::{
+use alloc::{collections::BTreeMap, string::String, vec::Vec};
+use rwasm::{
     common::{UntypedValue, ValueType},
     module::ImportName,
     FuncType,
 };
-use alloc::{collections::BTreeMap, string::String, vec::Vec};
 
 pub trait ImportHandler {
     // sys calls

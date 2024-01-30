@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+rwasm = { path = "../rwasm" }
 rwasm-codegen = { path = "../codegen" }
-fluentbase-rwasm = { path = "../rwasm" }
 byteorder = "1.4.3"
 wat = "1.0.66"
 anyhow = "1.0.71"
@@ -14,4 +14,4 @@ serial_test = "2.0.0"
 
 [features]
 default = ["e2e"]
-e2e = ["fluentbase-rwasm/e2e"]
+e2e = ["rwasm/e2e"]

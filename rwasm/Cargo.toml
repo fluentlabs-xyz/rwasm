@@ -1,5 +1,5 @@
 [package]
-name = "fluentbase-rwasm"
+name = "rwasm"
 version = "0.30.0"
 documentation = ""
 description = "rwasm"

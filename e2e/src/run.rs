@@ -1,6 +1,6 @@
 use super::{error::TestError, TestContext, TestDescriptor};
 use anyhow::Result;
-use fluentbase_rwasm::{
+use rwasm::{
     common::{F32, F64},
     Config,
     ExternRef,

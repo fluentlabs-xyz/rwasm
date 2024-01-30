@@ -14,7 +14,7 @@ mod platform;
 mod reduced_module;
 
 pub use self::{binary_format::*, compiler::*, instruction_set::*, platform::*, reduced_module::*};
-pub use fluentbase_rwasm as rwasm;
+pub use rwasm;
 
 #[cfg(test)]
 mod tests {
@@ -28,16 +28,7 @@ mod tests {
         ImportFunc,
     };
     use alloc::string::ToString;
-    use fluentbase_rwasm::{
-        common::ValueType,
-        AsContextMut,
-        Caller,
-        Config,
-        Engine,
-        Func,
-        Linker,
-        Store,
-    };
+    use rwasm::{common::ValueType, AsContextMut, Caller, Config, Engine, Func, Linker, Store};
 
     #[derive(Default, Debug, Clone)]
     struct HostState {

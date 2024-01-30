@@ -1,4 +1,4 @@
-use fluentbase_rwasm::Error as WasmiError;
+use rwasm::Error as WasmiError;
 use rwasm_codegen::CompilerError;
 use std::{error::Error, fmt, fmt::Display};
 

@@ -4,7 +4,7 @@ use crate::binary_format::{
     BinaryFormatError,
 };
 use alloc::vec::Vec;
-use fluentbase_rwasm::{
+use rwasm::{
     common::UntypedValue,
     engine::{
         bytecode::{
@@ -570,7 +570,7 @@ mod tests {
         },
         instruction::InstructionExtra,
     };
-    use fluentbase_rwasm::{common::UntypedValue, engine::bytecode::Instruction};
+    use rwasm::{common::UntypedValue, engine::bytecode::Instruction};
     use strum::IntoEnumIterator;
 
     #[test]

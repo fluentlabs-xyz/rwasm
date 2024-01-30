@@ -6,7 +6,7 @@ use crate::{
     InstructionSet,
 };
 use alloc::{collections::BTreeMap, vec::Vec};
-use fluentbase_rwasm::{
+use rwasm::{
     common::UntypedValue,
     engine::bytecode::{InstrMeta, Instruction},
 };

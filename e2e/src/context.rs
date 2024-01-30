@@ -1,6 +1,6 @@
 use super::{TestDescriptor, TestError, TestProfile, TestSpan};
 use anyhow::Result;
-use fluentbase_rwasm::{
+use rwasm::{
     common::{Trap, UntypedValue, ValueType, F32, F64},
     engine::bytecode::Instruction,
     value::WithType,

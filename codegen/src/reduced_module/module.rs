@@ -10,7 +10,7 @@ use alloc::{
     collections::{BTreeMap, BTreeSet},
     string::{String, ToString},
 };
-use fluentbase_rwasm::{
+use rwasm::{
     engine::bytecode::Instruction,
     module::{FuncIdx, FuncTypeIdx, MemoryIdx, ModuleBuilder, ModuleError, ModuleResources},
     Engine,
