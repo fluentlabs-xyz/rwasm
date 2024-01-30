@@ -1,87 +1,197 @@
-rWASM (reduced-WebAssembly)
-===========================
 
-## Abstract
+| Continuous Integration |     Test Coverage    |  Documentation   |      Crates.io       |
+|:----------------------:|:--------------------:|:----------------:|:--------------------:|
+| [![ci][1]][2]          | [![codecov][3]][4]   | [![docs][5]][6] | [![crates][7]][8]  |
 
-WebAssembly (WASM) is an interpreted language and binary format for Web2 (usually) developers.
-Our approach describes how to let Web2 developers to be transparently added into Web3 world, but it's a bit challenging.
-We like WASM comparing to RISC-V or other binary formats because its well-known and mass-adopted standard that developers like and support.
-Also, WASM has self-described binary format (including memory structure, type mapping and the rest) comparing to RISC-V/AMD/Intel binary formats that require some binary-wrappers like EXE or ELF.
-But it doesn't mean that WASM is optimal, it still has some tricky non ZK friendly structures that we'd like to avoid to prove.
-This is why we need rWASM.
+[1]: https://github.com/paritytech/wasmi/workflows/Rust%20-%20Continuous%20Integration/badge.svg?branch=master
+[2]: https://github.com/paritytech/wasmi/actions?query=workflow%3A%22Rust+-+Continuous+Integration%22+branch%3Amaster
+[3]: https://codecov.io/gh/paritytech/wasmi/branch/master/graph/badge.svg
+[4]: https://codecov.io/gh/paritytech/wasmi/branch/master
+[5]: https://docs.rs/wasmi/badge.svg
+[6]: https://docs.rs/wasmi
+[7]: https://img.shields.io/crates/v/wasmi.svg
+[8]: https://crates.io/crates/wasmi
 
-rWASM (Reduced WebAssembly) is a special-modified binary IR (intermediary representation) of WASMi execution.
-Literally rWASM is 99% compatible with WASM original bytecode and instruction set, but with a modified binary structure w/o affecting opcode behaviour.
-The biggest WASM problem is relative offsets for type mappings, function mappings and block/loop statements (everything that relates to PC offsets).
-rWASM binary format has more flatten structure w/o relative offsets and rWASM doesn't require type mapping validator and must be executed as is.
-Such flatten structure makes easier to proof correctness of each opcode execution and put several verification steps on developer's hands.
+[license-mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
+[license-apache-badge]: https://img.shields.io/badge/license-APACHE-orange.svg
 
-## Technology
+# `wasmi`- WebAssembly (Wasm) Interpreter
 
-rWASM is based on WASMi's IR developed by Parity Tech.
-We decided to choose on WASMi virtual machine because it's IR fully identical to the original WASM's opcode position.
-For rWASM we follow the same statement. Also, we don't touch WASMi's IR, instead we only modify binary representation to achieve ZK-friendliness. 
+`wasmi` is an efficient WebAssembly interpreter with low-overhead and support
+for embedded environment such as WebAssembly itself.
 
-Here is a list of differences:
-1. Deterministic function order based their position in the codebase
-2. Function indices are replaced with PC offset
-3. Block/Loop statements are not supported anymore, instead of this we're using Br/BrIf instructions
-4. Break instructions are redesigned to support PC offsets instead of depth-level
-5. Sections are removed to simplify binary verification
-6. Memory and table sections is computed using WebAssembly instructions instead of sections
-7. Global variables are recovered from codebase (no need for section)
-8. Type mappings are not required anymore since code is validated
-9. Drop/keep is replaced with Get/Set/Tee local instructions
+At Parity we are using `wasmi` in [Substrate](https://github.com/paritytech/substrate)
+as the execution engine for our WebAssembly based smart contracts.
+Furthermore we run `wasmi` within the Substrate runtime which is a WebAssembly
+environment itself and driven via [Wasmtime] at the time of this writing.
+As such `wasmi`'s implementation requires a high degree of correctness and
+Wasm specification conformance.
 
-The new binary representation produces 100% valid WASMi's runtime module from binary.
-There are several features that are not supported anymore, like exports since the only way to interact with rWASM is the start section.
+Since `wasmi` is relatively lightweight compared to other Wasm virtual machines
+such as Wasmtime it is also a decent option for initial prototyping.
 
-List of non-supported features:
-1. Export section doesn't work anymore (it can be fixed by injecting router inside)
-2. Passive mode data and table sections (it can be simulated by injecting additional functions for memory init)
+[Wasmtime]: https://github.com/bytecodealliance/wasmtime
 
-### Function order based on the position
+## Distinct Features
 
-There is no need to store information about each function inside WASM binary, like function section and code section.
-Instead of can say that all bytecode is presented in a flat structure, and we store all functions as one function.
-To achieve this we remove all `CallInternal` related opcodes and replace them with breaks.
-To simulate function return we use new instruction `BrIndirect` that reads IP from the stack and jumps.
-It means that `Return` opcode is always used only for execution termination since there is only one function.
+The following list states some of the distinct features of `wasmi`.
 
-### Function order and internal calls
+- Focus on simple, correct and deterministic WebAssembly execution.
+- Can itself run inside of WebAssembly.
+- Low-overhead and cross-platform WebAssembly runtime.
+- Loosely mirrors the [Wasmtime API](https://docs.rs/wasmtime/).
+- Resumable function calls.
+- Built-in support for fuel metering.
+- 100% official WebAssembly spec testsuite compliance.
 
-For example, let's say we have two internal functions inside function and code sections.
-Let it be `foo` and `bar` function.
-Each internal function has position in the code section like a binary offset.
-Since we know that all functions are ordered and one function code can't collide with another then we can sort all functions and replace function index with the position in the bytecode.
-Let's say function `foo` has index 0 and position 120. Then we replace `CallInternal(0)` with `CallInternal(120)`.
-It makes much easier to prove PC and there is no need to parse function and code sections for offset matching.
+## WebAssembly Proposals
 
-### Function local variables
+The new `wasmi` engine supports a variety of WebAssembly proposals and will support even more of them in the future.
 
-Each function might have local variables.
-In the reduced binary we don't store type mappings, so we need to avoid using local variables inside functions.
-To fix this problem we declare that each function has zero local variables and replace function init with `i32.const 0` opcodes.
+| WebAssembly Proposal | Status | Comment |
+|:--|:--:|:--|
+| [`mutable-global`] | ✅ | Since version `0.14.0`. |
+| [`saturating-float-to-int`] | ✅ | Since version `0.14.0`. |
+| [`sign-extension`] | ✅ | Since version `0.14.0`. |
+| [`multi-value`] | ✅ | Since version `0.14.0`. |
+| [`bulk-memory`] | ✅ | Since version `0.24.0`. [(#628)] |
+| [`reference-types`] | ✅ | Since version `0.24.0`. [(#635)] |
+| [`simd`] | ❌ | Unlikely to be supported. |
+| [`tail-calls`] | ✅ | Since version `0.28.0`. [(#683)] |
+| [`extended-const`] | ✅ | Since version `0.29.0`. [(#707)] |
+| | |
+| [WASI] | 🟡 | Experimental support via the [`wasmi_wasi` crate] or the `wasmi` CLI application. |
 
-### Global variables
+[`mutable-global`]: https://github.com/WebAssembly/mutable-global
+[`saturating-float-to-int`]: https://github.com/WebAssembly/nontrapping-float-to-int-conversions
+[`sign-extension`]: https://github.com/WebAssembly/sign-extension-ops
+[`multi-value`]: https://github.com/WebAssembly/multi-value
+[`reference-types`]: https://github.com/WebAssembly/reference-types
+[`bulk-memory`]: https://github.com/WebAssembly/bulk-memory-operations
+[`simd` ]: https://github.com/webassembly/simd
+[`tail-calls`]: https://github.com/WebAssembly/tail-call
+[`extended-const`]: https://github.com/WebAssembly/extended-const
 
-Global variables init we inject inside start section of the binary
+[WASI]: https://github.com/WebAssembly/WASI
+[`wasmi_wasi` crate]: ./crates/wasi
 
-## WebAssembly's problems and ways to solve them
+[(#363)]: https://github.com/paritytech/wasmi/issues/363
+[(#364)]: https://github.com/paritytech/wasmi/issues/364
+[(#496)]: https://github.com/paritytech/wasmi/issues/496
+[(#628)]: https://github.com/paritytech/wasmi/pull/628
+[(#635)]: https://github.com/paritytech/wasmi/pull/635
+[(#638)]: https://github.com/paritytech/wasmi/pull/638
+[(#683)]: https://github.com/paritytech/wasmi/pull/683
+[(#707)]: https://github.com/paritytech/wasmi/pull/707
 
-Most complicated issues for WASM proofs relate to PC offset calculation.
-Here we're defining ways how to avoid such situations by applying binary modifications that help to keep WASM compatibility but let it have more efficient binary structure.
-Long story short we need to create flatten binary representation of WASM by keeping backward compatibility with instruction set.
+## Usage
 
-One thing we want to highlight is that WASM is designed to be validated before execution, it means that translation step goes right after validation and translation can't go through if original WASM binary is not valid that helps us to define next statements and assumptions.
-1. if WASM binary is valid then rWASM binary is valid too
-2. rWASM can't store not possible instruction inside it's binary representation
-3. 
+### As CLI Application
 
-### Type section
+Install the newest `wasmi` CLI version via:
+```console
+cargo install wasmi_cli
+```
+Then run arbitrary `wasm32-unknown-unknown` Wasm blobs via:
+```console
+wasmi_cli <WASM_FILE> <FUNC_NAME> [<FUNC_ARGS>]*
+```
 
-Creating proof for type mappings is quite expensive because you need to create a lookup table to store information about each parsed binary type
+### As Rust Library
 
-### Global variables
-### Function indices
-### Memory section
+Any Rust crate can depend on the [`wasmi` crate](https://crates.io/crates/wasmi)
+in order to integrate a WebAssembly intepreter into their stack.
+
+Refer to the [`wasmi` crate docs](https://docs.rs/wasmi) to learn how to use the `wasmi` crate as library.
+
+## Development
+
+### Building
+
+Clone `wasmi` from our official repository and then build using the standard `cargo` procedure:
+
+```console
+git clone https://github.com/paritytech/wasmi.git
+cd wasmi
+cargo build
+```
+
+### Testing
+
+In order to test `wasmi` you need to initialize and update the Git submodules using:
+
+```console
+git submodule update --init --recursive
+```
+
+Alternatively you can provide `--recursive` flag to `git clone` command while cloning the repository:
+
+```console
+git clone https://github.com/paritytech/wasmi.git --recursive
+```
+
+After Git submodules have been initialized and updated you can test using:
+
+```console
+cargo test --workspace
+```
+
+### Benchmarks
+
+In order to benchmark `wasmi` use the following command:
+
+```console
+cargo bench
+```
+
+You can filter which set of benchmarks to run:
+- `cargo bench translate`
+  - Only runs benchmarks concerned with WebAssembly module translation.
+
+- `cargo bench instantiate`
+  - Only runs benchmarks concerned with WebAssembly module instantiation.
+
+- `cargo bench execute`
+  - Only runs benchmarks concerned with executing WebAssembly functions.
+
+## Supported Platforms
+
+Supported platforms are primarily Linux, MacOS, Windows and WebAssembly.  
+Other platforms might be working but are not guaranteed to be so by the `wasmi` maintainers.
+
+Use the following command in order to produce a WebAssembly build:
+
+```console
+cargo build --no-default-features --target wasm32-unknown-unknown
+```
+
+## Production Builds
+
+In order to reap the most performance out of `wasmi` we highly recommended
+to compile the `wasmi` crate using the following Cargo `profile`:
+
+```toml
+[profile.release]
+lto = "fat"
+codegen-units = 1
+```
+
+When compiling for the WebAssembly target we highly recommend to post-optimize
+`wasmi` using [Binaryen]'s `wasm-opt` tool since our experiments displayed a
+80-100% performance improvements when executed under Wasmtime and also
+slightly smaller Wasm binaries.
+
+[Binaryen]: https://github.com/WebAssembly/binaryen
+
+## License
+
+`wasmi` is primarily distributed under the terms of both the MIT
+license and the APACHE license (Version 2.0), at your choice.
+
+See `LICENSE-APACHE` and `LICENSE-MIT` for details.
+
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in `wasmi` by you, as defined in the APACHE 2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.

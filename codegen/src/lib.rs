@@ -1,4 +1,11 @@
-#![allow(dead_code)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(not(feature = "std"))]
+#[macro_use]
+extern crate alloc;
+extern crate core;
+#[cfg(feature = "std")]
+extern crate std as alloc;
 
 pub mod binary_format;
 mod compiler;
@@ -65,7 +72,7 @@ mod tests {
                 .fuel_consume(true),
             Some(&import_linker),
         )
-        .unwrap();
+            .unwrap();
         translator.translate(run_config.entrypoint).unwrap();
         let _source_map = translator.build_source_map();
         let binary = translator.finalize().unwrap();
