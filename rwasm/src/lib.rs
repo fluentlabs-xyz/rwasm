@@ -103,7 +103,6 @@ pub mod limits;
 pub mod linker;
 pub mod memory;
 pub mod module;
-pub mod rwasm;
 pub mod store;
 pub mod table;
 pub mod value;

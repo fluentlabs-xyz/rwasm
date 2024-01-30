@@ -15,18 +15,16 @@ mod utils;
 pub use self::{
     builder::{ModuleBuilder, ModuleResources},
     compile::{translate, BlockType},
+    data::{DataSegment, DataSegmentKind},
+    element::{ElementSegment, ElementSegmentItems, ElementSegmentKind},
     error::ModuleError,
     export::{ExportType, FuncIdx, MemoryIdx, ModuleExportsIter, TableIdx},
     global::GlobalIdx,
     import::{FuncTypeIdx, ImportName},
+    init_expr::ConstExpr,
     instantiate::{InstancePre, InstantiationError},
     parser::ReusableAllocations,
     read::Read,
-};
-pub(crate) use self::{
-    data::{DataSegment, DataSegmentKind},
-    element::{ElementSegment, ElementSegmentItems, ElementSegmentKind},
-    init_expr::ConstExpr,
 };
 use self::{
     export::ExternIdx,
@@ -51,20 +49,20 @@ use core::{iter, slice::Iter as SliceIter};
 /// A parsed and validated WebAssembly module.
 #[derive(Debug)]
 pub struct Module {
-    pub(crate) engine: Engine,
-    pub(crate) func_types: Arc<[DedupFuncType]>,
-    pub(crate) imports: ModuleImports,
-    pub(crate) funcs: Box<[DedupFuncType]>,
-    pub(crate) tables: Box<[TableType]>,
-    pub(crate) memories: Box<[MemoryType]>,
-    pub(crate) globals: Box<[GlobalType]>,
-    pub(crate) globals_init: Box<[ConstExpr]>,
-    pub(crate) exports: BTreeMap<Box<str>, ExternIdx>,
-    pub(crate) start: Option<FuncIdx>,
-    pub(crate) compiled_funcs: Box<[CompiledFunc]>,
-    pub(crate) element_segments: Box<[ElementSegment]>,
-    pub(crate) data_segments: Box<[DataSegment]>,
-    pub(crate) is_rwasm: bool,
+    pub engine: Engine,
+    pub func_types: Arc<[DedupFuncType]>,
+    pub imports: ModuleImports,
+    pub funcs: Box<[DedupFuncType]>,
+    pub tables: Box<[TableType]>,
+    pub memories: Box<[MemoryType]>,
+    pub globals: Box<[GlobalType]>,
+    pub globals_init: Box<[ConstExpr]>,
+    pub exports: BTreeMap<Box<str>, ExternIdx>,
+    pub start: Option<FuncIdx>,
+    pub compiled_funcs: Box<[CompiledFunc]>,
+    pub element_segments: Box<[ElementSegment]>,
+    pub data_segments: Box<[DataSegment]>,
+    pub is_rwasm: bool,
 }
 
 /// The index of the default Wasm linear memory.
@@ -93,21 +91,21 @@ pub enum Imported {
 #[derive(Debug)]
 pub struct ModuleImports {
     /// All names and types of all imported items.
-    pub(crate) items: Box<[Imported]>,
+    pub items: Box<[Imported]>,
     /// The amount of imported [`Func`].
     ///
     /// [`Func`]: [`crate::Func`]
-    pub(crate) len_funcs: usize,
+    pub len_funcs: usize,
     /// The amount of imported [`Global`].
-    pub(crate) len_globals: usize,
+    pub len_globals: usize,
     /// The amount of imported [`Memory`].
     ///
     /// [`Memory`]: [`crate::Memory`]
-    pub(crate) len_memories: usize,
+    pub len_memories: usize,
     /// The amount of imported [`Table`].
     ///
     /// [`Table`]: [`crate::Table`]
-    pub(crate) len_tables: usize,
+    pub len_tables: usize,
 }
 
 impl ModuleImports {

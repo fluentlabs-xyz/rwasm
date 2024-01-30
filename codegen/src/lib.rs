@@ -18,16 +18,17 @@ pub use self::{binary_format::*, compiler::*, instruction_set::*, platform::*, r
 #[cfg(test)]
 mod tests {
     use crate::{
-        common::ValueType,
+        compiler::Compiler,
         instruction_set,
-        rwasm::{
-            compiler::Compiler,
-            platform::ImportLinker,
-            reduced_module::ReducedModule,
-            CompilerConfig,
-            FuncOrExport,
-            ImportFunc,
-        },
+        platform::ImportLinker,
+        reduced_module::ReducedModule,
+        CompilerConfig,
+        FuncOrExport,
+        ImportFunc,
+    };
+    use alloc::string::ToString;
+    use fluentbase_rwasm::{
+        common::ValueType,
         AsContextMut,
         Caller,
         Config,
@@ -36,7 +37,6 @@ mod tests {
         Linker,
         Store,
     };
-    use alloc::string::ToString;
 
     #[derive(Default, Debug, Clone)]
     struct HostState {
@@ -72,7 +72,7 @@ mod tests {
                 .fuel_consume(true),
             Some(&import_linker),
         )
-            .unwrap();
+        .unwrap();
         translator.translate(run_config.entrypoint).unwrap();
         let _source_map = translator.build_source_map();
         let binary = translator.finalize().unwrap();

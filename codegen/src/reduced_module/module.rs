@@ -1,26 +1,25 @@
 use crate::{
-    engine::bytecode::Instruction,
-    module::{FuncIdx, FuncTypeIdx, MemoryIdx, ModuleBuilder, ModuleError, ModuleResources},
-    rwasm::{
-        instruction_set::InstructionSet,
-        platform::ImportLinker,
-        reduced_module::{
-            reader::ReducedModuleReader,
-            types::{ReducedModuleError, N_MAX_MEMORY_PAGES},
-        },
+    instruction_set::InstructionSet,
+    platform::ImportLinker,
+    reduced_module::{
+        reader::ReducedModuleReader,
+        types::{ReducedModuleError, N_MAX_MEMORY_PAGES},
     },
-    Engine,
-    FuncType,
-    Module,
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet},
     string::{String, ToString},
 };
+use fluentbase_rwasm::{
+    engine::bytecode::Instruction,
+    module::{FuncIdx, FuncTypeIdx, MemoryIdx, ModuleBuilder, ModuleError, ModuleResources},
+    Engine,
+    FuncType,
+    Module,
+};
 
 pub struct ReducedModule {
     pub(crate) instruction_set: InstructionSet,
-    relative_position: BTreeMap<u32, u32>,
 }
 
 impl ReducedModule {
@@ -31,7 +30,6 @@ impl ReducedModule {
             .map_err(|e| ReducedModuleError::BinaryFormat(e))?;
         Ok(ReducedModule {
             instruction_set: reader.instruction_set,
-            relative_position: reader.relative_position,
         })
     }
 

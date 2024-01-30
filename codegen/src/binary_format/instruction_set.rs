@@ -1,13 +1,13 @@
-use crate::{
+use fluentbase_rwasm::{
     engine::bytecode::Instruction,
-    rwasm::{
-        binary_format::{
-            reader_writer::{BinaryFormatReader, BinaryFormatWriter},
-            BinaryFormat,
-            BinaryFormatError,
-        },
-        instruction_set::InstructionSet,
+};
+use crate::{
+    binary_format::{
+        reader_writer::{BinaryFormatReader, BinaryFormatWriter},
+        BinaryFormat,
+        BinaryFormatError,
     },
+    instruction_set::InstructionSet,
 };
 
 impl<'a> BinaryFormat<'a> for InstructionSet {

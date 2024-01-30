@@ -1,6 +1,6 @@
 use crate::{
-    rwasm::binary_format::reader_writer::{BinaryFormatReader, BinaryFormatWriter},
-    rwasm::binary_format::{BinaryFormat, BinaryFormatError},
+    binary_format::reader_writer::{BinaryFormatReader, BinaryFormatWriter},
+    binary_format::{BinaryFormat, BinaryFormatError},
 };
 
 impl<'a> BinaryFormat<'a> for u32 {

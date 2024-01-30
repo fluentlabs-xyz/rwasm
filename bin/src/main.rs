@@ -3,7 +3,8 @@ extern crate core;
 use crate::types::FileFormat;
 use clap::Parser;
 use fluentbase_runtime::Runtime;
-use fluentbase_rwasm::rwasm::{
+use log::debug;
+use rwasm_codegen::{
     instruction::INSTRUCTION_SIZE_BYTES,
     Compiler,
     CompilerConfig,
@@ -11,7 +12,6 @@ use fluentbase_rwasm::rwasm::{
     FUNC_SOURCE_MAP_ENTRYPOINT_IDX,
     FUNC_SOURCE_MAP_ENTRYPOINT_NAME,
 };
-use log::debug;
 use std::{fs, io::BufRead, path::Path};
 
 mod types;

@@ -1,11 +1,11 @@
 pub mod instruction;
 mod instruction_set;
 mod number;
-mod reader_writer;
+pub mod reader_writer;
 mod utils;
 
 use alloc::vec::Vec;
-use crate::binary_format::reader_writer::{BinaryFormatReader, BinaryFormatWriter};
+pub use crate::binary_format::reader_writer::{BinaryFormatReader, BinaryFormatWriter};
 
 #[derive(Debug, Copy, Clone)]
 pub enum BinaryFormatError {

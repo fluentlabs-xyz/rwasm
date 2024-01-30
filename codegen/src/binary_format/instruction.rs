@@ -1,3 +1,9 @@
+use crate::binary_format::{
+    reader_writer::{BinaryFormatReader, BinaryFormatWriter},
+    BinaryFormat,
+    BinaryFormatError,
+};
+use alloc::vec::Vec;
 use fluentbase_rwasm::{
     common::UntypedValue,
     engine::{
@@ -19,12 +25,6 @@ use fluentbase_rwasm::{
         DropKeep,
     },
 };
-use crate::binary_format::{
-    reader_writer::{BinaryFormatReader, BinaryFormatWriter},
-    BinaryFormat,
-    BinaryFormatError,
-};
-use alloc::vec::Vec;
 
 pub const INSTRUCTION_OPCODE_BYTES: usize = 1;
 pub const INSTRUCTION_AUX_BYTES: usize = 8;
@@ -481,8 +481,14 @@ impl<'a> BinaryFormat<'a> for Instruction {
     }
 }
 
-impl Instruction {
-    pub fn aux_value(&self) -> Option<UntypedValue> {
+pub trait InstructionExtra {
+    fn aux_value(&self) -> Option<UntypedValue>;
+    fn code_value(&self) -> u8;
+    fn info(&self) -> (u8, usize);
+}
+
+impl InstructionExtra for Instruction {
+    fn aux_value(&self) -> Option<UntypedValue> {
         let value: UntypedValue = match self {
             Instruction::LocalGet(val)
             | Instruction::LocalSet(val)
@@ -541,12 +547,12 @@ impl Instruction {
         Some(value)
     }
 
-    pub fn code_value(&self) -> u8 {
+    fn code_value(&self) -> u8 {
         let (code_value, _) = self.info();
         code_value
     }
 
-    pub fn info(&self) -> (u8, usize) {
+    fn info(&self) -> (u8, usize) {
         let mut sink: Vec<u8> = vec![0; 100];
         let mut binary_writer = BinaryFormatWriter::new(sink.as_mut_slice());
         let size = self.write_binary(&mut binary_writer).unwrap();
@@ -557,14 +563,14 @@ impl Instruction {
 #[cfg(test)]
 mod tests {
     use crate::{
-        common::UntypedValue,
-        engine::bytecode::Instruction,
-        rwasm::binary_format::{
+        binary_format::{
             instruction::INSTRUCTION_AUX_BYTES,
             reader_writer::{BinaryFormatReader, BinaryFormatWriter},
             BinaryFormat,
         },
+        instruction::InstructionExtra,
     };
+    use fluentbase_rwasm::{common::UntypedValue, engine::bytecode::Instruction};
     use strum::IntoEnumIterator;
 
     #[test]

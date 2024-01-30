@@ -1,4 +1,7 @@
-use crate::{
+use crate::{BinaryFormat, BinaryFormatWriter, N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES};
+use alloc::{slice::SliceIndex, string::String, vec::Vec};
+use byteorder::{ByteOrder, LittleEndian};
+use fluentbase_rwasm::{
     common::UntypedValue,
     engine::{
         bytecode::{
@@ -20,10 +23,7 @@ use crate::{
         ConstRef,
         DropKeep,
     },
-    rwasm::{BinaryFormat, BinaryFormatWriter, N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES},
 };
-use alloc::{slice::SliceIndex, string::String, vec::Vec};
-use byteorder::{ByteOrder, LittleEndian};
 
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct InstructionSet {
@@ -565,16 +565,16 @@ macro_rules! instruction_set_internal {
     // Nothing left to do
     ($code:ident, ) => {};
     ($code:ident, $x:ident [$v:expr] $($rest:tt)*) => {{
-        $code.push($crate::engine::bytecode::Instruction::$x($v.into()));
+        $code.push(fluentbase_rwasm::engine::bytecode::Instruction::$x($v.into()));
         $crate::instruction_set_internal!($code, $($rest)*);
     }};
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {{
-        $code.push($crate::engine::bytecode::Instruction::$x($v.into()));
+        $code.push(fluentbase_rwasm::engine::bytecode::Instruction::$x($v.into()));
         $crate::instruction_set_internal!($code, $($rest)*);
     }};
     // Default opcode without any inputs
     ($code:ident, $x:ident $($rest:tt)*) => {{
-        $code.push($crate::engine::bytecode::Instruction::$x);
+        $code.push(fluentbase_rwasm::engine::bytecode::Instruction::$x);
         $crate::instruction_set_internal!($code, $($rest)*);
     }};
     // Function calls
@@ -587,7 +587,7 @@ macro_rules! instruction_set_internal {
 #[macro_export]
 macro_rules! instruction_set {
     ($($args:tt)*) => {{
-        let mut code = $crate::rwasm::InstructionSet::new();
+        let mut code = $crate::InstructionSet::new();
         $crate::instruction_set_internal!(code, $($args)*);
         code
     }};

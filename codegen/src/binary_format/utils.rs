@@ -1,4 +1,4 @@
-use crate::{
+use fluentbase_rwasm::{
     common::UntypedValue,
     engine::{
         bytecode::{
@@ -17,11 +17,11 @@ use crate::{
         CompiledFunc,
         ConstRef,
     },
-    rwasm::binary_format::{
-        reader_writer::{BinaryFormatReader, BinaryFormatWriter},
-        BinaryFormat,
-        BinaryFormatError,
-    },
+};
+use crate::binary_format::{
+    reader_writer::{BinaryFormatReader, BinaryFormatWriter},
+    BinaryFormat,
+    BinaryFormatError,
 };
 
 impl<'a> BinaryFormat<'a> for UntypedValue {

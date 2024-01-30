@@ -1,5 +1,13 @@
 use crate::{
-    alloc::string::ToString,
+    binary_format::{BinaryFormat, BinaryFormatError, BinaryFormatWriter},
+    compiler::drop_keep::{translate_drop_keep, DropKeepWithReturnParam},
+    instruction::INSTRUCTION_SIZE_BYTES,
+    instruction_set::InstructionSet,
+    ImportLinker,
+};
+use alloc::{boxed::Box, collections::BTreeMap, rc::Rc, string::String, vec::Vec};
+use core::{cell::RefCell, ops::Deref};
+use fluentbase_rwasm::{
     arena::ArenaIndex,
     common::{Pages, UntypedValue, ValueType},
     engine::{
@@ -8,27 +16,19 @@ use crate::{
         DropKeep,
     },
     module::{ConstExpr, DataSegment, DataSegmentKind, ElementSegmentKind, ImportName, Imported},
-    rwasm::{
-        binary_format::{BinaryFormat, BinaryFormatError, BinaryFormatWriter},
-        compiler::drop_keep::{translate_drop_keep, DropKeepWithReturnParam},
-        instruction::INSTRUCTION_SIZE_BYTES,
-        instruction_set::InstructionSet,
-        ImportLinker,
-    },
+    value::WithType,
     Config,
     Engine,
+    Error,
     FuncType,
     Module,
 };
-use alloc::{boxed::Box, collections::BTreeMap, rc::Rc, string::String, vec::Vec};
-use core::{cell::RefCell, ops::Deref};
 
 mod drop_keep;
-use crate::value::WithType;
 
 #[derive(Debug)]
 pub enum CompilerError {
-    ModuleError(crate::Error),
+    ModuleError(Error),
     MissingEntrypoint,
     MissingFunction,
     NotSupported(&'static str),
@@ -530,6 +530,7 @@ impl<'linker> Compiler<'linker> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn translate_subroutine(&mut self, main_index: FuncOrExport) -> Result<(), CompilerError> {
         // translate router into separate instruction set
         let return_offset = self.code_section.len() + 2;
@@ -688,15 +689,15 @@ impl<'linker> Compiler<'linker> {
         }
 
         for (i, e) in self.module.element_segments.iter().enumerate() {
-            if e.ty != ValueType::FuncRef {
+            if e.ty() != ValueType::FuncRef {
                 return Err(CompilerError::NotSupported(
                     "only funcref type is supported for element segments",
                 ));
             }
-            match &e.kind {
+            match &e.kind() {
                 ElementSegmentKind::Declared => return Ok(()),
                 ElementSegmentKind::Passive => {
-                    for (_, item) in e.items.items().iter().enumerate() {
+                    for (_, item) in e.items_cloned().items().iter().enumerate() {
                         if let Some(value) = item.funcref() {
                             self.code_section.op_ref_func(value.into_u32());
                             self.code_section.op_elem_store(i as u32);
@@ -705,7 +706,7 @@ impl<'linker> Compiler<'linker> {
                 }
                 ElementSegmentKind::Active(aes) => {
                     let dest_offset = self.translate_const_expr(aes.offset())?;
-                    for (index, item) in e.items.items().iter().enumerate() {
+                    for (index, item) in e.items_cloned().items().iter().enumerate() {
                         self.code_section
                             .op_i32_const(dest_offset.as_u32() + index as u32);
                         if let Some(value) = item.eval_const() {
@@ -723,6 +724,7 @@ impl<'linker> Compiler<'linker> {
                             .op_table_init(aes.table_index().into_u32(), i as u32);
                     }
                 }
+                #[allow(unreachable_patterns)]
                 _ => {}
             };
         }

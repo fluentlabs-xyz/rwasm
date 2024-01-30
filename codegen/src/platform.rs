@@ -1,4 +1,4 @@
-use crate::{
+use fluentbase_rwasm::{
     common::{UntypedValue, ValueType},
     module::ImportName,
     FuncType,

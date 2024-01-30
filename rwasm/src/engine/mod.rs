@@ -30,6 +30,7 @@ pub use self::{
     bytecode::{DropKeep, RwOp},
     code_map::CompiledFunc,
     config::{Config, FuelConsumptionMode},
+    const_pool::ConstRef,
     func_builder::{
         FuncBuilder,
         FuncTranslatorAllocations,
@@ -50,7 +51,7 @@ pub use self::{
     traits::{CallParams, CallResults},
 };
 pub(crate) use self::{
-    const_pool::{ConstPool, ConstPoolView, ConstRef},
+    const_pool::{ConstPool, ConstPoolView},
     func_args::{FuncFinished, FuncParams, FuncResults},
     func_types::DedupFuncType,
 };
@@ -157,7 +158,7 @@ impl Engine {
         self.inner.alloc_const(value)
     }
 
-    pub(super) fn resolve_const(&self, cref: ConstRef) -> Option<UntypedValue> {
+    pub fn resolve_const(&self, cref: ConstRef) -> Option<UntypedValue> {
         self.inner.resolve_const(cref)
     }
 
@@ -167,7 +168,7 @@ impl Engine {
     ///
     /// - If the deduplicated function type is not owned by the engine.
     /// - If the deduplicated function type cannot be resolved to its entity.
-    pub(super) fn resolve_func_type<F, R>(&self, func_type: &DedupFuncType, f: F) -> R
+    pub fn resolve_func_type<F, R>(&self, func_type: &DedupFuncType, f: F) -> R
     where
         F: FnOnce(&FuncType) -> R,
     {
@@ -187,7 +188,7 @@ impl Engine {
     ///
     /// - If `func` is an invalid [`CompiledFunc`] reference for this [`CodeMap`].
     /// - If `func` refers to an already initialized [`CompiledFunc`].
-    pub(super) fn init_func<I>(
+    pub fn init_func<I>(
         &self,
         func: CompiledFunc,
         len_locals: usize,

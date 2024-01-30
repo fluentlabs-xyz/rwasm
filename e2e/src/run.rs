@@ -2,13 +2,13 @@ use super::{error::TestError, TestContext, TestDescriptor};
 use anyhow::Result;
 use fluentbase_rwasm::{
     common::{F32, F64},
-    rwasm::DefaultImportHandler,
     Config,
     ExternRef,
     FuncRef,
     Store,
     Value,
 };
+use rwasm_codegen::DefaultImportHandler;
 use wast::{
     core::{HeapType, NanPattern, WastRetCore},
     lexer::Lexer,

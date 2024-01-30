@@ -3,16 +3,6 @@ use anyhow::Result;
 use fluentbase_rwasm::{
     common::{Trap, UntypedValue, ValueType, F32, F64},
     engine::bytecode::Instruction,
-    instruction_set,
-    rwasm::{
-        Compiler,
-        CompilerConfig,
-        DefaultImportHandler,
-        FuncOrExport,
-        ImportFunc,
-        ImportLinker,
-        ReducedModule,
-    },
     value::WithType,
     AsContext,
     Caller,
@@ -32,6 +22,16 @@ use fluentbase_rwasm::{
     Table,
     TableType,
     Value,
+};
+use rwasm_codegen::{
+    instruction_set,
+    Compiler,
+    CompilerConfig,
+    DefaultImportHandler,
+    FuncOrExport,
+    ImportFunc,
+    ImportLinker,
+    ReducedModule,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use wast::token::{Id, Span};

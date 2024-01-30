@@ -1,4 +1,4 @@
-use crate::rwasm::BinaryFormatError;
+use crate::BinaryFormatError;
 
 #[derive(Debug)]
 pub enum ReducedModuleError {

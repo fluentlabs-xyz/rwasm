@@ -1325,6 +1325,18 @@ dependencies = [
  "fluentbase-rwasm 0.30.0",
  "lazy_static",
  "log",
+ "rwasm-codegen",
+ "wat",
+]
+
+[[package]]
+name = "rwasm-codegen"
+version = "0.30.0"
+dependencies = [
+ "byteorder",
+ "fluentbase-rwasm 0.30.0",
+ "strum",
+ "strum_macros",
  "wat",
 ]
 
@@ -1335,6 +1347,7 @@ dependencies = [
  "anyhow",
  "byteorder",
  "fluentbase-rwasm 0.30.0",
+ "rwasm-codegen",
  "serial_test",
  "wast 62.0.1",
  "wat",

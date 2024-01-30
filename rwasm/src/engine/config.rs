@@ -398,7 +398,7 @@ impl Config {
     /// Returns `None` if fuel metering is disabled for the [`Engine`].
     ///
     /// [`Engine`]: crate::Engine
-    pub(crate) fn get_fuel_consumption_mode(&self) -> Option<FuelConsumptionMode> {
+    pub fn get_fuel_consumption_mode(&self) -> Option<FuelConsumptionMode> {
         self.get_consume_fuel()
             .then_some(self.fuel_consumption_mode)
     }
