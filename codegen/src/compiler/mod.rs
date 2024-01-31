@@ -558,8 +558,8 @@ impl<'linker> Compiler<'linker> {
                 // this is a mock case for e2e tests
                 #[cfg(feature = "e2e")]
                 if let Some(data_offset) = seg.offset().eval_with_context(
-                    |_| crate::Value::F32(crate::common::F32::from(666)),
-                    |_| crate::FuncRef::default(),
+                    |_| rwasm::Value::F32(rwasm::common::F32::from(666)),
+                    |_| rwasm::FuncRef::default(),
                 ) {
                     return Ok((data_offset, memory.bytes(), true));
                 }
@@ -640,8 +640,8 @@ impl<'linker> Compiler<'linker> {
             } else {
                 #[cfg(feature = "e2e")]
                 if let Some(value) = global_expr.eval_with_context(
-                    |_| crate::Value::F32(crate::common::F32::from(666)),
-                    |_| crate::FuncRef::default(),
+                    |_| rwasm::Value::F32(rwasm::common::F32::from(666)),
+                    |_| rwasm::FuncRef::default(),
                 ) {
                     self.code_section.op_i64_const(value.to_bits());
                 }
@@ -667,7 +667,7 @@ impl<'linker> Compiler<'linker> {
         #[cfg(feature = "e2e")]
         {
             let init_value = const_expr
-                .eval_with_context(|_| crate::Value::I32(666), |_| crate::FuncRef::default())
+                .eval_with_context(|_| rwasm::Value::I32(666), |_| rwasm::FuncRef::default())
                 .ok_or(CompilerError::NotSupported(
                     "only static global variables supported",
                 ))?;

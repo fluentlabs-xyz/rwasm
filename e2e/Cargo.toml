@@ -5,12 +5,12 @@ edition = "2021"
 
 [dependencies]
 rwasm = { path = "../rwasm" }
-rwasm-codegen = { path = "../codegen" }
+rwasm-codegen = { path = "../codegen", features = ["e2e"] }
 byteorder = "1.4.3"
 wat = "1.0.66"
 anyhow = "1.0.71"
-wast = "62.0.0"
-serial_test = "2.0.0"
+wast = "70.0.2"
+serial_test = "3.0.0"
 
 [features]
 default = ["e2e"]

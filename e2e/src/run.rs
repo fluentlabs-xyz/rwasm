@@ -176,14 +176,6 @@ fn execute_directives_with_state(wast: Wast, test_context: &mut TestContext) -> 
                     Err(error) => assert_trap(test_context, span, error, message),
                 }
             }
-            WastDirective::AssertMalformed {
-                span,
-                module: QuoteWat::Wat(Wat::Module(module)),
-                message,
-            } => {
-                test_context.profile().bump_assert_malformed();
-                module_compilation_fails(test_context, span, module, message);
-            }
             WastDirective::AssertExhaustion {
                 span,
                 call,
@@ -224,6 +216,7 @@ fn execute_directives_with_state(wast: Wast, test_context: &mut TestContext) -> 
                     )
                 }
             }
+            _ => unreachable!("unknown WAST directive"),
         }
     }
 
@@ -368,6 +361,7 @@ fn execute_directives(wast: Wast, test_context: &mut TestContext) -> Result<()> 
                     )
                 }
             }
+            _ => unreachable!("unknown WAST directive"),
         }
     }
     Ok(())
@@ -455,7 +449,7 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
                     .expect("unexpected null element")
                     .downcast_ref::<u32>()
                     .expect("unexpected non-u32 data");
-                assert_eq!(value, expected);
+                assert_eq!(*value, expected.unwrap_or_default());
             }
             (result, expected) => panic!(
                 "{}: encountered mismatch in evaluation. expected {:?} but found {:?}",

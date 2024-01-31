@@ -18,3 +18,4 @@ wat = "1"
 [features]
 default = ["std"]
 std = ["rwasm/std", "byteorder/std", "dep:strum", "dep:strum_macros"]
+e2e = []
