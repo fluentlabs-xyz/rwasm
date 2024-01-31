@@ -4,15 +4,8 @@ use crate::types::FileFormat;
 use clap::Parser;
 use fluentbase_runtime::Runtime;
 use log::debug;
-use rwasm_codegen::{
-    instruction::INSTRUCTION_SIZE_BYTES,
-    Compiler,
-    CompilerConfig,
-    FuncOrExport,
-    FUNC_SOURCE_MAP_ENTRYPOINT_IDX,
-    FUNC_SOURCE_MAP_ENTRYPOINT_NAME,
-};
-use std::{fs, io::BufRead, path::Path};
+use rwasm_codegen::{instruction::INSTRUCTION_SIZE_BYTES, Compiler, CompilerConfig, FuncOrExport};
+use std::{fs, path::Path};
 
 mod types;
 
@@ -111,27 +104,15 @@ fn main() {
         entry_point_fn.length
     );
     let mut as_rust_vec: Vec<String> = vec![];
-    let restricted_fn_names = &["ts_get", "ts_set"];
     for func_source_map in &func_source_maps {
         debug!("func_source_map '{:?}'", func_source_map);
         let fn_name = func_source_map.fn_name.as_str();
         let fn_beginning = func_source_map.position;
         let fn_length = func_source_map.length;
-        if fn_name == FUNC_SOURCE_MAP_ENTRYPOINT_NAME {
-            let opcode = FUNC_SOURCE_MAP_ENTRYPOINT_IDX;
-            as_rust_vec.push(format!("({opcode}, {fn_beginning}, {fn_length})"));
-        } else if !fn_name.starts_with("$__") && !restricted_fn_names.contains(&fn_name) {
-            let fn_name = fn_name.to_uppercase();
-            let fn_name_split = fn_name.split("_").collect::<Vec<_>>();
-            let opcode_name = fn_name_split[fn_name_split.len() - 1];
-            as_rust_vec.push(format!(
-                "(opcode::{opcode_name} as u32, {fn_beginning}, {fn_length})"
-            ));
-        }
+        as_rust_vec.push(format!("(\"{fn_name}\", {fn_beginning}, {fn_length})"));
     }
-    let rs_str = format!("[{}]", as_rust_vec.join(","));
+    let rs_str = format!("[\n    {}\n]", as_rust_vec.join(",\n    "));
     let mut rwasm_binary = compiler.finalize().unwrap();
-    // let init_bytecode_instruction_to_cut = 4; // redundant instruction inside init bytecode
     let init_bytecode = rwasm_binary[entry_point_fn.position as usize * INSTRUCTION_SIZE_BYTES
         ..(entry_point_fn.position + entry_point_fn.length) as usize * INSTRUCTION_SIZE_BYTES]
         .to_vec();
