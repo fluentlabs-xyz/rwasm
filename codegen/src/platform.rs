@@ -132,8 +132,8 @@ impl ImportFunc {
 
 #[derive(Default)]
 pub struct ImportLinker {
-    func_by_index: BTreeMap<u32, ImportFunc>,
-    func_by_name: BTreeMap<ImportName, (u32, u32)>,
+    pub func_by_index: BTreeMap<u32, ImportFunc>,
+    pub func_by_name: BTreeMap<ImportName, (u32, u32)>,
 }
 
 impl ImportLinker {
