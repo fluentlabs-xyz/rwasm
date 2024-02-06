@@ -7,28 +7,31 @@ extern crate core;
 #[cfg(feature = "std")]
 extern crate std as alloc;
 
+pub use rwasm;
+
+pub use self::{binary_format::*, compiler::*, instruction_set::*, platform::*, reduced_module::*};
+
 pub mod binary_format;
 mod compiler;
 mod instruction_set;
 mod platform;
 mod reduced_module;
 
-pub use self::{binary_format::*, compiler::*, instruction_set::*, platform::*, reduced_module::*};
-pub use rwasm;
-
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
+
+    use rwasm::{AsContextMut, Caller, common::ValueType, Config, Engine, Func, Linker, Store};
+
     use crate::{
         compiler::Compiler,
-        instruction_set,
-        platform::ImportLinker,
-        reduced_module::ReducedModule,
         CompilerConfig,
         FuncOrExport,
         ImportFunc,
+        instruction_set,
+        platform::ImportLinker,
+        reduced_module::ReducedModule,
     };
-    use alloc::string::ToString;
-    use rwasm::{common::ValueType, AsContextMut, Caller, Config, Engine, Func, Linker, Store};
 
     #[derive(Default, Debug, Clone)]
     struct HostState {
@@ -64,7 +67,7 @@ mod tests {
                 .fuel_consume(true),
             Some(&import_linker),
         )
-        .unwrap();
+            .unwrap();
         translator.translate(run_config.entrypoint).unwrap();
         let _source_map = translator.build_source_map();
         let binary = translator.finalize().unwrap();

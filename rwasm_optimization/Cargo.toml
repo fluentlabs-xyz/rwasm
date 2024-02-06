@@ -1,0 +1,21 @@
+[package]
+name = "rwasm_optimization"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rwasm-codegen = { git = "https://github.com/fluentlabs-xyz/rwasm", branch = "devel", default-features = false }
+fluentbase-sdk = { git = "https://github.com/fluentlabs-xyz/fluentbase", branch = "devel", default-features = false }
+
+[dev-dependencies]
+wat = { version = "1" }
+fluentbase-runtime = { git = "https://github.com/fluentlabs-xyz/fluentbase", branch = "devel" }
+
+[features]
+default = []
+std = ["fluentbase-sdk/runtime"]
+e2e = []
+

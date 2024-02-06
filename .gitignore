@@ -15,3 +15,5 @@ libzktrie.so
 
 /tmp/*
 !/tmp/.gitkeep
+rwasm/tmp
+rwasm_optimization/tmp

@@ -224,7 +224,6 @@ pub struct FuncSourceMap {
 
 pub const FUNC_SOURCE_MAP_ENTRYPOINT_NAME: &'static str = "$__entrypoint";
 pub const FUNC_SOURCE_MAP_ENTRYPOINT_IDX: u32 = u32::MAX;
-
 impl<'linker> Compiler<'linker> {
     pub fn new(wasm_binary: &[u8], config: CompilerConfig) -> Result<Self, CompilerError> {
         Self::new_with_linker(wasm_binary, config, None)

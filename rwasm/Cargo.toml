@@ -5,6 +5,9 @@ documentation = ""
 description = "rwasm"
 edition = "2021"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 wasmparser = { version = "0.100.1", package = "wasmparser-nostd", default-features = false }
 spin = { version = "0.9", default-features = false, features = [

@@ -4,6 +4,7 @@ members = [
     "codegen",
     "e2e",
     "rwasm",
+    "rwasm_optimization",
 ]
 exclude = []
 resolver = "2"
@@ -26,7 +27,7 @@ hashbrown = "0.14.3"
 [profile.release]
 panic = "abort"
 lto = true
-opt-level = 3
+opt-level = 2
 strip = true
 debug = false
 debug-assertions = false
