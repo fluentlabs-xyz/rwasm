@@ -82,9 +82,9 @@ dependencies = [
 
 [[package]]
 name = "anstyle"
-version = "1.0.5"
+version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2faccea4cc4ab4a667ce676a30e8ec13922a692c99bb8f5b11f1502c72e04220"
+checksum = "8901269c6307e8d93993578286ac0edf7f195079ffff5ebdeea6a59ffb7e36bc"
 
 [[package]]
 name = "anstyle-parse"
@@ -511,9 +511,9 @@ checksum = "acbf1af155f9b9ef647e42cdc158db4b64a1b61f743629225fde6f3e0be2a7c7"
 
 [[package]]
 name = "const-hex"
-version = "1.10.0"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5104de16b218eddf8e34ffe2f86f74bfa4e61e95a1b89732fccf6325efd0557"
+checksum = "18d59688ad0945eaf6b84cb44fedbe93484c81b48970e98f09db8a22832d7961"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -826,7 +826,6 @@ dependencies = [
 [[package]]
 name = "fluentbase-codec"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#b2eb4f0c44ebdd3368b6bec555b613e807135244"
 dependencies = [
  "alloy-primitives",
  "byteorder",
@@ -834,6 +833,16 @@ dependencies = [
  "hashbrown 0.14.3",
  "paste",
  "serde",
+]
+
+[[package]]
+name = "fluentbase-poseidon"
+version = "0.1.0"
+dependencies = [
+ "bitvec",
+ "halo2curves 0.3.1",
+ "lazy_static",
+ "poseidon",
 ]
 
 [[package]]
@@ -850,12 +859,28 @@ dependencies = [
 [[package]]
 name = "fluentbase-runtime"
 version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "fluentbase-poseidon 0.1.0",
+ "fluentbase-types 0.1.0",
+ "fluentbase-zktrie 0.1.0",
+ "halo2curves 0.3.1",
+ "hashbrown 0.14.3",
+ "k256",
+ "keccak-hash",
+ "rwasm 0.30.0",
+ "rwasm-codegen 0.30.0",
+]
+
+[[package]]
+name = "fluentbase-runtime"
+version = "0.1.0"
 source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#b2eb4f0c44ebdd3368b6bec555b613e807135244"
 dependencies = [
  "byteorder",
- "fluentbase-poseidon",
- "fluentbase-types",
- "fluentbase-zktrie",
+ "fluentbase-poseidon 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
+ "fluentbase-types 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
+ "fluentbase-zktrie 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
  "halo2curves 0.3.1",
  "hashbrown 0.14.3",
  "k256",
@@ -867,14 +892,25 @@ dependencies = [
 [[package]]
 name = "fluentbase-sdk"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#b2eb4f0c44ebdd3368b6bec555b613e807135244"
 dependencies = [
  "byteorder",
  "fluentbase-codec",
- "fluentbase-runtime",
- "fluentbase-types",
+ "fluentbase-runtime 0.1.0",
+ "fluentbase-types 0.1.0",
  "lol_alloc",
  "paste",
+]
+
+[[package]]
+name = "fluentbase-types"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "hashbrown 0.14.3",
+ "rwasm 0.30.0",
+ "rwasm-codegen 0.30.0",
+ "strum",
+ "strum_macros",
 ]
 
 [[package]]
@@ -893,10 +929,22 @@ dependencies = [
 [[package]]
 name = "fluentbase-zktrie"
 version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "fluentbase-poseidon 0.1.0",
+ "halo2curves 0.3.1",
+ "hex",
+ "lazy_static",
+ "uint",
+]
+
+[[package]]
+name = "fluentbase-zktrie"
+version = "0.1.0"
 source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#b2eb4f0c44ebdd3368b6bec555b613e807135244"
 dependencies = [
  "byteorder",
- "fluentbase-poseidon",
+ "fluentbase-poseidon 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
  "halo2curves 0.3.1",
  "hex",
  "lazy_static",
@@ -1252,9 +1300,9 @@ checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
 
 [[package]]
 name = "libc"
-version = "0.2.152"
+version = "0.2.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13e3bf6590cbc649f4d1a3eefc9d5d6eb746f5200ffb04e5e142700b8faa56e7"
+checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 
 [[package]]
 name = "libm"
@@ -1729,7 +1777,6 @@ dependencies = [
  "byteorder",
  "criterion",
  "downcast-rs",
- "fluentbase-sdk",
  "libm",
  "num-traits",
  "paste",
@@ -1765,7 +1812,7 @@ dependencies = [
  "clap 4.4.18",
  "ctor",
  "env_logger",
- "fluentbase-runtime",
+ "fluentbase-runtime 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
  "lazy_static",
  "log",
  "rwasm 0.30.0",
@@ -1778,8 +1825,7 @@ name = "rwasm-codegen"
 version = "0.30.0"
 dependencies = [
  "byteorder",
- "fluentbase-runtime",
- "fluentbase-sdk",
+ "fluentbase-runtime 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
  "rwasm 0.30.0",
  "strum",
  "strum_macros",
@@ -1812,8 +1858,9 @@ dependencies = [
 name = "rwasm_optimization"
 version = "0.1.0"
 dependencies = [
- "fluentbase-runtime",
+ "fluentbase-runtime 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
  "fluentbase-sdk",
+ "rwasm 0.30.0",
  "rwasm-codegen 0.30.0",
  "wat",
 ]
@@ -2445,9 +2492,9 @@ checksum = "dff9641d1cd4be8d1a070daf9e3773c5f67e78b4d9d42263020c057706765c04"
 
 [[package]]
 name = "winnow"
-version = "0.5.37"
+version = "0.5.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7cad8365489051ae9f054164e459304af2e7e9bb407c958076c8bf4aef52da5"
+checksum = "5389a154b01683d28c77f8f68f49dea75f0a4da32557a58f68ee51ebba472d29"
 dependencies = [
  "memchr",
 ]

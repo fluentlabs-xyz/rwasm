@@ -4,8 +4,8 @@
 use fluentbase_sdk::{LowLevelAPI, LowLevelSDK};
 
 extern crate alloc;
-#[cfg(not(test))]
-extern crate fluentbase_sdk;
+// #[cfg(not(test))]
+// extern crate fluentbase_sdk;
 // uncomment in case of using git repo for rwasm-codegen
 #[cfg(test)]
 extern crate std;
@@ -45,8 +45,8 @@ extern "C" {
 fn main() {
     unsafe {
         let s = _sys_input_size();
+        assert_ne!(s, 0);
         let mut v = alloc::vec![0u8; s as usize];
-
         _sys_read(v.as_mut_ptr(), 0, s);
         let r = translate_binary(&v);
         _sys_write(r.as_ptr(), r.len() as u32);
@@ -108,6 +108,7 @@ mod test {
         assert!(res.is_ok());
 
         let next_ctx = RuntimeContext::new(binary.clone())
+            .with_input(wasm_binary)
             .with_state(STATE_MAIN)
             .with_fuel_limit(0);
         let execution_result = Runtime::<()>::run_with_context(next_ctx, &import_linker).unwrap();

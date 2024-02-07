@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-fluentbase-sdk = { git = "https://github.com/fluentlabs-xyz/fluentbase", branch = "devel", default-features = false, features = ["evm"] }
+fluentbase-sdk = { workspace = true, default-features = false, features = ["evm"] }
 rwasm-codegen = { path = "../codegen", default-features = false, features = ["sdk"] }
+rwasm = { path = "../rwasm", default-features = false, features = ["sdk"] }
 #rwasm-codegen = { git = "https://github.com/fluentlabs-xyz/rwasm", branch = "devel", default-features = false }
 #lol_alloc = "0.4.0"
 
@@ -17,6 +18,6 @@ fluentbase-runtime = { git = "https://github.com/fluentlabs-xyz/fluentbase", bra
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = []
-std = ["fluentbase-sdk/runtime"]
+default = ["std"]
+std = ["fluentbase-sdk/runtime", "rwasm-codegen/std", "rwasm/std"]
 e2e = []

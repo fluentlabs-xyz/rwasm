@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-#[cfg(feature = "sdk")]
-extern crate fluentbase_sdk;
+// #[cfg(feature = "sdk")]
+// extern crate fluentbase_sdk;
 
 #[cfg(not(feature = "std"))]
 #[macro_use]

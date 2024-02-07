@@ -22,7 +22,9 @@ categories = ["wasm", "no-std", "virtualization"]
 
 [workspace.dependencies]
 byteorder = { version = "1.5.0", default-features = false }
-fluentbase-sdk = { git = "https://github.com/fluentlabs-xyz/fluentbase", branch = "devel", default-features = false, features = ["evm"] }
+#fluentbase-sdk = { git = "https://github.com/fluentlabs-xyz/fluentbase", branch = "devel", default-features = false, features = ["evm"] }
+fluentbase-sdk = { path = "../fluentbase/crates/sdk", default-features = false, features = ["evm"] }
+fluentbase-runtime = { path = "../fluentbase/crates/runtime" }
 hashbrown = "0.14.3"
 
 [profile.release]

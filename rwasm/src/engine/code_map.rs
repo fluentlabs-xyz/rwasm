@@ -232,6 +232,7 @@ impl CodeMap {
         InstructionPtr::new(
             self.instrs[iref.to_usize()..].as_ptr(),
             self.metas[iref.to_usize()..].as_ptr(),
+            self.instrs[iref.to_usize()..].len(),
         )
     }
 
@@ -244,6 +245,7 @@ impl CodeMap {
         let start_ptr = InstructionPtr::new(
             self.instrs[start..end].as_ptr(),
             self.metas[start..end].as_ptr(),
+            self.instrs[start..end].len(),
         );
         let mut end_ptr = start_ptr;
         end_ptr.add(end - start);
@@ -296,6 +298,7 @@ pub struct InstructionPtr {
     pub(crate) source: *const Instruction,
     /// The pointer to metas
     pub(crate) meta: *const InstrMeta,
+    opcode_count: usize,
 }
 
 /// It is safe to send an [`InstructionPtr`] to another thread.
@@ -311,11 +314,12 @@ unsafe impl Send for InstructionPtr {}
 impl InstructionPtr {
     /// Creates a new [`InstructionPtr`] for `instr`.
     #[inline]
-    pub fn new(ptr: *const Instruction, meta: *const InstrMeta) -> Self {
+    pub fn new(ptr: *const Instruction, meta: *const InstrMeta, opcode_count: usize) -> Self {
         Self {
             ptr,
             source: ptr,
             meta,
+            opcode_count,
         }
     }
 
@@ -335,6 +339,9 @@ impl InstructionPtr {
     /// bounds of the instructions of the same compiled Wasm function.
     #[inline(always)]
     pub fn offset(&mut self, by: isize) {
+        if self.pc() + by as u32 > self.opcode_count as u32 {
+            panic!("OPCODE OVERFLOW!!!")
+        }
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
@@ -344,6 +351,13 @@ impl InstructionPtr {
 
     #[inline(always)]
     pub fn add(&mut self, delta: usize) {
+        if self.pc() + delta as u32 > self.opcode_count as u32 {
+            panic!(
+                "OPCODE OVERFLOW!!! {} >= {}",
+                self.pc() + delta as u32,
+                self.opcode_count
+            )
+        }
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
@@ -360,6 +374,9 @@ impl InstructionPtr {
     /// the boundaries of its associated compiled Wasm function.
     #[inline(always)]
     pub fn get(&self) -> &Instruction {
+        if self.pc() > self.opcode_count as u32 {
+            panic!("OPCODE OVERFLOW!!!")
+        }
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
