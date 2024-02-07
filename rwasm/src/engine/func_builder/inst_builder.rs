@@ -3,6 +3,7 @@
 use super::{
     labels::{LabelRef, LabelRegistry},
     TranslationError,
+    TranslationErrorInner,
 };
 use crate::engine::{
     bytecode::{BranchOffset, FuncIdx, InstrMeta, Instruction},
@@ -226,7 +227,11 @@ impl InstructionsBuilder {
     /// If this is used before all branching labels have been pinned.
     fn update_branch_offsets(&mut self) -> Result<(), TranslationError> {
         for (user, offset) in self.labels.resolved_users() {
-            self.insts[user.into_usize()].update_branch_offset(offset?);
+            self.insts[user.into_usize()]
+                .update_branch_offset(offset?)
+                .map_err(|e| {
+                    TranslationError::new(TranslationErrorInner::BranchOffsetOutOfBounds)
+                })?;
         }
         Ok(())
     }
@@ -276,7 +281,10 @@ impl Instruction {
     /// # Panics
     ///
     /// If `self` is not a branch [`Instruction`].
-    pub fn update_branch_offset<I: Into<BranchOffset>>(&mut self, new_offset: I) {
+    pub fn update_branch_offset<I: Into<BranchOffset>>(
+        &mut self,
+        new_offset: I,
+    ) -> Result<(), &'static str> {
         let new_offset: BranchOffset = new_offset.into();
         match self {
             Instruction::Br(offset)
@@ -284,7 +292,13 @@ impl Instruction {
             | Instruction::BrIfNez(offset)
             | Instruction::BrAdjust(offset)
             | Instruction::BrAdjustIfNez(offset) => *offset = new_offset,
-            _ => panic!("tried to update branch offset of a non-branch instruction: {self:?}"),
+            _ => {
+                if cfg!(test) {
+                    panic!("tried to update branch offset of a non-branch instruction: {self:?}");
+                }
+                return Err("tried to update branch offset of a non-branch instruction: {self:?}");
+            }
         }
+        return Ok(());
     }
 }

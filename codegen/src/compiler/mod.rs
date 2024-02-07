@@ -39,6 +39,9 @@ pub enum CompilerError {
     UnknownImport(ImportName),
     MemoryUsageTooBig,
     DropKeepOutOfBounds,
+    StateRouterIncorrectParams,
+    StateRouterIncorrectState,
+    GlobalsIndexOutOfBounds,
 }
 
 impl CompilerError {
@@ -54,6 +57,9 @@ impl CompilerError {
             CompilerError::UnknownImport(_) => -8,
             CompilerError::MemoryUsageTooBig => -9,
             CompilerError::DropKeepOutOfBounds => -10,
+            CompilerError::StateRouterIncorrectParams => -11,
+            CompilerError::StateRouterIncorrectState => -12,
+            CompilerError::GlobalsIndexOutOfBounds => -13,
         }
     }
 }
@@ -75,7 +81,7 @@ pub struct CompilerConfig {
     extended_const: bool,
     translate_sections: bool,
     with_state: bool,
-    translate_func_as_inline: bool,
+    // translate_func_as_inline: bool,
     type_check: bool,
     input_code: Option<InstructionSet>,
     output_code: Option<InstructionSet>,
@@ -93,7 +99,7 @@ impl Default for CompilerConfig {
             extended_const: true,
             translate_sections: true,
             with_state: false,
-            translate_func_as_inline: false,
+            // translate_func_as_inline: false,
             type_check: true,
             input_code: None,
             output_code: None,
@@ -146,10 +152,10 @@ impl CompilerConfig {
         self
     }
 
-    pub fn translate_func_as_inline(mut self, value: bool) -> Self {
-        self.translate_func_as_inline = value;
-        self
-    }
+    // pub fn translate_func_as_inline(mut self, value: bool) -> Self {
+    //     self.translate_func_as_inline = value;
+    //     self
+    // }
 
     pub fn with_input_code(mut self, input_code: InstructionSet) -> Self {
         self.input_code = Some(input_code);
@@ -208,9 +214,14 @@ pub enum FuncOrExport {
     Global(Instruction),
 }
 
+pub const FUNC_SOURCE_MAP_ENTRYPOINT_NAME: &'static str = "$__entrypoint";
+pub const PRIVATE_FUNC_NAME_PREFIX: &'static str = "$__fn_";
+pub const MAIN_FUNC_NAME: &'static str = "main";
+pub const FUNC_SOURCE_MAP_ENTRYPOINT_IDX: u32 = u32::MAX;
+
 impl Default for FuncOrExport {
     fn default() -> Self {
-        Self::Export("main")
+        Self::Export(MAIN_FUNC_NAME)
     }
 }
 
@@ -222,8 +233,6 @@ pub struct FuncSourceMap {
     pub length: u32,
 }
 
-pub const FUNC_SOURCE_MAP_ENTRYPOINT_NAME: &'static str = "$__entrypoint";
-pub const FUNC_SOURCE_MAP_ENTRYPOINT_IDX: u32 = u32::MAX;
 impl<'linker> Compiler<'linker> {
     pub fn new(wasm_binary: &[u8], config: CompilerConfig) -> Result<Self, CompilerError> {
         Self::new_with_linker(wasm_binary, config, None)
@@ -266,10 +275,18 @@ impl<'linker> Compiler<'linker> {
 
     pub fn translate(&mut self, main_index: FuncOrExport) -> Result<(), CompilerError> {
         if self.is_translated {
-            unreachable!("already translated");
+            if cfg!(test) {
+                unreachable!("already translated");
+            }
+            return Err(CompilerError::NotSupported("already translated"));
         }
-        // lets reserve 0 index and offset for sections init
-        assert_eq!(self.code_section.len(), 0, "code section must be empty");
+        // reserve 0 index and offset for sections init
+        if cfg!(test) {
+            assert_eq!(self.code_section.len(), 0, "code section must be empty");
+        }
+        if self.code_section.len() > 0 {
+            return Err(CompilerError::NotSupported("code section must be empty"));
+        }
         if self.config.with_magic_prefix {
             self.code_section.op_magic_prefix([0x00; 8]);
         }
@@ -363,7 +380,12 @@ impl<'linker> Compiler<'linker> {
                 }
             }
             FuncOrExport::StateRouter(states, check_instr) => {
-                debug_assert_eq!(check_instr.len(), 1);
+                if cfg!(test) {
+                    debug_assert_eq!(check_instr.len(), 1);
+                }
+                if check_instr.len() != 1 {
+                    return Err(CompilerError::StateRouterIncorrectParams);
+                }
 
                 if let Some(input_code) = &self.config.input_code {
                     router_opcodes.extend(&input_code);
@@ -406,18 +428,22 @@ impl<'linker> Compiler<'linker> {
                             router_opcodes.extend(&output_code);
                         }
                     } else {
-                        unreachable!("not supported router state ({:?})", state)
+                        if cfg!(test) {
+                            unreachable!("not supported router state ({:?})", state)
+                        }
+                        return Err(CompilerError::StateRouterIncorrectState);
                     }
                     router_opcodes.op_br_indirect(0);
                 }
 
                 const INIT_PRELUDE_VALUE: i32 = 1000;
+                const INIT_PRELUDE_OFFSET: i32 = 4;
 
                 router_opcodes.extend(&check_instr);
                 router_opcodes.op_i32_const(INIT_PRELUDE_VALUE);
                 // if states are not equal then skip this call
                 router_opcodes.op_i32_eq();
-                router_opcodes.op_br_if_nez(4);
+                router_opcodes.op_br_if_nez(INIT_PRELUDE_OFFSET);
                 router_opcodes.op_br_indirect(0);
             }
             FuncOrExport::Global(instruction) => {
@@ -620,14 +646,24 @@ impl<'linker> Compiler<'linker> {
         let len_globals = self.module.imports.len_globals;
 
         let globals = &self.module.globals;
-        assert!(global_index < globals.len() as u32);
+        if cfg!(test) {
+            assert!(global_index < globals.len() as u32);
+        }
+        if global_index >= globals.len() as u32 {
+            return Err(CompilerError::GlobalsIndexOutOfBounds);
+        }
 
         if global_index < len_globals as u32 {
             self.code_section
                 .op_call(self.config.global_start_index + global_index);
         } else {
             let global_inits = &self.module.globals_init;
-            assert!(global_index as usize - len_globals < global_inits.len());
+            if cfg!(test) {
+                assert!(global_index as usize - len_globals < global_inits.len());
+            }
+            if global_index as usize - len_globals >= global_inits.len() {
+                return Err(CompilerError::GlobalsIndexOutOfBounds);
+            }
 
             let global_expr = &global_inits[global_index as usize - len_globals];
             if let Some(value) = global_expr.eval_const() {
@@ -790,7 +826,8 @@ impl<'linker> Compiler<'linker> {
             self.code_section.op_type_check(idx);
         }
 
-        if !self.config.translate_func_as_inline && self.config.swap_stack_params {
+        // if !self.config.translate_func_as_inline &&
+        if self.config.swap_stack_params {
             self.swap_stack_parameters(num_inputs.len() as u32);
         }
 
@@ -810,30 +847,46 @@ impl<'linker> Compiler<'linker> {
         while instr_ptr != instr_end {
             self.translate_opcode(&mut instr_ptr, 0)?;
         }
-        if !self.config.translate_func_as_inline {
-            self.code_section.op_unreachable();
-        }
+        // if !self.config.translate_func_as_inline {
+        self.code_section.op_unreachable();
+        // }
         // remember function offset in the mapping (+1 because 0 is reserved for sections init)
         self.function_beginning.insert(fn_index, beginning_offset);
         Ok(())
     }
 
-    fn extract_drop_keep(instr_ptr: &mut InstructionPtr) -> DropKeep {
+    fn extract_drop_keep(instr_ptr: &mut InstructionPtr) -> Result<DropKeep, CompilerError> {
         instr_ptr.add(1);
         let next_instr = instr_ptr.get();
-        match next_instr {
+        let drop_keep = match next_instr {
             Instruction::Return(drop_keep) => *drop_keep,
-            _ => unreachable!("incorrect instr after break adjust ({:?})", *next_instr),
-        }
+            _ => {
+                if cfg!(test) {
+                    unreachable!("incorrect instr after break adjust ({:?})", *next_instr)
+                }
+                return Err(CompilerError::NotSupported(
+                    "incorrect instr after break adjust",
+                ));
+            }
+        };
+        Ok(drop_keep)
     }
 
-    fn extract_table(instr_ptr: &mut InstructionPtr) -> TableIdx {
+    fn extract_table(instr_ptr: &mut InstructionPtr) -> Result<TableIdx, CompilerError> {
         instr_ptr.add(1);
         let next_instr = instr_ptr.get();
-        match next_instr {
+        let table_idx = match next_instr {
             Instruction::TableGet(table_idx) => *table_idx,
-            _ => unreachable!("incorrect instr after break adjust ({:?})", *next_instr),
-        }
+            _ => {
+                if cfg!(test) {
+                    unreachable!("incorrect instr after break adjust ({:?})", *next_instr)
+                }
+                return Err(CompilerError::NotSupported(
+                    "incorrect instr after break adjust",
+                ));
+            }
+        };
+        Ok(table_idx)
     }
 
     fn translate_br_table(
@@ -842,7 +895,7 @@ impl<'linker> Compiler<'linker> {
         branch_offset: Option<BranchOffset>,
     ) -> Result<(), CompilerError> {
         if let Some(mut br_table_status) = self.br_table_status.take() {
-            let drop_keep = Self::extract_drop_keep(instr_ptr);
+            let drop_keep = Self::extract_drop_keep(instr_ptr)?;
             let injection_begin = br_table_status.instr_countdown as i32
                 + br_table_status.injection_instructions.len() as i32;
 
@@ -894,11 +947,11 @@ impl<'linker> Compiler<'linker> {
                     if let Some(offset) =
                         br_table_status.injection_instructions[i].get_jump_offset()
                     {
-                        br_table_status.injection_instructions[i].update_branch_offset(
-                            BranchOffset::from(
+                        br_table_status.injection_instructions[i]
+                            .update_branch_offset(BranchOffset::from(
                                 offset.to_i32() + injection_len as i32 - i as i32 - 2,
-                            ),
-                        );
+                            ))
+                            .map_err(|e| CompilerError::NotSupported(e))?;
                     }
                 }
                 self.code_section
@@ -928,7 +981,7 @@ impl<'linker> Compiler<'linker> {
                 if self.br_table_status.is_some() {
                     self.translate_br_table(instr_ptr, Some(branch_offset))?;
                 } else {
-                    Self::extract_drop_keep(instr_ptr).translate(&mut self.code_section)?;
+                    Self::extract_drop_keep(instr_ptr)?.translate(&mut self.code_section)?;
                     self.code_section.op_br(branch_offset);
                     self.code_section.op_return();
                 }
@@ -940,12 +993,13 @@ impl<'linker> Compiler<'linker> {
                 opcode_count_origin += 1;
                 let br_if_offset = self.code_section.len();
                 self.code_section.op_br_if_eqz(0);
-                Self::extract_drop_keep(instr_ptr).translate(&mut self.code_section)?;
+                Self::extract_drop_keep(instr_ptr)?.translate(&mut self.code_section)?;
                 let drop_keep_len = self.code_section.len() - br_if_offset + 1;
                 self.code_section
                     .get_mut(br_if_offset as usize)
                     .unwrap()
-                    .update_branch_offset(BranchOffset::from(1 + drop_keep_len as i32));
+                    .update_branch_offset(BranchOffset::from(1 + drop_keep_len as i32))
+                    .map_err(|e| CompilerError::NotSupported(e))?;
 
                 // We increase break offset in negative case
                 // due to jump over BrAdjustIfNez opcode injection
@@ -967,7 +1021,7 @@ impl<'linker> Compiler<'linker> {
                 let type_index = self.get_or_insert_check_idx(func_type.clone());
                 let num_inputs = func_type.params();
 
-                Self::extract_drop_keep(instr_ptr).translate(&mut self.code_section)?;
+                Self::extract_drop_keep(instr_ptr)?.translate(&mut self.code_section)?;
 
                 self.swap_target(num_inputs.len() as u32);
 
@@ -979,21 +1033,24 @@ impl<'linker> Compiler<'linker> {
             }
             WI::ReturnCall(func) => {
                 self.code_section.op_unreachable();
-                Self::extract_drop_keep(instr_ptr).translate(&mut self.code_section)?;
+                Self::extract_drop_keep(instr_ptr)?.translate(&mut self.code_section)?;
                 self.code_section.op_call(func);
                 self.code_section.op_return();
-                unreachable!("wait, should it call translate host call?");
+                if cfg!(test) {
+                    unreachable!("wait, should it call translate host call?");
+                }
+                return Err(CompilerError::NotSupported("expected host call"));
             }
             WI::ReturnCallIndirect(sig_index) => {
                 self.code_section.op_i32_const(888);
                 self.code_section.op_drop();
 
-                let drop_keep = Self::extract_drop_keep(instr_ptr);
+                let drop_keep = Self::extract_drop_keep(instr_ptr)?;
                 let call_func_type = self.module.func_types[sig_index.to_u32() as usize];
                 let func_type = self.engine.resolve_func_type(&call_func_type, Clone::clone);
                 let num_inputs = func_type.params();
 
-                let table_idx = Self::extract_table(instr_ptr);
+                let table_idx = Self::extract_table(instr_ptr)?;
                 opcode_count_origin += 2;
                 // let target = self.code_section.len() + 3 + 4 + 1 + 4;
 
@@ -1019,9 +1076,9 @@ impl<'linker> Compiler<'linker> {
                 } else {
                     DropKeepWithReturnParam(drop_keep).translate(&mut self.code_section)?;
 
-                    if !self.config.translate_func_as_inline {
-                        self.code_section.op_br_indirect(0);
-                    }
+                    // if !self.config.translate_func_as_inline {
+                    self.code_section.op_br_indirect(0);
+                    // }
                 }
             }
             WI::ReturnIfNez(drop_keep) => {
@@ -1032,7 +1089,8 @@ impl<'linker> Compiler<'linker> {
                 self.code_section
                     .get_mut(br_if_offset as usize)
                     .unwrap()
-                    .update_branch_offset(BranchOffset::from(1 + drop_keep_len as i32));
+                    .update_branch_offset(BranchOffset::from(1 + drop_keep_len as i32))
+                    .map_err(|e| CompilerError::NotSupported(e))?;
                 self.code_section.op_br_indirect(0);
             }
             WI::CallInternal(func_idx) => {
@@ -1050,7 +1108,7 @@ impl<'linker> Compiler<'linker> {
                 }
             }
             WI::CallIndirect(sig_index) => {
-                let table_idx = Self::extract_table(instr_ptr);
+                let table_idx = Self::extract_table(instr_ptr)?;
                 opcode_count_origin += 1;
                 let target = self.code_section.len() + 3 + 4 + 1 + 4;
 
@@ -1083,7 +1141,12 @@ impl<'linker> Compiler<'linker> {
                 self.code_section.push(*instr_ptr.get());
             }
             WI::MemoryGrow => {
-                assert!(!self.module.memories.is_empty(), "memory must be provided");
+                if cfg!(test) {
+                    assert!(!self.module.memories.is_empty(), "memory must be provided");
+                }
+                if self.module.memories.is_empty() {
+                    return Err(CompilerError::NotSupported("memory must be provided"));
+                }
                 let max_pages = self.module.memories[0]
                     .maximum_pages()
                     .unwrap_or(Pages::max())
@@ -1151,7 +1214,7 @@ impl<'linker> Compiler<'linker> {
             .items
             .deref()
             .iter()
-            .filter(|import| matches!(import, Imported::Func(_)))
+            .filter(|&import| matches!(import, Imported::Func(_)))
             .collect::<Vec<_>>();
         if fn_index >= imports.len() as u32 {
             return Err(CompilerError::NotSupportedImport);
@@ -1222,7 +1285,7 @@ impl<'linker> Compiler<'linker> {
                 })
                 .last()
                 .map(|func| func.0.to_string())
-                .unwrap_or_else(|| format!("$__fn_{}", index));
+                .unwrap_or_else(|| format!("{}{}", PRIVATE_FUNC_NAME_PREFIX, index));
             result.push(FuncSourceMap {
                 fn_index: index,
                 fn_name,
@@ -1265,7 +1328,9 @@ impl<'linker> Compiler<'linker> {
                             }
                         }
                     };
-                    bytecode.instr[i].update_branch_offset(BranchOffset::from(offset));
+                    bytecode.instr[i]
+                        .update_branch_offset(BranchOffset::from(offset))
+                        .map_err(|e| CompilerError::NotSupported(e))?;
                 }
                 Instruction::BrTable(target) => {
                     i += target.to_usize() * 2;

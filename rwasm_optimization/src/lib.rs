@@ -1,16 +1,17 @@
 #![cfg_attr(not(test), no_std)]
 #![feature(core_intrinsics)]
 
+mod allocator_and_panic;
 
+// #[cfg(not(test))]
 extern crate alloc;
-#[cfg(not(test))]
-extern crate fluentbase_sdk;
+// extern crate fluentbase_sdk;
+// uncomment in case of using git repo for rwasm-codegen
 #[cfg(test)]
 extern crate std;
 
-
 use alloc::vec::Vec;
-
+use fluentbase_sdk::LowLevelSDK;
 use rwasm_codegen::{Compiler, CompilerConfig, ImportLinker};
 
 // #[no_mangle]
@@ -25,12 +26,11 @@ fn translate_binary(wasm_binary: &[u8]) -> Vec<u8> {
             .with_router(false),
         Some(&import_linker),
     )
-        .unwrap();
+    .unwrap();
     translator.translate(Default::default()).unwrap();
     let binary = translator.finalize().unwrap();
     binary
 }
-
 
 #[cfg(target_arch = "wasm32")]
 #[link(wasm_import_module = "fluentbase_v1alpha")]
@@ -59,13 +59,14 @@ fn main() {
 mod test {
     static PROVER_TIME_PER_INSTRUCTION_MS: f32 = 2.5;
 
-    use std::{format, fs, println};
-    use std::intrinsics::transmute_unchecked;
-
-    use fluentbase_runtime::{Runtime, RuntimeContext};
-    use fluentbase_runtime::types::STATE_MAIN;
-    use rwasm_codegen::{Compiler, CompilerConfig, ImportLinker};
-    use rwasm_codegen::instruction::INSTRUCTION_SIZE_BYTES;
+    use fluentbase_runtime::{types::STATE_MAIN, Runtime, RuntimeContext};
+    use rwasm_codegen::{
+        instruction::INSTRUCTION_SIZE_BYTES,
+        Compiler,
+        CompilerConfig,
+        ImportLinker,
+    };
+    use std::{format, fs, intrinsics::transmute_unchecked, println};
 
     #[test]
     fn translate_wasm2rwasm() {
@@ -76,7 +77,12 @@ mod test {
 
         let wasm_binary_len_old: i64 = 617963;
         let wasm_binary_len_new: i64 = wasm_binary.len() as i64;
-        println!("wasm binary len old {} new {} (decrease {})", wasm_binary_len_old, wasm_binary_len_new, wasm_binary_len_old - wasm_binary_len_new);
+        println!(
+            "wasm binary len old {} new {} (decrease {})",
+            wasm_binary_len_old,
+            wasm_binary_len_new,
+            wasm_binary_len_old - wasm_binary_len_new
+        );
 
         let import_linker2 = unsafe {
             let import_linker: &ImportLinker = transmute_unchecked(&import_linker);
@@ -90,7 +96,7 @@ mod test {
                 .with_router(true),
             Some(&import_linker2),
         )
-            .unwrap();
+        .unwrap();
         translator.translate(Default::default()).unwrap();
         let binary = translator.finalize().unwrap();
         let binary_len_old: i64 = 2697012;
@@ -106,7 +112,8 @@ mod test {
             .with_state(STATE_MAIN)
             .with_fuel_limit(0);
         let execution_result = Runtime::<()>::run_with_context(next_ctx, &import_linker).unwrap();
-        let len_old: i64 = 19831;
+        // let len_old: i64 = 19831; // when including from git, using special allocator,
+        let len_old: i64 = 21876;
         let len_new: i64 = execution_result.tracer().logs.len() as i64;
         let proof_gen_time_old_ms = len_old as f32 * PROVER_TIME_PER_INSTRUCTION_MS;
         let proof_gen_time_new_ms = len_new as f32 * PROVER_TIME_PER_INSTRUCTION_MS;
