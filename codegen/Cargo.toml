@@ -11,6 +11,7 @@ byteorder = { version = "1.5.0", default-features = false }
 ## strum is used only with test cfg
 strum = { version = "0.25.0", optional = true }
 strum_macros = { version = "0.25.1", optional = true }
+fluentbase-sdk = { workspace = true, optional = true }
 
 [dev-dependencies]
 wat = { version = "1" }
@@ -19,4 +20,8 @@ fluentbase-runtime = { git = "https://github.com/fluentlabs-xyz/fluentbase", bra
 [features]
 default = ["std"]
 std = ["rwasm/std", "byteorder/std", "dep:strum", "dep:strum_macros"]
+sdk = [
+    "dep:fluentbase-sdk",
+    "rwasm/sdk",
+]
 e2e = []

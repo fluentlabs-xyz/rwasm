@@ -1,17 +1,16 @@
 #![cfg_attr(not(test), no_std)]
 #![feature(core_intrinsics)]
 
-mod allocator_and_panic;
+use fluentbase_sdk::{LowLevelAPI, LowLevelSDK};
 
-// #[cfg(not(test))]
 extern crate alloc;
-// extern crate fluentbase_sdk;
+#[cfg(not(test))]
+extern crate fluentbase_sdk;
 // uncomment in case of using git repo for rwasm-codegen
 #[cfg(test)]
 extern crate std;
 
 use alloc::vec::Vec;
-use fluentbase_sdk::LowLevelSDK;
 use rwasm_codegen::{Compiler, CompilerConfig, ImportLinker};
 
 // #[no_mangle]

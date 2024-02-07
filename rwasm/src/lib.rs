@@ -81,6 +81,9 @@
 #![recursion_limit = "750"]
 #![allow(dead_code, unreachable_patterns)]
 
+#[cfg(feature = "sdk")]
+extern crate fluentbase_sdk;
+
 #[cfg(not(feature = "std"))]
 #[macro_use]
 extern crate alloc;
