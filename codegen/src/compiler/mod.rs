@@ -24,6 +24,7 @@ use rwasm::{
     FuncType,
     Module,
 };
+use smallvec::SmallVec;
 
 mod drop_keep;
 
@@ -202,9 +203,11 @@ pub struct Injection {
 
 #[derive(Debug)]
 struct BrTableStatus {
-    injection_instructions: Vec<Instruction>,
+    injection_instructions: SmallVec<[Instruction; 64]>,
     instr_countdown: u32,
 }
+pub const EXPORT_FUNC_MAIN_NAME: &'static str = "main";
+pub const EXPORT_FUNC_DEPLOY_NAME: &'static str = "deploy";
 
 #[derive(Debug)]
 pub enum FuncOrExport {
@@ -216,12 +219,11 @@ pub enum FuncOrExport {
 
 pub const FUNC_SOURCE_MAP_ENTRYPOINT_NAME: &'static str = "$__entrypoint";
 pub const PRIVATE_FUNC_NAME_PREFIX: &'static str = "$__fn_";
-pub const MAIN_FUNC_NAME: &'static str = "main";
 pub const FUNC_SOURCE_MAP_ENTRYPOINT_IDX: u32 = u32::MAX;
 
 impl Default for FuncOrExport {
     fn default() -> Self {
-        Self::Export(MAIN_FUNC_NAME)
+        Self::Export(EXPORT_FUNC_MAIN_NAME)
     }
 }
 
@@ -429,7 +431,7 @@ impl<'linker> Compiler<'linker> {
                         }
                     } else {
                         if cfg!(test) {
-                            unreachable!("not supported router state ({:?})", state)
+                            unreachable!("not supported router state ({:?})", state);
                         }
                         return Err(CompilerError::StateRouterIncorrectState);
                     }
@@ -674,13 +676,14 @@ impl<'linker> Compiler<'linker> {
                 self.code_section.op_global_get(index.into_u32());
             } else {
                 #[cfg(feature = "e2e")]
-                if let Some(value) = global_expr.eval_with_context(
-                    |_| rwasm::Value::F32(rwasm::common::F32::from(666)),
-                    |_| rwasm::FuncRef::default(),
-                ) {
-                    self.code_section.op_i64_const(value.to_bits());
+                {
+                    if let Some(value) = global_expr.eval_with_context(
+                        |_| rwasm::Value::F32(rwasm::common::F32::from(666)),
+                        |_| rwasm::FuncRef::default(),
+                    ) {
+                        self.code_section.op_i64_const(value.to_bits());
+                    }
                 }
-                #[cfg(not(feature = "e2e"))]
                 return Err(CompilerError::NotSupported("not supported global expr"));
             }
         }
@@ -862,7 +865,7 @@ impl<'linker> Compiler<'linker> {
             Instruction::Return(drop_keep) => *drop_keep,
             _ => {
                 if cfg!(test) {
-                    unreachable!("incorrect instr after break adjust ({:?})", *next_instr)
+                    unreachable!("incorrect instr after break adjust ({:?})", *next_instr);
                 }
                 return Err(CompilerError::NotSupported(
                     "incorrect instr after break adjust",
@@ -879,7 +882,7 @@ impl<'linker> Compiler<'linker> {
             Instruction::TableGet(table_idx) => *table_idx,
             _ => {
                 if cfg!(test) {
-                    unreachable!("incorrect instr after break adjust ({:?})", *next_instr)
+                    unreachable!("incorrect instr after break adjust ({:?})", *next_instr);
                 }
                 return Err(CompilerError::NotSupported(
                     "incorrect instr after break adjust",
@@ -1135,7 +1138,7 @@ impl<'linker> Compiler<'linker> {
             }
             WI::BrTable(target) => {
                 self.br_table_status = Some(BrTableStatus {
-                    injection_instructions: vec![],
+                    injection_instructions: Default::default(),
                     instr_countdown: target.to_usize() as u32 * 2,
                 });
                 self.code_section.push(*instr_ptr.get());

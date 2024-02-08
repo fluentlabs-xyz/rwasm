@@ -3,7 +3,6 @@ use crate::binary_format::{
     BinaryFormat,
     BinaryFormatError,
 };
-use alloc::vec::Vec;
 use rwasm::{
     common::UntypedValue,
     engine::{
@@ -553,7 +552,7 @@ impl InstructionExtra for Instruction {
     }
 
     fn info(&self) -> (u8, usize) {
-        let mut sink: Vec<u8> = vec![0; 100];
+        let mut sink = [0; 100];
         let mut binary_writer = BinaryFormatWriter::new(sink.as_mut_slice());
         let size = self.write_binary(&mut binary_writer).unwrap();
         (sink[0], size - 1)

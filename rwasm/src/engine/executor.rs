@@ -247,17 +247,36 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 return Err(TrapCode::StackOverflow.into());
             }
 
-            #[cfg(feature = "std")]
+            #[cfg(all(feature = "std", feature = "debug_print_realtime_trace"))]
             {
-                let dump = self.value_stack.dump_stack(self.sp);
-                if dump.len() < 20 {
-                    println!(
-                        "{} {:?} {:?}",
-                        self.ip.pc(),
-                        instr,
-                        dump.iter().map(|v| v.as_u64()).collect::<Vec<_>>()
+                use std::{env::current_dir, fs::OpenOptions, io::prelude::*};
+                let out_file = "./tmp/execution_trace.txt";
+                let mut trace_file = OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .open(out_file)
+                    .expect(
+                        format!(
+                            "trace file '{}' not found (must be empty to append). cur dir: {}",
+                            out_file,
+                            current_dir().unwrap().to_str().unwrap(),
+                        )
+                        .as_str(),
                     );
-                }
+
+                let dump = self.value_stack.dump_stack(self.sp);
+                // if dump.len() < 20 {
+                let log_str = format!(
+                    "{}: {:?} {:?}",
+                    self.ip.pc(),
+                    instr,
+                    dump.iter().map(|v| v.as_u64()).collect::<Vec<_>>()
+                );
+                // if let Err(e) = writeln!(trace_file, "{}", log_str) {
+                //     eprintln!("Couldn't write to file: {}", e);
+                // }
+                // println!("{}", log_str);
+                // }
             }
 
             // handle pre-instruction state

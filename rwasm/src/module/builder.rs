@@ -130,7 +130,7 @@ impl<'engine> ModuleBuilder<'engine> {
     pub fn new(engine: &'engine Engine) -> Self {
         Self {
             engine,
-            func_types: Vec::new(),
+            func_types: Default::default(),
             imports: ModuleImports::default(),
             funcs: Vec::new(),
             tables: Vec::new(),

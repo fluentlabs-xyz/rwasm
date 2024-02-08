@@ -2,14 +2,16 @@ use crate::{
     compiler::{CompilerError, Translator},
     instruction_set::InstructionSet,
 };
-use alloc::vec::Vec;
 use rwasm::engine::{
     bytecode::{Instruction, LocalDepth},
     DropKeep,
 };
+use smallvec::SmallVec;
 
-pub(crate) fn translate_drop_keep(drop_keep: DropKeep) -> Result<Vec<Instruction>, CompilerError> {
-    let mut result = Vec::new();
+pub(crate) fn translate_drop_keep(
+    drop_keep: DropKeep,
+) -> Result<SmallVec<[Instruction; 64]>, CompilerError> {
+    let mut result = SmallVec::<[Instruction; 64]>::new();
     let (drop, keep) = (drop_keep.drop(), drop_keep.keep());
     if drop == 0 {
         return Ok(result);
@@ -34,7 +36,7 @@ pub(crate) fn translate_drop_keep(drop_keep: DropKeep) -> Result<Vec<Instruction
 impl Translator for DropKeep {
     fn translate(&self, result: &mut InstructionSet) -> Result<(), CompilerError> {
         let drop_keep_opcodes = translate_drop_keep(*self)?;
-        result.instr.extend(&drop_keep_opcodes);
+        result.instr.extend(drop_keep_opcodes);
         Ok(())
     }
 }
@@ -52,7 +54,7 @@ impl Translator for DropKeepWithReturnParam {
             DropKeep::new(self.0.drop() as usize + 1, self.0.keep() as usize + 1)
                 .map_err(|_| CompilerError::DropKeepOutOfBounds)?,
         )?;
-        result.instr.extend(&drop_keep_opcodes);
+        result.instr.extend(drop_keep_opcodes);
         Ok(())
     }
 }

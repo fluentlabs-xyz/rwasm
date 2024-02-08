@@ -68,6 +68,7 @@ use crate::{
 };
 use alloc::{sync::Arc, vec::Vec};
 use core::sync::atomic::{AtomicU32, Ordering};
+use smallvec::SmallVec;
 use spin::{Mutex, RwLock};
 
 /// A unique engine index.
@@ -194,7 +195,7 @@ impl Engine {
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
-        metas: Vec<InstrMeta>,
+        metas: SmallVec<[InstrMeta; 64]>,
     ) where
         I: IntoIterator<Item = Instruction>,
     {
@@ -460,7 +461,7 @@ impl EngineInner {
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
-        metas: Vec<InstrMeta>,
+        metas: SmallVec<[InstrMeta; 64]>,
     ) where
         I: IntoIterator<Item = Instruction>,
     {
@@ -865,6 +866,7 @@ impl<'engine> EngineExecutor<'engine> {
         let code_map = &self.res.code_map;
         let const_pool = self.res.const_pool.view();
 
+        let _tracer_logs_len = tracer.logs.len();
         execute_wasm(
             store_inner,
             cache,

@@ -826,6 +826,7 @@ dependencies = [
 [[package]]
 name = "fluentbase-codec"
 version = "0.1.0"
+source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#bee3d868818da7c4809df7b2fda47645096e36b9"
 dependencies = [
  "alloy-primitives",
  "byteorder",
@@ -848,7 +849,7 @@ dependencies = [
 [[package]]
 name = "fluentbase-poseidon"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#b2eb4f0c44ebdd3368b6bec555b613e807135244"
+source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#bee3d868818da7c4809df7b2fda47645096e36b9"
 dependencies = [
  "bitvec",
  "halo2curves 0.3.1",
@@ -875,7 +876,7 @@ dependencies = [
 [[package]]
 name = "fluentbase-runtime"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#b2eb4f0c44ebdd3368b6bec555b613e807135244"
+source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#bee3d868818da7c4809df7b2fda47645096e36b9"
 dependencies = [
  "byteorder",
  "fluentbase-poseidon 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
@@ -892,11 +893,12 @@ dependencies = [
 [[package]]
 name = "fluentbase-sdk"
 version = "0.1.0"
+source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#bee3d868818da7c4809df7b2fda47645096e36b9"
 dependencies = [
  "byteorder",
  "fluentbase-codec",
- "fluentbase-runtime 0.1.0",
- "fluentbase-types 0.1.0",
+ "fluentbase-runtime 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
+ "fluentbase-types 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
  "lol_alloc",
  "paste",
 ]
@@ -916,7 +918,7 @@ dependencies = [
 [[package]]
 name = "fluentbase-types"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#b2eb4f0c44ebdd3368b6bec555b613e807135244"
+source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#bee3d868818da7c4809df7b2fda47645096e36b9"
 dependencies = [
  "alloy-primitives",
  "hashbrown 0.14.3",
@@ -941,7 +943,7 @@ dependencies = [
 [[package]]
 name = "fluentbase-zktrie"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#b2eb4f0c44ebdd3368b6bec555b613e807135244"
+source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#bee3d868818da7c4809df7b2fda47645096e36b9"
 dependencies = [
  "byteorder",
  "fluentbase-poseidon 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
@@ -1114,7 +1116,7 @@ dependencies = [
 [[package]]
 name = "halo2curves"
 version = "0.3.1"
-source = "git+https://github.com/scroll-tech/halo2curves.git?branch=0.3.1-derive-serde#969f1e44d9713ee4cd552563bd0c762c5d53b56e"
+source = "git+https://github.com/scroll-tech/halo2curves?branch=0.3.1-derive-serde#969f1e44d9713ee4cd552563bd0c762c5d53b56e"
 dependencies = [
  "ff 0.12.1",
  "group 0.12.1",
@@ -1777,6 +1779,7 @@ dependencies = [
  "byteorder",
  "criterion",
  "downcast-rs",
+ "fluentbase-sdk",
  "libm",
  "num-traits",
  "paste",
@@ -1825,8 +1828,9 @@ name = "rwasm-codegen"
 version = "0.30.0"
 dependencies = [
  "byteorder",
- "fluentbase-runtime 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
+ "fluentbase-runtime 0.1.0",
  "rwasm 0.30.0",
+ "smallvec",
  "strum",
  "strum_macros",
  "wat",

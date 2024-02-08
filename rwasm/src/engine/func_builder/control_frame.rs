@@ -65,7 +65,8 @@ impl BlockControlFrame {
     ///
     /// # Note
     ///
-    /// A [`BlockControlFrame`] might share its [`ConsumeFuel`] instruction with its child [`BlockControlFrame`].
+    /// A [`BlockControlFrame`] might share its [`ConsumeFuel`] instruction with its child
+    /// [`BlockControlFrame`].
     ///
     /// [`ConsumeFuel`]: enum.Instruction.html#variant.ConsumeFuel
     pub fn consume_fuel_instr(&self) -> Option<Instr> {
@@ -150,13 +151,12 @@ pub struct IfControlFrame {
     ///
     /// # Note
     ///
-    /// - This is `None` upon entering the `if` control flow frame.
-    ///   Once the optional `else` case or the `end` of the `if` control
-    ///   flow frame is reached this field will be computed.
-    /// - This information is important to know how to continue after a
-    ///   diverging `if` control flow frame.
-    /// - An `end_of_else_is_reachable` field is not needed since it will
-    ///   be easily computed once the translation reaches the end of the `if`.
+    /// - This is `None` upon entering the `if` control flow frame. Once the optional `else` case
+    ///   or the `end` of the `if` control flow frame is reached this field will be computed.
+    /// - This information is important to know how to continue after a diverging `if` control flow
+    ///   frame.
+    /// - An `end_of_else_is_reachable` field is not needed since it will be easily computed once
+    ///   the translation reaches the end of the `if`.
     end_of_then_is_reachable: Option<bool>,
     /// Instruction to consume fuel upon entering the basic block if fuel metering is enabled.
     ///

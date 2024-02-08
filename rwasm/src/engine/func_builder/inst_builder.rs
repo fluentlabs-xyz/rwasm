@@ -13,6 +13,7 @@ use crate::engine::{
 };
 use alloc::vec::Vec;
 use core::mem::take;
+use smallvec::SmallVec;
 
 /// A reference to an instruction of the partially
 /// constructed function body of the [`InstructionsBuilder`].
@@ -77,7 +78,7 @@ impl RelativeDepth {
 pub struct InstructionsBuilder {
     /// The instructions of the partially constructed function body.
     insts: Vec<Instruction>,
-    metas: Vec<InstrMeta>,
+    metas: SmallVec<[InstrMeta; 64]>,
     /// All labels and their uses.
     labels: LabelRegistry,
     /// Instruction meta state (pc and opcode number)
@@ -229,7 +230,7 @@ impl InstructionsBuilder {
         for (user, offset) in self.labels.resolved_users() {
             self.insts[user.into_usize()]
                 .update_branch_offset(offset?)
-                .map_err(|e| {
+                .map_err(|_e| {
                     TranslationError::new(TranslationErrorInner::BranchOffsetOutOfBounds)
                 })?;
         }

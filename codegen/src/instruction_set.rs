@@ -24,13 +24,14 @@ use rwasm::{
         DropKeep,
     },
 };
+use smallvec::SmallVec;
 
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct InstructionSet {
-    pub instr: Vec<Instruction>,
-    pub metas: Option<Vec<InstrMeta>>,
+    pub instr: SmallVec<[Instruction; 64]>,
+    pub metas: Option<SmallVec<[InstrMeta; 64]>>,
     // translate state
-    total_locals: Vec<usize>,
+    total_locals: SmallVec<[usize; 64]>,
     init_memory_size: u32,
     init_memory_pages: u32,
     relative_offset: u32,
@@ -74,9 +75,9 @@ macro_rules! impl_opcode {
 impl From<Vec<Instruction>> for InstructionSet {
     fn from(value: Vec<Instruction>) -> Self {
         Self {
-            instr: value,
+            instr: value.into(),
             metas: None,
-            total_locals: vec![],
+            total_locals: Default::default(),
             init_memory_size: 0,
             init_memory_pages: 0,
             relative_offset: 0,
@@ -108,7 +109,7 @@ impl InstructionSet {
             metas.push(meta);
             metas.len()
         } else {
-            self.metas = Some(vec![meta]);
+            self.metas = Some(SmallVec::from_slice(&[meta]));
             1
         };
         assert_eq!(self.instr.len(), metas_len, "instr len and meta mismatched");
@@ -275,11 +276,11 @@ impl InstructionSet {
             .unwrap_or_default()
     }
 
-    pub fn instr(&self) -> &Vec<Instruction> {
+    pub fn instr(&self) -> &SmallVec<[Instruction; 64]> {
         &self.instr
     }
 
-    pub fn instr_mut(&mut self) -> &mut Vec<Instruction> {
+    pub fn instr_mut(&mut self) -> &mut SmallVec<[Instruction; 64]> {
         &mut self.instr
     }
 
@@ -519,9 +520,9 @@ impl InstructionSet {
     impl_opcode!(op_i64_trunc_sat_f64u, I64TruncSatF64U);
 
     pub fn extend(&mut self, with: &InstructionSet) {
-        self.instr.extend(&with.instr);
+        self.instr.extend(with.instr.iter().cloned());
         if let Some(metas) = &mut self.metas {
-            metas.extend(with.metas.as_ref().unwrap());
+            metas.extend(with.metas.as_ref().cloned().unwrap());
         }
     }
 
@@ -534,15 +535,7 @@ impl InstructionSet {
         for offset in from_idx.unwrap_or(0)..=to_idx.unwrap_or(self.instr.len() - 1) {
             let instr = &mut self.instr[offset];
             match instr {
-                // Instruction::BrTable(_) |
-                // Instruction::Br(offset)
-                | Instruction::BrIndirect(offset)
-                // | Instruction::BrIfEqz(offset)
-                // | Instruction::BrAdjust(offset)
-                // | Instruction::BrAdjustIfNez(offset)
-                // | Instruction::BrIfEqz(offset)
-                // | Instruction::BrIfNez(offset) 
-                => {
+                Instruction::BrIndirect(offset) => {
                     *offset = BranchOffset::from(offset.to_i32() + offset_change)
                 }
                 _ => {}

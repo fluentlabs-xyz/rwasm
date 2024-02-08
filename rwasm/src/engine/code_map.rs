@@ -3,6 +3,7 @@
 use super::Instruction;
 use crate::{arena::ArenaIndex, engine::bytecode::InstrMeta};
 use alloc::vec::Vec;
+use smallvec::SmallVec;
 
 /// A reference to a compiled function stored in the [`CodeMap`] of an [`Engine`](crate::Engine).
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
@@ -188,7 +189,7 @@ impl CodeMap {
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
-        metas: Vec<InstrMeta>,
+        metas: SmallVec<[InstrMeta; 64]>,
     ) where
         I: IntoIterator<Item = Instruction>,
     {
@@ -339,7 +340,7 @@ impl InstructionPtr {
     /// bounds of the instructions of the same compiled Wasm function.
     #[inline(always)]
     pub fn offset(&mut self, by: isize) {
-        if self.pc() + by as u32 > self.opcode_count as u32 {
+        if self.pc() as isize + by > self.opcode_count as isize {
             panic!("OPCODE OVERFLOW!!!")
         }
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
@@ -351,7 +352,7 @@ impl InstructionPtr {
 
     #[inline(always)]
     pub fn add(&mut self, delta: usize) {
-        if self.pc() + delta as u32 > self.opcode_count as u32 {
+        if self.pc() as usize + delta > self.opcode_count {
             panic!(
                 "OPCODE OVERFLOW!!! {} >= {}",
                 self.pc() + delta as u32,
@@ -374,7 +375,7 @@ impl InstructionPtr {
     /// the boundaries of its associated compiled Wasm function.
     #[inline(always)]
     pub fn get(&self) -> &Instruction {
-        if self.pc() > self.opcode_count as u32 {
+        if self.pc() as usize > self.opcode_count {
             panic!("OPCODE OVERFLOW!!!")
         }
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
