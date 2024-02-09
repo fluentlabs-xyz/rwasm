@@ -4,6 +4,7 @@ use crate::{
     compiler::drop_keep::{translate_drop_keep, DropKeepWithReturnParam},
     instruction::INSTRUCTION_SIZE_BYTES,
     instruction_set::InstructionSet,
+    rwasm::types::SmallVecDefault,
     ImportLinker,
 };
 use alloc::{boxed::Box, collections::BTreeMap, rc::Rc, string::String, vec::Vec};
@@ -24,7 +25,6 @@ use rwasm::{
     FuncType,
     Module,
 };
-use smallvec::SmallVec;
 
 mod drop_keep;
 
@@ -188,7 +188,7 @@ pub struct Compiler<'linker> {
     function_beginning: BTreeMap<u32, u32>,
     import_linker: Option<&'linker ImportLinker>,
     is_translated: bool,
-    injection_segments: Vec<Injection>,
+    injection_segments: SmallVecDefault<Injection>,
     br_table_status: Option<BrTableStatus>,
     func_type_check_idx: Rc<RefCell<Vec<FuncType>>>,
     pub config: CompilerConfig,
@@ -203,7 +203,7 @@ pub struct Injection {
 
 #[derive(Debug)]
 struct BrTableStatus {
-    injection_instructions: SmallVec<[Instruction; 64]>,
+    injection_instructions: SmallVecDefault<Instruction>,
     instr_countdown: u32,
 }
 pub const EXPORT_FUNC_MAIN_NAME: &'static str = "main";
@@ -260,7 +260,7 @@ impl<'linker> Compiler<'linker> {
             function_beginning: BTreeMap::new(),
             import_linker,
             is_translated: false,
-            injection_segments: vec![],
+            injection_segments: Default::default(),
             br_table_status: None,
             func_type_check_idx: Default::default(),
             config,
@@ -1254,8 +1254,8 @@ impl<'linker> Compiler<'linker> {
             .unwrap_or_default()
     }
 
-    pub fn build_source_map(&self) -> Vec<FuncSourceMap> {
-        let mut result = Vec::new();
+    pub fn build_source_map(&self) -> SmallVecDefault<FuncSourceMap> {
+        let mut result: SmallVecDefault<FuncSourceMap> = Default::default();
         if self.config.translate_sections {
             result.push(FuncSourceMap {
                 fn_index: FUNC_SOURCE_MAP_ENTRYPOINT_IDX,

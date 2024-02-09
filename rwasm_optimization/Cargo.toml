@@ -13,8 +13,8 @@ rwasm = { path = "../rwasm", default-features = false, features = ["sdk"] }
 
 [dev-dependencies]
 wat = { version = "1" }
-#fluentbase-runtime = { path = "../../fluentbase/crates/runtime" }
-fluentbase-runtime = { git = "https://github.com/fluentlabs-xyz/fluentbase", branch = "devel" }
+fluentbase-runtime = { workspace = true }
+#fluentbase-runtime = { git = "https://github.com/fluentlabs-xyz/fluentbase", branch = "devel" }
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -23,3 +23,6 @@ crate-type = ["cdylib", "rlib"]
 default = []
 std = ["fluentbase-sdk/runtime", "rwasm-codegen/std", "rwasm/std"]
 e2e = []
+
+[profile.release]
+strip = false

@@ -1,4 +1,10 @@
-use crate::{BinaryFormat, BinaryFormatWriter, N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES};
+use crate::{
+    rwasm::types::SmallVecDefault,
+    BinaryFormat,
+    BinaryFormatWriter,
+    N_BYTES_PER_MEMORY_PAGE,
+    N_MAX_MEMORY_PAGES,
+};
 use alloc::{slice::SliceIndex, string::String, vec::Vec};
 use byteorder::{ByteOrder, LittleEndian};
 use rwasm::{
@@ -24,14 +30,13 @@ use rwasm::{
         DropKeep,
     },
 };
-use smallvec::SmallVec;
 
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct InstructionSet {
-    pub instr: SmallVec<[Instruction; 64]>,
-    pub metas: Option<SmallVec<[InstrMeta; 64]>>,
+    pub instr: SmallVecDefault<Instruction>,
+    pub metas: Option<SmallVecDefault<InstrMeta>>,
     // translate state
-    total_locals: SmallVec<[usize; 64]>,
+    total_locals: SmallVecDefault<usize>,
     init_memory_size: u32,
     init_memory_pages: u32,
     relative_offset: u32,
@@ -109,7 +114,7 @@ impl InstructionSet {
             metas.push(meta);
             metas.len()
         } else {
-            self.metas = Some(SmallVec::from_slice(&[meta]));
+            self.metas = Some(SmallVecDefault::from_slice(&[meta]));
             1
         };
         assert_eq!(self.instr.len(), metas_len, "instr len and meta mismatched");
@@ -276,11 +281,11 @@ impl InstructionSet {
             .unwrap_or_default()
     }
 
-    pub fn instr(&self) -> &SmallVec<[Instruction; 64]> {
+    pub fn instr(&self) -> &SmallVecDefault<Instruction> {
         &self.instr
     }
 
-    pub fn instr_mut(&mut self) -> &mut SmallVec<[Instruction; 64]> {
+    pub fn instr_mut(&mut self) -> &mut SmallVecDefault<Instruction> {
         &mut self.instr
     }
 

@@ -108,6 +108,7 @@ pub mod memory;
 pub mod module;
 pub mod store;
 pub mod table;
+pub mod types;
 pub mod value;
 
 /// Defines some errors that may occur upon interaction with `wasmi`.

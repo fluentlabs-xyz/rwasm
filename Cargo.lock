@@ -1815,7 +1815,7 @@ dependencies = [
  "clap 4.4.18",
  "ctor",
  "env_logger",
- "fluentbase-runtime 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
+ "fluentbase-runtime 0.1.0",
  "lazy_static",
  "log",
  "rwasm 0.30.0",
@@ -1862,7 +1862,7 @@ dependencies = [
 name = "rwasm_optimization"
 version = "0.1.0"
 dependencies = [
- "fluentbase-runtime 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
+ "fluentbase-runtime 0.1.0",
  "fluentbase-sdk",
  "rwasm 0.30.0",
  "rwasm-codegen 0.30.0",

@@ -105,7 +105,7 @@ fn main() {
     );
     let mut as_rust_vec: Vec<String> = vec![];
     for func_source_map in &func_source_maps {
-        debug!("func_source_map '{:?}'", func_source_map);
+        // debug!("func_source_map '{:?}'", func_source_map);
         let fn_name = func_source_map.fn_name.as_str();
         let fn_beginning = func_source_map.position;
         let fn_length = func_source_map.length;

@@ -247,34 +247,46 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 return Err(TrapCode::StackOverflow.into());
             }
 
-            #[cfg(all(feature = "std", feature = "debug_print_realtime_trace"))]
+            #[cfg(feature = "std")]
             {
-                use std::{env::current_dir, fs::OpenOptions, io::prelude::*};
-                let out_file = "./tmp/execution_trace.txt";
-                let mut trace_file = OpenOptions::new()
-                    .write(true)
-                    .append(true)
-                    .open(out_file)
-                    .expect(
-                        format!(
-                            "trace file '{}' not found (must be empty to append). cur dir: {}",
-                            out_file,
-                            current_dir().unwrap().to_str().unwrap(),
-                        )
-                        .as_str(),
-                    );
+                use std::{env::current_dir, fs::OpenOptions, io::prelude::*, path::Path};
 
                 let dump = self.value_stack.dump_stack(self.sp);
                 // if dump.len() < 20 {
+
+                let additional_info = match instr {
+                    Instruction::Br(offset) => {
+                        let abs_offset = self.ip.pc() as i32 + offset.to_i32();
+                        format!("(abs offset {} or {})", abs_offset, abs_offset - 1)
+                    }
+                    _ => "".to_string(),
+                };
                 let log_str = format!(
-                    "{}: {:?} {:?}",
+                    "{}:{} {:?} {:?}",
                     self.ip.pc(),
+                    additional_info,
                     instr,
                     dump.iter().map(|v| v.as_u64()).collect::<Vec<_>>()
                 );
-                // if let Err(e) = writeln!(trace_file, "{}", log_str) {
-                //     eprintln!("Couldn't write to file: {}", e);
-                // }
+
+                let out_file = "./tmp/execution_trace_greeting.txt";
+                if Path::new(out_file).exists() {
+                    let mut trace_file = OpenOptions::new()
+                        .write(true)
+                        .append(true)
+                        .open(out_file)
+                        .expect(
+                            format!(
+                                "trace file '{}' not found (must exist to be able append to it). cur dir: {}",
+                                out_file,
+                                current_dir().unwrap().to_str().unwrap(),
+                            )
+                                .as_str(),
+                        );
+                    if let Err(e) = writeln!(trace_file, "{}", log_str) {
+                        eprintln!("Couldn't write to file: {}", e);
+                    }
+                }
                 // println!("{}", log_str);
                 // }
             }

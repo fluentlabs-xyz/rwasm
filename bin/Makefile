@@ -17,6 +17,7 @@ PROFILE=release
 TEST_CASE=arithmetic_sdiv
 
 OPTIONS=--entry-fn-name=$(ENTRY_FN_NAME) --do-not-inject-fuel --skip-type-check --no-router #--skip-translate-sections
+CARGO_OPTIONS_TMP=--do-not-inject-fuel
 
 .PHONY: $(FILES)
 $(FILES):
@@ -24,3 +25,7 @@ $(FILES):
 
 solid_file:
 	cargo run -- ${OPTIONS} --file-in-path=../../rwasm/code-snippets/bin/$@.wat
+
+tmp_solid_file:
+	clear
+	cargo run -- ${CARGO_OPTIONS_TMP} --file-in-path=../rwasm_optimization/tmp/solid_file_with_symbols.wat

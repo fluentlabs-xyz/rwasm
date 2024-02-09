@@ -1,17 +1,17 @@
 use crate::{
     compiler::{CompilerError, Translator},
     instruction_set::InstructionSet,
+    rwasm::types::SmallVecDefault,
 };
 use rwasm::engine::{
     bytecode::{Instruction, LocalDepth},
     DropKeep,
 };
-use smallvec::SmallVec;
 
 pub(crate) fn translate_drop_keep(
     drop_keep: DropKeep,
-) -> Result<SmallVec<[Instruction; 64]>, CompilerError> {
-    let mut result = SmallVec::<[Instruction; 64]>::new();
+) -> Result<SmallVecDefault<Instruction>, CompilerError> {
+    let mut result = SmallVecDefault::new();
     let (drop, keep) = (drop_keep.drop(), drop_keep.keep());
     if drop == 0 {
         return Ok(result);

@@ -42,4 +42,3 @@ sdk = [
     "dep:fluentbase-sdk"
 ]
 e2e = []
-debug_print_realtime_trace = []
