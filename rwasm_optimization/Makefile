@@ -1,7 +1,7 @@
 .PHONY: all
 all: solid_file
 
-FEATURES =
+FEATURES=
 TARGET=wasm32-unknown-unknown
 PROFILE=release
 

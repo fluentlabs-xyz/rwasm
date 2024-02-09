@@ -33,10 +33,23 @@ fn translate_binary(wasm_binary: &[u8]) -> Vec<u8> {
 #[cfg(target_arch = "wasm32")]
 #[link(wasm_import_module = "fluentbase_v1alpha")]
 extern "C" {
-    fn _sys_read(target: *mut u8, offset: u32, length: u32);
-    pub(crate) fn _sys_input_size() -> u32;
+    fn _sys_halt(code: i32) -> !;
     fn _sys_write(offset: *const u8, length: u32);
-    fn _sys_halt(code: i64) -> !;
+    fn _sys_input_size() -> u32;
+    fn _sys_read(target: *mut u8, offset: u32, length: u32);
+    fn _sys_output_size() -> u32;
+    fn _sys_read_output(target: *mut u8, offset: u32, length: u32);
+    fn _sys_state() -> u32;
+    fn _sys_exec(
+        code_offset: *const u8,
+        code_len: u32,
+        input_offset: *const u8,
+        input_len: u32,
+        return_offset: *mut u8,
+        return_len: u32,
+        fuel_offset: *mut u32,
+        state: u32,
+    ) -> i32;
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -55,16 +68,60 @@ fn main() {
 
 #[cfg(test)]
 mod test {
-    use fluentbase_runtime::{types::STATE_MAIN, Runtime, RuntimeContext};
+    use fluentbase_runtime::{
+        instruction::runtime_register_sovereign_handlers,
+        types::STATE_MAIN,
+        Runtime,
+        RuntimeContext,
+    };
+    use fluentbase_sdk::LowLevelSDK;
+    use rwasm::{Config, Engine, Linker, Module, Store};
     use rwasm_codegen::{
         instruction::INSTRUCTION_SIZE_BYTES,
         Compiler,
         CompilerConfig,
         ImportLinker,
     };
-    use std::{intrinsics::transmute_unchecked, println};
+    use std::{format, intrinsics::transmute_unchecked, println, string::String, vec::Vec};
 
     static PROVER_TIME_PER_INSTRUCTION_MS: f32 = 2.5;
+
+    fn test_wasm_binary(wasm_binary: &[u8]) {
+        let config = Config::default();
+        let engine = Engine::new(&config);
+        let module = Module::new(&engine, wasm_binary).unwrap();
+        let mut store = Store::new(&engine, RuntimeContext::<()>::default());
+        let mut linker = Linker::new(&engine);
+        runtime_register_sovereign_handlers::<()>(
+            unsafe { transmute_unchecked(&mut linker) },
+            unsafe { transmute_unchecked(&mut store) },
+        );
+        let instance = linker
+            .instantiate(&mut store, &module)
+            .unwrap()
+            .start(&mut store)
+            .unwrap();
+        let main_func = instance.get_func(&store, "main").unwrap();
+        match main_func.call(&mut store, &[], &mut []) {
+            Err(err) => {
+                let mut lines = String::new();
+                for log in store.tracer().logs.iter() {
+                    let stack = log
+                        .stack
+                        .iter()
+                        .map(|v| v.to_bits() as i64)
+                        .collect::<Vec<_>>();
+                    lines += format!("{}\t{:?}\t{:?}\n", log.program_counter, log.opcode, stack)
+                        .as_str();
+                }
+                let _ = std::fs::create_dir("./tmp");
+                std::fs::write("./tmp/cairo.txt", lines).unwrap();
+                panic!("err happened during wasm execution: {:?}", err);
+            }
+            Ok(_) => {}
+        }
+        let wasm_exit_code = store.data().exit_code();
+    }
 
     #[test]
     fn translate_wasm2rwasm() {
@@ -82,6 +139,9 @@ mod test {
             wasm_binary_len_new,
             wasm_binary_len_new - wasm_binary_len_old
         );
+
+        LowLevelSDK::with_test_input(translatee_wasm_binary.clone());
+        test_wasm_binary(&translator_wasm_binary);
 
         let import_linker2 = unsafe {
             let import_linker: &ImportLinker = transmute_unchecked(&import_linker);

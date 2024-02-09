@@ -869,8 +869,8 @@ dependencies = [
  "hashbrown 0.14.3",
  "k256",
  "keccak-hash",
- "rwasm 0.30.0",
- "rwasm-codegen 0.30.0",
+ "rwasm 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=devel)",
+ "rwasm-codegen 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=devel)",
 ]
 
 [[package]]
@@ -909,8 +909,8 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "hashbrown 0.14.3",
- "rwasm 0.30.0",
- "rwasm-codegen 0.30.0",
+ "rwasm 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=devel)",
+ "rwasm-codegen 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=devel)",
  "strum",
  "strum_macros",
 ]
