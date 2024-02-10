@@ -111,8 +111,7 @@ mod test {
                         .iter()
                         .map(|v| v.to_bits() as i64)
                         .collect::<Vec<_>>();
-                    lines += format!("{}\t{:?}\t{:?}\n", log.program_counter, log.opcode, stack)
-                        .as_str();
+                    lines += format!("{}\t{:?}\t{:?}\n", log.source_pc, log.opcode, stack).as_str();
                 }
                 let _ = std::fs::create_dir("./tmp");
                 std::fs::write("./tmp/cairo.txt", lines).unwrap();

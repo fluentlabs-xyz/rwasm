@@ -31,8 +31,8 @@ hashbrown = "0.14.3"
 [profile.release]
 panic = "abort"
 lto = true
-opt-level = 2
-strip = true
+opt-level = 0
+strip = false
 debug = false
 debug-assertions = false
 rpath = false

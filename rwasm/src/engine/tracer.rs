@@ -105,16 +105,11 @@ impl Tracer {
         self.logs.last().map(|opcode| opcode.source_pc)
     }
 
-    pub fn register_extern(&mut self, ex: Extern, name: &Box<str>, entity_index: u32) {
-        match ex {
-            Extern::Global(_) => {}
-            Extern::Table(_) => {}
-            Extern::Memory(_) => {}
-            Extern::Func(_) => {
-                self.extern_names
-                    .insert(entity_index, name.clone().into_string());
-            }
-        }
+    pub fn register_function_index(&mut self, ex: Extern, name: &Box<str>, entity_index: u32) {
+        ex.into_func().map(|v| {
+            self.extern_names
+                .insert(entity_index, name.clone().into_string());
+        });
     }
 
     pub fn pre_opcode_state(

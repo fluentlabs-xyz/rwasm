@@ -25,4 +25,4 @@ std = ["fluentbase-sdk/runtime", "rwasm-codegen/std", "rwasm/std"]
 e2e = []
 
 [profile.release]
-strip = false
+#strip = false
