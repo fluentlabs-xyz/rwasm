@@ -1,3 +1,4 @@
+#![feature(core_intrinsics)]
 extern crate core;
 
 use crate::types::FileFormat;
@@ -5,7 +6,7 @@ use clap::Parser;
 use fluentbase_runtime::Runtime;
 use log::debug;
 use rwasm_codegen::{instruction::INSTRUCTION_SIZE_BYTES, Compiler, CompilerConfig, FuncOrExport};
-use std::{fs, path::Path};
+use std::{fs, mem::transmute, path::Path};
 
 mod types;
 
@@ -75,7 +76,7 @@ fn main() {
             .fuel_consume(!args.do_not_inject_fuel)
             .with_router(!args.no_router)
             .with_magic_prefix(false),
-        Some(&import_linker),
+        Some(unsafe { transmute(&import_linker) }),
     )
     .unwrap();
     let file_in_path = Path::new(&args.file_in_path);

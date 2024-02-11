@@ -28,4 +28,4 @@ solid_file:
 
 tmp_solid_file:
 	clear
-	cargo run -- ${CARGO_OPTIONS_TMP} --file-in-path=../rwasm_optimization/tmp/solid_file_with_symbols.wat
+	cargo run -- ${CARGO_OPTIONS_TMP} --file-in-path=../rwasm_optimization/tmp/solid_file.wat
