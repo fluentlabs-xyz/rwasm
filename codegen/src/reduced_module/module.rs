@@ -5,6 +5,7 @@ use crate::{
         reader::ReducedModuleReader,
         types::{ReducedModuleError, N_MAX_MEMORY_PAGES},
     },
+    N_MAX_TABLES,
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet},
@@ -140,7 +141,6 @@ impl ReducedModule {
                 builder.push_passive_data_segment();
             });
         }
-
         if !elem_segments.is_empty() {
             (0..=elem_segments.len()).for_each(|_| {
                 builder.push_passive_elem_segment();
@@ -155,8 +155,9 @@ impl ReducedModule {
             .unwrap();
         // set 0 function as an entrypoint (it goes right after import section)
         let main_index = import_mapping.len() as u32;
-        #[cfg(feature = "e2e")]
-        builder.set_start(FuncIdx::from(main_index));
+        if cfg!(feature = "e2e") {
+            builder.set_start(FuncIdx::from(main_index));
+        }
         builder
             .push_export(
                 "main".to_string().into_boxed_str(),
@@ -167,7 +168,7 @@ impl ReducedModule {
         let num_globals = self.bytecode().count_globals();
         builder.push_empty_globals(num_globals as usize).unwrap();
         let num_tables = self.bytecode().count_tables();
-        builder.push_empty_tables(num_tables as usize).unwrap();
+        builder.push_empty_tables(num_tables, N_MAX_TABLES).unwrap();
         // finalize module
         builder
     }

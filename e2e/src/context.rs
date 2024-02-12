@@ -24,11 +24,11 @@ use rwasm::{
     Value,
 };
 use rwasm_codegen::{
+    config::CompilerConfig,
     instruction_set,
+    types::FuncOrExport,
     Compiler,
-    CompilerConfig,
     DefaultImportHandler,
-    FuncOrExport,
     ImportFunc,
     ImportLinker,
     ReducedModule,

@@ -354,8 +354,12 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
-    pub fn push_empty_tables(&mut self, num_tables: usize) -> Result<(), ModuleError> {
-        let global_decl = TableType::new(ValueType::FuncRef, 0, Some(1024));
+    pub fn push_empty_tables(
+        &mut self,
+        num_tables: u32,
+        max_tables: u32,
+    ) -> Result<(), ModuleError> {
+        let global_decl = TableType::new(ValueType::FuncRef, 0, Some(max_tables));
         (0..num_tables).for_each(|_| {
             self.tables.push(global_decl);
         });

@@ -1,4 +1,4 @@
-use crate::{BinaryFormat, BinaryFormatWriter, N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES};
+use crate::{N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES};
 use alloc::{slice::SliceIndex, string::String, vec::Vec};
 use byteorder::{ByteOrder, LittleEndian};
 use rwasm::{
@@ -34,18 +34,6 @@ pub struct InstructionSet {
     init_memory_size: u32,
     init_memory_pages: u32,
     relative_offset: u32,
-}
-
-impl Into<Vec<u8>> for InstructionSet {
-    fn into(mut self) -> Vec<u8> {
-        self.finalize(true);
-        let mut buffer = vec![0; 65536 * 2];
-        let mut binary_writer = BinaryFormatWriter::new(buffer.as_mut_slice());
-        let n = self.write_binary(&mut binary_writer).unwrap();
-        assert_ne!(n, buffer.len());
-        buffer.resize(n, 0);
-        buffer
-    }
 }
 
 macro_rules! impl_opcode {
@@ -285,6 +273,10 @@ impl InstructionSet {
 
     pub fn offset(&self, jump_dist: u32) -> u32 {
         self.relative_offset + self.instr.len() as u32 + jump_dist
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.instr.is_empty()
     }
 
     pub fn len(&self) -> u32 {

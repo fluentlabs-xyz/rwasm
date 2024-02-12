@@ -20,11 +20,11 @@ pub use rwasm;
 mod tests {
     use crate::{
         compiler::Compiler,
+        config::CompilerConfig,
         instruction_set,
         platform::ImportLinker,
         reduced_module::ReducedModule,
-        CompilerConfig,
-        FuncOrExport,
+        types::FuncOrExport,
         ImportFunc,
     };
     use alloc::string::ToString;

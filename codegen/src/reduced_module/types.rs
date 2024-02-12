@@ -19,3 +19,4 @@ pub enum ReducedModuleError {
 
 pub const N_BYTES_PER_MEMORY_PAGE: u32 = 65536;
 pub const N_MAX_MEMORY_PAGES: u32 = 1024;
+pub const N_MAX_TABLES: u32 = 1024;

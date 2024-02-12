@@ -1,12 +1,26 @@
 use crate::{
     alloc::string::ToString,
     binary_format::{BinaryFormat, BinaryFormatError, BinaryFormatWriter},
-    compiler::drop_keep::{translate_drop_keep, DropKeepWithReturnParam},
+    compiler::{
+        config::CompilerConfig,
+        drop_keep::{translate_drop_keep, DropKeepWithReturnParam},
+        types::{
+            BrTableStatus,
+            CompilerError,
+            FuncOrExport,
+            FuncSourceMap,
+            Injection,
+            Translator,
+            FUNC_SOURCE_MAP_ENTRYPOINT_IDX,
+            FUNC_SOURCE_MAP_ENTRYPOINT_NAME,
+        },
+    },
     instruction::INSTRUCTION_SIZE_BYTES,
     instruction_set::InstructionSet,
     ImportLinker,
+    N_MAX_TABLES,
 };
-use alloc::{boxed::Box, collections::BTreeMap, rc::Rc, string::String, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, rc::Rc, vec::Vec};
 use core::{cell::RefCell, ops::Deref};
 use rwasm::{
     arena::ArenaIndex,
@@ -16,161 +30,18 @@ use rwasm::{
         code_map::InstructionPtr,
         DropKeep,
     },
-    module::{ConstExpr, DataSegment, DataSegmentKind, ElementSegmentKind, ImportName, Imported},
+    module::{ConstExpr, DataSegment, DataSegmentKind, ElementSegmentKind, Imported},
     value::WithType,
     Config,
     Engine,
-    Error,
     FuncType,
     Module,
 };
 
-mod drop_keep;
-
-#[derive(Debug)]
-pub enum CompilerError {
-    ModuleError(Error),
-    MissingEntrypoint,
-    MissingFunction,
-    NotSupported(&'static str),
-    OutOfBuffer,
-    BinaryFormat(BinaryFormatError),
-    NotSupportedImport,
-    UnknownImport(ImportName),
-    MemoryUsageTooBig,
-    DropKeepOutOfBounds,
-}
-
-impl CompilerError {
-    pub fn into_i32(self) -> i32 {
-        match self {
-            CompilerError::ModuleError(_) => -1,
-            CompilerError::MissingEntrypoint => -2,
-            CompilerError::MissingFunction => -3,
-            CompilerError::NotSupported(_) => -4,
-            CompilerError::OutOfBuffer => -5,
-            CompilerError::BinaryFormat(_) => -6,
-            CompilerError::NotSupportedImport => -7,
-            CompilerError::UnknownImport(_) => -8,
-            CompilerError::MemoryUsageTooBig => -9,
-            CompilerError::DropKeepOutOfBounds => -10,
-        }
-    }
-}
-
-impl Into<i32> for CompilerError {
-    fn into(self) -> i32 {
-        self.into_i32()
-    }
-}
-
-pub trait Translator {
-    fn translate(&self, result: &mut InstructionSet) -> Result<(), CompilerError>;
-}
-
-#[derive(Debug, Clone)]
-pub struct CompilerConfig {
-    fuel_consume: bool,
-    tail_call: bool,
-    extended_const: bool,
-    translate_sections: bool,
-    with_state: bool,
-    translate_func_as_inline: bool,
-    type_check: bool,
-    input_code: Option<InstructionSet>,
-    output_code: Option<InstructionSet>,
-    global_start_index: u32,
-    swap_stack_params: bool,
-    with_router: bool,
-    with_magic_prefix: bool,
-}
-
-impl Default for CompilerConfig {
-    fn default() -> Self {
-        Self {
-            fuel_consume: true,
-            tail_call: true,
-            extended_const: true,
-            translate_sections: true,
-            with_state: false,
-            translate_func_as_inline: false,
-            type_check: true,
-            input_code: None,
-            output_code: None,
-            global_start_index: 0,
-            swap_stack_params: true,
-            with_router: true,
-            with_magic_prefix: true,
-        }
-    }
-}
-
-impl CompilerConfig {
-    pub fn fuel_consume(mut self, value: bool) -> Self {
-        self.fuel_consume = value;
-        self
-    }
-
-    pub fn type_check(mut self, value: bool) -> Self {
-        self.type_check = value;
-        self
-    }
-
-    pub fn tail_call(mut self, value: bool) -> Self {
-        self.tail_call = value;
-        self
-    }
-
-    pub fn extended_const(mut self, value: bool) -> Self {
-        self.extended_const = value;
-        self
-    }
-
-    pub fn translate_sections(mut self, value: bool) -> Self {
-        self.translate_sections = value;
-        self
-    }
-
-    pub fn with_state(mut self, value: bool) -> Self {
-        self.with_state = value;
-        self
-    }
-
-    pub fn with_router(mut self, value: bool) -> Self {
-        self.with_router = value;
-        self
-    }
-
-    pub fn with_magic_prefix(mut self, value: bool) -> Self {
-        self.with_magic_prefix = value;
-        self
-    }
-
-    pub fn translate_func_as_inline(mut self, value: bool) -> Self {
-        self.translate_func_as_inline = value;
-        self
-    }
-
-    pub fn with_input_code(mut self, input_code: InstructionSet) -> Self {
-        self.input_code = Some(input_code);
-        self
-    }
-
-    pub fn with_output_code(mut self, output_code: InstructionSet) -> Self {
-        self.output_code = Some(output_code);
-        self
-    }
-
-    pub fn with_global_start_index(mut self, global_start_index: u32) -> Self {
-        self.global_start_index = global_start_index;
-        self
-    }
-
-    pub fn with_swap_stack_params(mut self, swap_stack_params: bool) -> Self {
-        self.swap_stack_params = swap_stack_params;
-        self
-    }
-}
+pub mod compiler;
+pub mod config;
+pub mod drop_keep;
+pub mod types;
 
 pub struct Compiler<'linker> {
     engine: Engine,
@@ -186,44 +57,6 @@ pub struct Compiler<'linker> {
     func_type_check_idx: Rc<RefCell<Vec<FuncType>>>,
     pub config: CompilerConfig,
 }
-
-#[derive(Debug)]
-pub struct Injection {
-    pub begin: i32,
-    pub end: i32,
-    pub origin_len: i32,
-}
-
-#[derive(Debug)]
-struct BrTableStatus {
-    injection_instructions: Vec<Instruction>,
-    instr_countdown: u32,
-}
-
-#[derive(Debug)]
-pub enum FuncOrExport {
-    Export(&'static str),
-    Func(u32),
-    StateRouter(Vec<FuncOrExport>, InstructionSet),
-    Global(Instruction),
-}
-
-impl Default for FuncOrExport {
-    fn default() -> Self {
-        Self::Export("main")
-    }
-}
-
-#[derive(Debug)]
-pub struct FuncSourceMap {
-    pub fn_index: u32,
-    pub fn_name: String,
-    pub position: u32,
-    pub length: u32,
-}
-
-pub const FUNC_SOURCE_MAP_ENTRYPOINT_NAME: &'static str = "$__entrypoint";
-pub const FUNC_SOURCE_MAP_ENTRYPOINT_IDX: u32 = u32::MAX;
 
 impl<'linker> Compiler<'linker> {
     pub fn new(wasm_binary: &[u8], config: CompilerConfig) -> Result<Self, CompilerError> {
@@ -269,7 +102,7 @@ impl<'linker> Compiler<'linker> {
         if self.is_translated {
             unreachable!("already translated");
         }
-        // lets reserve 0 index and offset for sections init
+        // let's reserve 0 index and offset for sections init
         assert_eq!(self.code_section.len(), 0, "code section must be empty");
         if self.config.with_magic_prefix {
             self.code_section.op_magic_prefix([0x00; 8]);
@@ -625,7 +458,7 @@ impl<'linker> Compiler<'linker> {
 
         if global_index < len_globals as u32 {
             self.code_section
-                .op_call(self.config.global_start_index + global_index);
+                .op_call(self.config.global_start_index.unwrap_or_default() + global_index);
         } else {
             let global_inits = &self.module.globals_init;
             assert!(global_index as usize - len_globals < global_inits.len());
@@ -1103,7 +936,7 @@ impl<'linker> Compiler<'linker> {
             WI::TableGrow(idx) => {
                 let max_size = self.module.tables[idx.to_u32() as usize]
                     .maximum()
-                    .unwrap_or(1024);
+                    .unwrap_or(N_MAX_TABLES);
                 self.code_section.op_local_get(1);
                 self.code_section.op_table_size(idx);
                 self.code_section.op_i32_add();
