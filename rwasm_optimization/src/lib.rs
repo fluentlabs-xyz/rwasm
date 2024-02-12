@@ -69,7 +69,7 @@ fn main() {
 #[cfg(test)]
 mod test {
     use fluentbase_runtime::{
-        instruction::runtime_register_shared_handlers,
+        instruction::runtime_register_sovereign_handlers,
         types::STATE_MAIN,
         Runtime,
         RuntimeContext,
@@ -94,7 +94,7 @@ mod test {
         runtime_ctx = runtime_ctx.with_input(input.to_vec());
         let mut store = Store::new(&engine, runtime_ctx);
         let mut linker = Linker::new(&engine);
-        runtime_register_shared_handlers::<()>(&mut linker, &mut store);
+        runtime_register_sovereign_handlers::<()>(&mut linker, &mut store);
         let instance = linker
             .instantiate(&mut store, &module)
             .unwrap()
