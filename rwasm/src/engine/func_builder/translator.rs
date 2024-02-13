@@ -447,7 +447,7 @@ impl<'parser> FuncTranslator<'parser> {
         //         }
         //         if global_type.content() == ValueType::I64 {
         //             if let Ok(value) = i32::try_from(i64::from(value)) {
-        //                 return Ok(Some(Instruction::I32Const(UntypedValue::from(value))));
+        //                 return Ok(Some(Instruction::I64Const(value.into())));
         //             }
         //         }
         //         // No optimized case was applicable so we have to allocate
@@ -1236,7 +1236,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                     builder
                         .alloc
                         .inst_builder
-                        .push_inst(Instruction::ReturnCall(func.into()));
+                        .push_inst(Instruction::ReturnCall(func));
                 }
             }
             builder
@@ -1300,7 +1300,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                     builder
                         .alloc
                         .inst_builder
-                        .push_inst(Instruction::Call(func_idx.into()));
+                        .push_inst(Instruction::Call(func_idx));
                 }
             }
             Ok(())
@@ -1775,6 +1775,21 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                 .push_inst(Instruction::I64Const(UntypedValue::from(value)));
             Ok(())
         })
+        // match i32::try_from(value) {
+        //     Ok(value) => self.translate_if_reachable(|builder| {
+        //         // Case: The constant value is small enough that we can apply
+        //         //       a small value optimization and use a more efficient
+        //         //       instruction to encode the constant value instruction.
+        //         builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+        //         builder.stack_height.push();
+        //         builder
+        //             .alloc
+        //             .inst_builder
+        //             .push_inst(Instruction::I64Const(value.into()));
+        //         Ok(())
+        //     }),
+        //     Err(_) => self.translate_const_ref(value),
+        // }
     }
 
     fn visit_f32_const(&mut self, value: wasmparser::Ieee32) -> Result<(), TranslationError> {

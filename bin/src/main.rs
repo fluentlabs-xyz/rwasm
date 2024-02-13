@@ -4,7 +4,12 @@ use crate::types::FileFormat;
 use clap::Parser;
 use fluentbase_runtime::Runtime;
 use log::debug;
-use rwasm_codegen::{instruction::INSTRUCTION_SIZE_BYTES, Compiler, CompilerConfig, FuncOrExport};
+use rwasm_codegen::{
+    config::CompilerConfig,
+    instruction::INSTRUCTION_SIZE_BYTES,
+    types::FuncOrExport,
+    Compiler,
+};
 use std::{fs, path::Path};
 
 mod types;

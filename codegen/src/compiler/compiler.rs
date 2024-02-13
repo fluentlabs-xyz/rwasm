@@ -86,6 +86,22 @@ impl<'linker> Compiler2<'linker> {
         todo!("")
     }
 
+    // fn translate_entrypoint_with_state(
+    //     &mut self,
+    //     main_index: FuncOrExport,
+    // ) -> Result<(), CompilerError> {
+    //     // translate router for main index
+    //     self.translate_router(main_index)?;
+    //     // translate sections only if its needed
+    //     if self.config.translate_sections {
+    //         self.translate_sections()?;
+    //     }
+    //     // translate router into separate instruction set
+    //     // inject main function call with return
+    //     self.code_section.op_br_indirect(0);
+    //     Ok(())
+    // }
+
     pub fn translate_global(&mut self, global_index: u32) -> Result<(), CompilerError> {
         let globals = &self.module.globals;
         assert!(global_index < globals.len() as u32);

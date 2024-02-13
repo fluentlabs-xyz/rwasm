@@ -313,13 +313,13 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     self.visit_return_call_internal(compiled_func)?
                 }
                 Instr::ReturnCall(func) => {
-                    forward_call!(self.visit_return_call(func.into()))
+                    forward_call!(self.visit_return_call(func))
                 }
                 Instr::ReturnCallIndirect(func_type) => {
                     forward_call!(self.visit_return_call_indirect(func_type))
                 }
                 Instr::CallInternal(compiled_func) => self.visit_call_internal(compiled_func)?,
-                Instr::Call(func) => forward_call!(self.visit_call(func.into())),
+                Instr::Call(func) => forward_call!(self.visit_call(func)),
                 Instr::CallIndirect(func_type) => {
                     forward_call!(self.visit_call_indirect(func_type))
                 }
@@ -1171,7 +1171,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     }
 
     #[inline(always)]
-    #[allow(dead_code)]
     fn visit_const_32(&mut self, bytes: [u8; 4]) {
         let bytes = u32::from_ne_bytes(bytes);
         self.sp.push(UntypedValue::from(bytes));
@@ -1179,7 +1178,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     }
 
     #[inline(always)]
-    #[allow(dead_code)]
     fn visit_i64_const_32(&mut self, value: i32) {
         let sign_extended = i64::from(value);
         self.sp.push(UntypedValue::from(sign_extended));
@@ -1401,6 +1399,8 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 this.ctx
                     .resolve_table_mut(&table)
                     .grow_untyped(delta, init, resource_limiter)
+                    // TODO line below were removed on our side
+                    .map_err(|_| EntityGrowError::InvalidGrow)
             },
         );
         let result = match result {
@@ -1432,6 +1432,12 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     .resolve_table_mut(&table)
                     .fill_untyped(dst, val, len)?;
                 Ok(())
+                // TODO old block content:
+                // let table = this.cache.get_table(this.ctx, table_index);
+                // this.ctx
+                //     .resolve_table_mut(&table)
+                //     .fill_untyped(dst, val, len)?;
+                // Ok(())
             },
         )?;
         self.try_next_instr()
@@ -1477,6 +1483,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 // Query both tables and check if they are the same:
                 let dst = this.cache.get_table(this.ctx, dst);
                 let src = this.cache.get_table(this.ctx, src);
+                // TODO recheck this block
                 if len != 0 {
                     this.ctx
                         .resolve_table(&dst)
@@ -1555,6 +1562,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
 
     #[inline(always)]
     fn visit_ref_func(&mut self, func_index: FuncIdx) {
+        // TODO recheck changes
         // let func = self.cache.get_func(self.ctx, func_index);
         // let funcref = FuncRef::new(func);
         self.sp.push_as(func_index.to_u32());

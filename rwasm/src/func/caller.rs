@@ -1,5 +1,5 @@
 use super::super::{AsContext, AsContextMut, StoreContext, StoreContextMut};
-use crate::{store::FuelError, Engine, Extern, Instance, Memory};
+use crate::{store::FuelError, Engine, Extern, Instance};
 
 /// Represents the caller’s context when creating a host function via [`Func::wrap`].
 ///
@@ -47,35 +47,6 @@ impl<'a, T> Caller<'a, T> {
     /// Returns a shared reference to the used [`Engine`].
     pub fn engine(&self) -> &Engine {
         self.ctx.store.engine()
-    }
-
-    pub fn exported_memory(&self) -> Memory {
-        let memory = self
-            .get_export("memory")
-            .unwrap_or_else(|| unreachable!("there is no memory export inside"));
-        match memory {
-            Extern::Memory(memory) => memory,
-            _ => unreachable!("there is no memory export inside"),
-        }
-    }
-
-    pub fn read_memory(&self, offset: u32, len: u32) -> &[u8] {
-        let buffer = self.exported_memory().data(self);
-        if buffer.len() > offset as usize {
-            &buffer[(offset as usize)..(offset as usize + len as usize)]
-        } else {
-            &[]
-        }
-    }
-
-    pub fn write_memory(&mut self, address: u32, data: &[u8]) {
-        let address = address as usize;
-        let memory = self.exported_memory().data_mut(self.as_context_mut());
-        memory[address..(address + data.len())].clone_from_slice(data);
-        self.ctx
-            .store
-            .tracer_mut()
-            .memory_change(address as u32, data.len() as u32, data);
     }
 
     /// Adds `delta` quantity of fuel to the remaining fuel.

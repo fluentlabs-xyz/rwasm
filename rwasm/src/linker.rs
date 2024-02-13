@@ -30,6 +30,7 @@ use core::{
     num::NonZeroUsize,
     ops::Deref,
 };
+
 /// An error that may occur upon operating with [`Linker`] instances.
 #[derive(Debug)]
 pub enum LinkerError {
@@ -626,13 +627,9 @@ impl<T> Linker<T> {
             context.as_context().store.engine(),
             self.engine()
         ));
-
         let key = ImportKey {
             module: self.strings.get(module)?,
-            name: self
-                .strings
-                .get(name)
-                .or(self.strings.get(format!("{}:{}", module, name).as_str()))?,
+            name: self.strings.get(name)?,
         };
         self.definitions.get(&key)
     }
@@ -825,7 +822,7 @@ mod tests {
                 )
             "#;
         let wasm = wat::parse_str(wat).unwrap();
-        let module = Module::new(&engine, &wasm[..]).unwrap();
+        let module = Module::new(&engine, &mut &wasm[..]).unwrap();
         let instance = linker
             .instantiate(&mut store, &module)
             .unwrap()

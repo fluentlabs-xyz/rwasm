@@ -31,8 +31,4 @@ where
         }
         Some(self.entity_idx)
     }
-
-    pub fn entity_index_unsafe(&self) -> EntityIdx {
-        self.entity_idx
-    }
 }

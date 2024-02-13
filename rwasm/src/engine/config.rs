@@ -255,7 +255,7 @@ impl Config {
     /// Enable or disable the [`sign-extension`] Wasm proposal for the [`Config`].
     ///
     /// # Note
-    ///memory_bytes_per_fuel
+    ///
     /// Enabled by default.
     ///
     /// [`sign-extension`]: https://github.com/WebAssembly/sign-extension-ops
@@ -352,7 +352,7 @@ impl Config {
     ///
     /// This configuration can be used to make `wasmi` instrument its internal bytecode
     /// so that it consumes fuel as it executes. Once an execution runs out of fuel
-    /// a [`TrapCode::OutOfFuel`](crate::core::TrapCode::OutOfFuel) trap is raised.
+    /// a [`TrapCode::OutOfFuel`](crate::common::TrapCode::OutOfFuel) trap is raised.
     /// This way users can deterministically halt or yield the execution of WebAssembly code.
     ///
     /// - Use [`Store::add_fuel`](crate::Store::add_fuel) to pour some fuel into the [`Store`]

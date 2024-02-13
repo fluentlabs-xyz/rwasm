@@ -319,7 +319,6 @@ for_each_tuple!(impl_wasm_type_list);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::{F32, F64};
 
     /// Utility struct helper for the `implements_wasm_results` macro.
     pub struct ImplementsWasmRet<T> {

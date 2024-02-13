@@ -21,7 +21,7 @@ use crate::{
     N_MAX_TABLES,
 };
 use alloc::{boxed::Box, collections::BTreeMap, rc::Rc, vec::Vec};
-use core::{cell::RefCell, ops::Deref};
+use core::{cell::RefCell, convert::TryInto, ops::Deref};
 use rwasm::{
     arena::ArenaIndex,
     common::{Pages, UntypedValue, ValueType},
@@ -30,7 +30,7 @@ use rwasm::{
         code_map::InstructionPtr,
         DropKeep,
     },
-    module::{ConstExpr, DataSegment, DataSegmentKind, ElementSegmentKind, Imported},
+    module::{ConstExpr, DataSegment, DataSegmentKind, ElementSegmentKind, FuncIdx, Imported},
     value::WithType,
     Config,
     Engine,

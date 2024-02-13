@@ -1,5 +1,5 @@
 use super::InstantiationError;
-use crate::{module::FuncIdx, AsContextMut, Error, Func, Instance, InstanceEntityBuilder, Value};
+use crate::{module::FuncIdx, AsContextMut, Error, Instance, InstanceEntityBuilder};
 
 /// A partially instantiated [`Instance`] where the `start` function has not yet been executed.
 ///
@@ -24,7 +24,7 @@ impl InstancePre {
     /// Returns the index of the `start` function if any.
     ///
     /// Returns `None` if the Wasm module does not have a `start` function.
-    pub fn start_fn(&self) -> Option<u32> {
+    fn start_fn(&self) -> Option<u32> {
         self.builder.get_start().map(FuncIdx::into_u32)
     }
 
@@ -41,16 +41,7 @@ impl InstancePre {
     /// # Panics
     ///
     /// If the `start` function is invalid albeit successful validation.
-    pub fn start(self, context: impl AsContextMut) -> Result<Instance, Error> {
-        self.start_with_param(context, &[], &mut [])
-    }
-
-    pub fn start_with_param(
-        self,
-        mut context: impl AsContextMut,
-        inputs: &[Value],
-        outputs: &mut [Value],
-    ) -> Result<Instance, Error> {
+    pub fn start(self, mut context: impl AsContextMut) -> Result<Instance, Error> {
         let opt_start_index = self.start_fn();
         context
             .as_context_mut()
@@ -64,28 +55,9 @@ impl InstancePre {
                 .unwrap_or_else(|| {
                     panic!("encountered invalid start function after validation: {start_index}")
                 });
-            start_func.call(context.as_context_mut(), inputs, outputs)?
+            start_func.call(context.as_context_mut(), &[], &mut [])?
         }
         Ok(self.handle)
-    }
-
-    pub fn get_start_func(self, mut context: impl AsContextMut) -> Option<Func> {
-        let opt_start_index = self.start_fn();
-        context
-            .as_context_mut()
-            .store
-            .inner
-            .initialize_instance(self.handle, self.builder.finish());
-        if let Some(start_index) = opt_start_index {
-            return Some(
-                self.handle
-                    .get_func_by_index(&mut context, start_index)
-                    .unwrap_or_else(|| {
-                        panic!("encountered invalid start function after validation: {start_index}")
-                    }),
-            );
-        }
-        None
     }
 
     /// Finishes instantiation ensuring that no `start` function exists.

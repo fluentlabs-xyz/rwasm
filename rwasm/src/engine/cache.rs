@@ -259,8 +259,8 @@ impl InstanceCache {
             .get_table(index.to_u32())
             .unwrap_or_else(|| {
                 unreachable!(
-                    "missing table at index {:?} for instance: {:?}",
-                    index, self.instance
+                    "missing table at index {index:?} for instance: {:?}",
+                    self.instance
                 )
             });
         self.last_table = Some((index, table));
@@ -280,8 +280,8 @@ impl InstanceCache {
             .get_func(index.to_u32())
             .unwrap_or_else(|| {
                 unreachable!(
-                    "missing func at index {:?} for instance: {:?}",
-                    index, self.instance
+                    "missing func at index {index:?} for instance: {:?}",
+                    self.instance
                 )
             });
         self.last_func = Some((index, func));
@@ -317,8 +317,8 @@ impl InstanceCache {
             .map(|global| ctx.resolve_global_mut(global).get_untyped_ptr())
             .unwrap_or_else(|| {
                 unreachable!(
-                    "missing global variable at index {:?} for instance: {:?}",
-                    index, self.instance
+                    "missing global variable at index {index:?} for instance: {:?}",
+                    self.instance
                 )
             });
         self.last_global = Some((index, global));
