@@ -284,6 +284,7 @@ impl Instruction {
             | Instruction::BrIfNez(offset)
             | Instruction::BrAdjust(offset)
             | Instruction::BrAdjustIfNez(offset) => *offset = new_offset,
+            // | Instruction::BrAdjustIfNez(offset) => offset.init(new_offset),
             _ => panic!("tried to update branch offset of a non-branch instruction: {self:?}"),
         }
     }

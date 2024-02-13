@@ -24,7 +24,7 @@ macro_rules! define_tests {
         $( $(#[$attr:meta])* fn $test_name:ident($file_name:expr); )*
     ) => {
         $(
-            #[serial]
+            // #[serial]
             #[test]
             $( #[$attr] )*
             fn $test_name() {

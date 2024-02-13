@@ -32,7 +32,7 @@
 //!     // Wasmi does not yet support parsing `.wat` so we have to convert
 //!     // out `.wat` into `.wasm` before we compile and validate it.
 //!     let wasm = wat::parse_str(&wat)?;
-//!     let module = Module::new(&engine, &wasm[..]).unwrap();
+//!     let module = Module::new(&engine, &mut &wasm[..])?;
 //!
 //!     // All Wasm objects operate within the context of a `Store`.
 //!     // Each `Store` has a type parameter to store host-specific data,
@@ -52,16 +52,14 @@
 //!     // type signature of the function with `get_typed_func`.
 //!     //
 //!     // Also before using an instance created this way we need to start it.
-//!     linker.define("host", "hello", host_hello).unwrap();
+//!     linker.define("host", "hello", host_hello)?;
 //!     let instance = linker
-//!         .instantiate(&mut store, &module)
-//!         .unwrap()
-//!         .start(&mut store)
-//!         .unwrap();
-//!     let hello = instance.get_typed_func::<(), ()>(&store, "hello").unwrap();
+//!         .instantiate(&mut store, &module)?
+//!         .start(&mut store)?;
+//!     let hello = instance.get_typed_func::<(), ()>(&store, "hello")?;
 //!
 //!     // And finally we can call the wasm!
-//!     hello.call(&mut store, ()).unwrap();
+//!     hello.call(&mut store, ())?;
 //!
 //!     Ok(())
 //! }
@@ -79,12 +77,10 @@
     clippy::items_after_statements
 )]
 #![recursion_limit = "750"]
-#![allow(dead_code, unreachable_patterns)]
 
 #[cfg(not(feature = "std"))]
 #[macro_use]
 extern crate alloc;
-extern crate core;
 #[cfg(feature = "std")]
 extern crate std as alloc;
 
@@ -103,6 +99,7 @@ pub mod limits;
 pub mod linker;
 pub mod memory;
 pub mod module;
+pub mod reftype;
 pub mod store;
 pub mod table;
 pub mod value;
@@ -127,7 +124,6 @@ pub use self::{
         FuelConsumptionMode,
         ResumableCall,
         ResumableInvocation,
-        RwOp,
         StackLimits,
         TypedResumableCall,
         TypedResumableInvocation,

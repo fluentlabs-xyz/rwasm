@@ -3,7 +3,10 @@ use super::{
     import::FuncTypeIdx,
     ConstExpr,
     DataSegment,
+    DataSegmentKind,
     ElementSegment,
+    ElementSegmentItems,
+    ElementSegmentKind,
     ExternTypeIdx,
     FuncIdx,
     Global,
@@ -16,7 +19,6 @@ use crate::{
     common::ValueType,
     engine::{CompiledFunc, DedupFuncType},
     errors::ModuleError,
-    module::{DataSegmentKind, ElementSegmentItems, ElementSegmentKind},
     Engine,
     FuncType,
     GlobalType,
@@ -24,7 +26,8 @@ use crate::{
     Mutability,
     TableType,
 };
-use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
+use std::sync::Arc;
 
 /// A builder for a WebAssembly [`Module`].
 #[derive(Debug)]

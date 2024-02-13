@@ -1,5 +1,3 @@
-extern crate alloc;
-
 use crate::common::HostError;
 use alloc::{boxed::Box, string::String};
 use core::fmt::{self, Display};
@@ -37,7 +35,7 @@ enum TrapReason {
     ///
     /// This is useful for some WASI functions.
     I32Exit(i32),
-    /// An error decribed by a display message.
+    /// An error described by a display message.
     Message(Box<str>),
     /// Traps and errors during host execution.
     Host(Box<dyn HostError>),
@@ -217,7 +215,7 @@ impl StdError for Trap {
 /// See [`Trap`] for details.
 ///
 /// [`Trap`]: struct.Trap.html
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TrapCode {
     /// Wasm code executed `unreachable` opcode.
     ///
@@ -281,7 +279,7 @@ pub enum TrapCode {
 
     /// This trap is raised when a WebAssembly execution ran out of fuel.
     ///
-    /// The `wasmi` execution engine can be configured to instrument its
+    /// The Wasmi execution engine can be configured to instrument its
     /// internal bytecode so that fuel is consumed for each executed instruction.
     /// This is useful to deterministically halt or yield a WebAssembly execution.
     OutOfFuel,
@@ -292,7 +290,6 @@ pub enum TrapCode {
     /// desire on the part of the embedder to trap the interpreter rather than
     /// merely fail the growth operation.
     GrowthOperationLimited,
-    //  EmptyInput,
 }
 
 impl TrapCode {
@@ -316,8 +313,6 @@ impl TrapCode {
             Self::BadSignature => "indirect call type mismatch",
             Self::OutOfFuel => "all fuel consumed by WebAssembly",
             Self::GrowthOperationLimited => "growth operation limited",
-            // evm inputs
-            // Self::EmptyInput => "input is empty",
         }
     }
 }

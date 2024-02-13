@@ -1317,7 +1317,6 @@ impl UntypedValue {
 }
 
 /// Macro to help implement generic trait implementations for tuple types.
-#[macro_export]
 macro_rules! for_each_tuple {
     ($mac:ident) => {
         $mac!( 0 );
