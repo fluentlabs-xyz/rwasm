@@ -4,8 +4,8 @@ mod number;
 pub mod reader_writer;
 mod utils;
 
-use alloc::vec::Vec;
 pub use crate::binary_format::reader_writer::{BinaryFormatReader, BinaryFormatWriter};
+use alloc::vec::Vec;
 
 #[derive(Debug, Copy, Clone)]
 pub enum BinaryFormatError {
@@ -28,12 +28,12 @@ pub trait BinaryFormat<'a> {
         Ok(n)
     }
 
+    fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError>;
+
     fn read_from_slice(sink: &'a [u8]) -> Result<Self::SelfType, BinaryFormatError> {
         let mut binary_format_reader = BinaryFormatReader::<'a>::new(sink);
         Self::read_binary(&mut binary_format_reader)
     }
-
-    fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError>;
 
     fn read_binary(sink: &mut BinaryFormatReader<'a>) -> Result<Self::SelfType, BinaryFormatError>;
 }

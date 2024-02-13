@@ -12,7 +12,7 @@ use rwasm::{
 };
 
 #[derive(Debug, Clone)]
-pub struct ReducedModuleTrace {
+pub struct RwasmModuleTrace {
     pub offset: usize,
     pub bytecode_length: usize,
     pub code: u8,
@@ -22,7 +22,7 @@ pub struct ReducedModuleTrace {
     pub instr: Result<Instruction, BinaryFormatError>,
 }
 
-impl ReducedModuleTrace {
+impl RwasmModuleTrace {
     pub fn raw_bytes_padded(&self, pad_length: usize) -> Vec<u8> {
         if self.raw_bytes.len() % pad_length == 0 {
             return self.raw_bytes.clone();
@@ -58,7 +58,7 @@ impl<'a> ReducedModuleReader<'a> {
     }
 
     pub fn read_till_error(&mut self) -> Result<(), BinaryFormatError> {
-        let mut last_trace: Option<ReducedModuleTrace> = None;
+        let mut last_trace: Option<RwasmModuleTrace> = None;
         loop {
             let trace = self.trace_opcode();
             if trace.is_none() {
@@ -72,7 +72,7 @@ impl<'a> ReducedModuleReader<'a> {
         Ok(())
     }
 
-    pub fn trace_opcode(&mut self) -> Option<ReducedModuleTrace> {
+    pub fn trace_opcode(&mut self) -> Option<RwasmModuleTrace> {
         if self.binary_format_reader.is_empty() {
             // if reader is empty then we've reached end of the stream
             return None;
@@ -89,7 +89,7 @@ impl<'a> ReducedModuleReader<'a> {
             .unwrap_or_default();
         let pos_after = self.binary_format_reader.pos();
 
-        let trace = ReducedModuleTrace {
+        let trace = RwasmModuleTrace {
             offset: pos_before,
             bytecode_length: self.bytecode_length,
             code: self.binary_format_reader.sink[pos_before],

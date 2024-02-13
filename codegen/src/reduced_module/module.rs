@@ -2,7 +2,7 @@ use crate::{
     instruction_set::InstructionSet,
     platform::ImportLinker,
     reduced_module::{
-        reader::ReducedModuleReader,
+        encoder::ReducedModuleReader,
         types::{ReducedModuleError, N_MAX_MEMORY_PAGES},
     },
     N_MAX_TABLES,
@@ -19,17 +19,17 @@ use rwasm::{
     Module,
 };
 
-pub struct ReducedModule {
+pub struct RwasmModule {
     pub(crate) instruction_set: InstructionSet,
 }
 
-impl ReducedModule {
-    pub fn new(sink: &[u8]) -> Result<ReducedModule, ReducedModuleError> {
+impl RwasmModule {
+    pub fn new(sink: &[u8]) -> Result<RwasmModule, ReducedModuleError> {
         let mut reader = ReducedModuleReader::new(sink);
         reader
             .read_till_error()
             .map_err(|e| ReducedModuleError::BinaryFormat(e))?;
-        Ok(ReducedModule {
+        Ok(RwasmModule {
             instruction_set: reader.instruction_set,
         })
     }

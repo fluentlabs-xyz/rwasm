@@ -31,7 +31,7 @@ use rwasm_codegen::{
     DefaultImportHandler,
     ImportFunc,
     ImportLinker,
-    ReducedModule,
+    RwasmModule,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use wast::token::{Id, Span};
@@ -611,7 +611,7 @@ impl TestContext<'_> {
             ))
             .map_err(|err| TestError::Compiler(err))?;
         let rwasm_binary = compiler.finalize().unwrap();
-        let reduced_module = ReducedModule::new(rwasm_binary.as_slice()).unwrap();
+        let reduced_module = RwasmModule::new(rwasm_binary.as_slice()).unwrap();
         let module_builder =
             reduced_module.to_module_builder(&self.engine, &import_linker, FuncType::new([], []));
         let module = module_builder.finish();
@@ -737,7 +737,7 @@ impl TestContext<'_> {
         }
 
         let rwasm_binary = compiler.finalize().unwrap();
-        let reduced_module = ReducedModule::new(rwasm_binary.as_slice()).unwrap();
+        let reduced_module = RwasmModule::new(rwasm_binary.as_slice()).unwrap();
 
         let func_type = elem.ty().func();
         let global_type = elem

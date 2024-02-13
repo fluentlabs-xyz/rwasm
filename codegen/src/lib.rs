@@ -23,7 +23,7 @@ mod tests {
         config::CompilerConfig,
         instruction_set,
         platform::ImportLinker,
-        reduced_module::ReducedModule,
+        reduced_module::RwasmModule,
         types::FuncOrExport,
         ImportFunc,
     };
@@ -68,7 +68,7 @@ mod tests {
         translator.translate(run_config.entrypoint).unwrap();
         let _source_map = translator.build_source_map();
         let binary = translator.finalize().unwrap();
-        let reduced_module = ReducedModule::new(binary.as_slice()).unwrap();
+        let reduced_module = RwasmModule::new(binary.as_slice()).unwrap();
         // assert_eq!(translator.code_section, reduced_module.bytecode().clone());
         let _trace = reduced_module.trace();
 
