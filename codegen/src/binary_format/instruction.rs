@@ -3,7 +3,6 @@ use crate::binary_format::{
     BinaryFormat,
     BinaryFormatError,
 };
-use alloc::vec::Vec;
 use rwasm::{
     common::UntypedValue,
     engine::{
@@ -32,6 +31,10 @@ pub const INSTRUCTION_SIZE_BYTES: usize = INSTRUCTION_OPCODE_BYTES + INSTRUCTION
 
 impl<'a> BinaryFormat<'a> for Instruction {
     type SelfType = Instruction;
+
+    fn encoded_length(&self) -> usize {
+        INSTRUCTION_SIZE_BYTES
+    }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
         let mut n = match self {
@@ -553,8 +556,8 @@ impl InstructionExtra for Instruction {
     }
 
     fn info(&self) -> (u8, usize) {
-        let mut sink: Vec<u8> = vec![0; 100];
-        let mut binary_writer = BinaryFormatWriter::new(sink.as_mut_slice());
+        let mut sink = [0u8; INSTRUCTION_SIZE_BYTES];
+        let mut binary_writer = BinaryFormatWriter::new(&mut sink);
         let size = self.write_binary(&mut binary_writer).unwrap();
         (sink[0], size - 1)
     }

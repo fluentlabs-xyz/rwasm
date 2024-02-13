@@ -1,5 +1,6 @@
 pub mod instruction;
 mod instruction_set;
+mod module;
 mod number;
 pub mod reader_writer;
 mod utils;
@@ -11,21 +12,19 @@ use alloc::vec::Vec;
 pub enum BinaryFormatError {
     ReachedUnreachable,
     NeedMore(usize),
+    MalformedWasmModule,
     IllegalOpcode(u8),
 }
 
 pub trait BinaryFormat<'a> {
     type SelfType;
 
-    fn write_binary_to_vec(&self, target: &'a mut Vec<u8>) -> Result<usize, BinaryFormatError> {
-        let buf =
-            unsafe { alloc::slice::from_raw_parts_mut(target.as_mut_ptr(), target.capacity()) };
-        let mut sink = BinaryFormatWriter::<'a>::new(buf);
-        let n = self.write_binary(&mut sink)?;
-        target.resize(n, 0);
-        sink.reset();
-        let n = self.write_binary(&mut sink)?;
-        Ok(n)
+    fn encoded_length(&self) -> usize;
+
+    fn write_binary_to_vec(&self, buffer: &'a mut Vec<u8>) -> Result<usize, BinaryFormatError> {
+        buffer.resize(self.encoded_length(), 0u8);
+        let mut sink = BinaryFormatWriter::<'a>::new(buffer.as_mut_slice());
+        self.write_binary(&mut sink)
     }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError>;

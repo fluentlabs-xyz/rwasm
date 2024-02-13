@@ -19,6 +19,7 @@ use rwasm::{
     Module,
 };
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct RwasmModule {
     pub(crate) instruction_set: InstructionSet,
 }
