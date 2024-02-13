@@ -15,6 +15,7 @@ mod traits;
 
 #[cfg(test)]
 mod tests;
+#[cfg(feature = "tracer")]
 mod tracer;
 
 use self::{
@@ -41,13 +42,6 @@ pub use self::{
     },
     resumable::{ResumableCall, ResumableInvocation, TypedResumableCall, TypedResumableInvocation},
     stack::StackLimits,
-    tracer::{
-        Tracer,
-        TracerFunctionMeta,
-        TracerGlobalVariable,
-        TracerInstrState,
-        TracerMemoryState,
-    },
     traits::{CallParams, CallResults},
 };
 pub(crate) use self::{
@@ -55,10 +49,12 @@ pub(crate) use self::{
     func_args::{FuncFinished, FuncParams, FuncResults},
     func_types::DedupFuncType,
 };
+#[cfg(feature = "tracer")]
+use crate::engine::bytecode::InstrMeta;
 use crate::{
     arena::{ArenaIndex, GuardedEntity},
     common::{Trap, TrapCode, UntypedValue},
-    engine::{bytecode::InstrMeta, code_map::InstructionPtr},
+    engine::code_map::InstructionPtr,
     func::FuncEntity,
     AsContext,
     AsContextMut,
@@ -194,12 +190,16 @@ impl Engine {
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
-        metas: Vec<InstrMeta>,
+        // #[cfg(feature = "tracer")] metas: Vec<InstrMeta>,
     ) where
         I: IntoIterator<Item = Instruction>,
     {
+        // #[cfg(feature = "tracer")]
+        // self.inner
+        //     .init_func(func, len_locals, local_stack_height, instrs, metas);
+        // #[cfg(not(feature = "tracer"))]
         self.inner
-            .init_func(func, len_locals, local_stack_height, instrs, metas)
+            .init_func(func, len_locals, local_stack_height, instrs);
     }
 
     pub(super) fn mark_func(
@@ -460,14 +460,20 @@ impl EngineInner {
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
-        metas: Vec<InstrMeta>,
+        #[cfg(feature = "tracer")] metas: Vec<InstrMeta>,
     ) where
         I: IntoIterator<Item = Instruction>,
     {
+        #[cfg(feature = "tracer")]
         self.res
             .write()
             .code_map
-            .init_func(func, len_locals, local_stack_height, instrs, metas)
+            .init_func(func, len_locals, local_stack_height, instrs, metas);
+        #[cfg(not(feature = "tracer"))]
+        self.res
+            .write()
+            .code_map
+            .init_func(func, len_locals, local_stack_height, instrs);
     }
 
     fn mark_func(
@@ -858,8 +864,11 @@ impl<'engine> EngineExecutor<'engine> {
             code.into()
         }
 
+        #[cfg(feature = "tracer")]
         let (store_inner, tracer, mut resource_limiter) =
             ctx.store.store_inner_and_tracer_and_resource_limiter_ref();
+        #[cfg(not(feature = "tracer"))]
+        let (store_inner, mut resource_limiter) = ctx.store.store_inner_and_resource_limiter_ref();
         let value_stack = &mut self.stack.values;
         let call_stack = &mut self.stack.frames;
         let code_map = &self.res.code_map;
@@ -873,6 +882,7 @@ impl<'engine> EngineExecutor<'engine> {
             code_map,
             const_pool,
             &mut resource_limiter,
+            #[cfg(feature = "tracer")]
             tracer,
         )
         .map_err(make_trap)

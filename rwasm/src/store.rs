@@ -1,7 +1,7 @@
 use crate::{
     arena::{Arena, ArenaIndex, GuardedEntity},
     common::TrapCode,
-    engine::{DedupFuncType, Tracer},
+    engine::DedupFuncType,
     externref::{ExternObject, ExternObjectEntity, ExternObjectIdx},
     func::{Trampoline, TrampolineEntity, TrampolineIdx},
     memory::{DataSegment, MemoryError},
@@ -119,6 +119,7 @@ pub struct Store<T> {
     /// [`ResourceLimiter`](crate::ResourceLimiter).
     limiter: Option<ResourceLimiterQuery<T>>,
     /// Tracer
+    #[cfg(feature = "tracer")]
     tracer: Tracer,
 }
 
@@ -740,6 +741,7 @@ impl<T> Store<T> {
             trampolines: Arena::new(),
             data,
             limiter: None,
+            #[cfg(feature = "tracer")]
             tracer: Tracer::default(),
         }
     }
@@ -764,10 +766,12 @@ impl<T> Store<T> {
         self.data
     }
 
+    #[cfg(feature = "tracer")]
     pub fn tracer(&self) -> &Tracer {
         &self.tracer
     }
 
+    #[cfg(feature = "tracer")]
     pub fn tracer_mut(&mut self) -> &mut Tracer {
         &mut self.tracer
     }
@@ -831,6 +835,7 @@ impl<T> Store<T> {
         (&mut self.inner, resource_limiter)
     }
 
+    #[cfg(feature = "tracer")]
     pub(crate) fn store_inner_and_tracer_and_resource_limiter_ref(
         &mut self,
     ) -> (&mut StoreInner, &mut Tracer, ResourceLimiterRef) {
@@ -1014,6 +1019,7 @@ impl<'a, T> StoreContextMut<'a, T> {
         self.store.engine()
     }
 
+    #[cfg(feature = "tracer")]
     pub fn tracer_mut(&mut self) -> &mut Tracer {
         self.store.tracer_mut()
     }

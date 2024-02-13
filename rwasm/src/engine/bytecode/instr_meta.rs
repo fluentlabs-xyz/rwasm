@@ -6,6 +6,7 @@ type IsSigned = bool;
 
 impl Instruction {
     pub const MAX_BYTE_LEN: usize = 8;
+
     pub fn store_instr_meta(instr: &Instruction) -> InstrByteLen {
         match instr {
             Instruction::I32Store(_) => 4,

@@ -6,10 +6,7 @@ use crate::{
     InstructionSet,
 };
 use alloc::{collections::BTreeMap, vec::Vec};
-use rwasm::{
-    common::UntypedValue,
-    engine::bytecode::{InstrMeta, Instruction},
-};
+use rwasm::{common::UntypedValue, engine::bytecode::Instruction};
 
 #[derive(Debug, Clone)]
 pub struct ReducedModuleTrace {
@@ -102,14 +99,15 @@ impl<'a> ReducedModuleReader<'a> {
         self.relative_position
             .insert(trace.offset as u32, self.instruction_set.len());
         if let Ok(instr) = instr {
-            self.instruction_set.push_with_meta(
-                instr,
-                InstrMeta::new(
-                    trace.offset,
-                    trace.code as u16,
-                    self.instruction_set.len() as usize,
-                ),
-            );
+            self.instruction_set.push(instr);
+            // self.instruction_set.push_with_meta(
+            //     instr,
+            //     InstrMeta::new(
+            //         trace.offset,
+            //         trace.code as u16,
+            //         self.instruction_set.len() as usize,
+            //     ),
+            // );
         }
 
         Some(trace)

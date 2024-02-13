@@ -20,7 +20,6 @@ use crate::{
         code_map::{CodeMap, InstructionPtr},
         config::FuelCosts,
         stack::{CallStack, ValueStackPtr},
-        tracer::Tracer,
         DropKeep,
         FuncFrame,
         ValueStack,
@@ -104,7 +103,7 @@ pub fn execute_wasm<'ctx, 'engine>(
     code_map: &'engine CodeMap,
     const_pool: ConstPoolView<'engine>,
     resource_limiter: &'ctx mut ResourceLimiterRef<'ctx>,
-    tracer: &'engine mut Tracer,
+    #[cfg(feature = "tracer")] tracer: &'engine mut tracer::Tracer,
 ) -> Result<WasmOutcome, TrapCode> {
     Executor::new(
         ctx,
@@ -113,6 +112,7 @@ pub fn execute_wasm<'ctx, 'engine>(
         call_stack,
         code_map,
         const_pool,
+        #[cfg(feature = "tracer")]
         tracer,
     )
     .execute(resource_limiter)
@@ -184,7 +184,8 @@ struct Executor<'ctx, 'engine> {
     /// A read-only view to a pool of constant values.
     const_pool: ConstPoolView<'engine>,
     /// A tracer that stores execution info
-    tracer: &'engine mut Tracer,
+    #[cfg(feature = "tracer")]
+    tracer: &'engine mut tracer::Tracer,
 }
 
 macro_rules! forward_call {
@@ -212,7 +213,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         call_stack: &'engine mut CallStack,
         code_map: &'engine CodeMap,
         const_pool: ConstPoolView<'engine>,
-        tracer: &'engine mut Tracer,
+        #[cfg(feature = "tracer")] tracer: &'engine mut Tracer,
     ) -> Self {
         let frame = call_stack.pop().expect("must have frame on the call stack");
         let sp = value_stack.stack_ptr();
@@ -226,6 +227,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             call_stack,
             code_map,
             const_pool,
+            #[cfg(feature = "tracer")]
             tracer,
         }
     }
@@ -239,7 +241,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         use Instruction as Instr;
         loop {
             let instr = *self.ip.get();
-            let meta = *self.ip.meta();
 
             // TODO: Need to add recursive check while call function
             // TODO: Create more optimized check for stack overflowed
@@ -258,32 +259,35 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             // }
 
             // handle pre-instruction state
-            let has_default_memory = {
-                let instance = self.cache.instance();
-                self.ctx
-                    .resolve_instance(instance)
-                    .get_memory(DEFAULT_MEMORY_INDEX)
-                    .is_some()
-            };
-            let memory_size: u32 = if has_default_memory {
-                self.ctx
-                    .resolve_memory(self.cache.default_memory(self.ctx))
-                    .current_pages()
-                    .into()
-            } else {
-                0
-            };
-            let consumed_fuel = self.ctx.fuel().fuel_consumed();
-            let stack = self.value_stack.dump_stack(self.sp);
-            // println!("pc:{} instr:{:?} stack:{:?}", self.ip.pc(), instr, stack);
-            self.tracer.pre_opcode_state(
-                self.ip.pc(),
-                instr,
-                stack,
-                &meta,
-                memory_size,
-                consumed_fuel,
-            );
+            #[cfg(feature = "tracer")]
+            {
+                let has_default_memory = {
+                    let instance = self.cache.instance();
+                    self.ctx
+                        .resolve_instance(instance)
+                        .get_memory(crate::module::DEFAULT_MEMORY_INDEX)
+                        .is_some()
+                };
+                let memory_size: u32 = if has_default_memory {
+                    self.ctx
+                        .resolve_memory(self.cache.default_memory(self.ctx))
+                        .current_pages()
+                        .into()
+                } else {
+                    0
+                };
+                let consumed_fuel = self.ctx.fuel().fuel_consumed();
+                let stack = self.value_stack.dump_stack(self.sp);
+                // println!("pc:{} instr:{:?} stack:{:?}", self.ip.pc(), instr, stack);
+                self.tracer.pre_opcode_state(
+                    self.ip.pc(),
+                    instr,
+                    stack,
+                    &meta,
+                    memory_size,
+                    consumed_fuel,
+                );
+            }
 
             match instr {
                 Instr::LocalGet(local_depth) => self.visit_local_get(local_depth),
@@ -562,6 +566,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         self.ip.offset(0);
         let address = u32::from(address);
         let base_address = offset.into_inner() + address;
+        #[cfg(feature = "tracer")]
         self.tracer.memory_change(
             base_address,
             len,
@@ -711,6 +716,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         match self.ctx.resolve_func(func) {
             FuncEntity::Wasm(wasm_func) => {
                 let header = self.code_map.header(wasm_func.func_body());
+                #[cfg(feature = "tracer")]
                 self.tracer.function_call(
                     func_index,
                     header.max_stack_height(),
@@ -972,6 +978,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             Instruction::TableGet(table_idx) => *table_idx,
             _ => unreachable!("expected TableGet instruction word at this point"),
         };
+        #[cfg(feature = "tracer")]
         self.tracer.remember_next_table(table_idx);
         table_idx
     }
@@ -1282,6 +1289,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     .and_then(|memory| memory.get_mut(..n))
                     .ok_or(TrapCode::MemoryOutOfBounds)?;
                 memory.fill(byte);
+                #[cfg(feature = "tracer")]
                 this.tracer.memory_change(offset as u32, n as u32, memory);
                 Ok(())
             },
@@ -1308,6 +1316,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     .and_then(|memory| memory.get(..n))
                     .ok_or(TrapCode::MemoryOutOfBounds)?;
                 data.copy_within(src_offset..src_offset.wrapping_add(n), dst_offset);
+                #[cfg(feature = "tracer")]
                 this.tracer.memory_change(
                     dst_offset as u32,
                     n as u32,
@@ -1341,6 +1350,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     .and_then(|data| data.get(..n))
                     .ok_or(TrapCode::MemoryOutOfBounds)?;
                 memory.copy_from_slice(data);
+                #[cfg(feature = "tracer")]
                 this.tracer
                     .global_memory(dst_offset as u32, n as u32, memory);
                 Ok(())
@@ -1409,6 +1419,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             Err(EntityGrowError::TrapCode(trap_code)) => return Err(trap_code),
         };
         self.sp.push_as(result);
+        #[cfg(feature = "tracer")]
         self.tracer
             .table_size_change(table_index.to_u32(), init.as_u32(), delta);
         self.try_next_instr()
@@ -1459,6 +1470,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             .resolve_table_mut(&table)
             .set_untyped(index, value)
             .map_err(|_| TrapCode::TableOutOfBounds)?;
+        #[cfg(feature = "tracer")]
         self.tracer.table_change(table_index.to_u32(), index, value);
         self.try_next_instr()
     }

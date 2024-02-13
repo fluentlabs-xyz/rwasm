@@ -1,7 +1,9 @@
 //! Datastructure to efficiently store function bodies and their instructions.
 
 use super::Instruction;
-use crate::{arena::ArenaIndex, engine::bytecode::InstrMeta};
+use crate::arena::ArenaIndex;
+#[cfg(feature = "tracer")]
+use crate::engine::bytecode::InstrMeta;
 use alloc::vec::Vec;
 
 /// A reference to a compiled function stored in the [`CodeMap`] of an [`Engine`](crate::Engine).
@@ -146,6 +148,7 @@ pub struct CodeMap {
     /// Also this improves efficiency of deallocating the [`CodeMap`]
     /// and generally improves data locality.
     instrs: Vec<Instruction>,
+    #[cfg(feature = "tracer")]
     metas: Vec<InstrMeta>,
 }
 
@@ -158,6 +161,7 @@ impl Default for CodeMap {
             // index value for compiled functions that have yet to be
             // initialized with their actual function bodies.
             instrs: vec![Instruction::Unreachable],
+            #[cfg(feature = "tracer")]
             metas: vec![InstrMeta::default()],
         }
     }
@@ -188,7 +192,7 @@ impl CodeMap {
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
-        metas: Vec<InstrMeta>,
+        #[cfg(feature = "tracer")] metas: Vec<InstrMeta>,
     ) where
         I: IntoIterator<Item = Instruction>,
     {
@@ -198,6 +202,7 @@ impl CodeMap {
         );
         let start = self.instrs.len();
         self.instrs.extend(instrs);
+        #[cfg(feature = "tracer")]
         self.metas.extend(metas);
         let iref = InstructionsRef::new(start);
         self.headers[func.into_usize()] = FuncHeader::new(iref, len_locals, local_stack_height);
@@ -231,6 +236,7 @@ impl CodeMap {
     pub fn instr_ptr(&self, iref: InstructionsRef) -> InstructionPtr {
         InstructionPtr::new(
             self.instrs[iref.to_usize()..].as_ptr(),
+            #[cfg(feature = "tracer")]
             self.metas[iref.to_usize()..].as_ptr(),
         )
     }
@@ -243,6 +249,7 @@ impl CodeMap {
         let end = self.instr_end(func_body);
         let start_ptr = InstructionPtr::new(
             self.instrs[start..end].as_ptr(),
+            #[cfg(feature = "tracer")]
             self.metas[start..end].as_ptr(),
         );
         let mut end_ptr = start_ptr;
@@ -295,6 +302,7 @@ pub struct InstructionPtr {
     pub(crate) ptr: *const Instruction,
     pub(crate) source: *const Instruction,
     /// The pointer to metas
+    #[cfg(feature = "tracer")]
     pub(crate) meta: *const InstrMeta,
 }
 
@@ -311,10 +319,11 @@ unsafe impl Send for InstructionPtr {}
 impl InstructionPtr {
     /// Creates a new [`InstructionPtr`] for `instr`.
     #[inline]
-    pub fn new(ptr: *const Instruction, meta: *const InstrMeta) -> Self {
+    pub fn new(ptr: *const Instruction, #[cfg(feature = "tracer")] meta: *const InstrMeta) -> Self {
         Self {
             ptr,
             source: ptr,
+            #[cfg(feature = "tracer")]
             meta,
         }
     }
@@ -339,7 +348,8 @@ impl InstructionPtr {
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.offset(by) };
-        self.meta = unsafe { self.meta.offset(by) };
+        // #[cfg(feature = "tracer")]
+        // self.meta = unsafe { self.meta.offset(by) };
     }
 
     #[inline(always)]
@@ -348,7 +358,8 @@ impl InstructionPtr {
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
-        self.meta = unsafe { self.meta.add(delta) };
+        // #[cfg(feature = "tracer")]
+        // self.meta = unsafe { self.meta.add(delta) };
     }
 
     /// Returns a shared reference to the currently pointed at [`Instruction`].
@@ -364,13 +375,5 @@ impl InstructionPtr {
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
         unsafe { &*self.ptr }
-    }
-
-    #[inline(always)]
-    pub fn meta(&self) -> &InstrMeta {
-        // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
-        //         of valid bounds using this method.
-        unsafe { &*self.meta }
     }
 }
