@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 fluentbase-sdk = { git = "https://github.com/fluentlabs-xyz/fluentbase", branch = "no-tracer", default-features = false, features = ["evm"] }
+#fluentbase-codec = { path = "../../fluentbase/crates/codec", default-features = false, features = ["std"] }
 #fluentbase-sdk = { path="../../fluentbase/crates/sdk", default-features = false, features = ["evm"] }
 rwasm-codegen = { path = "../codegen", default-features = false, features = [] }
 rwasm = { path = "../rwasm", default-features = false, features = ["sdk"] }
@@ -21,7 +22,11 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
-std = ["fluentbase-sdk/runtime", "rwasm-codegen/std", "rwasm/std"]
+std = [
+    "fluentbase-sdk/runtime",
+    "rwasm-codegen/std",
+    "rwasm/std",
+]
 e2e = []
 
 [profile.release]
