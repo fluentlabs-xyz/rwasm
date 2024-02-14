@@ -1,4 +1,4 @@
-use crate::common::HostError;
+use crate::core::HostError;
 use alloc::{boxed::Box, string::String};
 use core::fmt::{self, Display};
 #[cfg(feature = "std")]
@@ -35,7 +35,7 @@ enum TrapReason {
     ///
     /// This is useful for some WASI functions.
     I32Exit(i32),
-    /// An error described by a display message.
+    /// An error decribed by a display message.
     Message(Box<str>),
     /// Traps and errors during host execution.
     Host(Box<dyn HostError>),
@@ -215,7 +215,7 @@ impl StdError for Trap {
 /// See [`Trap`] for details.
 ///
 /// [`Trap`]: struct.Trap.html
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone)]
 pub enum TrapCode {
     /// Wasm code executed `unreachable` opcode.
     ///
@@ -279,7 +279,7 @@ pub enum TrapCode {
 
     /// This trap is raised when a WebAssembly execution ran out of fuel.
     ///
-    /// The Wasmi execution engine can be configured to instrument its
+    /// The `wasmi` execution engine can be configured to instrument its
     /// internal bytecode so that fuel is consumed for each executed instruction.
     /// This is useful to deterministically halt or yield a WebAssembly execution.
     OutOfFuel,
@@ -304,8 +304,8 @@ impl TrapCode {
             Self::UnreachableCodeReached => "wasm `unreachable` instruction executed",
             Self::MemoryOutOfBounds => "out of bounds memory access",
             Self::TableOutOfBounds => "undefined element: out of bounds table access",
-            Self::IndirectCallToNull => "uninitialized element 2", /* TODO: fixme, remove the */
-            // trailing " 2" again
+            Self::IndirectCallToNull => "uninitialized element 2", /* TODO: fixme, remove the
+                                                                     * trailing " 2" again */
             Self::IntegerDivisionByZero => "integer divide by zero",
             Self::IntegerOverflow => "integer overflow",
             Self::BadConversionToInteger => "invalid conversion to integer",

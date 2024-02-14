@@ -12,11 +12,11 @@ impl<'a> BinaryFormat<'a> for u32 {
     }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
-        sink.write_u32_be(*self)
+        sink.write_u32_le(*self)
     }
 
     fn read_binary(sink: &mut BinaryFormatReader<'a>) -> Result<u32, BinaryFormatError> {
-        sink.read_u32_be()
+        sink.read_u32_le()
     }
 }
 
@@ -28,11 +28,11 @@ impl<'a> BinaryFormat<'a> for i32 {
     }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
-        sink.write_i32_be(*self)
+        sink.write_i32_le(*self)
     }
 
     fn read_binary(sink: &mut BinaryFormatReader<'a>) -> Result<i32, BinaryFormatError> {
-        sink.read_i32_be()
+        sink.read_i32_le()
     }
 }
 
@@ -44,11 +44,11 @@ impl<'a> BinaryFormat<'a> for u64 {
     }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
-        sink.write_u64_be(*self)
+        sink.write_u64_le(*self)
     }
 
     fn read_binary(sink: &mut BinaryFormatReader<'a>) -> Result<u64, BinaryFormatError> {
-        sink.read_u64_be()
+        sink.read_u64_le()
     }
 }
 
@@ -60,10 +60,10 @@ impl<'a> BinaryFormat<'a> for i64 {
     }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
-        sink.write_i64_be(*self)
+        sink.write_i64_le(*self)
     }
 
     fn read_binary(sink: &mut BinaryFormatReader<'a>) -> Result<i64, BinaryFormatError> {
-        sink.read_i64_be()
+        sink.read_i64_le()
     }
 }

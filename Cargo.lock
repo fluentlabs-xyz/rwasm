@@ -1334,6 +1334,7 @@ name = "rwasm-codegen"
 version = "0.30.0"
 dependencies = [
  "byteorder",
+ "hashbrown 0.14.3",
  "rwasm",
  "strum",
  "strum_macros",

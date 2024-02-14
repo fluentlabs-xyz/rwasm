@@ -15,7 +15,7 @@
 //!
 //! ```
 //! use anyhow::{anyhow, Result};
-//! use rwasm::*;
+//! use wasmi::*;
 //!
 //! fn main() -> Result<()> {
 //!     // First step is to create the Wasm execution engine with some config.
@@ -88,7 +88,7 @@ extern crate std as alloc;
 mod foreach_tuple;
 
 pub mod arena;
-pub mod common;
+pub mod core;
 pub mod engine;
 pub mod error;
 pub mod externref;

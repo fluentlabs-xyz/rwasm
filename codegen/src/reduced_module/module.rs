@@ -8,7 +8,7 @@ use crate::{
     N_MAX_TABLES,
 };
 use alloc::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     string::{String, ToString},
 };
 use rwasm::{
@@ -19,24 +19,25 @@ use rwasm::{
     Module,
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct RwasmModule {
-    pub(crate) instruction_set: InstructionSet,
+    pub(crate) code_section: InstructionSet,
 }
 
 impl RwasmModule {
+    #[deprecated(note = "will be removed soon")]
     pub fn new(sink: &[u8]) -> Result<RwasmModule, ReducedModuleError> {
         let mut reader = ReducedModuleReader::new(sink);
         reader
             .read_till_error()
             .map_err(|e| ReducedModuleError::BinaryFormat(e))?;
         Ok(RwasmModule {
-            instruction_set: reader.instruction_set,
+            code_section: reader.instruction_set,
         })
     }
 
     pub fn bytecode(&self) -> &InstructionSet {
-        &self.instruction_set
+        &self.code_section
     }
 
     pub fn to_module(&self, engine: &Engine, import_linker: &ImportLinker) -> Module {
@@ -110,43 +111,12 @@ impl RwasmModule {
         let compiled_func = resources
             .get_compiled_func(FuncIdx::from(import_len))
             .unwrap();
-        engine.init_func(
-            compiled_func,
-            0,
-            0,
-            code_section.instr.clone(),
-            code_section.metas.clone().unwrap(),
-        );
-        // push segments
-        let mut data_segments = BTreeSet::new();
-        let mut elem_segments = BTreeSet::new();
+        engine.init_func(compiled_func, 0, 0, code_section.instr.clone());
 
-        for instr in code_section.instr.iter() {
-            match instr {
-                Instruction::DataStore8(seg)
-                | Instruction::DataStore16(seg)
-                | Instruction::DataStore32(seg)
-                | Instruction::DataStore64(seg)
-                | Instruction::MemoryInit(seg) => {
-                    data_segments.insert(seg.to_u32());
-                }
-                Instruction::ElemStore(seg) | Instruction::TableInit(seg) => {
-                    elem_segments.insert(seg.to_u32());
-                }
-                _ => continue,
-            }
-        }
-        if !data_segments.is_empty() {
-            let max_data_segment = data_segments.iter().max().copied().unwrap_or_default() as usize;
-            (0..=max_data_segment).for_each(|_| {
-                builder.push_passive_data_segment();
-            });
-        }
-        if !elem_segments.is_empty() {
-            (0..=elem_segments.len()).for_each(|_| {
-                builder.push_passive_elem_segment();
-            })
-        }
+        // push segments
+        builder.push_default_data_segment(&self.code_section.default_memory);
+        builder.push_default_elem_segment();
+
         // allocate default memory
         builder
             .push_default_memory(0, Some(N_MAX_MEMORY_PAGES))
@@ -175,6 +145,6 @@ impl RwasmModule {
     }
 
     pub fn trace(&self) -> String {
-        self.instruction_set.trace()
+        self.code_section.trace()
     }
 }

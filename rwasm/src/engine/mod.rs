@@ -4,7 +4,7 @@ pub mod bytecode;
 mod cache;
 pub mod code_map;
 mod config;
-mod const_pool;
+pub mod const_pool;
 pub mod executor;
 mod func_args;
 mod func_builder;
@@ -15,50 +15,40 @@ mod traits;
 
 #[cfg(test)]
 mod tests;
-mod tracer;
 
-use self::{
-    bytecode::Instruction,
-    cache::InstanceCache,
-    code_map::CodeMap,
-    executor::{execute_wasm, WasmOutcome},
-    func_types::FuncTypeRegistry,
-    resumable::ResumableCallBase,
-    stack::{FuncFrame, Stack, ValueStack},
-};
 pub use self::{
-    bytecode::{DropKeep, RwOp},
+    bytecode::DropKeep,
     code_map::CompiledFunc,
     config::{Config, FuelConsumptionMode},
-    const_pool::ConstRef,
     func_builder::{
         FuncBuilder,
         FuncTranslatorAllocations,
         Instr,
         RelativeDepth,
         TranslationError,
-        ValueStackHeight,
     },
     resumable::{ResumableCall, ResumableInvocation, TypedResumableCall, TypedResumableInvocation},
     stack::StackLimits,
-    tracer::{
-        Tracer,
-        TracerFunctionMeta,
-        TracerGlobalVariable,
-        TracerInstrState,
-        TracerMemoryState,
-    },
     traits::{CallParams, CallResults},
 };
+use self::{
+    bytecode::Instruction,
+    cache::InstanceCache,
+    code_map::CodeMap,
+    const_pool::{ConstPool, ConstPoolView, ConstRef},
+    executor::{execute_wasm, WasmOutcome},
+    func_types::FuncTypeRegistry,
+    resumable::ResumableCallBase,
+    stack::{FuncFrame, Stack, ValueStack},
+};
 pub(crate) use self::{
-    const_pool::{ConstPool, ConstPoolView},
     func_args::{FuncFinished, FuncParams, FuncResults},
     func_types::DedupFuncType,
 };
 use crate::{
     arena::{ArenaIndex, GuardedEntity},
-    common::{Trap, TrapCode, UntypedValue},
-    engine::{bytecode::InstrMeta, code_map::InstructionPtr},
+    core::{Trap, TrapCode, UntypedValue},
+    engine::code_map::InstructionPtr,
     func::FuncEntity,
     AsContext,
     AsContextMut,
@@ -194,23 +184,11 @@ impl Engine {
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
-        metas: Vec<InstrMeta>,
     ) where
         I: IntoIterator<Item = Instruction>,
     {
         self.inner
-            .init_func(func, len_locals, local_stack_height, instrs, metas)
-    }
-
-    pub(super) fn mark_func(
-        &self,
-        func: CompiledFunc,
-        len_locals: usize,
-        local_stack_height: usize,
-        start: usize,
-    ) {
-        self.inner
-            .mark_func(func, len_locals, local_stack_height, start)
+            .init_func(func, len_locals, local_stack_height, instrs)
     }
 
     /// Resolves the [`CompiledFunc`] to the underlying `wasmi` bytecode instructions.
@@ -460,27 +438,13 @@ impl EngineInner {
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
-        metas: Vec<InstrMeta>,
     ) where
         I: IntoIterator<Item = Instruction>,
     {
         self.res
             .write()
             .code_map
-            .init_func(func, len_locals, local_stack_height, instrs, metas)
-    }
-
-    fn mark_func(
-        &self,
-        func: CompiledFunc,
-        len_locals: usize,
-        local_stack_height: usize,
-        start: usize,
-    ) {
-        self.res
-            .write()
-            .code_map
-            .mark_func(func, len_locals, local_stack_height, start)
+            .init_func(func, len_locals, local_stack_height, instrs)
     }
 
     fn resolve_func_type<F, R>(&self, func_type: &DedupFuncType, f: F) -> R
@@ -712,7 +676,9 @@ impl<'engine> EngineExecutor<'engine> {
         Results: CallResults,
     {
         self.stack.reset();
-        self.stack.values.extend(params.call_params());
+        let call_params = params.call_params();
+        self.stack.values.reserve(call_params.len())?;
+        self.stack.values.extend(call_params);
         match ctx.as_context().store.inner.resolve_func(func) {
             FuncEntity::Wasm(wasm_func) => {
                 self.stack
@@ -754,7 +720,9 @@ impl<'engine> EngineExecutor<'engine> {
         self.stack
             .values
             .drop(host_func.ty(ctx.as_context()).params().len());
-        self.stack.values.extend(params.call_params());
+        let call_params = params.call_params();
+        self.stack.values.reserve(call_params.len())?;
+        self.stack.values.extend(call_params);
         assert!(
             self.stack.frames.peek().is_some(),
             "a frame must be on the call stack upon resumption"
@@ -858,8 +826,7 @@ impl<'engine> EngineExecutor<'engine> {
             code.into()
         }
 
-        let (store_inner, tracer, mut resource_limiter) =
-            ctx.store.store_inner_and_tracer_and_resource_limiter_ref();
+        let (store_inner, mut resource_limiter) = ctx.store.store_inner_and_resource_limiter_ref();
         let value_stack = &mut self.stack.values;
         let call_stack = &mut self.stack.frames;
         let code_map = &self.res.code_map;
@@ -873,7 +840,6 @@ impl<'engine> EngineExecutor<'engine> {
             code_map,
             const_pool,
             &mut resource_limiter,
-            tracer,
         )
         .map_err(make_trap)
     }

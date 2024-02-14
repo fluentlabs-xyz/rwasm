@@ -1,6 +1,6 @@
 use super::bytecode::{DataSegmentIdx, ElementSegmentIdx, FuncIdx, GlobalIdx, TableIdx};
 use crate::{
-    common::UntypedValue,
+    core::UntypedValue,
     instance::InstanceEntity,
     memory::DataSegment,
     module::DEFAULT_MEMORY_INDEX,
@@ -82,7 +82,7 @@ impl InstanceCache {
     #[inline]
     pub fn get_data_segment(&mut self, ctx: &StoreInner, index: u32) -> DataSegment {
         let instance = self.instance();
-        ctx.resolve_instance(instance)
+        ctx.resolve_instance(self.instance())
             .get_data_segment(index)
             .unwrap_or_else(|| {
                 unreachable!("missing data segment ({index:?}) for instance: {instance:?}",)
@@ -101,7 +101,7 @@ impl InstanceCache {
         index: ElementSegmentIdx,
     ) -> ElementSegment {
         let instance = self.instance();
-        ctx.resolve_instance(instance)
+        ctx.resolve_instance(self.instance())
             .get_element_segment(index.to_u32())
             .unwrap_or_else(|| {
                 unreachable!("missing element segment ({index:?}) for instance: {instance:?}",)

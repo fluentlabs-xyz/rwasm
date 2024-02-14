@@ -8,7 +8,7 @@
 //! those entities.
 
 use crate::{
-    common::ValueType,
+    core::ValueType,
     instance::InstanceEntity,
     Engine,
     Error,

@@ -1,7 +1,7 @@
 use crate::{
     arena::{Arena, ArenaIndex, GuardedEntity},
-    common::TrapCode,
-    engine::{DedupFuncType, Tracer},
+    core::TrapCode,
+    engine::DedupFuncType,
     externref::{ExternObject, ExternObjectEntity, ExternObjectIdx},
     func::{Trampoline, TrampolineEntity, TrampolineIdx},
     memory::{DataSegment, MemoryError},
@@ -118,8 +118,6 @@ pub struct Store<T> {
     /// User provided hook to retrieve a
     /// [`ResourceLimiter`](crate::ResourceLimiter).
     limiter: Option<ResourceLimiterQuery<T>>,
-    /// Tracer
-    tracer: Tracer,
 }
 
 /// The inner store that owns all data not associated to the host state.
@@ -308,7 +306,7 @@ impl StoreInner {
     /// # Panics
     ///
     /// If the [`Stored<Idx>`] does not originate from this [`Store`].
-    pub(crate) fn unwrap_stored<Idx>(&self, stored: &Stored<Idx>) -> Idx
+    fn unwrap_stored<Idx>(&self, stored: &Stored<Idx>) -> Idx
     where
         Idx: ArenaIndex + Debug,
     {
@@ -740,7 +738,6 @@ impl<T> Store<T> {
             trampolines: Arena::new(),
             data,
             limiter: None,
-            tracer: Tracer::default(),
         }
     }
 
@@ -762,14 +759,6 @@ impl<T> Store<T> {
     /// Consumes `self` and returns its user provided data.
     pub fn into_data(self) -> T {
         self.data
-    }
-
-    pub fn tracer(&self) -> &Tracer {
-        &self.tracer
-    }
-
-    pub fn tracer_mut(&mut self) -> &mut Tracer {
-        &mut self.tracer
     }
 
     /// Installs a function into the [`Store`] that will be called with the user
@@ -829,16 +818,6 @@ impl<T> Store<T> {
             None => None,
         });
         (&mut self.inner, resource_limiter)
-    }
-
-    pub(crate) fn store_inner_and_tracer_and_resource_limiter_ref(
-        &mut self,
-    ) -> (&mut StoreInner, &mut Tracer, ResourceLimiterRef) {
-        let resource_limiter = ResourceLimiterRef(match &mut self.limiter {
-            Some(q) => Some(q.0(&mut self.data)),
-            None => None,
-        });
-        (&mut self.inner, &mut self.tracer, resource_limiter)
     }
 
     /// Returns `true` if fuel metering has been enabled.
@@ -1012,10 +991,6 @@ impl<'a, T> StoreContextMut<'a, T> {
     /// Returns the underlying [`Engine`] this store is connected to.
     pub fn engine(&self) -> &Engine {
         self.store.engine()
-    }
-
-    pub fn tracer_mut(&mut self) -> &mut Tracer {
-        self.store.tracer_mut()
     }
 
     /// Access the underlying data owned by this store.

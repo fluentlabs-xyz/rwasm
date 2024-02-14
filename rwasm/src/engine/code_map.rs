@@ -1,7 +1,7 @@
 //! Datastructure to efficiently store function bodies and their instructions.
 
 use super::Instruction;
-use crate::{arena::ArenaIndex, engine::bytecode::InstrMeta};
+use crate::arena::ArenaIndex;
 use alloc::vec::Vec;
 
 /// A reference to a compiled function stored in the [`CodeMap`] of an [`Engine`](crate::Engine).
@@ -146,7 +146,6 @@ pub struct CodeMap {
     /// Also this improves efficiency of deallocating the [`CodeMap`]
     /// and generally improves data locality.
     instrs: Vec<Instruction>,
-    metas: Vec<InstrMeta>,
 }
 
 impl Default for CodeMap {
@@ -158,7 +157,6 @@ impl Default for CodeMap {
             // index value for compiled functions that have yet to be
             // initialized with their actual function bodies.
             instrs: vec![Instruction::Unreachable],
-            metas: vec![InstrMeta::default()],
         }
     }
 }
@@ -188,7 +186,6 @@ impl CodeMap {
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
-        metas: Vec<InstrMeta>,
     ) where
         I: IntoIterator<Item = Instruction>,
     {
@@ -198,7 +195,6 @@ impl CodeMap {
         );
         let start = self.instrs.len();
         self.instrs.extend(instrs);
-        self.metas.extend(metas);
         let iref = InstructionsRef::new(start);
         self.headers[func.into_usize()] = FuncHeader::new(iref, len_locals, local_stack_height);
     }
@@ -229,10 +225,7 @@ impl CodeMap {
     /// Returns an [`InstructionPtr`] to the instruction at [`InstructionsRef`].
     #[inline]
     pub fn instr_ptr(&self, iref: InstructionsRef) -> InstructionPtr {
-        InstructionPtr::new(
-            self.instrs[iref.to_usize()..].as_ptr(),
-            self.metas[iref.to_usize()..].as_ptr(),
-        )
+        InstructionPtr::new(self.instrs[iref.to_usize()..].as_ptr())
     }
 
     /// Returns an [`InstructionPtr`] to the instruction at [`InstructionsRef`].
@@ -241,10 +234,7 @@ impl CodeMap {
         let header = self.header(func_body);
         let start = header.iref.to_usize();
         let end = self.instr_end(func_body);
-        let start_ptr = InstructionPtr::new(
-            self.instrs[start..end].as_ptr(),
-            self.metas[start..end].as_ptr(),
-        );
+        let start_ptr = InstructionPtr::new(self.instrs[start..end].as_ptr());
         let mut end_ptr = start_ptr;
         end_ptr.add(end - start);
         (start_ptr, end_ptr)
@@ -293,10 +283,7 @@ impl CodeMap {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct InstructionPtr {
     /// The pointer to the instruction.
-    pub(crate) ptr: *const Instruction,
-    pub(crate) source: *const Instruction,
-    /// The pointer to metas
-    pub(crate) meta: *const InstrMeta,
+    ptr: *const Instruction,
 }
 
 /// It is safe to send an [`InstructionPtr`] to another thread.
@@ -312,19 +299,8 @@ unsafe impl Send for InstructionPtr {}
 impl InstructionPtr {
     /// Creates a new [`InstructionPtr`] for `instr`.
     #[inline]
-    pub fn new(ptr: *const Instruction, meta: *const InstrMeta) -> Self {
-        Self {
-            ptr,
-            source: ptr,
-            meta,
-        }
-    }
-
-    #[inline(always)]
-    pub fn pc(&self) -> u32 {
-        let size = core::mem::size_of::<Instruction>() as u32;
-        let diff = self.ptr as u32 - self.source as u32;
-        diff / size
+    pub fn new(ptr: *const Instruction) -> Self {
+        Self { ptr }
     }
 
     /// Offset the [`InstructionPtr`] by the given value.
@@ -340,7 +316,6 @@ impl InstructionPtr {
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.offset(by) };
-        self.meta = unsafe { self.meta.offset(by) };
     }
 
     #[inline(always)]
@@ -349,7 +324,6 @@ impl InstructionPtr {
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
-        self.meta = unsafe { self.meta.add(delta) };
     }
 
     /// Returns a shared reference to the currently pointed at [`Instruction`].
@@ -365,13 +339,5 @@ impl InstructionPtr {
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
         unsafe { &*self.ptr }
-    }
-
-    #[inline(always)]
-    pub fn meta(&self) -> &InstrMeta {
-        // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
-        //         of valid bounds using this method.
-        unsafe { &*self.meta }
     }
 }

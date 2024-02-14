@@ -4,6 +4,7 @@
 //! These allocators mainly serve as the backbone for an efficient Wasm store
 //! implementation.
 
+#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(
     clippy::cast_lossless,
     clippy::missing_errors_doc,
@@ -15,7 +16,11 @@
     clippy::map_unwrap_or,
     clippy::items_after_statements
 )]
-#[allow(dead_code)]
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std as alloc;
+
 mod component_vec;
 mod dedup;
 mod guarded;

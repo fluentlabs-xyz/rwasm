@@ -13,7 +13,7 @@ pub use self::{
 use super::{AsContext, AsContextMut, StoreContext, StoreContextMut, Stored};
 use crate::{
     arena::ArenaIndex,
-    common::{Pages, TrapCode},
+    core::{Pages, TrapCode},
     engine::executor::EntityGrowError,
     store::ResourceLimiterRef,
 };

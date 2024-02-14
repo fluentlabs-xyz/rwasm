@@ -1,15 +1,10 @@
-use crate::{
-    BinaryFormat,
-    BinaryFormatError,
-    BinaryFormatReader,
-    BinaryFormatWriter,
-    InstructionSet,
-    RwasmModule,
-};
+use crate::{BinaryFormat, BinaryFormatError, BinaryFormatReader, BinaryFormatWriter, RwasmModule};
+use rwasm::engine::bytecode::Instruction;
 
 const RWASM_VERSION: u8 = 0x52;
 const SECTION_TERMINATOR: u8 = 0x00;
 const SECTION_CODE: u8 = 0x01;
+const SECTION_MEMORY: u8 = 0x02;
 
 /// Rwasm module encoding follows EIP-3540 standard but stores rWASM opcodes
 /// instead of EVM.
@@ -19,7 +14,13 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
     type SelfType = RwasmModule;
 
     fn encoded_length(&self) -> usize {
-        3 + 5 + 1 + self.instruction_set.encoded_length()
+        2 + // sig
+        1 + // version
+        5 + // code section header
+        5 + // memory section header
+        1 + // terminator
+            self.code_section.encoded_length() + // code section
+            self.code_section.default_memory.len() // memory section
     }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
@@ -29,17 +30,26 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         // version (0x52 = R symbol)
         n += sink.write_u8(RWASM_VERSION)?;
         // code section header
-        let code_section_length = self.instruction_set.encoded_length();
+        let code_section_length = self.code_section.encoded_length() as u32;
         n += sink.write_u8(SECTION_CODE)?;
-        n += sink.write_u32_le(code_section_length as u32)?;
+        n += sink.write_u32_le(code_section_length)?;
+        // data section header
+        let memory_section_length = self.code_section.default_memory.len() as u32;
+        n += sink.write_u8(SECTION_MEMORY)?;
+        n += sink.write_u32_le(memory_section_length)?;
         // section terminator
         n += sink.write_u8(SECTION_TERMINATOR)?;
         // write code section
-        n += self.instruction_set.write_binary(sink)?;
+        for opcode in self.code_section.instr.iter() {
+            n += opcode.write_binary(sink)?;
+        }
+        // write data section
+        n += sink.write_bytes(&self.code_section.default_memory)?;
         Ok(n)
     }
 
     fn read_binary(sink: &mut BinaryFormatReader<'a>) -> Result<Self::SelfType, BinaryFormatError> {
+        let mut result = RwasmModule::default();
         // magic prefix (0xef 0x00)
         if sink.read_u8()? != 0xef || sink.read_u8()? != 0x00 {
             return Err(BinaryFormatError::MalformedWasmModule);
@@ -54,18 +64,33 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
             return Err(BinaryFormatError::MalformedWasmModule);
         }
         let code_section_length = sink.read_u32_le()?;
+        // memory section header
+        if sink.read_u8()? != SECTION_MEMORY {
+            return Err(BinaryFormatError::MalformedWasmModule);
+        }
+        let memory_section_length = sink.read_u32_le()?;
         // section terminator
         if sink.read_u8()? != SECTION_TERMINATOR {
             return Err(BinaryFormatError::MalformedWasmModule);
         }
         // read code section
-        let instruction_set = InstructionSet::read_binary(sink)?;
-        assert_eq!(
-            instruction_set.encoded_length(),
-            code_section_length as usize
-        );
+        let mut code_section_sink = sink.limit_with(code_section_length as usize);
+        while !code_section_sink.is_empty() {
+            result
+                .code_section
+                .push(Instruction::read_binary(&mut code_section_sink)?);
+        }
+        sink.pos += code_section_length as usize;
+        // read memory section
+        let mut memory_section_sink = sink.limit_with(memory_section_length as usize);
+        result
+            .code_section
+            .default_memory
+            .resize(memory_section_length as usize, 0u8);
+        memory_section_sink.read_bytes(&mut result.code_section.default_memory)?;
+        sink.pos += memory_section_length as usize;
         // return the final module
-        Ok(RwasmModule { instruction_set })
+        Ok(result)
     }
 }
 
@@ -76,16 +101,23 @@ mod tests {
     #[test]
     fn test_module_encoding() {
         let instruction_set = instruction_set! {
-            I32Const(100)
-            I32Const(20)
+            .add_memory_pages(1)
+            .add_default_memory(0, &[0, 1, 2, 3])
+            .add_default_memory(100, &[4, 5, 6, 7])
+            I64Const32(100)
+            I64Const32(20)
             I32Add
-            I32Const(3)
+            I64Const32(3)
             I32Add
             Drop
         };
-        let module = RwasmModule { instruction_set };
+        let memory_section = instruction_set.default_memory.clone();
+        let module = RwasmModule {
+            code_section: instruction_set,
+        };
         let mut encoded_data = Vec::new();
         module.write_binary_to_vec(&mut encoded_data).unwrap();
+        assert_eq!(module.encoded_length(), encoded_data.len());
         let module2 = RwasmModule::read_from_slice(&encoded_data).unwrap();
         assert_eq!(module, module2);
     }

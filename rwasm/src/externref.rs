@@ -1,6 +1,6 @@
 use crate::{
     arena::ArenaIndex,
-    common::UntypedValue,
+    core::UntypedValue,
     reftype::Transposer,
     store::Stored,
     AsContextMut,

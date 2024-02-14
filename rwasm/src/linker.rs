@@ -1,5 +1,5 @@
 use crate::{
-    common::Trap,
+    core::Trap,
     func::{FuncEntity, HostFuncEntity, HostFuncTrampolineEntity},
     module::{ImportName, ImportType},
     AsContext,
@@ -749,7 +749,7 @@ impl<T> Linker<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{common::ValueType, Store};
+    use crate::{core::ValueType, Store};
 
     struct HostState {
         a: i32,

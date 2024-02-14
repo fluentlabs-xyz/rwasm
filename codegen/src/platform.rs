@@ -1,6 +1,6 @@
 use alloc::{collections::BTreeMap, string::String, vec::Vec};
 use rwasm::{
-    common::{UntypedValue, ValueType},
+    core::{UntypedValue, ValueType},
     module::ImportName,
     FuncType,
 };

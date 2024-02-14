@@ -16,7 +16,6 @@ pub use self::{
     error::{TranslationError, TranslationErrorInner},
     inst_builder::{Instr, InstructionsBuilder, RelativeDepth},
     translator::FuncTranslatorAllocations,
-    value_stack::ValueStackHeight,
 };
 use super::CompiledFunc;
 use crate::module::{FuncIdx, ModuleResources, ReusableAllocations};
@@ -76,12 +75,6 @@ impl<'parser> FuncBuilder<'parser> {
     /// be added to this function translation.
     pub fn finish_translate_locals(&mut self) -> Result<(), TranslationError> {
         self.translator.finish_translate_locals()
-    }
-
-    /// Updates the current position within the Wasm binary while parsing operators.
-    pub fn update_pos_with_opcode(&mut self, pos: usize, opcode: u16) {
-        self.pos = pos;
-        self.translator.register_opcode_metadata(pos, opcode);
     }
 
     /// Updates the current position within the Wasm binary while parsing operators.

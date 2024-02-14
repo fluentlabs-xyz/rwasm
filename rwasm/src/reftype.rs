@@ -1,4 +1,4 @@
-use crate::common::UntypedValue;
+use crate::core::UntypedValue;
 
 /// Utility type used to convert between `reftype` and [`UntypedValue`].
 ///

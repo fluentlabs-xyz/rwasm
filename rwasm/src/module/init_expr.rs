@@ -8,7 +8,7 @@
 
 use super::FuncIdx;
 use crate::{
-    common::{UntypedValue, F32, F64},
+    core::{UntypedValue, F32, F64},
     ExternRef,
     FuncRef,
     Value,

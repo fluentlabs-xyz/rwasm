@@ -1,4 +1,4 @@
-use crate::common::{
+use crate::core::{
     nan_preserving_float::{F32, F64},
     TrapCode,
 };

@@ -1,8 +1,9 @@
 use crate::{N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES};
-use alloc::{slice::SliceIndex, string::String, vec::Vec};
-use byteorder::{ByteOrder, LittleEndian};
+use alloc::{string::String, vec::Vec};
+use core::slice::SliceIndex;
+use hashbrown::HashMap;
 use rwasm::{
-    common::UntypedValue,
+    core::UntypedValue,
     engine::{
         bytecode::{
             AddressOffset,
@@ -13,27 +14,32 @@ use rwasm::{
             ElementSegmentIdx,
             FuncIdx,
             GlobalIdx,
-            InstrMeta,
             Instruction,
             LocalDepth,
             SignatureIdx,
             TableIdx,
         },
+        const_pool::ConstRef,
         CompiledFunc,
-        ConstRef,
         DropKeep,
     },
 };
 
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone)]
 pub struct InstructionSet {
     pub instr: Vec<Instruction>,
-    pub metas: Option<Vec<InstrMeta>>,
+    // pub metas: Option<Vec<InstrMeta>>,
     // translate state
+    pub(crate) default_memory: Vec<u8>,
+    pub(crate) passive_sections: HashMap<DataSegmentIdx, (u32, u32)>,
     total_locals: Vec<usize>,
-    init_memory_size: u32,
-    init_memory_pages: u32,
-    relative_offset: u32,
+    total_pages: u32,
+}
+
+impl PartialEq for InstructionSet {
+    fn eq(&self, other: &Self) -> bool {
+        self.instr.eq(&other.instr)
+    }
 }
 
 macro_rules! impl_opcode {
@@ -63,11 +69,10 @@ impl From<Vec<Instruction>> for InstructionSet {
     fn from(value: Vec<Instruction>) -> Self {
         Self {
             instr: value,
-            metas: None,
+            default_memory: vec![],
+            passive_sections: Default::default(),
             total_locals: vec![],
-            init_memory_size: 0,
-            init_memory_pages: 0,
-            relative_offset: 0,
+            total_pages: 0,
         }
     }
 }
@@ -77,109 +82,73 @@ impl InstructionSet {
         Self::default()
     }
 
-    pub fn with_relative_offset(relative_offset: u32) -> Self {
-        Self {
-            relative_offset,
-            ..Default::default()
-        }
-    }
-
     pub fn push(&mut self, opcode: Instruction) -> u32 {
         let opcode_pos = self.len();
         self.instr.push(opcode);
         opcode_pos
     }
 
-    pub fn push_with_meta(&mut self, opcode: Instruction, meta: InstrMeta) -> u32 {
-        let opcode_pos = self.push(opcode);
-        let metas_len = if let Some(metas) = &mut self.metas {
-            metas.push(meta);
-            metas.len()
-        } else {
-            self.metas = Some(vec![meta]);
-            1
-        };
-        assert_eq!(self.instr.len(), metas_len, "instr len and meta mismatched");
-        opcode_pos
-    }
+    // pub fn push_with_meta(&mut self, opcode: Instruction, meta: InstrMeta) -> u32 {
+    //     let opcode_pos = self.push(opcode);
+    //     let metas_len = if let Some(metas) = &mut self.metas {
+    //         metas.push(meta);
+    //         metas.len()
+    //     } else {
+    //         self.metas = Some(vec![meta]);
+    //         1
+    //     };
+    //     assert_eq!(self.instr.len(), metas_len, "instr len and meta mismatched");
+    //     opcode_pos
+    // }
 
-    pub fn add_memory_pages(&mut self, initial_pages: u32) {
-        assert_eq!(self.init_memory_pages, 0);
-        if initial_pages != 0 {
-            self.op_i32_const(initial_pages);
+    pub fn add_memory_pages(&mut self, initial_pages: u32) -> bool {
+        // there is a hard limit of max possible memory used (~64 mB)
+        if self.total_pages + initial_pages >= N_MAX_MEMORY_PAGES {
+            return false;
+        }
+        // it makes no sense to grow memory with 0 pages
+        if initial_pages > 0 {
+            self.op_i64_const32(initial_pages);
             self.op_memory_grow();
             self.op_drop();
         }
-        self.init_memory_pages = initial_pages;
-        // we set here 0 because this memory is not used yet
-        self.init_memory_size = 0;
-    }
-
-    pub fn add_memory(&mut self, mut offset: i32, mut bytes: &[u8]) -> bool {
-        // make sure we have enough allocated memory
-        let new_size = self.init_memory_size + offset as u32 + bytes.len() as u32;
-        let total_pages = (new_size + N_BYTES_PER_MEMORY_PAGE - 1) / N_BYTES_PER_MEMORY_PAGE;
-        if total_pages > N_MAX_MEMORY_PAGES {
-            return false;
-        }
-        self.init_memory_size += bytes.len() as u32;
-        self.init_memory_pages = total_pages;
-
-        // translate input bytes
-        [8, 4, 2, 1].iter().copied().for_each(|chunk_size| {
-            let mut it = bytes.chunks_exact(chunk_size);
-            while let Some(chunk) = it.next() {
-                let value = match chunk_size {
-                    8 => LittleEndian::read_u64(chunk),
-                    4 => LittleEndian::read_u32(chunk) as u64,
-                    2 => LittleEndian::read_u16(chunk) as u64,
-                    1 => chunk[0] as u64,
-                    _ => unreachable!("not supported chunk size: {}", chunk_size),
-                };
-                self.op_i32_const(offset);
-                self.op_i64_const(value);
-                match chunk_size {
-                    8 => self.op_i64_store(0u32),
-                    4 => self.op_i32_store(0u32),
-                    2 => self.op_i32_store16(0u32),
-                    1 => self.op_i64_store8(0u32),
-                    _ => unreachable!("not supported chunk size: {}", chunk_size),
-                }
-                offset += chunk_size as i32;
-            }
-            bytes = it.remainder();
-        });
-
+        // increase total number of pages allocated
+        self.total_pages += initial_pages;
         return true;
     }
 
-    pub fn add_data(&mut self, mut bytes: &[u8], segment_idx: u32) {
-        // translate input bytes
-        [8, 4, 2, 1].iter().copied().for_each(|chunk_size| {
-            let mut it = bytes.chunks_exact(chunk_size);
-            while let Some(chunk) = it.next() {
-                let value = match chunk_size {
-                    8 => LittleEndian::read_u64(chunk),
-                    4 => LittleEndian::read_u32(chunk) as u64,
-                    2 => LittleEndian::read_u16(chunk) as u64,
-                    1 => chunk[0] as u64,
-                    _ => unreachable!("not supported chunk size: {}", chunk_size),
-                };
-                self.op_i64_const(value);
-                match chunk_size {
-                    8 => self.op_data_store64(segment_idx),
-                    4 => self.op_data_store32(segment_idx),
-                    2 => self.op_data_store16(segment_idx),
-                    1 => self.op_data_store8(segment_idx),
-                    _ => unreachable!("not supported chunk size: {}", chunk_size),
-                }
-            }
-            bytes = it.remainder();
-        });
+    pub fn add_default_memory(&mut self, offset: u32, bytes: &[u8]) -> bool {
+        // don't allow to grow default memory if there is no enough pages allocated
+        let max_affected_page =
+            (offset + bytes.len() as u32 + N_BYTES_PER_MEMORY_PAGE - 1) / N_BYTES_PER_MEMORY_PAGE;
+        if max_affected_page > self.total_pages {
+            return false;
+        }
+        // expand default memory
+        let data_offset = self.default_memory.len();
+        let data_length = bytes.len();
+        self.default_memory.extend(bytes);
+        // default memory is just a passive section with force memory init
+        self.op_i64_const(data_offset);
+        self.op_i64_const32(offset);
+        self.op_i64_const(data_length);
+        self.op_memory_init_unsafe(0);
+        // we have enough memory pages so can grow
+        return true;
+    }
+
+    pub fn add_passive_memory(&mut self, segment_idx: DataSegmentIdx, bytes: &[u8]) {
+        // expand default memory
+        let data_offset = self.default_memory.len() as u32;
+        let data_length = bytes.len() as u32;
+        self.default_memory.extend(bytes);
+        // store passive section info
+        self.passive_sections
+            .insert(segment_idx, (data_offset, data_length));
     }
 
     pub fn propagate_locals(&mut self, n: usize) {
-        (0..n).for_each(|_| self.op_i32_const(0));
+        (0..n).for_each(|_| self.op_i64_const32(0));
         self.total_locals.push(n);
     }
 
@@ -214,9 +183,9 @@ impl InstructionSet {
         }
     }
 
-    pub fn has_meta(&self) -> bool {
-        self.metas.is_some()
-    }
+    // pub fn has_meta(&self) -> bool {
+    //     self.metas.is_some()
+    // }
 
     pub fn get<I>(&self, index: I) -> Option<&Instruction>
     where
@@ -272,7 +241,7 @@ impl InstructionSet {
     }
 
     pub fn offset(&self, jump_dist: u32) -> u32 {
-        self.relative_offset + self.instr.len() as u32 + jump_dist
+        self.instr.len() as u32 + jump_dist
     }
 
     pub fn is_empty(&self) -> bool {
@@ -283,10 +252,6 @@ impl InstructionSet {
         self.instr.len() as u32
     }
 
-    pub fn op_magic_prefix(&mut self, value: [u8; 8]) {
-        let value = byteorder::BigEndian::read_u64(&value);
-        self.push(Instruction::MagicPrefix(value.into()));
-    }
     impl_opcode!(op_local_get, LocalGet(LocalDepth));
     impl_opcode!(op_local_set, LocalSet(LocalDepth));
     impl_opcode!(op_local_tee, LocalTee(LocalDepth));
@@ -299,25 +264,11 @@ impl InstructionSet {
     impl_opcode!(op_unreachable, Unreachable);
     impl_opcode!(op_consume_fuel, ConsumeFuel(BlockFuel));
     impl_opcode!(op_return, Return, DropKeep::none());
-    impl_opcode!(op_br_indirect, BrIndirect(BranchOffset));
-    impl_opcode!(op_type_check, TypeCheck(SignatureIdx));
     impl_opcode!(op_return_if_nez, ReturnIfNez, DropKeep::none());
     impl_opcode!(op_return_call_internal, ReturnCallInternal(CompiledFunc));
     impl_opcode!(op_return_call, ReturnCall(FuncIdx));
     impl_opcode!(op_return_call_indirect, ReturnCallIndirect(SignatureIdx));
-    pub fn op_call_internal<I>(&mut self, fn_index: I, type_index: u32)
-    where
-        I: Into<CompiledFunc>,
-    {
-        self.push(Instruction::I32Const(type_index.into()));
-        self.push(Instruction::CallInternal(fn_index.into()));
-    }
-    pub fn op_call_internal_unsafe<I>(&mut self, fn_index: I)
-    where
-        I: Into<CompiledFunc>,
-    {
-        self.push(Instruction::CallInternal(fn_index.into()));
-    }
+    impl_opcode!(op_call_internal, CallInternal(CompiledFunc));
     impl_opcode!(op_call, Call(FuncIdx));
     impl_opcode!(op_call_indirect, CallIndirect(SignatureIdx));
     impl_opcode!(op_drop, Drop);
@@ -351,11 +302,60 @@ impl InstructionSet {
     impl_opcode!(op_memory_grow, MemoryGrow);
     impl_opcode!(op_memory_fill, MemoryFill);
     impl_opcode!(op_memory_copy, MemoryCopy);
-    impl_opcode!(op_memory_init, MemoryInit(DataSegmentIdx));
-    impl_opcode!(op_data_store8, DataStore8(DataSegmentIdx));
-    impl_opcode!(op_data_store16, DataStore16(DataSegmentIdx));
-    impl_opcode!(op_data_store32, DataStore32(DataSegmentIdx));
-    impl_opcode!(op_data_store64, DataStore64(DataSegmentIdx));
+
+    /// MemoryInit opcode reads 3 elements from stack (dst, src, len), where:
+    /// - dst - Memory destination of copied data
+    /// - src - Data source of copied data (in the passive section)
+    /// - len - Length of copied data
+    ///
+    /// In the `passive_sections` field we store info about all passive sections
+    /// that are presented in the WebAssembly binary. When passive section is activated
+    /// though `memory.init` opcode we find modified offsets in the data section
+    /// and put the on the stack by removing previous values.
+    ///
+    /// Here is the stack structure for `memory.init` call:
+    /// - ... some other stack elements
+    /// - dst
+    /// - src
+    /// - len
+    /// - ... call of `memory.init` happens here
+    ///
+    /// Here we need to replace `src` field with our modified, but since we don't know
+    /// how stack was structured then we can achieve it by replacing stack element using `local.set`
+    /// opcode.
+    ///
+    /// - dst
+    /// - src  <----+
+    /// - len       |
+    /// - new_src --+
+    /// - ... call `local.set(1)` to replace prev offset
+    ///
+    /// Here we use 1 offset because we pop `new_src`, and then count from the top, `len`
+    /// has 0 offset and `src` has offset 1.
+    ///
+    /// Before doing these ops we must ensure that specified length of copied data
+    /// doesn't exceed original section size. We also inject GT check to make sure that
+    /// there is no data section overflow.
+    pub fn op_memory_init<T>(&mut self, data_segment_index: T)
+    where
+        T: Into<DataSegmentIdx>,
+    {
+        let data_segment_index: DataSegmentIdx = data_segment_index.into();
+        let (offset, _length) = self
+            .passive_sections
+            .get(&data_segment_index)
+            .copied()
+            .expect("can't resolve passive segment by index");
+        // TODO: "ideally we need to have an overflow check for length"
+        // we need to replace offset on the stack with the new value
+        self.push(Instruction::I64Const32((offset as i32).into()));
+        self.push(Instruction::I32Add);
+        self.push(Instruction::LocalSet(1.into()));
+        // since we store all data sections in the one segment then index is always 0
+        self.push(Instruction::MemoryInit(0.into()));
+    }
+    impl_opcode!(op_memory_init_unsafe, MemoryInit(DataSegmentIdx));
+
     impl_opcode!(op_data_drop, DataDrop(DataSegmentIdx));
     impl_opcode!(op_table_size, TableSize(TableIdx));
     impl_opcode!(op_table_grow, TableGrow(TableIdx));
@@ -371,10 +371,11 @@ impl InstructionSet {
         self.push(Instruction::TableInit(elem_idx.into()));
         self.push(Instruction::TableGet(table_idx.into()));
     }
-    impl_opcode!(op_elem_store, ElemStore(ElementSegmentIdx));
     impl_opcode!(op_elem_drop, ElemDrop(ElementSegmentIdx));
     impl_opcode!(op_ref_func, RefFunc(FuncIdx));
-    impl_opcode!(op_i32_const, I32Const(UntypedValue));
+    pub fn op_i64_const32(&mut self, val: u32) {
+        self.push(Instruction::I64Const32(val as i32));
+    }
     impl_opcode!(op_i64_const, I64Const(UntypedValue));
     impl_opcode!(op_const_ref, ConstRef(ConstRef));
     impl_opcode!(op_i32_eqz, I32Eqz);
@@ -512,9 +513,9 @@ impl InstructionSet {
 
     pub fn extend(&mut self, with: &InstructionSet) {
         self.instr.extend(&with.instr);
-        if let Some(metas) = &mut self.metas {
-            metas.extend(with.metas.as_ref().unwrap());
-        }
+        // if let Some(metas) = &mut self.metas {
+        //     metas.extend(with.metas.as_ref().unwrap());
+        // }
     }
 
     pub fn fix_br_indirect_offset(
@@ -528,15 +529,15 @@ impl InstructionSet {
             match instr {
                 // Instruction::BrTable(_) |
                 // Instruction::Br(offset)
-                | Instruction::BrIndirect(offset)
+                // | Instruction::BrIndirect(offset)
                 // | Instruction::BrIfEqz(offset)
                 // | Instruction::BrAdjust(offset)
                 // | Instruction::BrAdjustIfNez(offset)
                 // | Instruction::BrIfEqz(offset)
-                // | Instruction::BrIfNez(offset) 
-                => {
-                    *offset = BranchOffset::from(offset.to_i32() + offset_change)
-                }
+                // | Instruction::BrIfNez(offset)
+                // => {
+                //     *offset = BranchOffset::from(offset.to_i32() + offset_change)
+                // }
                 _ => {}
             }
         }

@@ -4,7 +4,8 @@ use crate::binary_format::{
     BinaryFormatError,
 };
 use rwasm::{
-    common::UntypedValue,
+    arena::ArenaIndex,
+    core::UntypedValue,
     engine::{
         bytecode::{
             AddressOffset,
@@ -20,7 +21,7 @@ use rwasm::{
             SignatureIdx,
             TableIdx,
         },
-        ConstRef,
+        const_pool::ConstRef,
         DropKeep,
     },
 };
@@ -46,7 +47,6 @@ impl<'a> BinaryFormat<'a> for Instruction {
             Instruction::Br(branch_params) => {
                 sink.write_u8(0x04)? + branch_params.write_binary(sink)?
             }
-            Instruction::BrIndirect(offset) => sink.write_u8(0x05)? + offset.write_binary(sink)?,
             Instruction::BrIfEqz(branch_params) => {
                 sink.write_u8(0x06)? + branch_params.write_binary(sink)?
             }
@@ -94,10 +94,6 @@ impl<'a> BinaryFormat<'a> for Instruction {
             Instruction::MemoryFill => sink.write_u8(0x2b)?,
             Instruction::MemoryCopy => sink.write_u8(0x2c)?,
             Instruction::MemoryInit(index) => sink.write_u8(0x2d)? + index.write_binary(sink)?,
-            Instruction::DataStore8(index) => sink.write_u8(0x2e)? + index.write_binary(sink)?,
-            Instruction::DataStore16(index) => sink.write_u8(0x2f)? + index.write_binary(sink)?,
-            Instruction::DataStore32(index) => sink.write_u8(0x30)? + index.write_binary(sink)?,
-            Instruction::DataStore64(index) => sink.write_u8(0x31)? + index.write_binary(sink)?,
             Instruction::DataDrop(index) => sink.write_u8(0x32)? + index.write_binary(sink)?,
             Instruction::TableSize(index) => sink.write_u8(0x33)? + index.write_binary(sink)?,
             Instruction::TableGrow(index) => sink.write_u8(0x34)? + index.write_binary(sink)?,
@@ -106,16 +102,9 @@ impl<'a> BinaryFormat<'a> for Instruction {
             Instruction::TableSet(index) => sink.write_u8(0x37)? + index.write_binary(sink)?,
             Instruction::TableCopy(idx) => sink.write_u8(0x38)? + idx.write_binary(sink)?,
             Instruction::TableInit(idx) => sink.write_u8(0x39)? + idx.write_binary(sink)?,
-            Instruction::ElemStore(idx) => sink.write_u8(0x3a)? + idx.write_binary(sink)?,
             Instruction::ElemDrop(idx) => sink.write_u8(0x3b)? + idx.write_binary(sink)?,
             Instruction::RefFunc(idx) => sink.write_u8(0x3c)? + idx.write_binary(sink)?,
             // i32/i64 Instruction family
-            Instruction::I32Const(untyped_value) => {
-                sink.write_u8(0x3d)? + untyped_value.write_binary(sink)?
-            }
-            Instruction::I64Const(untyped_value) => {
-                sink.write_u8(0x3e)? + untyped_value.write_binary(sink)?
-            }
             Instruction::ConstRef(const_ref) => {
                 sink.write_u8(0x41)? + const_ref.write_binary(sink)?
             }
@@ -251,15 +240,11 @@ impl<'a> BinaryFormat<'a> for Instruction {
             Instruction::I64TruncSatF32U => sink.write_u8(0xc3)?,
             Instruction::I64TruncSatF64S => sink.write_u8(0xc4)?,
             Instruction::I64TruncSatF64U => sink.write_u8(0xc5)?,
-            Instruction::TypeCheck(sig_idx) => sink.write_u8(0xc6)? + sig_idx.write_binary(sink)?,
-            Instruction::MagicPrefix(version) => {
-                sink.write_u8(0xef)? + version.write_binary(sink)?
-            }
             _ => unreachable!("not supported opcode: {:?}", self),
         };
         // we align all opcodes to 9 bytes
         if n == 1 {
-            n += sink.write_u64_be(0)?;
+            n += sink.write_u64_le(0)?;
         }
         debug_assert_eq!(n, INSTRUCTION_SIZE_BYTES);
         Ok(n)
@@ -275,7 +260,6 @@ impl<'a> BinaryFormat<'a> for Instruction {
             0x03 => Instruction::LocalTee(LocalDepth::read_binary(sink)?),
             // control flow Instruction family
             0x04 => Instruction::Br(BranchOffset::read_binary(sink)?),
-            0x05 => Instruction::BrIndirect(BranchOffset::read_binary(sink)?),
             0x06 => Instruction::BrIfEqz(BranchOffset::read_binary(sink)?),
             0x07 => Instruction::BrIfNez(BranchOffset::read_binary(sink)?),
             0x08 => Instruction::BrTable(BranchTableTargets::read_binary(sink)?),
@@ -319,10 +303,6 @@ impl<'a> BinaryFormat<'a> for Instruction {
             0x2b => Instruction::MemoryFill,
             0x2c => Instruction::MemoryCopy,
             0x2d => Instruction::MemoryInit(DataSegmentIdx::read_binary(sink)?),
-            0x2e => Instruction::DataStore8(DataSegmentIdx::read_binary(sink)?),
-            0x2f => Instruction::DataStore16(DataSegmentIdx::read_binary(sink)?),
-            0x30 => Instruction::DataStore32(DataSegmentIdx::read_binary(sink)?),
-            0x31 => Instruction::DataStore64(DataSegmentIdx::read_binary(sink)?),
             0x32 => Instruction::DataDrop(DataSegmentIdx::read_binary(sink)?),
             0x33 => Instruction::TableSize(TableIdx::read_binary(sink)?),
             0x34 => Instruction::TableGrow(TableIdx::read_binary(sink)?),
@@ -331,12 +311,9 @@ impl<'a> BinaryFormat<'a> for Instruction {
             0x37 => Instruction::TableSet(TableIdx::read_binary(sink)?),
             0x38 => Instruction::TableCopy(TableIdx::read_binary(sink)?),
             0x39 => Instruction::TableInit(ElementSegmentIdx::read_binary(sink)?),
-            0x3a => Instruction::ElemStore(ElementSegmentIdx::read_binary(sink)?),
             0x3b => Instruction::ElemDrop(ElementSegmentIdx::read_binary(sink)?),
             0x3c => Instruction::RefFunc(FuncIdx::read_binary(sink)?),
             // i32/i64 Instruction family
-            0x3d => Instruction::I32Const(UntypedValue::read_binary(sink)?),
-            0x3e => Instruction::I64Const(UntypedValue::read_binary(sink)?),
             0x41 => Instruction::ConstRef(ConstRef::read_binary(sink)?),
             0x42 => Instruction::I32Eqz,
             0x43 => Instruction::I32Eq,
@@ -470,15 +447,12 @@ impl<'a> BinaryFormat<'a> for Instruction {
             0xc3 => Instruction::I64TruncSatF32U,
             0xc4 => Instruction::I64TruncSatF64S,
             0xc5 => Instruction::I64TruncSatF64U,
-            0xc6 => Instruction::TypeCheck(SignatureIdx::read_binary(sink)?),
-            // this opcode must always be 0xEF
-            0xef => Instruction::MagicPrefix(UntypedValue::read_binary(sink)?),
 
             _ => return Err(BinaryFormatError::IllegalOpcode(byte)),
         };
         // we align all opcodes to 9 bytes
         if sink.pos() - current_pos == 1 {
-            sink.read_u64_be()?;
+            sink.read_u64_le()?;
         }
         Ok(instr)
     }
@@ -495,16 +469,16 @@ impl InstructionExtra for Instruction {
         let value: UntypedValue = match self {
             Instruction::LocalGet(val)
             | Instruction::LocalSet(val)
-            | Instruction::LocalTee(val) => val.to_usize().into(),
+            | Instruction::LocalTee(val) => UntypedValue::from(val.to_usize() as u64),
             Instruction::Br(val)
             | Instruction::BrIfEqz(val)
             | Instruction::BrIfNez(val)
             | Instruction::BrAdjust(val)
             | Instruction::BrAdjustIfNez(val) => val.to_i32().into(),
-            Instruction::BrTable(val) => val.to_usize().into(),
+            Instruction::BrTable(val) => (val.to_usize() as u64).into(),
             Instruction::ConsumeFuel(val) => val.to_u64().into(),
             Instruction::ReturnCallInternal(val) | Instruction::CallInternal(val) => {
-                val.to_u32().into()
+                (val.into_usize() as u64).into()
             }
             Instruction::ReturnCall(val) | Instruction::Call(val) => val.to_u32().into(),
             Instruction::ReturnCallIndirect(val) | Instruction::CallIndirect(val) => {
@@ -543,8 +517,7 @@ impl InstructionExtra for Instruction {
             | Instruction::TableCopy(val) => val.to_u32().into(),
             Instruction::TableInit(val) | Instruction::ElemDrop(val) => val.to_u32().into(),
             Instruction::RefFunc(val) => val.to_u32().into(),
-            Instruction::I32Const(val) | Instruction::I64Const(val) => *val,
-            Instruction::ConstRef(val) => val.to_usize().into(),
+            Instruction::ConstRef(val) => (val.to_usize() as u64).into(),
             _ => return None,
         };
         Some(value)
@@ -573,7 +546,7 @@ mod tests {
         },
         instruction::InstructionExtra,
     };
-    use rwasm::{common::UntypedValue, engine::bytecode::Instruction};
+    use rwasm::engine::bytecode::Instruction;
     use strum::IntoEnumIterator;
 
     #[test]
@@ -603,13 +576,5 @@ mod tests {
             let opcode2 = Instruction::read_binary(&mut reader).unwrap();
             assert_eq!(opcode, opcode2);
         }
-    }
-
-    #[test]
-    fn test_magic_is_always_0xef() {
-        assert_eq!(
-            Instruction::MagicPrefix(UntypedValue::default()).code_value(),
-            0xEf
-        );
     }
 }

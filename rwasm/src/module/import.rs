@@ -67,8 +67,7 @@ impl From<wasmparser::Import<'_>> for Import {
             TypeRef::Memory(ty) => ExternTypeIdx::Memory(MemoryType::from_wasmparser(ty)),
             TypeRef::Global(ty) => ExternTypeIdx::Global(GlobalType::from_wasmparser(ty)),
             TypeRef::Tag(tag) => panic!(
-                "wasmi does not support the `exception-handling` Wasm proposal but found: {:?}",
-                tag
+                "wasmi does not support the `exception-handling` Wasm proposal but found: {tag:?}"
             ),
         };
         Self::new(import.module, import.name, kind)

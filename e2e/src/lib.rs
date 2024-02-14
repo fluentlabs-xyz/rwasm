@@ -13,7 +13,7 @@ use self::{
     profile::TestProfile,
 };
 use rwasm::Config;
-use serial_test::serial;
+// use serial_test::serial;
 
 macro_rules! define_tests {
     (

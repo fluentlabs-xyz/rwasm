@@ -3,7 +3,7 @@ use super::{
     TrampolineEntity,
 };
 use crate::{
-    common::{DecodeUntypedSlice, EncodeUntypedSlice, Trap, UntypedValue, ValueType, F32, F64},
+    core::{DecodeUntypedSlice, EncodeUntypedSlice, Trap, UntypedValue, ValueType, F32, F64},
     foreach_tuple::for_each_tuple,
     Caller,
     ExternRef,
@@ -319,6 +319,7 @@ for_each_tuple!(impl_wasm_type_list);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::{F32, F64};
 
     /// Utility struct helper for the `implements_wasm_results` macro.
     pub struct ImplementsWasmRet<T> {

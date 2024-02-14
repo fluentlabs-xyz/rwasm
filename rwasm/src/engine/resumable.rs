@@ -1,6 +1,6 @@
 use super::Func;
 use crate::{
-    common::Trap,
+    core::Trap,
     engine::Stack,
     func::CallResultsTuple,
     AsContextMut,

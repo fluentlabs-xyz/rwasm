@@ -1,4 +1,4 @@
-use crate::common::{
+use crate::core::{
     value::{LoadInto, StoreFrom},
     ArithmeticOps,
     ExtendInto,
@@ -22,7 +22,7 @@ use paste::paste;
 /// An untyped value.
 ///
 /// Provides a dense and simple interface to all functional Wasm operations.
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct UntypedValue {
     /// This inner value is required to have enough bits to represent
@@ -1506,22 +1506,22 @@ for_each_tuple!(impl_encode_untyped_slice);
 
 impl UntypedValue {
     pub fn as_u16(self) -> u16 {
-        self.to_bits() as u16
+        u16::from(self)
     }
 
     pub fn as_u32(self) -> u32 {
-        self.to_bits() as u32
+        u32::from(self)
     }
 
     pub fn as_i32(self) -> i32 {
-        self.to_bits() as i32
+        i32::from(self)
     }
 
     pub fn as_u64(self) -> u64 {
-        self.to_bits()
+        u64::from(self)
     }
 
     pub fn as_usize(self) -> usize {
-        self.to_bits() as usize
+        self.as_u64() as usize
     }
 }

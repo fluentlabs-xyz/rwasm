@@ -1,5 +1,5 @@
 use super::{ConstExpr, TableIdx};
-use crate::{common::ValueType, module::utils::WasmiValueType};
+use crate::{core::ValueType, module::utils::WasmiValueType};
 use alloc::sync::Arc;
 
 /// A table element segment within a [`Module`].
@@ -54,10 +54,6 @@ impl ElementSegmentItems {
                 .map(ConstExpr::new)
                 .collect::<Arc<[_]>>(),
         };
-        Self { exprs }
-    }
-
-    pub fn from_items(exprs: Arc<[ConstExpr]>) -> Self {
         Self { exprs }
     }
 

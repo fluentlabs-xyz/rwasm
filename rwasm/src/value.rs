@@ -1,5 +1,5 @@
 use crate::{
-    common::{UntypedValue, ValueType, F32, F64},
+    core::{UntypedValue, ValueType, F32, F64},
     ExternRef,
     Func,
     FuncRef,

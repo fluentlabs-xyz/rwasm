@@ -1,6 +1,6 @@
 use super::{into_func::WasmTypeList, Func};
 use crate::{
-    common::{Trap, UntypedValue},
+    core::{Trap, UntypedValue},
     engine::{CallParams, CallResults},
     AsContext,
     AsContextMut,
@@ -173,9 +173,7 @@ impl<Results> Default for CallResultsTuple<Results> {
 impl<Results> Copy for CallResultsTuple<Results> {}
 impl<Results> Clone for CallResultsTuple<Results> {
     fn clone(&self) -> Self {
-        Self {
-            _marker: PhantomData,
-        }
+        *self
     }
 }
 

@@ -5,9 +5,9 @@ mod pre;
 mod tests;
 
 pub use self::{error::InstantiationError, pre::InstancePre};
-use super::{element::ElementSegmentKind, export, ConstExpr, DataSegmentKind, FuncIdx, Module};
+use super::{element::ElementSegmentKind, export, ConstExpr, DataSegmentKind, Module};
 use crate::{
-    common::{Trap, UntypedValue},
+    core::{Trap, UntypedValue},
     func::WasmFuncEntity,
     memory::{DataSegment, MemoryError},
     value::WithType,
@@ -297,10 +297,6 @@ impl Module {
         if let Some(start_fn) = self.start {
             builder.set_start(start_fn)
         }
-    }
-
-    pub fn get_start_fn(&self) -> Option<FuncIdx> {
-        self.start
     }
 
     /// Initializes the [`Instance`] tables with the Wasm element segments of the [`Module`].

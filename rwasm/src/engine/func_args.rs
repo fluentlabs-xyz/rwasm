@@ -1,7 +1,7 @@
 //! API using the Rust type system to guide host function trampoline execution.
 
 use crate::{
-    common::{DecodeUntypedSlice, EncodeUntypedSlice, UntypedError, UntypedValue},
+    core::{DecodeUntypedSlice, EncodeUntypedSlice, UntypedError, UntypedValue},
     value::WithType,
     Value,
 };

@@ -90,6 +90,12 @@ impl<'a> BinaryFormatWriter<'a> {
         self.skip(n)
     }
 
+    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<usize, BinaryFormatError> {
+        let n = self.require(bytes.len())?;
+        self.sink[self.pos..(self.pos + n)].copy_from_slice(bytes);
+        self.skip(n)
+    }
+
     fn require(&self, n: usize) -> Result<usize, BinaryFormatError> {
         if self.sink.len() < self.pos + n {
             Err(BinaryFormatError::NeedMore(self.pos + n - self.sink.len()))
@@ -119,12 +125,19 @@ impl<'a> BinaryFormatWriter<'a> {
 
 pub struct BinaryFormatReader<'a> {
     pub sink: &'a [u8],
-    pos: usize,
+    pub pos: usize,
 }
 
 impl<'a> BinaryFormatReader<'a> {
     pub fn new(sink: &'a [u8]) -> Self {
         Self { sink, pos: 0 }
+    }
+
+    pub fn limit_with(&self, length: usize) -> Self {
+        Self {
+            sink: &self.sink[self.pos..(self.pos + length)],
+            pos: 0,
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -224,6 +237,12 @@ impl<'a> BinaryFormatReader<'a> {
         let result = LittleEndian::read_i64(&self.sink[self.pos..]);
         self.skip(8)?;
         Ok(result)
+    }
+
+    pub fn read_bytes(&mut self, bytes: &mut [u8]) -> Result<(), BinaryFormatError> {
+        self.require(bytes.len())?;
+        bytes.copy_from_slice(&self.sink[self.pos..(self.pos + bytes.len())]);
+        self.skip(bytes.len())
     }
 
     fn require(&self, n: usize) -> Result<(), BinaryFormatError> {

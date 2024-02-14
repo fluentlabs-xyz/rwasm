@@ -4,7 +4,7 @@ use crate::binary_format::{
     BinaryFormatError,
 };
 use rwasm::{
-    common::UntypedValue,
+    core::UntypedValue,
     engine::{
         bytecode::{
             AddressOffset,
@@ -19,8 +19,8 @@ use rwasm::{
             SignatureIdx,
             TableIdx,
         },
+        const_pool::ConstRef,
         CompiledFunc,
-        ConstRef,
     },
 };
 

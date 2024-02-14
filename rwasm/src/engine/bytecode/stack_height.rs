@@ -165,13 +165,6 @@ impl Instruction {
                 // unreachable!("not implemented here")
             }
             Instruction::MemoryInit(_) => {}
-            Instruction::DataStore8(seg)
-            | Instruction::DataStore16(seg)
-            | Instruction::DataStore32(seg)
-            | Instruction::DataStore64(seg) => {
-                stack_ops.push(RwOp::StackRead(0));
-                stack_ops.push(RwOp::DataWrite(seg.to_u32()))
-            }
             Instruction::DataDrop(_) => {}
 
             Instruction::TableSize(table_idx) => {
@@ -206,16 +199,9 @@ impl Instruction {
             }
             Instruction::TableInit(_) => {}
 
-            Instruction::ElemStore(seg) => {
-                stack_ops.push(RwOp::StackRead(0));
-                stack_ops.push(RwOp::TableElemWrite(seg.to_u32()))
-            }
             Instruction::ElemDrop(_) => {}
             Instruction::RefFunc(_) => {
                 stack_ops.push(RwOp::StackWrite(0));
-            }
-            Instruction::I32Const(_) | Instruction::I64Const(_) => {
-                stack_ops.push(RwOp::StackWrite(0))
             }
             Instruction::ConstRef(_) => stack_ops.push(RwOp::StackWrite(0)),
 
