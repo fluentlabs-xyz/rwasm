@@ -42,7 +42,7 @@ pub struct Compiler2<'linker> {
     module: Module,
     // translation state
     pub(crate) code_section: InstructionSet,
-    function_beginning: BTreeMap<u32, u32>,
+    function_beginning: Vec<u32>,
     injection_segments: Vec<Injection>,
 }
 
@@ -77,7 +77,7 @@ impl<'linker> Compiler2<'linker> {
             engine,
             module,
             code_section: InstructionSet::new(),
-            function_beginning: BTreeMap::new(),
+            function_beginning: Vec::new(),
             import_linker,
             injection_segments: vec![],
             config,
@@ -97,6 +97,11 @@ impl<'linker> Compiler2<'linker> {
         if self.config.with_router {
             self.translate_router(main_index)?;
         }
+        // translate import functions
+        let import_len = self.module.imports.len_funcs;
+        for i in 0..import_len {
+            self.translate_import_func(i as u32)?;
+        }
         // remember that this is injected and shifts br/br_if offset
         self.injection_segments.push(Injection {
             begin: 0,
@@ -111,6 +116,19 @@ impl<'linker> Compiler2<'linker> {
         }
         // there is no need to inject because code is already validated
         self.code_section.finalize(false);
+        Ok(())
+    }
+
+    fn translate_import_func(&mut self, import_fn_index: u32) -> Result<(), CompilerError> {
+        let beginning_offset = self.code_section.len();
+        self.translate_host_call(import_fn_index)?;
+        self.code_section.op_return();
+        assert_eq!(
+            self.function_beginning.len(),
+            import_fn_index as usize,
+            "incorrect function order"
+        );
+        self.function_beginning.push(beginning_offset);
         Ok(())
     }
 
@@ -136,11 +154,13 @@ impl<'linker> Compiler2<'linker> {
         while instr_ptr != instr_end {
             self.translate_opcode(&mut instr_ptr, 0)?;
         }
-        if !self.config.translate_func_as_inline {
-            self.code_section.op_unreachable();
-        }
-        // remember function offset in the mapping (+1 because 0 is reserved for sections init)
-        self.function_beginning.insert(fn_index, beginning_offset);
+        // remember function offset in the mapping
+        assert_eq!(
+            self.function_beginning.len(),
+            fn_index as usize,
+            "incorrect function order"
+        );
+        self.function_beginning.push(beginning_offset);
         Ok(())
     }
 
@@ -195,7 +215,12 @@ impl<'linker> Compiler2<'linker> {
                 self.code_section.op_return();
             }
             WI::Call(func_idx) => {
-                self.translate_host_call(func_idx.to_u32())?;
+                self.code_section.op_call_internal(func_idx.to_u32());
+            }
+            WI::CallInternal(func_idx) => {
+                let import_len = self.module.imports.len_funcs as u32;
+                self.code_section
+                    .op_call_internal(func_idx.to_u32() + import_len);
             }
             WI::ConstRef(const_ref) => {
                 let resolved_const = self.engine.resolve_const(const_ref).unwrap();
@@ -580,7 +605,7 @@ impl<'linker> Compiler2<'linker> {
             };
             let func_offset = self
                 .function_beginning
-                .get(&func_idx)
+                .get(func_idx as usize)
                 .copied()
                 .ok_or(CompilerError::MissingFunction)?;
             instr.update_call_index(func_offset);
@@ -588,6 +613,7 @@ impl<'linker> Compiler2<'linker> {
 
         Ok(RwasmModule {
             code_section: bytecode.clone(),
+            function_position: self.function_beginning.clone(),
         })
     }
 }

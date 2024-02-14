@@ -1,20 +1,23 @@
-use crate::core::{
-    value::{LoadInto, StoreFrom},
-    ArithmeticOps,
-    ExtendInto,
-    Float,
-    Integer,
-    LittleEndianConvert,
-    SignExtendFrom,
-    TrapCode,
-    TruncateSaturateInto,
-    TryTruncateInto,
-    WrapInto,
-    F32,
-    F64,
+use crate::{
+    core::{
+        value::{LoadInto, StoreFrom},
+        ArithmeticOps,
+        ExtendInto,
+        Float,
+        Integer,
+        LittleEndianConvert,
+        SignExtendFrom,
+        TrapCode,
+        TruncateSaturateInto,
+        TryTruncateInto,
+        WrapInto,
+        F32,
+        F64,
+    },
+    engine::bytecode::Instruction,
 };
 use core::{
-    fmt::{self, Display},
+    fmt::{self, Display, Formatter},
     ops::{Neg, Shl, Shr},
 };
 use paste::paste;
@@ -28,6 +31,13 @@ pub struct UntypedValue {
     /// This inner value is required to have enough bits to represent
     /// all fundamental WebAssembly types `i32`, `i64`, `f32` and `f64`.
     bits: u64,
+}
+
+impl Display for UntypedValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let name = format!("{:?}", self.bits);
+        write!(f, "{}", name)
+    }
 }
 
 impl UntypedValue {

@@ -12,7 +12,7 @@ use alloc::{
     string::{String, ToString},
 };
 use rwasm::{
-    engine::bytecode::Instruction,
+    engine::{bytecode::Instruction, CompiledFunc},
     module::{FuncIdx, FuncTypeIdx, MemoryIdx, ModuleBuilder, ModuleError, ModuleResources},
     Engine,
     FuncType,
@@ -22,6 +22,7 @@ use rwasm::{
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct RwasmModule {
     pub(crate) code_section: InstructionSet,
+    pub(crate) function_position: Vec<u32>,
 }
 
 impl RwasmModule {
@@ -33,6 +34,7 @@ impl RwasmModule {
             .map_err(|e| ReducedModuleError::BinaryFormat(e))?;
         Ok(RwasmModule {
             code_section: reader.instruction_set,
+            function_position: vec![],
         })
     }
 
@@ -99,19 +101,34 @@ impl RwasmModule {
         }
         let import_len = import_mapping.len() as u32;
 
-        // push main functions (we collapse all functions into one)
-        builder
-            .push_funcs(vec![Result::<FuncTypeIdx, ModuleError>::Ok(
-                FuncTypeIdx::from(0),
-            )])
-            .unwrap();
+        // push main functions
+        let builder_functions = (0..(self.function_position.len() + 1))
+            .map(|_| Result::<FuncTypeIdx, ModuleError>::Ok(FuncTypeIdx::from(0)))
+            .collect::<Vec<_>>();
+        builder.push_funcs(builder_functions).unwrap();
 
         // mark headers for missing functions inside binary
         let resources = ModuleResources::new(&builder);
+        // let entrypoint_length =
+        //     self.function_position
+        //         .first()
+        //         .copied()
+        //         .unwrap_or_else(|| code_section.instr.len() as u32) as usize;
         let compiled_func = resources
             .get_compiled_func(FuncIdx::from(import_len))
             .unwrap();
         engine.init_func(compiled_func, 0, 0, code_section.instr.clone());
+        for (fn_index, fn_pos) in self.function_position.iter().copied().enumerate() {
+            // let next_fn_pos =
+            //     self.function_position
+            //         .get(fn_index + 1)
+            //         .copied()
+            //         .unwrap_or_else(|| code_section.instr.len() as u32) as usize;
+            let compiled_func = resources
+                .get_compiled_func(FuncIdx::from(import_len + fn_index as u32 + 1))
+                .unwrap();
+            engine.mark_func(compiled_func, 0, 0, fn_pos as usize);
+        }
 
         // push segments
         builder.push_default_data_segment(&self.code_section.default_memory);

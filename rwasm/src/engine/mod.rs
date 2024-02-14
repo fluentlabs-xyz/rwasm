@@ -191,6 +191,17 @@ impl Engine {
             .init_func(func, len_locals, local_stack_height, instrs)
     }
 
+    pub fn mark_func(
+        &self,
+        func: CompiledFunc,
+        len_locals: usize,
+        local_stack_height: usize,
+        start: usize,
+    ) {
+        self.inner
+            .mark_func(func, len_locals, local_stack_height, start)
+    }
+
     /// Resolves the [`CompiledFunc`] to the underlying `wasmi` bytecode instructions.
     ///
     /// # Note
@@ -445,6 +456,19 @@ impl EngineInner {
             .write()
             .code_map
             .init_func(func, len_locals, local_stack_height, instrs)
+    }
+
+    fn mark_func(
+        &self,
+        func: CompiledFunc,
+        len_locals: usize,
+        local_stack_height: usize,
+        start: usize,
+    ) {
+        self.res
+            .write()
+            .code_map
+            .mark_func(func, len_locals, local_stack_height, start)
     }
 
     fn resolve_func_type<F, R>(&self, func_type: &DedupFuncType, f: F) -> R

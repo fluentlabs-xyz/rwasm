@@ -47,7 +47,8 @@ fn execute_binary(wat: &str, run_config: RunConfig) -> HostState {
     translator.translate(run_config.entrypoint).unwrap();
     let reduced_module = translator.finalize().unwrap();
     // assert_eq!(translator.code_section, reduced_module.bytecode().clone());
-    let _trace = reduced_module.trace();
+    let trace = reduced_module.trace();
+    println!("{}", trace);
 
     // execute translated rwasm
     let mut config = Config::default();

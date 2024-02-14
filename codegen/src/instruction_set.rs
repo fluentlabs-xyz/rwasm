@@ -129,8 +129,8 @@ impl InstructionSet {
         let data_length = bytes.len();
         self.default_memory.extend(bytes);
         // default memory is just a passive section with force memory init
-        self.op_i64_const(data_offset);
         self.op_i64_const32(offset);
+        self.op_i64_const(data_offset);
         self.op_i64_const(data_length);
         self.op_memory_init_unsafe(0);
         // we have enough memory pages so can grow

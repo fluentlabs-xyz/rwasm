@@ -114,6 +114,7 @@ mod tests {
         let memory_section = instruction_set.default_memory.clone();
         let module = RwasmModule {
             code_section: instruction_set,
+            function_position: vec![],
         };
         let mut encoded_data = Vec::new();
         module.write_binary_to_vec(&mut encoded_data).unwrap();

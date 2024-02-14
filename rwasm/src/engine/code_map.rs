@@ -3,6 +3,7 @@
 use super::Instruction;
 use crate::arena::ArenaIndex;
 use alloc::vec::Vec;
+use hashbrown::HashMap;
 
 /// A reference to a compiled function stored in the [`CodeMap`] of an [`Engine`](crate::Engine).
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
@@ -136,6 +137,7 @@ impl FuncHeader {
 pub struct CodeMap {
     /// The headers of all compiled functions.
     headers: Vec<FuncHeader>,
+    index_by_offset: HashMap<usize, CompiledFunc>,
     /// The instructions of all allocated function bodies.
     ///
     /// By storing all `wasmi` bytecode instructions in a single
@@ -152,6 +154,7 @@ impl Default for CodeMap {
     fn default() -> Self {
         Self {
             headers: Vec::new(),
+            index_by_offset: Default::default(),
             // The first instruction always is a simple trapping instruction
             // so that we safely can use `InstructionsRef(0)` as an uninitialized
             // index value for compiled functions that have yet to be
@@ -220,6 +223,15 @@ impl CodeMap {
             self.instrs.len()
         );
         self.headers[func.into_usize()] = FuncHeader::new(iref, len_locals, local_stack_height);
+        assert!(
+            !self.index_by_offset.contains_key(&start),
+            "function with such offset already exists"
+        );
+        self.index_by_offset.insert(start - 1, func);
+    }
+
+    pub fn resolve_function_by_offset(&self, offset: usize) -> Option<CompiledFunc> {
+        self.index_by_offset.get(&offset).copied()
     }
 
     /// Returns an [`InstructionPtr`] to the instruction at [`InstructionsRef`].

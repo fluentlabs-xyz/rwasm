@@ -5,6 +5,7 @@ use super::{
     ConstPoolView,
 };
 use crate::{
+    arena::ArenaIndex,
     core::{Pages, TrapCode, UntypedValue},
     engine::{
         bytecode::{
@@ -303,7 +304,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 Instr::TableCopy(dst) => self.visit_table_copy(dst)?,
                 Instr::TableInit(elem) => self.visit_table_init(elem)?,
                 Instr::ElemDrop(segment) => self.visit_element_drop(segment),
-                Instr::RefFunc(func_index) => self.visit_ref_func(func_index),
+                Instr::RefFunc(func_index) => self.visit_ref_func(func_index)?,
                 Instr::Const32(bytes) => self.visit_const_32(bytes),
                 Instr::I64Const32(value) => self.visit_i64_const_32(value),
                 Instr::I64Const(value) => self.visit_i64_const(value),
@@ -652,6 +653,10 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     /// with the outer structures.
     #[inline(always)]
     fn call_func_internal(&mut self, func: CompiledFunc, kind: CallKind) -> Result<(), TrapCode> {
+        let func = self
+            .code_map
+            .resolve_function_by_offset(func.into_usize())
+            .ok_or(TrapCode::UnresolvedFunction)?;
         self.next_instr_at(match kind {
             CallKind::Nested => 1,
             CallKind::Tail => 2,
@@ -1364,11 +1369,18 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     }
 
     #[inline(always)]
-    fn visit_ref_func(&mut self, func_index: FuncIdx) {
+    fn visit_ref_func(&mut self, func_index: FuncIdx) -> Result<(), TrapCode> {
+        let func_index: FuncIdx = self
+            .code_map
+            .resolve_function_by_offset(func_index.to_u32() as usize)
+            .ok_or(TrapCode::UnresolvedFunction)?
+            .to_u32()
+            .into();
         let func = self.cache.get_func(self.ctx, func_index);
         let funcref = FuncRef::new(func);
         self.sp.push_as(funcref);
         self.next_instr();
+        Ok(())
     }
 }
 
