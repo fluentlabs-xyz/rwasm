@@ -91,12 +91,7 @@ impl<'parser> FunctionTranslator<'parser> {
         let mut reader = self.func_body.get_operators_reader()?;
         while !reader.eof() {
             let pos = reader.original_position();
-            let mut new_binary_reader = reader.get_binary_reader();
-            let mut opcode = new_binary_reader.read_u8()? as u16;
-            if matches!(opcode, 0xfc | 0xfd | 0xfe) {
-                opcode = (opcode << 8) | new_binary_reader.read_u8()? as u16;
-            }
-            self.func_builder.update_pos_with_opcode(pos, opcode);
+            self.func_builder.update_pos(pos);
             reader.visit_operator(&mut self.func_builder)??;
         }
         reader.ensure_end()?;

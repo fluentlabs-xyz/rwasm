@@ -10,6 +10,7 @@ RUSTFLAGS='-C target-feature=+bulk-memory'
 
 .PHONY: solid_file
 solid_file:
+	clear
 	RUSTFLAGS=${RUSTFLAGS} cargo b --profile ${PROFILE} --target=${TARGET} --features="${FEATURES}" #-v
 	mkdir -p tmp
 	cp ../target/${TARGET}/${PROFILE}/rwasm_optimization.wasm ./tmp/$@.wasm

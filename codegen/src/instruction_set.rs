@@ -19,7 +19,7 @@ use rwasm::{
             ElementSegmentIdx,
             FuncIdx,
             GlobalIdx,
-            InstrMeta,
+            // InstrMeta,
             Instruction,
             LocalDepth,
             SignatureIdx,
@@ -34,7 +34,8 @@ use rwasm::{
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct InstructionSet {
     pub instr: SmallVecDefault<Instruction>,
-    pub metas: Option<SmallVecDefault<InstrMeta>>,
+    // pub metas: Option<SmallVecDefault<InstrMeta>>,
+    // pub instr: Vec<Instruction>,
     // translate state
     total_locals: SmallVecDefault<usize>,
     init_memory_size: u32,
@@ -81,7 +82,7 @@ impl From<Vec<Instruction>> for InstructionSet {
     fn from(value: Vec<Instruction>) -> Self {
         Self {
             instr: value.into(),
-            metas: None,
+            // metas: None,
             total_locals: Default::default(),
             init_memory_size: 0,
             init_memory_pages: 0,
@@ -108,18 +109,18 @@ impl InstructionSet {
         opcode_pos
     }
 
-    pub fn push_with_meta(&mut self, opcode: Instruction, meta: InstrMeta) -> u32 {
-        let opcode_pos = self.push(opcode);
-        let metas_len = if let Some(metas) = &mut self.metas {
-            metas.push(meta);
-            metas.len()
-        } else {
-            self.metas = Some(SmallVecDefault::from_slice(&[meta]));
-            1
-        };
-        assert_eq!(self.instr.len(), metas_len, "instr len and meta mismatched");
-        opcode_pos
-    }
+    // pub fn push_with_meta(&mut self, opcode: Instruction, meta: InstrMeta) -> u32 {
+    //     let opcode_pos = self.push(opcode);
+    //     let metas_len = if let Some(metas) = &mut self.metas {
+    //         metas.push(meta);
+    //         metas.len()
+    //     } else {
+    //         self.metas = Some(vec![meta]);
+    //         1
+    //     };
+    //     assert_eq!(self.instr.len(), metas_len, "instr len and meta mismatched");
+    //     opcode_pos
+    // }
 
     pub fn add_memory_pages(&mut self, initial_pages: u32) {
         assert_eq!(self.init_memory_pages, 0);
@@ -232,9 +233,9 @@ impl InstructionSet {
         }
     }
 
-    pub fn has_meta(&self) -> bool {
-        self.metas.is_some()
-    }
+    // pub fn has_meta(&self) -> bool {
+    //     self.metas.is_some()
+    // }
 
     pub fn get<I>(&self, index: I) -> Option<&Instruction>
     where
@@ -526,9 +527,9 @@ impl InstructionSet {
 
     pub fn extend(&mut self, with: &InstructionSet) {
         self.instr.extend(with.instr.iter().cloned());
-        if let Some(metas) = &mut self.metas {
-            metas.extend(with.metas.as_ref().cloned().unwrap());
-        }
+        // if let Some(metas) = &mut self.metas {
+        //     metas.extend(with.metas.as_ref().unwrap());
+        // }
     }
 
     pub fn fix_br_indirect_offset(

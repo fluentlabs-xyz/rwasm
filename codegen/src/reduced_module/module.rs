@@ -108,13 +108,7 @@ impl ReducedModule {
         let compiled_func = resources
             .get_compiled_func(FuncIdx::from(import_len))
             .unwrap();
-        engine.init_func(
-            compiled_func,
-            0,
-            0,
-            code_section.instr.clone(),
-            code_section.metas.clone().unwrap(),
-        );
+        engine.init_func(compiled_func, 0, 0, code_section.instr.clone());
         // push segments
         let mut data_segments = BTreeSet::new();
         let mut elem_segments = BTreeSet::new();

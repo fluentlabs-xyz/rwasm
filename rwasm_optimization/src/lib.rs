@@ -104,21 +104,21 @@ mod test {
         match main_func.call(&mut store, &[], &mut []) {
             Err(err) => {
                 let mut lines = String::new();
-                for log in store.tracer().logs.iter() {
-                    let stack = log
-                        .stack
-                        .iter()
-                        .map(|v| v.to_bits() as i64)
-                        .collect::<Vec<_>>();
-                    lines += format!(
-                        "{}:sl {}: {:?}\t{:?}\n",
-                        log.source_pc,
-                        stack.len(),
-                        log.opcode,
-                        stack
-                    )
-                    .as_str();
-                }
+                // for log in store.tracer().logs.iter() {
+                //     let stack = log
+                //         .stack
+                //         .iter()
+                //         .map(|v| v.to_bits() as i64)
+                //         .collect::<Vec<_>>();
+                //     lines += format!(
+                //         "{}:sl {}: {:?}\t{:?}\n",
+                //         log.source_pc,
+                //         stack.len(),
+                //         log.opcode,
+                //         stack
+                //     )
+                //     .as_str();
+                // }
                 let _ = std::fs::create_dir("./tmp");
                 std::fs::write("./tmp/solid_file.wasm.trace.log", lines).unwrap();
                 panic!("err happened during wasm execution: {:?}", err);
@@ -132,7 +132,7 @@ mod test {
     fn translate_wasm2rwasm() {
         let cur_dir = std::env::current_dir().unwrap();
         let translator_wasm_binary = include_bytes!("../tmp/solid_file.wasm").to_vec();
-        let translatee_wasm_binary = include_bytes!("../tmp/greeting.wasm").to_vec();
+        let translatee_wasm_binary = include_bytes!("../tmp/stack.wasm").to_vec();
         // translate and compile module
         let import_linker = Runtime::<()>::new_shared_linker();
 
@@ -216,16 +216,17 @@ mod test {
             .with_fuel_limit(0);
         let execution_result = Runtime::<()>::run_with_context(next_ctx, &import_linker).unwrap();
         assert_eq!(execution_result.data().exit_code(), 0);
-        let len_old: i64 = 24438;
-        let len_new: i64 = execution_result.tracer().logs.len() as i64;
-        let proof_gen_time_old_ms = len_old as f32 * PROVER_TIME_PER_INSTRUCTION_MS;
-        let proof_gen_time_new_ms = len_new as f32 * PROVER_TIME_PER_INSTRUCTION_MS;
+        // let len_old: i64 = 24438;
+        // let len_new: i64 = execution_result.tracer().logs.len() as i64;
+        // let proof_gen_time_old_ms = len_old as f32 * PROVER_TIME_PER_INSTRUCTION_MS;
+        // let proof_gen_time_new_ms = len_new as f32 * PROVER_TIME_PER_INSTRUCTION_MS;
 
-        println!(
-            "instructions spent while proving old {} new {} (change {}, ratio {}) proof gen time ms (est.) old {} new {} (change {})",
-                len_old, len_new, len_new-len_old, len_new as f32 / len_old as f32, proof_gen_time_old_ms,
-                proof_gen_time_new_ms, proof_gen_time_new_ms-proof_gen_time_old_ms,
-        );
+        // println!(
+        //     "instructions spent while proving old {} new {} (change {}, ratio {}) proof gen time
+        // ms (est.) old {} new {} (change {})",         len_old, len_new, len_new-len_old,
+        // len_new as f32 / len_old as f32, proof_gen_time_old_ms,
+        //         proof_gen_time_new_ms, proof_gen_time_new_ms-proof_gen_time_old_ms,
+        // );
         // println!("logs:");
         // for l in execution_result.tracer().clone().logs {
         //     println!("{}: {:?}", l.program_counter, l.opcode);

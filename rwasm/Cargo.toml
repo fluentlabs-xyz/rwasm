@@ -37,8 +37,9 @@ rand = "0.8.2"
 [features]
 default = ["std"]
 # Use `no-default-features` for a `no_std` build.
-std = ["num-traits/std", "downcast-rs/std", "dep:strum", "dep:strum_macros"]
 sdk = [
     "dep:fluentbase-sdk"
 ]
+std = ["num-traits/std", "downcast-rs/std", "byteorder/std", "dep:strum", "dep:strum_macros"]
+tracer = []
 e2e = []

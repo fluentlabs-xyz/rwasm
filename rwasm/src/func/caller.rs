@@ -72,6 +72,7 @@ impl<'a, T> Caller<'a, T> {
         let address = address as usize;
         let memory = self.exported_memory().data_mut(self.as_context_mut());
         memory[address..(address + data.len())].clone_from_slice(data);
+        #[cfg(feature = "tracer")]
         self.ctx
             .store
             .tracer_mut()

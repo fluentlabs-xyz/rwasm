@@ -633,9 +633,11 @@ impl Instruction {
     }
 }
 
+#[cfg(feature = "tracer")]
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
 pub struct InstrMeta(usize, u16, pub(crate) usize);
 
+#[cfg(feature = "tracer")]
 impl InstrMeta {
     pub fn new(pos: usize, code: u16, index: usize) -> Self {
         Self(pos, code, index)
