@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-fluentbase-sdk = { git = "https://github.com/fluentlabs-xyz/fluentbase", branch = "devel", default-features = false, features = ["evm"] }
+fluentbase-sdk = { git = "https://github.com/fluentlabs-xyz/fluentbase", branch = "no-tracer", default-features = false, features = ["evm"] }
 #fluentbase-sdk = { path="../../fluentbase/crates/sdk", default-features = false, features = ["evm"] }
 rwasm-codegen = { path = "../codegen", default-features = false, features = [] }
 rwasm = { path = "../rwasm", default-features = false, features = ["sdk"] }

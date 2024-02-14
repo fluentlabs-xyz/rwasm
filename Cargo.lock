@@ -600,7 +600,7 @@ dependencies = [
 [[package]]
 name = "fluentbase-codec"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#df7fe44c603d134f442d535025666c84b204bf9a"
+source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=no-tracer#633a85148a6f6f5bc0be345e959cbf74878a4985"
 dependencies = [
  "alloy-primitives",
  "byteorder",
@@ -623,7 +623,7 @@ dependencies = [
 [[package]]
 name = "fluentbase-poseidon"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#df7fe44c603d134f442d535025666c84b204bf9a"
+source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=no-tracer#633a85148a6f6f5bc0be345e959cbf74878a4985"
 dependencies = [
  "bitvec",
  "halo2curves 0.3.1",
@@ -650,29 +650,29 @@ dependencies = [
 [[package]]
 name = "fluentbase-runtime"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#df7fe44c603d134f442d535025666c84b204bf9a"
+source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=no-tracer#633a85148a6f6f5bc0be345e959cbf74878a4985"
 dependencies = [
  "byteorder",
- "fluentbase-poseidon 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
- "fluentbase-types 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
- "fluentbase-zktrie 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
+ "fluentbase-poseidon 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=no-tracer)",
+ "fluentbase-types 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=no-tracer)",
+ "fluentbase-zktrie 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=no-tracer)",
  "halo2curves 0.3.1",
  "hashbrown 0.14.3",
  "k256",
  "keccak-hash",
- "rwasm 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=devel)",
- "rwasm-codegen 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=devel)",
+ "rwasm 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=no-tracer)",
+ "rwasm-codegen 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=no-tracer)",
 ]
 
 [[package]]
 name = "fluentbase-sdk"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#df7fe44c603d134f442d535025666c84b204bf9a"
+source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=no-tracer#633a85148a6f6f5bc0be345e959cbf74878a4985"
 dependencies = [
  "byteorder",
  "fluentbase-codec",
- "fluentbase-runtime 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
- "fluentbase-types 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
+ "fluentbase-runtime 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=no-tracer)",
+ "fluentbase-types 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=no-tracer)",
  "lol_alloc",
  "paste",
 ]
@@ -692,12 +692,12 @@ dependencies = [
 [[package]]
 name = "fluentbase-types"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#df7fe44c603d134f442d535025666c84b204bf9a"
+source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=no-tracer#633a85148a6f6f5bc0be345e959cbf74878a4985"
 dependencies = [
  "alloy-primitives",
  "hashbrown 0.14.3",
- "rwasm 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=devel)",
- "rwasm-codegen 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=devel)",
+ "rwasm 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=no-tracer)",
+ "rwasm-codegen 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=no-tracer)",
  "strum",
  "strum_macros",
 ]
@@ -717,10 +717,10 @@ dependencies = [
 [[package]]
 name = "fluentbase-zktrie"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#df7fe44c603d134f442d535025666c84b204bf9a"
+source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=no-tracer#633a85148a6f6f5bc0be345e959cbf74878a4985"
 dependencies = [
  "byteorder",
- "fluentbase-poseidon 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel)",
+ "fluentbase-poseidon 0.1.0 (git+https://github.com/fluentlabs-xyz/fluentbase?branch=no-tracer)",
  "halo2curves 0.3.1",
  "hex",
  "lazy_static",
@@ -1398,7 +1398,7 @@ dependencies = [
 [[package]]
 name = "rwasm"
 version = "0.30.0"
-source = "git+https://github.com/fluentlabs-xyz/rwasm?branch=devel#a8c14817d2e5219177b60831b2082ba538dd96ea"
+source = "git+https://github.com/fluentlabs-xyz/rwasm?branch=no-tracer#a753db878fa147bfa00a21c370fcdb3f343c85fc"
 dependencies = [
  "byteorder",
  "downcast-rs",
@@ -1441,10 +1441,10 @@ dependencies = [
 [[package]]
 name = "rwasm-codegen"
 version = "0.30.0"
-source = "git+https://github.com/fluentlabs-xyz/rwasm?branch=devel#a8c14817d2e5219177b60831b2082ba538dd96ea"
+source = "git+https://github.com/fluentlabs-xyz/rwasm?branch=no-tracer#a753db878fa147bfa00a21c370fcdb3f343c85fc"
 dependencies = [
  "byteorder",
- "rwasm 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=devel)",
+ "rwasm 0.30.0 (git+https://github.com/fluentlabs-xyz/rwasm?branch=no-tracer)",
 ]
 
 [[package]]
