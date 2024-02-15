@@ -261,7 +261,7 @@ fn test_state_router() {
             entrypoint: FuncOrExport::StateRouter(
                 vec![FuncOrExport::Export("main"), FuncOrExport::Export("deploy")],
                 instruction_set! {
-                    I64Const32(0)
+                    I32Const(0)
                 },
             ),
         },
@@ -288,7 +288,7 @@ fn test_state_router() {
             entrypoint: FuncOrExport::StateRouter(
                 vec![FuncOrExport::Export("main"), FuncOrExport::Export("deploy")],
                 instruction_set! {
-                    I64Const32(1)
+                    I32Const(1)
                 },
             ),
         },

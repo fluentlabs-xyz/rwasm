@@ -2,19 +2,12 @@ use crate::{
     compiler::{
         config::CompilerConfig,
         drop_keep::DropKeepWithReturnParam,
-        types::{
-            CompilerError,
-            FuncOrExport,
-            Injection,
-            Translator,
-            N_MAX_RECURSION_DEPTH,
-            N_MAX_STACK_HEIGHT,
-        },
+        types::{CompilerError, FuncOrExport, Injection, Translator},
     },
+    constants::{N_MAX_RECURSION_DEPTH, N_MAX_STACK_HEIGHT, N_MAX_TABLES},
     ImportLinker,
     InstructionSet,
     RwasmModule,
-    N_MAX_TABLES,
 };
 use alloc::vec::Vec;
 use rwasm::{
@@ -30,7 +23,6 @@ use rwasm::{
     Module,
     StackLimits,
 };
-use std::ops::Deref;
 
 pub struct Compiler2<'linker> {
     // input params
@@ -146,7 +138,7 @@ impl<'linker> Compiler2<'linker> {
         // reserve stack for locals
         let len_locals = self.engine.num_locals(*func_body);
         (0..len_locals).for_each(|_| {
-            self.code_section.op_i64_const32(0);
+            self.code_section.op_i32_const(0);
         });
         // translate instructions
         let (mut instr_ptr, instr_end) = self.engine.instr_ptr(*func_body);
@@ -241,11 +233,11 @@ impl<'linker> Compiler2<'linker> {
                 self.code_section.op_local_get(1);
                 self.code_section.op_memory_size();
                 self.code_section.op_i32_add();
-                self.code_section.op_i64_const32(max_pages);
+                self.code_section.op_i32_const(max_pages);
                 self.code_section.op_i32_gt_s();
                 self.code_section.op_br_if_eqz(4);
                 self.code_section.op_drop();
-                self.code_section.op_i64_const32(u32::MAX);
+                self.code_section.op_i32_const(u32::MAX);
                 self.code_section.op_br(2);
                 self.code_section.op_memory_grow();
             }
@@ -256,12 +248,12 @@ impl<'linker> Compiler2<'linker> {
                 self.code_section.op_local_get(1);
                 self.code_section.op_table_size(idx);
                 self.code_section.op_i32_add();
-                self.code_section.op_i64_const32(max_size);
+                self.code_section.op_i32_const(max_size);
                 self.code_section.op_i32_gt_s();
                 self.code_section.op_br_if_eqz(5);
                 self.code_section.op_drop();
                 self.code_section.op_drop();
-                self.code_section.op_i64_const32(u32::MAX);
+                self.code_section.op_i32_const(u32::MAX);
                 self.code_section.op_br(2);
                 self.code_section.op_table_grow(idx);
             }
@@ -308,10 +300,8 @@ impl<'linker> Compiler2<'linker> {
             .module
             .imports
             .items
-            .deref()
             .iter()
             .filter(|import| matches!(import, Imported::Func(_)))
-            .cloned()
             .collect::<Vec<_>>();
         if fn_index >= imports.len() as u32 {
             return Err(CompilerError::NotSupportedImport);
@@ -510,7 +500,7 @@ impl<'linker> Compiler2<'linker> {
     pub fn translate_tables(&mut self) -> Result<(), CompilerError> {
         for (table_index, table) in self.module.tables.iter().enumerate() {
             // don't use ref_func here due to the entrypoint section
-            self.code_section.op_i64_const32(0);
+            self.code_section.op_i32_const(0);
             if table_index < self.module.imports.len_tables {
                 self.code_section.op_i64_const(table.minimum() as usize);
             } else {
@@ -630,7 +620,7 @@ impl<'linker> Compiler2<'linker> {
         Ok(RwasmModule {
             code_section: bytecode.clone(),
             memory_section: bytecode.memory_section.clone(),
-            function_section: self.function_beginning.clone(),
+            decl_section: self.function_beginning.clone(),
             element_section,
         })
     }

@@ -1,8 +1,6 @@
 use crate::{BinaryFormatError, InstructionSet};
+use alloc::vec::Vec;
 use rwasm::{engine::bytecode::Instruction, module::ImportName, Error};
-
-pub const N_MAX_STACK_HEIGHT: usize = 1024;
-pub const N_MAX_RECURSION_DEPTH: usize = 1024;
 
 pub trait Translator {
     fn translate(&self, result: &mut InstructionSet) -> Result<(), CompilerError>;

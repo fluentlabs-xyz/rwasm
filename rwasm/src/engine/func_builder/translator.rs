@@ -14,7 +14,7 @@ use super::{
     TranslationError,
 };
 use crate::{
-    core::{UntypedValue, ValueType, F32, F64},
+    core::{UntypedValue, ValueType, F32},
     engine::{
         bytecode::{
             self,
@@ -23,7 +23,6 @@ use crate::{
             BranchTableTargets,
             DataSegmentIdx,
             ElementSegmentIdx,
-            F64Const32,
             Instruction,
             SignatureIdx,
             TableIdx,
@@ -443,14 +442,12 @@ impl<'parser> FuncTranslator<'parser> {
                     return Ok(Some(Instruction::f32_const(F32::from(value))));
                 }
                 if global_type.content() == ValueType::I64 {
-                    if let Ok(value) = i32::try_from(i64::from(value)) {
-                        return Ok(Some(Instruction::I64Const32(value)));
-                    }
+                    return Ok(Some(Instruction::I64Const(value)));
                 }
-                // No optimized case was applicable so we have to allocate
+                // No optimized case was applicable, so we have to allocate
                 // a constant value in the const pool and reference it.
-                let cref = engine.alloc_const(value)?;
-                return Ok(Some(Instruction::ConstRef(cref)));
+                let const_ref = engine.alloc_const(value)?;
+                return Ok(Some(Instruction::ConstRef(const_ref)));
             }
             if let Some(func_index) = init_expr.funcref() {
                 // We can optimize `global.get` to the equivalent `ref.func x` instruction.
@@ -1763,7 +1760,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     }
 
     fn visit_i64_const(&mut self, value: i64) -> Result<(), TranslationError> {
-        match i32::try_from(value) {
+        match i64::try_from(value) {
             Ok(value) => self.translate_if_reachable(|builder| {
                 // Case: The constant value is small enough that we can apply
                 //       a small value optimization and use a more efficient
@@ -1773,7 +1770,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                 builder
                     .alloc
                     .inst_builder
-                    .push_inst(Instruction::I64Const32(value));
+                    .push_inst(Instruction::I64Const(UntypedValue::from(value)));
                 Ok(())
             }),
             Err(_) => self.translate_const_ref(value),
@@ -1793,21 +1790,15 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     }
 
     fn visit_f64_const(&mut self, value: wasmparser::Ieee64) -> Result<(), TranslationError> {
-        match F64Const32::new(f64::from_bits(value.bits())) {
-            Some(value) => self.translate_if_reachable(|builder| {
-                // Case: The constant value can be encoded as 32-bit float so
-                //       it is possible to use a more efficient instruction
-                //       to encode the constant value instruction.
-                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-                builder.stack_height.push();
-                builder
-                    .alloc
-                    .inst_builder
-                    .push_inst(Instruction::F64Const32(value));
-                Ok(())
-            }),
-            None => self.translate_const_ref(F64::from_bits(value.bits())),
-        }
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.stack_height.push();
+            builder
+                .alloc
+                .inst_builder
+                .push_inst(Instruction::F64Const(UntypedValue::from_bits(value.bits())));
+            Ok(())
+        })
     }
 
     fn visit_i32_eqz(&mut self) -> Result<(), TranslationError> {

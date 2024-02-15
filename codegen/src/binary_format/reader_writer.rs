@@ -148,6 +148,14 @@ impl<'a> BinaryFormatReader<'a> {
         self.pos
     }
 
+    pub fn assert_u8(&mut self, value: u8) -> Result<u8, BinaryFormatError> {
+        if self.read_u8()? != value {
+            Err(BinaryFormatError::MalformedWasmModule)
+        } else {
+            Ok(1)
+        }
+    }
+
     pub fn read_u8(&mut self) -> Result<u8, BinaryFormatError> {
         self.require(1)?;
         let result = self.sink[self.pos];

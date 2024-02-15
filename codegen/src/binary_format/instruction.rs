@@ -20,7 +20,6 @@ use rwasm::{
             LocalDepth,
             TableIdx,
         },
-        const_pool::ConstRef,
         DropKeep,
     },
 };
@@ -104,7 +103,10 @@ impl<'a> BinaryFormat<'a> for Instruction {
             Instruction::ElemDrop(idx) => sink.write_u8(0x3b)? + idx.write_binary(sink)?,
             Instruction::RefFunc(idx) => sink.write_u8(0x3c)? + idx.write_binary(sink)?,
             // i32/i64 Instruction family
-            Instruction::ConstRef(const_ref) => {
+            Instruction::I32Const(const_ref) => {
+                sink.write_u8(0x40)? + const_ref.write_binary(sink)?
+            }
+            Instruction::I64Const(const_ref) => {
                 sink.write_u8(0x41)? + const_ref.write_binary(sink)?
             }
             Instruction::I32Eqz => sink.write_u8(0x42)?,
@@ -245,7 +247,7 @@ impl<'a> BinaryFormat<'a> for Instruction {
         if n == 1 {
             n += sink.write_u64_le(0)?;
         }
-        debug_assert_eq!(n, INSTRUCTION_SIZE_BYTES);
+        debug_assert_eq!(n, INSTRUCTION_SIZE_BYTES,);
         Ok(n)
     }
 
@@ -313,7 +315,8 @@ impl<'a> BinaryFormat<'a> for Instruction {
             0x3b => Instruction::ElemDrop(ElementSegmentIdx::read_binary(sink)?),
             0x3c => Instruction::RefFunc(FuncIdx::read_binary(sink)?),
             // i32/i64 Instruction family
-            0x41 => Instruction::ConstRef(ConstRef::read_binary(sink)?),
+            0x40 => Instruction::I32Const(UntypedValue::read_binary(sink)?),
+            0x41 => Instruction::I64Const(UntypedValue::read_binary(sink)?),
             0x42 => Instruction::I32Eqz,
             0x43 => Instruction::I32Eq,
             0x44 => Instruction::I32Ne,
@@ -549,7 +552,6 @@ mod tests {
     use strum::IntoEnumIterator;
 
     #[test]
-    #[ignore]
     fn test_opcode_encoding() {
         for opcode in Instruction::iter() {
             if !opcode.is_supported() {

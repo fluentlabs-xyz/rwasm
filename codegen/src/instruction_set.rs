@@ -1,4 +1,4 @@
-use crate::{N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES};
+use crate::constants::{N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES};
 use alloc::{string::String, vec::Vec};
 use core::slice::SliceIndex;
 use hashbrown::HashMap;
@@ -112,7 +112,7 @@ impl InstructionSet {
         }
         // it makes no sense to grow memory with 0 pages
         if initial_pages > 0 {
-            self.op_i64_const32(initial_pages);
+            self.op_i32_const(initial_pages);
             self.op_memory_grow();
             self.op_drop();
         }
@@ -133,7 +133,7 @@ impl InstructionSet {
         let data_length = bytes.len();
         self.memory_section.extend(bytes);
         // default memory is just a passive section with force memory init
-        self.op_i64_const32(offset);
+        self.op_i32_const(offset);
         self.op_i64_const(data_offset);
         self.op_i64_const(data_length);
         self.op_memory_init_unsafe(0);
@@ -162,7 +162,7 @@ impl InstructionSet {
         self.element_section.extend(elements);
         let segment_length = self.element_section.len() - segment_offset;
         // init table with these elements
-        self.op_i64_const32(offset);
+        self.op_i32_const(offset);
         self.op_i64_const(segment_offset);
         self.op_i64_const(segment_length);
         self.op_table_init_unsafe(table_idx, ElementSegmentIdx::from(0));
@@ -183,7 +183,7 @@ impl InstructionSet {
     }
 
     pub fn propagate_locals(&mut self, n: usize) {
-        (0..n).for_each(|_| self.op_i64_const32(0));
+        (0..n).for_each(|_| self.op_i32_const(0));
         self.total_locals.push(n);
     }
 
@@ -383,7 +383,7 @@ impl InstructionSet {
             .expect("can't resolve passive segment by index");
         // TODO: "ideally we need to have an overflow check for length"
         // we need to replace offset on the stack with the new value
-        self.push(Instruction::I64Const32((offset as i32).into()));
+        self.push(Instruction::I32Const((offset as i32).into()));
         self.push(Instruction::I32Add);
         self.push(Instruction::LocalSet(1.into()));
         // since we store all data sections in the one segment then index is always 0
@@ -414,7 +414,7 @@ impl InstructionSet {
             .expect("can't resolve passive segment by index");
         // TODO: "ideally we need to have an overflow check for length"
         // we need to replace offset on the stack with the new value
-        self.push(Instruction::I64Const32((offset as i32).into()));
+        self.push(Instruction::I32Const((offset as i32).into()));
         self.push(Instruction::I32Add);
         self.push(Instruction::LocalSet(1.into()));
         // since we store all data sections in the one segment then index is always 0
@@ -432,11 +432,7 @@ impl InstructionSet {
 
     impl_opcode!(op_elem_drop, ElemDrop(ElementSegmentIdx));
     impl_opcode!(op_ref_func, RefFunc(FuncIdx));
-
-    pub fn op_i64_const32(&mut self, val: u32) {
-        self.push(Instruction::I64Const32(val as i32));
-    }
-
+    impl_opcode!(op_i32_const, I32Const(UntypedValue));
     impl_opcode!(op_i64_const, I64Const(UntypedValue));
     impl_opcode!(op_const_ref, ConstRef(ConstRef));
     impl_opcode!(op_i32_eqz, I32Eqz);

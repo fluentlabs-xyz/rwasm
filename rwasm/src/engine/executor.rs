@@ -1,9 +1,4 @@
-use super::{
-    bytecode::{BranchOffset, F64Const32},
-    const_pool::ConstRef,
-    CompiledFunc,
-    ConstPoolView,
-};
+use super::{bytecode::BranchOffset, const_pool::ConstRef, CompiledFunc, ConstPoolView};
 use crate::{
     arena::ArenaIndex,
     core::{Pages, TrapCode, UntypedValue},
@@ -263,7 +258,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             //     0
             // };
             // let consumed_fuel = self.ctx.fuel().fuel_consumed();
-            let stack = self.value_stack.dump_stack(self.sp);
             // self.tracer.pre_opcode_state(
             //     self.ip.pc(),
             //     instr,
@@ -273,12 +267,15 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             //     consumed_fuel,
             // );
             #[cfg(feature = "std")]
-            println!(
-                "{}:\t {:?} \tstack:{:?}",
-                self.ip.pc(),
-                instr,
-                stack.iter().map(|v| v.as_usize()).collect::<Vec<_>>()
-            );
+            {
+                let stack = self.value_stack.dump_stack(self.sp);
+                println!(
+                    "{}:\t {:?} \tstack:{:?}",
+                    self.ip.pc(),
+                    instr,
+                    stack.iter().map(|v| v.as_usize()).collect::<Vec<_>>()
+                );
+            }
 
             match instr {
                 Instr::LocalGet(local_depth) => self.visit_local_get(local_depth),
@@ -358,10 +355,10 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 Instr::TableInit(elem) => self.visit_table_init(elem)?,
                 Instr::ElemDrop(segment) => self.visit_element_drop(segment),
                 Instr::RefFunc(func_index) => self.visit_ref_func(func_index)?,
-                Instr::Const32(bytes) => self.visit_const_32(bytes),
-                Instr::I64Const32(value) => self.visit_i64_const_32(value),
+                Instr::I32Const(value) => self.visit_i32_const(value),
                 Instr::I64Const(value) => self.visit_i64_const(value),
-                Instr::F64Const32(value) => self.visit_f64_const_32(value),
+                Instr::F32Const(value) => self.visit_f32_const(value),
+                Instr::F64Const(value) => self.visit_f64_const(value),
                 Instr::ConstRef(cref) => self.visit_const(cref),
                 Instr::I32Eqz => self.visit_i32_eqz(),
                 Instr::I32Eq => self.visit_i32_eq(),
@@ -1091,30 +1088,26 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     }
 
     #[inline(always)]
-    fn visit_const_32(&mut self, bytes: [u8; 4]) {
-        let bytes = u32::from_ne_bytes(bytes);
-        self.sp.push(UntypedValue::from(bytes));
-        self.next_instr()
-    }
-
-    #[inline(always)]
-    fn visit_i64_const_32(&mut self, value: i32) {
-        let sign_extended = i64::from(value);
-        self.sp.push(UntypedValue::from(sign_extended));
+    fn visit_i32_const(&mut self, value: UntypedValue) {
+        self.sp.push(value);
         self.next_instr()
     }
 
     #[inline(always)]
     fn visit_i64_const(&mut self, value: UntypedValue) {
-        let sign_extended = i64::from(value);
-        self.sp.push(UntypedValue::from(sign_extended));
+        self.sp.push(value);
         self.next_instr()
     }
 
     #[inline(always)]
-    fn visit_f64_const_32(&mut self, value: F64Const32) {
-        let promoted = value.to_f64();
-        self.sp.push(UntypedValue::from(promoted));
+    fn visit_f32_const(&mut self, value: UntypedValue) {
+        self.sp.push(value);
+        self.next_instr()
+    }
+
+    #[inline(always)]
+    fn visit_f64_const(&mut self, value: UntypedValue) {
+        self.sp.push(value);
         self.next_instr()
     }
 

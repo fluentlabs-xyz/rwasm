@@ -1,4 +1,3 @@
-#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(
     clippy::cast_lossless,
     clippy::missing_errors_doc,
