@@ -9,19 +9,29 @@ use crate::{
 ///
 /// [`ValueStack`]: super::ValueStack
 #[derive(Debug, Copy, Clone)]
-#[repr(transparent)]
+// #[repr(transparent)]
 pub struct ValueStackPtr {
+    src: *mut UntypedValue,
     ptr: *mut UntypedValue,
+    len: usize,
 }
 
 impl From<*mut UntypedValue> for ValueStackPtr {
     #[inline]
     fn from(ptr: *mut UntypedValue) -> Self {
-        Self { ptr }
+        Self {
+            src: ptr,
+            ptr,
+            len: usize::MAX,
+        }
     }
 }
 
 impl ValueStackPtr {
+    pub fn new(ptr: *mut UntypedValue, len: usize) -> ValueStackPtr {
+        Self { src: ptr, ptr, len }
+    }
+
     /// Calculates the distance between two [`ValueStackPtr] in units of [`UntypedValue`].
     #[inline]
     pub fn offset_from(self, other: Self) -> isize {
@@ -119,6 +129,12 @@ impl ValueStackPtr {
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
+        let diff = self.ptr as isize - self.src as isize;
+        if diff < 0 {
+            unreachable!("STACK UNDERFLOW")
+        } else if diff > self.len as isize {
+            unreachable!("STACK OVERFLOW")
+        }
     }
 
     /// Decreases the [`ValueStackPtr`] of `self` by one.
@@ -128,6 +144,12 @@ impl ValueStackPtr {
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.sub(delta) };
+        let diff = self.ptr as isize - self.src as isize;
+        if diff < 0 {
+            unreachable!("STACK UNDERFLOW")
+        } else if diff > self.len as isize {
+            unreachable!("STACK OVERFLOW")
+        }
     }
 
     /// Pushes the `T` to the end of the [`ValueStack`].

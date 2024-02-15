@@ -116,7 +116,7 @@ impl ValueStack {
     /// The returned [`ValueStackPtr`] points to the first value on the [`ValueStack`].
     #[inline]
     pub(crate) fn base_ptr(&mut self) -> ValueStackPtr {
-        ValueStackPtr::from(self.entries.as_mut_ptr())
+        ValueStackPtr::new(self.entries.as_mut_ptr(), self.entries.len())
     }
 
     /// Synchronizes [`ValueStack`] with the new [`ValueStackPtr`].
