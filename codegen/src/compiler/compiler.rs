@@ -311,6 +311,7 @@ impl<'linker> Compiler2<'linker> {
             .deref()
             .iter()
             .filter(|import| matches!(import, Imported::Func(_)))
+            .cloned()
             .collect::<Vec<_>>();
         if fn_index >= imports.len() as u32 {
             return Err(CompilerError::NotSupportedImport);
