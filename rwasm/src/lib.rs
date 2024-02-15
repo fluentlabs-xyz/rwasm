@@ -15,7 +15,7 @@
 //!
 //! ```
 //! use anyhow::{anyhow, Result};
-//! use wasmi::*;
+//! use rwasm::*;
 //!
 //! fn main() -> Result<()> {
 //!     // First step is to create the Wasm execution engine with some config.
