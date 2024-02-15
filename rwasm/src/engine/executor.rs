@@ -270,10 +270,16 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             {
                 let stack = self.value_stack.dump_stack(self.sp);
                 println!(
-                    "{}:\t {:?} \tstack:{:?}",
+                    "{}:\t {:?} \tstack({}):{:?}",
                     self.ip.pc(),
                     instr,
-                    stack.iter().map(|v| v.as_usize()).collect::<Vec<_>>()
+                    stack.len(),
+                    stack
+                        .iter()
+                        .rev()
+                        .take(10)
+                        .map(|v| v.as_usize())
+                        .collect::<Vec<_>>()
                 );
             }
 

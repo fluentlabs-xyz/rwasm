@@ -1,7 +1,6 @@
 use crate::{
     compiler::{
         config::CompilerConfig,
-        drop_keep::DropKeepWithReturnParam,
         types::{CompilerError, FuncOrExport, Injection, Translator},
     },
     constants::{N_MAX_RECURSION_DEPTH, N_MAX_STACK_HEIGHT, N_MAX_TABLES},
@@ -112,7 +111,11 @@ impl<'linker> Compiler2<'linker> {
 
     fn translate_import_func(&mut self, import_fn_index: u32) -> Result<(), CompilerError> {
         let beginning_offset = self.code_section.len();
-        self.translate_host_call(import_fn_index)?;
+        let (import_index, fuel_cost, _, _) = self.resolve_host_call(import_fn_index)?;
+        if self.engine.config().get_consume_fuel() {
+            self.code_section.op_consume_fuel(fuel_cost);
+        }
+        self.code_section.op_call(import_index);
         self.code_section.op_return();
         assert_eq!(
             self.function_beginning.len(),
@@ -191,13 +194,13 @@ impl<'linker> Compiler2<'linker> {
                 self.code_section.op_return();
             }
             WI::Return(drop_keep) => {
-                DropKeepWithReturnParam(drop_keep).translate(&mut self.code_section)?;
+                drop_keep.translate(&mut self.code_section)?;
                 self.code_section.op_return();
             }
             WI::ReturnIfNez(drop_keep) => {
                 let br_if_offset = self.code_section.len();
                 self.code_section.op_br_if_eqz(0);
-                DropKeepWithReturnParam(drop_keep).translate(&mut self.code_section)?;
+                drop_keep.translate(&mut self.code_section)?;
                 let drop_keep_len = self.code_section.len() - br_if_offset;
                 self.code_section
                     .get_mut(br_if_offset as usize)
@@ -286,16 +289,10 @@ impl<'linker> Compiler2<'linker> {
         Ok(())
     }
 
-    fn translate_host_call(&mut self, fn_index: u32) -> Result<(), CompilerError> {
-        let (import_index, fuel_amount) = self.resolve_host_call(fn_index)?;
-        if self.engine.config().get_fuel_consumption_mode().is_some() {
-            self.code_section.op_consume_fuel(fuel_amount);
-        }
-        self.code_section.op_call(import_index);
-        Ok(())
-    }
-
-    fn resolve_host_call(&mut self, fn_index: u32) -> Result<(u32, u32), CompilerError> {
+    fn resolve_host_call(
+        &mut self,
+        fn_index: u32,
+    ) -> Result<(u32, u32, usize, usize), CompilerError> {
         let imports = self
             .module
             .imports
@@ -311,13 +308,20 @@ impl<'linker> Compiler2<'linker> {
             Imported::Func(import_name) => import_name,
             _ => return Err(CompilerError::NotSupportedImport),
         };
-        let import_index_and_fuel_amount = self
+        let (index, fuel_cost) = self
             .import_linker
             .ok_or(CompilerError::UnknownImport(import_name.clone()))?
             .index_mapping()
             .get(import_name)
+            .copied()
             .ok_or(CompilerError::UnknownImport(import_name.clone()))?;
-        Ok(*import_index_and_fuel_amount)
+        let import_func = self
+            .import_linker
+            .ok_or(CompilerError::UnknownImport(import_name.clone()))?
+            .resolve_by_index(index)
+            .ok_or(CompilerError::UnknownImport(import_name.clone()))?;
+        let (len_input, len_output) = import_func.func_type().len_params();
+        Ok((index, fuel_cost, len_input, len_output))
     }
 
     fn extract_drop_keep(instr_ptr: &mut InstructionPtr) -> DropKeep {

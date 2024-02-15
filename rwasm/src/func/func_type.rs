@@ -60,6 +60,10 @@ impl FuncType {
         }
     }
 
+    pub fn len_params(&self) -> (usize, usize) {
+        (self.len_params, self.params_results.len() - self.len_params)
+    }
+
     /// Returns the parameter types of the function type.
     pub fn params(&self) -> &[ValueType] {
         &self.params_results[..self.len_params]

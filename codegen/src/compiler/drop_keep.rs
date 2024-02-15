@@ -8,11 +8,11 @@ use rwasm::engine::{
     DropKeep,
 };
 
-pub(crate) fn translate_drop_keep(drop_keep: DropKeep) -> Result<Vec<Instruction>, CompilerError> {
+pub(crate) fn translate_drop_keep(drop_keep: DropKeep) -> Vec<Instruction> {
     let mut result = Vec::new();
     let (drop, keep) = (drop_keep.drop(), drop_keep.keep());
     if drop == 0 {
-        return Ok(result);
+        return result;
     }
     if drop >= keep {
         (0..keep).for_each(|_| result.push(Instruction::LocalSet(LocalDepth::from(drop as u32))));
@@ -28,29 +28,12 @@ pub(crate) fn translate_drop_keep(drop_keep: DropKeep) -> Result<Vec<Instruction
         });
         (0..drop).for_each(|_| result.push(Instruction::Drop));
     }
-    Ok(result)
+    result
 }
 
 impl Translator for DropKeep {
     fn translate(&self, result: &mut InstructionSet) -> Result<(), CompilerError> {
-        let drop_keep_opcodes = translate_drop_keep(*self)?;
-        result.instr.extend(&drop_keep_opcodes);
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct DropKeepWithReturnParam(pub DropKeep);
-
-impl Translator for DropKeepWithReturnParam {
-    fn translate(&self, result: &mut InstructionSet) -> Result<(), CompilerError> {
-        if self.0.drop() == 0 && self.0.keep() == 0 {
-            return Ok(());
-        }
-        let drop_keep_opcodes = translate_drop_keep(
-            DropKeep::new(self.0.drop() as usize, self.0.keep() as usize)
-                .map_err(|_| CompilerError::DropKeepOutOfBounds)?,
-        )?;
+        let drop_keep_opcodes = translate_drop_keep(*self);
         result.instr.extend(&drop_keep_opcodes);
         Ok(())
     }
@@ -80,7 +63,7 @@ mod tests {
             (vec![1, 2, 3, 4, 5], vec![5], drop_keep!(4, 1)),
         ];
         for (input, output, drop_keep) in tests.iter() {
-            let opcodes = translate_drop_keep(*drop_keep).unwrap();
+            let opcodes = translate_drop_keep(*drop_keep);
             let mut stack = input.clone();
             for opcode in opcodes.iter() {
                 match opcode {

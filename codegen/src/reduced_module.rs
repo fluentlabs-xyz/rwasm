@@ -1,7 +1,9 @@
 use crate::{
-    constants::{N_MAX_MEMORY_PAGES, N_MAX_STACK_HEIGHT, N_MAX_TABLES},
+    binary_format::BinaryFormat,
+    constants::{N_MAX_MEMORY_PAGES, N_MAX_TABLES},
     instruction_set::InstructionSet,
     platform::ImportLinker,
+    BinaryFormatError,
 };
 use alloc::{
     collections::BTreeMap,
@@ -25,6 +27,10 @@ pub struct RwasmModule {
 }
 
 impl RwasmModule {
+    pub fn new(module: &[u8]) -> Result<Self, BinaryFormatError> {
+        Self::read_from_slice(module)
+    }
+
     pub fn bytecode(&self) -> &InstructionSet {
         &self.code_section
     }
@@ -101,12 +107,16 @@ impl RwasmModule {
         let compiled_func = resources
             .get_compiled_func(FuncIdx::from(import_len))
             .unwrap();
-        engine.init_func(compiled_func, 0, 0, code_section.instr.clone());
+        let mut code_section = code_section.instr.clone();
+        if code_section.is_empty() {
+            code_section.push(Instruction::Unreachable);
+        }
+        engine.init_func(compiled_func, 0, 0, code_section);
         for (fn_index, fn_pos) in self.decl_section.iter().copied().enumerate() {
             let compiled_func = resources
                 .get_compiled_func(FuncIdx::from(import_len + fn_index as u32 + 1))
                 .unwrap();
-            engine.mark_func(compiled_func, 0, N_MAX_STACK_HEIGHT, fn_pos as usize);
+            engine.mark_func(compiled_func, 0, 0, fn_pos as usize);
         }
 
         // push segments

@@ -372,7 +372,7 @@ impl Config {
     /// Returns `true` if the [`Config`] enables fuel consumption by the [`Engine`].
     ///
     /// [`Engine`]: crate::Engine
-    pub(crate) fn get_consume_fuel(&self) -> bool {
+    pub fn get_consume_fuel(&self) -> bool {
         self.consume_fuel
     }
 
