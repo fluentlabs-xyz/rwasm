@@ -18,7 +18,6 @@ use rwasm::{
             GlobalIdx,
             Instruction,
             LocalDepth,
-            SignatureIdx,
             TableIdx,
         },
         const_pool::ConstRef,

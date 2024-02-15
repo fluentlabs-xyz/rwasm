@@ -1338,7 +1338,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
 
     #[inline(always)]
     fn visit_table_init(&mut self, elem: ElementSegmentIdx) -> Result<(), TrapCode> {
-        let table = self.fetch_table_idx(1);
+        let table_idx = self.fetch_table_idx(1);
         // The `n`, `s` and `d` variable bindings are extracted from the Wasm specification.
         let (d, s, n) = self.sp.pop3();
         let len = u32::from(n);
@@ -1349,11 +1349,16 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             |this| {
                 let (instance, table, element) = this
                     .cache
-                    .get_table_and_element_segment(this.ctx, table, elem);
+                    .get_table_and_element_segment(this.ctx, table_idx, elem);
                 table.init(dst_index, element, src_index, len, |func_index| {
-                    instance
-                        .get_func(func_index)
-                        .unwrap_or_else(|| panic!("missing function at index {func_index}"))
+                    let func_index = self
+                        .code_map
+                        .resolve_function_by_offset(func_index as usize)?
+                        .into_usize();
+                    let func = instance
+                        .get_func(func_index as u32)
+                        .unwrap_or_else(|| panic!("missing function at index {func_index}"));
+                    Some(func)
                 })?;
                 Ok(())
             },

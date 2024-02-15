@@ -26,7 +26,7 @@ use crate::{
     Mutability,
     TableType,
 };
-use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
 
 /// A builder for a WebAssembly [`Module`].
 #[derive(Debug)]
@@ -462,16 +462,23 @@ impl<'engine> ModuleBuilder<'engine> {
         });
     }
 
-    pub fn push_default_elem_segment(&mut self) {
+    pub fn push_default_elem_segment(&mut self, bytes: &[u32]) {
+        let items = ElementSegmentItems {
+            exprs: bytes.iter().map(|v| ConstExpr::new_funcref(*v)).collect(),
+        };
         self.element_segments.push(ElementSegment {
             kind: ElementSegmentKind::Passive,
             ty: ValueType::FuncRef,
-            items: ElementSegmentItems::default(),
+            items,
         });
     }
 
     /// Finishes construction of the WebAssembly [`Module`].
     pub fn finish(self) -> Module {
-        Module::from_builder(self)
+        Module::from_builder(self, false)
+    }
+
+    pub fn finish_rwasm(self) -> Module {
+        Module::from_builder(self, true)
     }
 }

@@ -8,17 +8,17 @@ use alloc::sync::Arc;
 #[derive(Debug)]
 pub struct ElementSegment {
     /// The kind of the [`ElementSegment`].
-    pub(crate) kind: ElementSegmentKind,
+    pub kind: ElementSegmentKind,
     /// The type of elements of the [`ElementSegment`].
-    pub(crate) ty: ValueType,
+    pub ty: ValueType,
     /// The items of the [`ElementSegment`].
-    pub(crate) items: ElementSegmentItems,
+    pub items: ElementSegmentItems,
 }
 
 /// The items of an [`ElementSegment`].
 #[derive(Debug, Clone)]
 pub struct ElementSegmentItems {
-    pub(crate) exprs: Arc<[ConstExpr]>,
+    pub exprs: Arc<[ConstExpr]>,
 }
 
 impl Default for ElementSegmentItems {

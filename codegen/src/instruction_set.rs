@@ -30,8 +30,10 @@ pub struct InstructionSet {
     pub instr: Vec<Instruction>,
     // pub metas: Option<Vec<InstrMeta>>,
     // translate state
-    pub(crate) default_memory: Vec<u8>,
-    pub(crate) passive_sections: HashMap<DataSegmentIdx, (u32, u32)>,
+    pub(crate) memory_section: Vec<u8>,
+    pub(crate) passive_memory_sections: HashMap<DataSegmentIdx, (u32, u32)>,
+    pub(crate) element_section: Vec<u32>,
+    pub(crate) passive_element_sections: HashMap<ElementSegmentIdx, (u32, u32)>,
     total_locals: Vec<usize>,
     total_pages: u32,
 }
@@ -69,8 +71,10 @@ impl From<Vec<Instruction>> for InstructionSet {
     fn from(value: Vec<Instruction>) -> Self {
         Self {
             instr: value,
-            default_memory: vec![],
-            passive_sections: Default::default(),
+            memory_section: vec![],
+            passive_memory_sections: Default::default(),
+            element_section: vec![],
+            passive_element_sections: Default::default(),
             total_locals: vec![],
             total_pages: 0,
         }
@@ -125,9 +129,9 @@ impl InstructionSet {
             return false;
         }
         // expand default memory
-        let data_offset = self.default_memory.len();
+        let data_offset = self.memory_section.len();
         let data_length = bytes.len();
-        self.default_memory.extend(bytes);
+        self.memory_section.extend(bytes);
         // default memory is just a passive section with force memory init
         self.op_i64_const32(offset);
         self.op_i64_const(data_offset);
@@ -139,12 +143,43 @@ impl InstructionSet {
 
     pub fn add_passive_memory(&mut self, segment_idx: DataSegmentIdx, bytes: &[u8]) {
         // expand default memory
-        let data_offset = self.default_memory.len() as u32;
+        let data_offset = self.memory_section.len() as u32;
         let data_length = bytes.len() as u32;
-        self.default_memory.extend(bytes);
+        self.memory_section.extend(bytes);
         // store passive section info
-        self.passive_sections
+        self.passive_memory_sections
             .insert(segment_idx, (data_offset, data_length));
+    }
+
+    pub fn add_active_elements<T: IntoIterator<Item = u32>>(
+        &mut self,
+        offset: u32,
+        table_idx: TableIdx,
+        elements: T,
+    ) {
+        // expand element section (remember offset and length)
+        let segment_offset = self.element_section.len();
+        self.element_section.extend(elements);
+        let segment_length = self.element_section.len() - segment_offset;
+        // init table with these elements
+        self.op_i64_const32(offset);
+        self.op_i64_const(segment_offset);
+        self.op_i64_const(segment_length);
+        self.op_table_init_unsafe(table_idx, ElementSegmentIdx::from(0));
+    }
+
+    pub fn add_passive_elements<T: IntoIterator<Item = u32>>(
+        &mut self,
+        segment_idx: ElementSegmentIdx,
+        elements: T,
+    ) {
+        // expand element section
+        let segment_offset = self.element_section.len() as u32;
+        self.element_section.extend(elements);
+        let segment_length = self.element_section.len() as u32 - segment_offset;
+        // store passive section info
+        self.passive_element_sections
+            .insert(segment_idx, (segment_offset, segment_length));
     }
 
     pub fn propagate_locals(&mut self, n: usize) {
@@ -342,7 +377,7 @@ impl InstructionSet {
     {
         let data_segment_index: DataSegmentIdx = data_segment_index.into();
         let (offset, _length) = self
-            .passive_sections
+            .passive_memory_sections
             .get(&data_segment_index)
             .copied()
             .expect("can't resolve passive segment by index");
@@ -363,7 +398,30 @@ impl InstructionSet {
     impl_opcode!(op_table_get, TableGet(TableIdx));
     impl_opcode!(op_table_set, TableSet(TableIdx));
     impl_opcode!(op_table_copy, TableCopy(TableIdx));
+
+    /// The semantics of this function is the same as for `MemoryInit` opcode, read
+    /// upper docs for `op_memory_init` function for more info.
     pub fn op_table_init<T, E>(&mut self, table_idx: T, elem_idx: E)
+    where
+        T: Into<TableIdx>,
+        E: Into<ElementSegmentIdx>,
+    {
+        let elem_segment_index: ElementSegmentIdx = elem_idx.into();
+        let (offset, _length) = self
+            .passive_element_sections
+            .get(&elem_segment_index)
+            .copied()
+            .expect("can't resolve passive segment by index");
+        // TODO: "ideally we need to have an overflow check for length"
+        // we need to replace offset on the stack with the new value
+        self.push(Instruction::I64Const32((offset as i32).into()));
+        self.push(Instruction::I32Add);
+        self.push(Instruction::LocalSet(1.into()));
+        // since we store all data sections in the one segment then index is always 0
+        self.push(Instruction::TableInit(elem_segment_index));
+        self.push(Instruction::TableGet(table_idx.into()));
+    }
+    pub fn op_table_init_unsafe<T, E>(&mut self, table_idx: T, elem_idx: E)
     where
         T: Into<TableIdx>,
         E: Into<ElementSegmentIdx>,
@@ -371,11 +429,14 @@ impl InstructionSet {
         self.push(Instruction::TableInit(elem_idx.into()));
         self.push(Instruction::TableGet(table_idx.into()));
     }
+
     impl_opcode!(op_elem_drop, ElemDrop(ElementSegmentIdx));
     impl_opcode!(op_ref_func, RefFunc(FuncIdx));
+
     pub fn op_i64_const32(&mut self, val: u32) {
         self.push(Instruction::I64Const32(val as i32));
     }
+
     impl_opcode!(op_i64_const, I64Const(UntypedValue));
     impl_opcode!(op_const_ref, ConstRef(ConstRef));
     impl_opcode!(op_i32_eqz, I32Eqz);
@@ -518,30 +579,30 @@ impl InstructionSet {
         // }
     }
 
-    pub fn fix_br_indirect_offset(
-        &mut self,
-        from_idx: Option<usize>,
-        to_idx: Option<usize>,
-        offset_change: i32,
-    ) {
-        for offset in from_idx.unwrap_or(0)..=to_idx.unwrap_or(self.instr.len() - 1) {
-            let instr = &mut self.instr[offset];
-            match instr {
-                // Instruction::BrTable(_) |
-                // Instruction::Br(offset)
-                // | Instruction::BrIndirect(offset)
-                // | Instruction::BrIfEqz(offset)
-                // | Instruction::BrAdjust(offset)
-                // | Instruction::BrAdjustIfNez(offset)
-                // | Instruction::BrIfEqz(offset)
-                // | Instruction::BrIfNez(offset)
-                // => {
-                //     *offset = BranchOffset::from(offset.to_i32() + offset_change)
-                // }
-                _ => {}
-            }
-        }
-    }
+    // pub fn fix_br_indirect_offset(
+    //     &mut self,
+    //     from_idx: Option<usize>,
+    //     to_idx: Option<usize>,
+    //     offset_change: i32,
+    // ) {
+    //     for offset in from_idx.unwrap_or(0)..=to_idx.unwrap_or(self.instr.len() - 1) {
+    //         let instr = &mut self.instr[offset];
+    //         match instr {
+    //             // Instruction::BrTable(_) |
+    //             // Instruction::Br(offset)
+    //             // | Instruction::BrIndirect(offset)
+    //             // | Instruction::BrIfEqz(offset)
+    //             // | Instruction::BrAdjust(offset)
+    //             // | Instruction::BrAdjustIfNez(offset)
+    //             // | Instruction::BrIfEqz(offset)
+    //             // | Instruction::BrIfNez(offset)
+    //             // => {
+    //             //     *offset = BranchOffset::from(offset.to_i32() + offset_change)
+    //             // }
+    //             _ => {}
+    //         }
+    //     }
+    // }
 
     pub fn trace(&self) -> String {
         let mut result = String::new();

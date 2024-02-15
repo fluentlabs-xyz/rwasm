@@ -145,7 +145,7 @@ pub struct CodeMap {
     /// compared to a solution that stores instructions of different
     /// function bodies in different allocations.
     ///
-    /// Also this improves efficiency of deallocating the [`CodeMap`]
+    /// Also, this improves efficiency of deallocating the [`CodeMap`]
     /// and generally improves data locality.
     instrs: Vec<Instruction>,
 }

@@ -15,5 +15,5 @@ mod reduced_module;
 #[cfg(test)]
 mod tests;
 
-pub use self::{binary_format::*, compiler::*, instruction_set::*, platform::*, reduced_module::*};
+pub use self::{binary_format::*, instruction_set::*, platform::*, reduced_module::*};
 pub use rwasm;

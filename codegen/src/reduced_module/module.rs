@@ -12,7 +12,7 @@ use alloc::{
     string::{String, ToString},
 };
 use rwasm::{
-    engine::{bytecode::Instruction, CompiledFunc},
+    engine::bytecode::Instruction,
     module::{FuncIdx, FuncTypeIdx, MemoryIdx, ModuleBuilder, ModuleError, ModuleResources},
     Engine,
     FuncType,
@@ -22,7 +22,9 @@ use rwasm::{
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct RwasmModule {
     pub(crate) code_section: InstructionSet,
-    pub(crate) function_position: Vec<u32>,
+    pub(crate) memory_section: Vec<u8>,
+    pub(crate) function_section: Vec<u32>,
+    pub(crate) element_section: Vec<u32>,
 }
 
 impl RwasmModule {
@@ -34,7 +36,9 @@ impl RwasmModule {
             .map_err(|e| ReducedModuleError::BinaryFormat(e))?;
         Ok(RwasmModule {
             code_section: reader.instruction_set,
-            function_position: vec![],
+            memory_section: vec![],
+            function_section: vec![],
+            element_section: vec![],
         })
     }
 
@@ -44,7 +48,7 @@ impl RwasmModule {
 
     pub fn to_module(&self, engine: &Engine, import_linker: &ImportLinker) -> Module {
         let builder = self.to_module_builder(engine, import_linker, FuncType::new([], []));
-        builder.finish()
+        builder.finish_rwasm()
     }
 
     pub fn to_module_builder<'a>(
@@ -75,6 +79,7 @@ impl RwasmModule {
         let mut code_section = self.bytecode().clone();
 
         // find all used imports and map them
+        // TODO: "we can optimize it by adding flag into WASMI VM and support such calls mapping"
         let mut import_mapping = BTreeMap::new();
         for instr in code_section.instr.iter_mut() {
             let host_index = match instr {
@@ -102,28 +107,19 @@ impl RwasmModule {
         let import_len = import_mapping.len() as u32;
 
         // push main functions
-        let builder_functions = (0..(self.function_position.len() + 1))
+        let total_functions = self.function_section.len() + 1;
+        let builder_functions = (0..total_functions)
             .map(|_| Result::<FuncTypeIdx, ModuleError>::Ok(FuncTypeIdx::from(0)))
             .collect::<Vec<_>>();
         builder.push_funcs(builder_functions).unwrap();
 
         // mark headers for missing functions inside binary
         let resources = ModuleResources::new(&builder);
-        // let entrypoint_length =
-        //     self.function_position
-        //         .first()
-        //         .copied()
-        //         .unwrap_or_else(|| code_section.instr.len() as u32) as usize;
         let compiled_func = resources
             .get_compiled_func(FuncIdx::from(import_len))
             .unwrap();
         engine.init_func(compiled_func, 0, 0, code_section.instr.clone());
-        for (fn_index, fn_pos) in self.function_position.iter().copied().enumerate() {
-            // let next_fn_pos =
-            //     self.function_position
-            //         .get(fn_index + 1)
-            //         .copied()
-            //         .unwrap_or_else(|| code_section.instr.len() as u32) as usize;
+        for (fn_index, fn_pos) in self.function_section.iter().copied().enumerate() {
             let compiled_func = resources
                 .get_compiled_func(FuncIdx::from(import_len + fn_index as u32 + 1))
                 .unwrap();
@@ -131,8 +127,8 @@ impl RwasmModule {
         }
 
         // push segments
-        builder.push_default_data_segment(&self.code_section.default_memory);
-        builder.push_default_elem_segment();
+        builder.push_default_data_segment(&self.memory_section);
+        builder.push_default_elem_segment(&self.element_section);
 
         // allocate default memory
         builder

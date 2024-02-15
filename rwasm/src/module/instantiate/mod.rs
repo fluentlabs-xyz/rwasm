@@ -336,7 +336,7 @@ impl Module {
                         .resolve_table_element(&table, &element);
                     table
                         .init(dst_index, element, 0, len_items, |func_index| {
-                            builder.get_func(func_index)
+                            Some(builder.get_func(func_index))
                         })
                         .map_err(Trap::from)?;
                 }

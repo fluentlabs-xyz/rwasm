@@ -1,5 +1,5 @@
 use crate::{
-    compiler::{types::Translator, CompilerError},
+    compiler::types::{CompilerError, Translator},
     instruction_set::InstructionSet,
 };
 use alloc::vec::Vec;

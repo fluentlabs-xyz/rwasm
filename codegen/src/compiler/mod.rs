@@ -1,42 +1,41 @@
-use crate::{
-    alloc::string::ToString,
-    binary_format::{BinaryFormat, BinaryFormatError, BinaryFormatWriter},
-    compiler::{
-        config::CompilerConfig,
-        drop_keep::{translate_drop_keep, DropKeepWithReturnParam},
-        types::{
-            BrTableStatus,
-            CompilerError,
-            FuncOrExport,
-            FuncSourceMap,
-            Injection,
-            Translator,
-            FUNC_SOURCE_MAP_ENTRYPOINT_IDX,
-            FUNC_SOURCE_MAP_ENTRYPOINT_NAME,
-        },
-    },
-    instruction::INSTRUCTION_SIZE_BYTES,
-    instruction_set::InstructionSet,
-    ImportLinker,
-    N_MAX_TABLES,
-};
-use alloc::{boxed::Box, collections::BTreeMap, rc::Rc, vec::Vec};
-use core::{cell::RefCell, convert::TryInto, ops::Deref};
-use rwasm::{
-    arena::ArenaIndex,
-    core::{Pages, UntypedValue, ValueType},
-    engine::{
-        bytecode::{BranchOffset, Instruction, LocalDepth, TableIdx},
-        code_map::InstructionPtr,
-        DropKeep,
-    },
-    module::{ConstExpr, DataSegment, DataSegmentKind, ElementSegmentKind, Imported},
-    value::WithType,
-    Config,
-    Engine,
-    FuncType,
-    Module,
-};
+// use crate::{
+//     alloc::string::ToString,
+//     binary_format::{BinaryFormat, BinaryFormatError, BinaryFormatWriter},
+//     compiler::{
+//         config::CompilerConfig,
+//         drop_keep::{translate_drop_keep, DropKeepWithReturnParam},
+//         types::{
+//             CompilerError,
+//             FuncOrExport,
+//             FuncSourceMap,
+//             Injection,
+//             Translator,
+//             FUNC_SOURCE_MAP_ENTRYPOINT_IDX,
+//             FUNC_SOURCE_MAP_ENTRYPOINT_NAME,
+//         },
+//     },
+//     instruction::INSTRUCTION_SIZE_BYTES,
+//     instruction_set::InstructionSet,
+//     ImportLinker,
+//     N_MAX_TABLES,
+// };
+// use alloc::{boxed::Box, collections::BTreeMap, rc::Rc, vec::Vec};
+// use core::{cell::RefCell, convert::TryInto, ops::Deref};
+// use rwasm::{
+//     arena::ArenaIndex,
+//     core::{Pages, UntypedValue, ValueType},
+//     engine::{
+//         bytecode::{BranchOffset, Instruction, LocalDepth, TableIdx},
+//         code_map::InstructionPtr,
+//         DropKeep,
+//     },
+//     module::{ConstExpr, DataSegment, DataSegmentKind, ElementSegmentKind, Imported},
+//     value::WithType,
+//     Config,
+//     Engine,
+//     FuncType,
+//     Module,
+// };
 
 pub mod compiler;
 pub mod config;

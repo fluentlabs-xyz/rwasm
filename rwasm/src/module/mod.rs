@@ -62,6 +62,7 @@ pub struct Module {
     pub compiled_funcs: Box<[CompiledFunc]>,
     pub element_segments: Box<[ElementSegment]>,
     pub data_segments: Box<[DataSegment]>,
+    pub is_rwasm: bool,
 }
 
 /// The index of the default Wasm linear memory.
@@ -150,7 +151,7 @@ impl Module {
     }
 
     /// Creates a new [`Module`] from the [`ModuleBuilder`].
-    fn from_builder(builder: ModuleBuilder) -> Self {
+    fn from_builder(builder: ModuleBuilder, is_rwasm: bool) -> Self {
         Self {
             engine: builder.engine().clone(),
             func_types: builder.func_types.into(),
@@ -165,6 +166,7 @@ impl Module {
             compiled_funcs: builder.compiled_funcs.into(),
             element_segments: builder.element_segments.into(),
             data_segments: builder.data_segments.into(),
+            is_rwasm,
         }
     }
 

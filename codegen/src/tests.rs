@@ -1,9 +1,7 @@
 use crate::{
-    compiler::compiler::Compiler2,
-    config::CompilerConfig,
+    compiler::{compiler::Compiler2, config::CompilerConfig, types::FuncOrExport},
     instruction_set,
     platform::ImportLinker,
-    types::FuncOrExport,
     ImportFunc,
 };
 use alloc::string::ToString;

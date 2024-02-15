@@ -1,23 +1,22 @@
 use crate::{
     compiler::{
         config::CompilerConfig,
+        drop_keep::DropKeepWithReturnParam,
         types::{
             CompilerError,
             FuncOrExport,
             Injection,
+            Translator,
             N_MAX_RECURSION_DEPTH,
             N_MAX_STACK_HEIGHT,
         },
     },
-    drop_keep::DropKeepWithReturnParam,
-    types::Translator,
-    BinaryFormat,
     ImportLinker,
     InstructionSet,
     RwasmModule,
     N_MAX_TABLES,
 };
-use alloc::{collections::BTreeMap, vec::Vec};
+use alloc::vec::Vec;
 use rwasm::{
     core::{Pages, UntypedValue, ValueType},
     engine::{
@@ -226,6 +225,13 @@ impl<'linker> Compiler2<'linker> {
                 let resolved_const = self.engine.resolve_const(const_ref).unwrap();
                 self.code_section.op_i64_const(resolved_const);
             }
+            WI::MemoryInit(data_segment_idx) => {
+                self.code_section.op_memory_init(data_segment_idx);
+            }
+            WI::TableInit(elem_segment_idx) => {
+                let table = Self::extract_table(instr_ptr);
+                self.code_section.op_table_init(table, elem_segment_idx);
+            }
             WI::MemoryGrow => {
                 assert!(!self.module.memories.is_empty(), "memory must be provided");
                 let max_pages = self.module.memories[0]
@@ -433,10 +439,12 @@ impl<'linker> Compiler2<'linker> {
     ) -> Result<(UntypedValue, &[u8], bool), CompilerError> {
         match memory.kind() {
             DataSegmentKind::Active(seg) => {
+                assert_eq!(
+                    seg.memory_index().into_u32(),
+                    0,
+                    "memory index can't be zero"
+                );
                 let data_offset = Self::translate_const_expr(seg.offset())?;
-                if seg.memory_index().into_u32() != 0 {
-                    return Err(CompilerError::NotSupported("not zero index"));
-                }
                 return Ok((data_offset, memory.bytes(), true));
             }
             DataSegmentKind::Passive => Ok((0.into(), memory.bytes(), false)),
@@ -524,32 +532,33 @@ impl<'linker> Compiler2<'linker> {
             }
             match &e.kind() {
                 ElementSegmentKind::Passive => {
-                    for (_, item) in e.items_cloned().items().iter().enumerate() {
-                        if let Some(value) = item.funcref() {
-                            // self.code_section.op_ref_func(value.into_u32());
-                            // self.code_section.op_elem_store(i as u32);
-                            todo!("not supported yet")
-                        }
-                    }
+                    let into_inter = e.items.exprs.into_iter().map(|v| {
+                        v.funcref()
+                            .expect("only funcref type is allowed to sections")
+                            .into_u32()
+                    });
+                    self.code_section
+                        .add_passive_elements((i as u32).into(), into_inter);
                 }
                 ElementSegmentKind::Active(aes) => {
                     let dest_offset = Self::translate_const_expr(aes.offset())?;
-                    for (index, item) in e.items_cloned().items().iter().enumerate() {
-                        self.code_section
-                            .op_i64_const32(dest_offset.as_u32() + index as u32);
-                        if let Some(value) = item.eval_const() {
-                            self.code_section.op_i64_const(value);
-                        } else if let Some(value) = item.funcref() {
-                            self.code_section.op_ref_func(value.into_u32());
-                        }
-                        self.code_section.op_table_set(aes.table_index().into_u32());
-                    }
+                    let into_inter = e.items.exprs.into_iter().map(|v| {
+                        v.funcref()
+                            .expect("only funcref type is allowed to sections")
+                            .into_u32()
+                    });
+                    self.code_section.add_active_elements(
+                        dest_offset.as_u32(),
+                        aes.table_index().into_u32().into(),
+                        into_inter,
+                    );
+                    // TODO: "do we need this condition here?"
                     if cfg!(feature = "e2e") {
                         self.code_section.op_i64_const(dest_offset);
                         self.code_section.op_i64_const(0);
                         self.code_section.op_i64_const(0);
                         self.code_section
-                            .op_table_init(aes.table_index().into_u32(), i as u32);
+                            .op_table_init_unsafe(aes.table_index().into_u32(), i as u32);
                     }
                 }
                 ElementSegmentKind::Declared => return Ok(()),
@@ -611,9 +620,21 @@ impl<'linker> Compiler2<'linker> {
             instr.update_call_index(func_offset);
         }
 
+        let element_section = bytecode
+            .element_section
+            .iter()
+            .map_while(|func_index| self.function_beginning.get(*func_index as usize))
+            .copied()
+            .collect::<Vec<_>>();
+        if element_section.len() != bytecode.element_section.len() {
+            return Err(CompilerError::MissingFunction);
+        }
+
         Ok(RwasmModule {
             code_section: bytecode.clone(),
-            function_position: self.function_beginning.clone(),
+            memory_section: bytecode.memory_section.clone(),
+            function_section: self.function_beginning.clone(),
+            element_section,
         })
     }
 }

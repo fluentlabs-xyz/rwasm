@@ -58,11 +58,11 @@ pub struct Injection {
     pub origin_len: i32,
 }
 
-#[derive(Debug)]
-pub struct BrTableStatus {
-    pub(crate) injection_instructions: Vec<Instruction>,
-    pub(crate) instr_countdown: u32,
-}
+// #[derive(Debug)]
+// pub struct BrTableStatus {
+//     pub(crate) injection_instructions: Vec<Instruction>,
+//     pub(crate) instr_countdown: u32,
+// }
 
 #[derive(Debug)]
 pub enum FuncOrExport {
@@ -78,13 +78,13 @@ impl Default for FuncOrExport {
     }
 }
 
-#[derive(Debug)]
-pub struct FuncSourceMap {
-    pub fn_index: u32,
-    pub fn_name: String,
-    pub position: u32,
-    pub length: u32,
-}
+// #[derive(Debug)]
+// pub struct FuncSourceMap {
+//     pub fn_index: u32,
+//     pub fn_name: String,
+//     pub position: u32,
+//     pub length: u32,
+// }
 
-pub const FUNC_SOURCE_MAP_ENTRYPOINT_NAME: &'static str = "$__entrypoint";
-pub const FUNC_SOURCE_MAP_ENTRYPOINT_IDX: u32 = u32::MAX;
+// pub const FUNC_SOURCE_MAP_ENTRYPOINT_NAME: &'static str = "$__entrypoint";
+// pub const FUNC_SOURCE_MAP_ENTRYPOINT_IDX: u32 = u32::MAX;

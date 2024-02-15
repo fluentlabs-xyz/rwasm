@@ -20,7 +20,7 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         5 + // memory section header
         1 + // terminator
             self.code_section.encoded_length() + // code section
-            self.code_section.default_memory.len() // memory section
+            self.code_section.memory_section.len() // memory section
     }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
@@ -34,7 +34,7 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         n += sink.write_u8(SECTION_CODE)?;
         n += sink.write_u32_le(code_section_length)?;
         // data section header
-        let memory_section_length = self.code_section.default_memory.len() as u32;
+        let memory_section_length = self.code_section.memory_section.len() as u32;
         n += sink.write_u8(SECTION_MEMORY)?;
         n += sink.write_u32_le(memory_section_length)?;
         // section terminator
@@ -44,7 +44,7 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
             n += opcode.write_binary(sink)?;
         }
         // write data section
-        n += sink.write_bytes(&self.code_section.default_memory)?;
+        n += sink.write_bytes(&self.code_section.memory_section)?;
         Ok(n)
     }
 
@@ -85,9 +85,9 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         let mut memory_section_sink = sink.limit_with(memory_section_length as usize);
         result
             .code_section
-            .default_memory
+            .memory_section
             .resize(memory_section_length as usize, 0u8);
-        memory_section_sink.read_bytes(&mut result.code_section.default_memory)?;
+        memory_section_sink.read_bytes(&mut result.code_section.memory_section)?;
         sink.pos += memory_section_length as usize;
         // return the final module
         Ok(result)
@@ -111,10 +111,12 @@ mod tests {
             I32Add
             Drop
         };
-        let memory_section = instruction_set.default_memory.clone();
+        let memory_section = instruction_set.memory_section.clone();
         let module = RwasmModule {
             code_section: instruction_set,
-            function_position: vec![],
+            memory_section,
+            function_section: vec![],
+            element_section: vec![],
         };
         let mut encoded_data = Vec::new();
         module.write_binary_to_vec(&mut encoded_data).unwrap();

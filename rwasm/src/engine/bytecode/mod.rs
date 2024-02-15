@@ -478,7 +478,7 @@ impl Instruction {
             | Instruction::RefFunc(_)
             | Instruction::Const32(_)
             | Instruction::I64Const32(_)
-            | Instruction::I64Const32(_)
+            | Instruction::I64Const(_)
             | Instruction::I32Eqz
             | Instruction::I32Eq
             | Instruction::I32Ne
