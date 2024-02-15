@@ -272,6 +272,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             //     memory_size,
             //     consumed_fuel,
             // );
+            #[cfg(feature = "std")]
             println!(
                 "{}:\t {:?} \tstack:{:?}",
                 self.ip.pc(),

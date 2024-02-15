@@ -369,6 +369,7 @@ pub enum Instruction {
     I64TruncSatF64U,
 }
 
+#[cfg(feature = "std")]
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let name = format!("{:?}", self);
