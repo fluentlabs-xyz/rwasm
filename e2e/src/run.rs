@@ -1,7 +1,7 @@
 use super::{error::TestError, TestContext, TestDescriptor};
 use anyhow::Result;
 use rwasm::{
-    common::{F32, F64},
+    core::{F32, F64},
     Config,
     ExternRef,
     FuncRef,

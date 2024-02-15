@@ -1,7 +1,7 @@
 use super::{TestDescriptor, TestError, TestProfile, TestSpan};
 use anyhow::Result;
 use rwasm::{
-    common::{Trap, UntypedValue, ValueType, F32, F64},
+    core::{Trap, UntypedValue, ValueType, F32, F64},
     engine::bytecode::Instruction,
     value::WithType,
     AsContext,
@@ -24,14 +24,11 @@ use rwasm::{
     Value,
 };
 use rwasm_codegen::{
-    config::CompilerConfig,
+    compiler::{compiler::Compiler2, config::CompilerConfig, types::FuncOrExport},
     instruction_set,
-    types::FuncOrExport,
-    Compiler,
     DefaultImportHandler,
     ImportFunc,
     ImportLinker,
-    RwasmModule,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use wast::token::{Id, Span};
@@ -391,7 +388,7 @@ impl TestContext<'_> {
 
         let mut exports_names = None;
 
-        let start_fn = module.get_start_fn();
+        let start_fn = module.start;
         let mut router_index = 0;
 
         enum ExportRouter {
@@ -456,7 +453,12 @@ impl TestContext<'_> {
                     }
                     self.binaries.insert(name.clone(), wasm_binary.clone());
 
-                    FuncOrExport::Global(instruction)
+                    todo!("implement global routing");
+                    // router_opcodes.op_local_get(1);
+                    // router_opcodes.push(instruction);
+                    // router_opcodes.op_local_set(2);
+                    // router_opcodes.op_return();
+                    // FuncOrExport::Global(instruction)
                 }
             })
             .collect::<Vec<_>>();
@@ -597,10 +599,10 @@ impl TestContext<'_> {
             .with_state(true)
             .with_global_start_index(GLOBAL_START_INDEX);
         let mut compiler =
-            Compiler::new_with_linker(wasm_binary.as_slice(), config, Some(&import_linker))
+            Compiler2::new_with_linker(wasm_binary.as_slice(), config, Some(&import_linker))
                 .unwrap();
 
-        compiler.set_func_type_check_idx(self.func_type_check_idx.clone());
+        // compiler.set_func_type_check_idx(self.func_type_check_idx.clone());
 
         compiler
             .translate(FuncOrExport::StateRouter(
@@ -610,8 +612,7 @@ impl TestContext<'_> {
                 },
             ))
             .map_err(|err| TestError::Compiler(err))?;
-        let rwasm_binary = compiler.finalize().unwrap();
-        let reduced_module = RwasmModule::new(rwasm_binary.as_slice()).unwrap();
+        let reduced_module = compiler.finalize().unwrap();
         let module_builder =
             reduced_module.to_module_builder(&self.engine, &import_linker, FuncType::new([], []));
         let module = module_builder.finish();
@@ -716,28 +717,31 @@ impl TestContext<'_> {
             1,
         ));
 
-        let mut compiler = Compiler::new_with_linker(
-            wasm_binary.as_slice(),
-            CompilerConfig::default().fuel_consume(false),
-            Some(&import_linker),
-        )
-        .unwrap();
-        compiler.set_func_type_check_idx(self.func_type_check_idx.clone());
+        let mut compiler_config = CompilerConfig::default().fuel_consume(false);
 
         let elem = module
             .exports()
             .find(|export| export.name() == fn_name)
             .unwrap();
 
-        if let Some(idx) = elem.index().into_func_idx() {
-            compiler.translate(FuncOrExport::Func(idx)).unwrap();
+        let main_func = if let Some(idx) = elem.index().into_func_idx() {
+            FuncOrExport::Func(idx)
         } else if let Some(ix) = module.get_global_init(elem.index()) {
-            compiler.set_state(true);
-            compiler.translate(FuncOrExport::Global(ix)).unwrap();
-        }
-
-        let rwasm_binary = compiler.finalize().unwrap();
-        let reduced_module = RwasmModule::new(rwasm_binary.as_slice()).unwrap();
+            compiler_config = compiler_config.with_state(true);
+            // FuncOrExport::Global(ix)
+            todo!("implement global routing");
+        } else {
+            unreachable!("unknown elem index")
+        };
+        let mut compiler = Compiler2::new_with_linker(
+            wasm_binary.as_slice(),
+            compiler_config,
+            Some(&import_linker),
+        )
+        .unwrap();
+        // compiler.set_func_type_check_idx(self.func_type_check_idx.clone());
+        compiler.translate(main_func).unwrap();
+        let reduced_module = compiler.finalize().unwrap();
 
         let func_type = elem.ty().func();
         let global_type = elem

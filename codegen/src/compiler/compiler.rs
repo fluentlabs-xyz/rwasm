@@ -360,17 +360,20 @@ impl<'linker> Compiler2<'linker> {
     fn create_router(&mut self, main_index: FuncOrExport) -> Result<InstructionSet, CompilerError> {
         let mut router_opcodes = InstructionSet::default();
         let func_index = self.resolve_func_index(&main_index)?.unwrap_or_default();
+        if let Some(input_code) = &self.config.input_code {
+            router_opcodes.extend(&input_code);
+        }
         match main_index {
             FuncOrExport::Export(_) | FuncOrExport::Func(_) => {
-                if let Some(input_code) = &self.config.input_code {
-                    router_opcodes.extend(&input_code);
-                }
                 router_opcodes.op_call_internal(func_index);
-                if let Some(output_code) = &self.config.output_code {
-                    router_opcodes.extend(&output_code);
-                }
+            }
+            FuncOrExport::Custom(router) => {
+                router_opcodes.extend(&router);
             }
             _ => unreachable!("not supported main function"),
+        }
+        if let Some(output_code) = &self.config.output_code {
+            router_opcodes.extend(&output_code);
         }
         Ok(router_opcodes)
     }
@@ -392,13 +395,6 @@ impl<'linker> Compiler2<'linker> {
             .into_func_idx()
             .ok_or(CompilerError::MissingEntrypoint)?;
         Ok(export_index)
-    }
-
-    fn resolve_global_instr(&self, export: &FuncOrExport) -> Option<Instruction> {
-        match export {
-            FuncOrExport::Global(ix) => Some(ix.clone()),
-            _ => None,
-        }
     }
 
     pub fn translate_sections(&mut self) -> Result<(), CompilerError> {

@@ -8,7 +8,7 @@ extern crate core;
 extern crate std as alloc;
 
 pub mod binary_format;
-mod compiler;
+pub mod compiler;
 mod instruction_set;
 mod platform;
 mod reduced_module;

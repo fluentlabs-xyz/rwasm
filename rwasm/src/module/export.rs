@@ -153,6 +153,7 @@ pub struct ModuleExportsIter<'module> {
 pub struct ExportType<'module> {
     name: &'module str,
     ty: ExternType,
+    index: ExternIdx,
 }
 
 impl<'module> ExportType<'module> {
@@ -164,6 +165,10 @@ impl<'module> ExportType<'module> {
     /// Returns the type of the exported item.
     pub fn ty(&self) -> &ExternType {
         &self.ty
+    }
+
+    pub fn index(&self) -> &ExternIdx {
+        &self.index
     }
 }
 
@@ -183,7 +188,11 @@ impl<'module> Iterator for ModuleExportsIter<'module> {
     fn next(&mut self) -> Option<Self::Item> {
         self.exports.next().map(|(name, idx)| {
             let ty = self.module.get_extern_type(*idx);
-            ExportType { name, ty }
+            ExportType {
+                name,
+                ty,
+                index: *idx,
+            }
         })
     }
 }

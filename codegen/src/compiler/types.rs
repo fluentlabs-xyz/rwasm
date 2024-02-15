@@ -68,8 +68,11 @@ pub struct Injection {
 pub enum FuncOrExport {
     Export(&'static str),
     Func(u32),
+    #[deprecated(note = "will be removed")]
     StateRouter(Vec<FuncOrExport>, InstructionSet),
+    #[deprecated(note = "will be removed")]
     Global(Instruction),
+    Custom(InstructionSet),
 }
 
 impl Default for FuncOrExport {
@@ -77,6 +80,8 @@ impl Default for FuncOrExport {
         Self::Export("main")
     }
 }
+
+impl FuncOrExport {}
 
 // #[derive(Debug)]
 // pub struct FuncSourceMap {
