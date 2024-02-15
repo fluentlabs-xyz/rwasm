@@ -47,9 +47,8 @@ impl Translator for DropKeepWithReturnParam {
         if self.0.drop() == 0 && self.0.keep() == 0 {
             return Ok(());
         }
-        result.op_local_get((self.0.drop() + self.0.keep() + 1) as u32);
         let drop_keep_opcodes = translate_drop_keep(
-            DropKeep::new(self.0.drop() as usize + 1, self.0.keep() as usize + 1)
+            DropKeep::new(self.0.drop() as usize, self.0.keep() as usize)
                 .map_err(|_| CompilerError::DropKeepOutOfBounds)?,
         )?;
         result.instr.extend(&drop_keep_opcodes);
@@ -70,6 +69,7 @@ mod tests {
             };
         }
         let tests = vec![
+            (vec![100, 20, 120], vec![120], drop_keep!(2, 1)),
             (vec![1, 2], vec![1, 2], drop_keep!(0, 0)),
             (vec![1, 2, 3], vec![1, 2, 3], drop_keep!(0, 3)),
             (vec![1, 2, 3, 4], vec![3, 4], drop_keep!(2, 2)),

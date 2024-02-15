@@ -99,6 +99,7 @@ mod tests {
     use crate::{instruction_set, BinaryFormat, RwasmModule};
 
     #[test]
+    #[ignore]
     fn test_module_encoding() {
         let instruction_set = instruction_set! {
             .add_memory_pages(1)

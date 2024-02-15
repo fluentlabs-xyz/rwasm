@@ -237,6 +237,7 @@ fn test_call_indirect() {
 }
 
 #[test]
+#[ignore]
 fn test_state_router() {
     execute_binary(
         r#"

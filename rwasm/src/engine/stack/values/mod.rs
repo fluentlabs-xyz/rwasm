@@ -97,12 +97,26 @@ impl ValueStack {
         self.base_ptr().into_add(self.stack_ptr)
     }
 
+    pub fn stack_len(&mut self, sp: ValueStackPtr) -> usize {
+        let base = self.base_ptr();
+        sp.offset_from(base) as usize
+    }
+
+    pub fn is_stack_overflowed(&mut self, sp: ValueStackPtr) -> bool {
+        self.stack_len(sp) > self.maximum_len
+    }
+
+    pub fn dump_stack(&mut self, sp: ValueStackPtr) -> Vec<UntypedValue> {
+        let size = self.stack_len(sp);
+        self.entries[0..size].to_vec()
+    }
+
     /// Returns the base [`ValueStackPtr`] of `self`.
     ///
     /// The returned [`ValueStackPtr`] points to the first value on the [`ValueStack`].
     #[inline]
     fn base_ptr(&mut self) -> ValueStackPtr {
-        ValueStackPtr::from(self.entries.as_mut_ptr())
+        ValueStackPtr::new(self.entries.as_mut_ptr(), self.entries.len())
     }
 
     /// Synchronizes [`ValueStack`] with the new [`ValueStackPtr`].

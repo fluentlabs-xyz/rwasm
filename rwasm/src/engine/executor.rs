@@ -227,7 +227,59 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     ) -> Result<WasmOutcome, TrapCode> {
         use Instruction as Instr;
         loop {
-            match *self.ip.get() {
+            let instr = *self.ip.get();
+            // let meta = *self.ip.meta();
+
+            // TODO: Need to add recursive check while call function
+            // TODO: Create more optimized check for stack overflowed
+            // if self.value_stack.is_stack_overflowed(self.sp) {
+            //     return Err(TrapCode::StackOverflow.into());
+            // }
+
+            // let dump = self.value_stack.dump_stack(self.sp);
+            // if dump.len() < 20 {
+            //     println!(
+            //         "{} {:?} {:?}",
+            //         self.ip.pc(),
+            //         instr,
+            //         dump.iter().map(|v| v.as_u64()).collect::<Vec<_>>()
+            //     );
+            // }
+
+            // handle pre-instruction state
+            // let has_default_memory = {
+            //     let instance = self.cache.instance();
+            //     self.ctx
+            //         .resolve_instance(instance)
+            //         .get_memory(DEFAULT_MEMORY_INDEX)
+            //         .is_some()
+            // };
+            // let memory_size: u32 = if has_default_memory {
+            //     self.ctx
+            //         .resolve_memory(self.cache.default_memory(self.ctx))
+            //         .current_pages()
+            //         .into()
+            // } else {
+            //     0
+            // };
+            // let consumed_fuel = self.ctx.fuel().fuel_consumed();
+            let stack = self.value_stack.dump_stack(self.sp);
+            // self.tracer.pre_opcode_state(
+            //     self.ip.pc(),
+            //     instr,
+            //     stack,
+            //     &meta,
+            //     memory_size,
+            //     consumed_fuel,
+            // );
+            println!(
+                "{}:\t {:?} \tstack:{:?}",
+                self.ip.pc(),
+                instr,
+                stack.iter().map(|v| v.as_usize()).collect::<Vec<_>>()
+            );
+
+            match instr {
                 Instr::LocalGet(local_depth) => self.visit_local_get(local_depth),
                 Instr::LocalSet(local_depth) => self.visit_local_set(local_depth),
                 Instr::LocalTee(local_depth) => self.visit_local_tee(local_depth),

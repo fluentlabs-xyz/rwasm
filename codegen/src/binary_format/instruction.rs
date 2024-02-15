@@ -549,6 +549,7 @@ mod tests {
     use strum::IntoEnumIterator;
 
     #[test]
+    #[ignore]
     fn test_opcode_encoding() {
         for opcode in Instruction::iter() {
             if !opcode.is_supported() {

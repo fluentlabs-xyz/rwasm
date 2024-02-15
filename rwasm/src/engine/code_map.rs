@@ -296,6 +296,7 @@ impl CodeMap {
 pub struct InstructionPtr {
     /// The pointer to the instruction.
     ptr: *const Instruction,
+    src: *const Instruction,
 }
 
 /// It is safe to send an [`InstructionPtr`] to another thread.
@@ -312,7 +313,14 @@ impl InstructionPtr {
     /// Creates a new [`InstructionPtr`] for `instr`.
     #[inline]
     pub fn new(ptr: *const Instruction) -> Self {
-        Self { ptr }
+        Self { ptr, src: ptr }
+    }
+
+    #[inline(always)]
+    pub fn pc(&self) -> u32 {
+        let size = core::mem::size_of::<Instruction>() as u32;
+        let diff = self.ptr as u32 - self.src as u32;
+        diff / size
     }
 
     /// Offset the [`InstructionPtr`] by the given value.

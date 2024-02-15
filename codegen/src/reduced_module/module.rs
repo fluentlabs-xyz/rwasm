@@ -1,4 +1,5 @@
 use crate::{
+    compiler::types::N_MAX_STACK_HEIGHT,
     instruction_set::InstructionSet,
     platform::ImportLinker,
     reduced_module::{
@@ -118,12 +119,17 @@ impl RwasmModule {
         let compiled_func = resources
             .get_compiled_func(FuncIdx::from(import_len))
             .unwrap();
-        engine.init_func(compiled_func, 0, 0, code_section.instr.clone());
+        engine.init_func(
+            compiled_func,
+            0,
+            N_MAX_STACK_HEIGHT,
+            code_section.instr.clone(),
+        );
         for (fn_index, fn_pos) in self.function_section.iter().copied().enumerate() {
             let compiled_func = resources
                 .get_compiled_func(FuncIdx::from(import_len + fn_index as u32 + 1))
                 .unwrap();
-            engine.mark_func(compiled_func, 0, 0, fn_pos as usize);
+            engine.mark_func(compiled_func, 0, N_MAX_STACK_HEIGHT, fn_pos as usize);
         }
 
         // push segments
