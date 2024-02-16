@@ -1,3 +1,4 @@
+use crate::alloc::string::ToString;
 use alloc::{collections::BTreeMap, string::String, vec::Vec};
 use rwasm::{
     common::{UntypedValue, ValueType},
@@ -158,5 +159,71 @@ impl ImportLinker {
 
     pub fn index_mapping(&self) -> &BTreeMap<ImportName, (u32, u32)> {
         &self.func_by_name
+    }
+}
+
+#[derive(Default)]
+pub struct ImportLinkerDefaults {
+    base_idx: u16,
+    module_name: String,
+}
+
+impl ImportLinkerDefaults {
+    pub fn new_v1alpha() -> Self {
+        Self {
+            base_idx: 1000,
+            module_name: "fluentbase_v1alpha".to_string(),
+        }
+    }
+
+    pub fn with_base_index(mut self, start_index: u16) -> Self {
+        self.base_idx = start_index;
+        self
+    }
+
+    pub fn with_module_name(mut self, v: String) -> Self {
+        self.module_name = v;
+        self
+    }
+
+    pub fn register_import_funcs(mut self, import_linker: &mut ImportLinker) -> Self {
+        let mut index = self.base_idx;
+        import_linker.insert_function(ImportFunc::new_env(
+            self.module_name.clone(),
+            "_sys_halt".to_string(),
+            index,
+            &[ValueType::I32],
+            &[],
+            0,
+        ));
+        index += 1;
+        import_linker.insert_function(ImportFunc::new_env(
+            self.module_name.clone(),
+            "_sys_write".to_string(),
+            index,
+            &[ValueType::I32; 2],
+            &[],
+            0,
+        ));
+        index += 1;
+        import_linker.insert_function(ImportFunc::new_env(
+            self.module_name.clone(),
+            "_sys_input_size".to_string(),
+            index,
+            &[],
+            &[ValueType::I32; 1],
+            0,
+        ));
+        index += 1;
+        import_linker.insert_function(ImportFunc::new_env(
+            self.module_name.clone(),
+            "_sys_read".to_string(),
+            index,
+            &[ValueType::I32; 3],
+            &[],
+            0,
+        ));
+
+        self
     }
 }

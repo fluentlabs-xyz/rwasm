@@ -26,6 +26,7 @@ mod tests {
         CompilerConfig,
         FuncOrExport,
         ImportFunc,
+        ImportLinkerDefaults,
     };
     use alloc::string::ToString;
     use rwasm::{common::ValueType, AsContextMut, Caller, Config, Engine, Func, Linker, Store};
@@ -48,14 +49,9 @@ mod tests {
         let wasm_binary = wat::parse_str(wat).unwrap();
         // translate and compile module
         let mut import_linker = ImportLinker::default();
-        import_linker.insert_function(ImportFunc::new_env(
-            "env".to_string(),
-            "_sys_halt".to_string(),
-            10,
-            &[ValueType::I32],
-            &[],
-            1,
-        ));
+        ImportLinkerDefaults::new_v1alpha()
+            .with_module_name("env".to_string())
+            .register_import_funcs(&mut import_linker);
 
         let mut translator = Compiler::new_with_linker(
             &wasm_binary,

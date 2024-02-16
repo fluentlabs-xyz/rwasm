@@ -591,7 +591,6 @@ dependencies = [
 [[package]]
 name = "fluentbase-poseidon"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#90a26bf9595c66dfb9d86b43de74a7089d7d581a"
 dependencies = [
  "bitvec",
  "halo2curves 0.3.1",
@@ -602,42 +601,26 @@ dependencies = [
 [[package]]
 name = "fluentbase-runtime"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#90a26bf9595c66dfb9d86b43de74a7089d7d581a"
 dependencies = [
+ "byteorder",
  "fluentbase-poseidon",
- "fluentbase-rwasm",
  "fluentbase-types",
  "fluentbase-zktrie",
  "halo2curves 0.3.1",
+ "hashbrown 0.14.3",
  "k256",
  "keccak-hash",
-]
-
-[[package]]
-name = "fluentbase-rwasm"
-version = "0.30.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#90a26bf9595c66dfb9d86b43de74a7089d7d581a"
-dependencies = [
- "byteorder",
- "downcast-rs",
- "libm",
- "num-traits",
- "paste",
- "smallvec",
- "spin 0.9.8",
- "strum",
- "strum_macros",
- "wasmparser-nostd",
+ "rwasm",
+ "rwasm-codegen",
 ]
 
 [[package]]
 name = "fluentbase-types"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#90a26bf9595c66dfb9d86b43de74a7089d7d581a"
 dependencies = [
  "alloy-primitives",
- "fluentbase-rwasm",
  "hashbrown 0.14.3",
+ "rwasm",
  "strum",
  "strum_macros",
 ]
@@ -645,7 +628,6 @@ dependencies = [
 [[package]]
 name = "fluentbase-zktrie"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/fluentbase?branch=devel#90a26bf9595c66dfb9d86b43de74a7089d7d581a"
 dependencies = [
  "byteorder",
  "fluentbase-poseidon",
@@ -812,7 +794,7 @@ dependencies = [
 [[package]]
 name = "halo2curves"
 version = "0.3.1"
-source = "git+https://github.com/scroll-tech/halo2curves.git?branch=0.3.1-derive-serde#969f1e44d9713ee4cd552563bd0c762c5d53b56e"
+source = "git+https://github.com/fluentlabs-xyz/halo2curves?branch=0.3.1-derive-serde#969f1e44d9713ee4cd552563bd0c762c5d53b56e"
 dependencies = [
  "ff 0.12.1",
  "group 0.12.1",
