@@ -709,10 +709,11 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     /// with the outer structures.
     #[inline(always)]
     fn call_func_internal(&mut self, func: CompiledFunc, kind: CallKind) -> Result<(), TrapCode> {
+        // in a rWASM compatibility mode we must convert function offset to index
         let func = self
             .code_map
             .resolve_function_by_offset(func.into_usize())
-            .ok_or(TrapCode::UnresolvedFunction)?;
+            .unwrap_or(func);
         self.next_instr_at(match kind {
             CallKind::Nested => 1,
             CallKind::Tail => 2,
@@ -1405,10 +1406,11 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 table.init(dst_index, element, src_index, len, |func_index| {
                     let func_index = self
                         .code_map
-                        .resolve_function_by_offset(func_index as usize)?
-                        .into_usize();
+                        .resolve_function_by_offset(func_index as usize)
+                        .map(|v| v.into_usize() as u32)
+                        .unwrap_or(func_index);
                     let func = instance
-                        .get_func(func_index as u32)
+                        .get_func(func_index)
                         .unwrap_or_else(|| panic!("missing function at index {func_index}"));
                     Some(func)
                 })?;
@@ -1430,9 +1432,8 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         let func_index: FuncIdx = self
             .code_map
             .resolve_function_by_offset(func_index.to_u32() as usize)
-            .ok_or(TrapCode::UnresolvedFunction)?
-            .to_u32()
-            .into();
+            .map(|v| v.to_u32().into())
+            .unwrap_or(func_index);
         let func = self.cache.get_func(self.ctx, func_index);
         let funcref = FuncRef::new(func);
         self.sp.push_as(funcref);

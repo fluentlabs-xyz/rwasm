@@ -14,7 +14,7 @@ use super::{
     TranslationError,
 };
 use crate::{
-    core::{UntypedValue, ValueType, F32},
+    core::{Pages, UntypedValue, ValueType, F32},
     engine::{
         bytecode::{
             self,
@@ -28,7 +28,7 @@ use crate::{
             TableIdx,
         },
         config::FuelCosts,
-        func_builder::control_frame::ControlFrameKind,
+        func_builder::{control_frame::ControlFrameKind, rwasm::RwasmModuleBuilder},
         CompiledFunc,
         DropKeep,
         Instr,
@@ -62,9 +62,11 @@ pub struct FuncTranslatorAllocations {
     /// # Note
     ///
     /// Allows to incrementally construct the instruction of a function.
-    inst_builder: InstructionsBuilder,
+    pub(crate) inst_builder: InstructionsBuilder,
     /// Buffer for translating `br_table`.
     br_table_branches: Vec<Instruction>,
+    /// Module builder for rWASM
+    pub(crate) rwasm_builder: RwasmModuleBuilder,
 }
 
 impl FuncTranslatorAllocations {
@@ -78,6 +80,7 @@ impl FuncTranslatorAllocations {
         self.control_frames.reset();
         self.inst_builder.reset();
         self.br_table_branches.clear();
+        self.rwasm_builder.reset();
     }
 }
 
@@ -104,7 +107,7 @@ pub struct FuncTranslator<'parser> {
     /// Stores and resolves local variable types.
     locals: LocalsRegistry,
     /// The reusable data structures of the [`FuncTranslator`].
-    alloc: FuncTranslatorAllocations,
+    pub(crate) alloc: FuncTranslatorAllocations,
 }
 
 impl<'parser> FuncTranslator<'parser> {
@@ -128,7 +131,7 @@ impl<'parser> FuncTranslator<'parser> {
     }
 
     /// Returns a shared reference to the underlying [`Engine`].
-    fn engine(&self) -> &Engine {
+    pub(crate) fn engine(&self) -> &Engine {
         self.res.engine()
     }
 
@@ -1566,10 +1569,21 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
-            builder
-                .alloc
-                .inst_builder
-                .push_inst(Instruction::MemoryGrow);
+            let ib = &mut builder.alloc.inst_builder;
+            assert!(!self.res.res.memories.is_empty(), "memory must be provided");
+            let max_pages = self.res.res.memories[0]
+                .maximum_pages()
+                .unwrap_or(Pages::max())
+                .into_inner();
+            ib.push_inst(Instruction::LocalGet(1.into()));
+            ib.push_inst(Instruction::MemorySize);
+            ib.push_inst(Instruction::I32Add);
+            ib.push_inst(Instruction::I32Const(max_pages.into()));
+            ib.push_inst(Instruction::I32GtS);
+            ib.push_inst(Instruction::BrIfEqz(4.into()));
+            ib.push_inst(Instruction::Drop);
+            ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+            ib.push_inst(Instruction::MemoryGrow);
             Ok(())
         })
     }

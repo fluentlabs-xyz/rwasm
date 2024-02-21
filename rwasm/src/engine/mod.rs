@@ -24,7 +24,9 @@ pub use self::{
         FuncBuilder,
         FuncTranslatorAllocations,
         Instr,
+        InstructionsBuilder,
         RelativeDepth,
+        RwasmModuleBuilder,
         TranslationError,
     },
     resumable::{ResumableCall, ResumableInvocation, TypedResumableCall, TypedResumableInvocation},
@@ -401,7 +403,7 @@ impl EngineInner {
     /// Creates a new [`EngineInner`] with the given [`Config`].
     fn new(config: &Config) -> Self {
         Self {
-            config: *config,
+            config: config.clone(),
             res: RwLock::new(EngineResources::new()),
             stacks: Mutex::new(EngineStacks::new(config)),
         }

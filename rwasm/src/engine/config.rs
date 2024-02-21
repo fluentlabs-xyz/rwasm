@@ -1,5 +1,5 @@
 use super::{stack::StackLimits, DropKeep};
-use crate::core::UntypedValue;
+use crate::core::{ImportLinker, UntypedValue};
 use core::{mem::size_of, num::NonZeroU64};
 use wasmparser::WasmFeatures;
 
@@ -9,7 +9,7 @@ const DEFAULT_CACHED_STACKS: usize = 2;
 /// Configuration for an [`Engine`].
 ///
 /// [`Engine`]: [`crate::Engine`]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct Config {
     /// The limits set on the value stack and call stack.
     stack_limits: StackLimits,
@@ -39,6 +39,10 @@ pub struct Config {
     fuel_consumption_mode: FuelConsumptionMode,
     /// The configured fuel costs of all `wasmi` bytecode instructions.
     fuel_costs: FuelCosts,
+    /// Translate into rWASM compatible binary
+    rwasm_binary: bool,
+    /// Rwasm import linker
+    import_linker: Option<ImportLinker>,
 }
 
 /// The fuel consumption mode of the `wasmi` [`Engine`].
@@ -209,6 +213,8 @@ impl Default for Config {
             consume_fuel: false,
             fuel_costs: FuelCosts::default(),
             fuel_consumption_mode: FuelConsumptionMode::default(),
+            import_linker: None,
+            rwasm_binary: false,
         }
     }
 }
@@ -401,6 +407,24 @@ impl Config {
     pub fn get_fuel_consumption_mode(&self) -> Option<FuelConsumptionMode> {
         self.get_consume_fuel()
             .then_some(self.fuel_consumption_mode)
+    }
+
+    pub fn import_linker(&mut self, import_linker: ImportLinker) -> &mut Self {
+        self.import_linker = Some(import_linker);
+        self
+    }
+
+    pub fn get_import_linker(&self) -> Option<&ImportLinker> {
+        self.import_linker.as_ref()
+    }
+
+    pub fn rwasm_binary(&mut self, rwasm_binary: bool) -> &mut Self {
+        self.rwasm_binary = rwasm_binary;
+        self
+    }
+
+    pub fn get_rwasm_binary(&self) -> bool {
+        self.rwasm_binary
     }
 
     /// Returns the [`WasmFeatures`] represented by the [`Config`].

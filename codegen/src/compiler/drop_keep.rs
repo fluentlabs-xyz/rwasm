@@ -33,6 +33,7 @@ pub(crate) fn translate_drop_keep(drop_keep: DropKeep) -> Vec<Instruction> {
 
 impl Translator for DropKeep {
     fn translate(&self, result: &mut InstructionSet) -> Result<(), CompilerError> {
+        // result.push(Instruction::DropKeep(*self));
         let drop_keep_opcodes = translate_drop_keep(*self);
         result.instr.extend(&drop_keep_opcodes);
         Ok(())

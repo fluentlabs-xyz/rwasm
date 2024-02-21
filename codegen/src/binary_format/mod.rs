@@ -1,3 +1,4 @@
+mod drop_keep;
 pub mod instruction;
 mod instruction_set;
 mod module;

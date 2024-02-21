@@ -1,4 +1,3 @@
-use crate::constants::{N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES};
 use alloc::{string::String, vec::Vec};
 use core::slice::SliceIndex;
 use hashbrown::HashMap;
@@ -104,83 +103,6 @@ impl InstructionSet {
     //     assert_eq!(self.instr.len(), metas_len, "instr len and meta mismatched");
     //     opcode_pos
     // }
-
-    pub fn add_memory_pages(&mut self, initial_pages: u32) -> bool {
-        // there is a hard limit of max possible memory used (~64 mB)
-        if self.total_pages + initial_pages >= N_MAX_MEMORY_PAGES {
-            return false;
-        }
-        // it makes no sense to grow memory with 0 pages
-        if initial_pages > 0 {
-            self.op_i32_const(initial_pages);
-            self.op_memory_grow();
-            self.op_drop();
-        }
-        // increase total number of pages allocated
-        self.total_pages += initial_pages;
-        return true;
-    }
-
-    pub fn add_default_memory(&mut self, offset: u32, bytes: &[u8]) -> bool {
-        // don't allow to grow default memory if there is no enough pages allocated
-        let max_affected_page =
-            (offset + bytes.len() as u32 + N_BYTES_PER_MEMORY_PAGE - 1) / N_BYTES_PER_MEMORY_PAGE;
-        if max_affected_page > self.total_pages {
-            return false;
-        }
-        // expand default memory
-        let data_offset = self.memory_section.len();
-        let data_length = bytes.len();
-        self.memory_section.extend(bytes);
-        // default memory is just a passive section with force memory init
-        self.op_i32_const(offset);
-        self.op_i64_const(data_offset);
-        self.op_i64_const(data_length);
-        self.op_memory_init_unsafe(0);
-        // we have enough memory pages so can grow
-        return true;
-    }
-
-    pub fn add_passive_memory(&mut self, segment_idx: DataSegmentIdx, bytes: &[u8]) {
-        // expand default memory
-        let data_offset = self.memory_section.len() as u32;
-        let data_length = bytes.len() as u32;
-        self.memory_section.extend(bytes);
-        // store passive section info
-        self.passive_memory_sections
-            .insert(segment_idx, (data_offset, data_length));
-    }
-
-    pub fn add_active_elements<T: IntoIterator<Item = u32>>(
-        &mut self,
-        offset: u32,
-        table_idx: TableIdx,
-        elements: T,
-    ) {
-        // expand element section (remember offset and length)
-        let segment_offset = self.element_section.len();
-        self.element_section.extend(elements);
-        let segment_length = self.element_section.len() - segment_offset;
-        // init table with these elements
-        self.op_i32_const(offset);
-        self.op_i64_const(segment_offset);
-        self.op_i64_const(segment_length);
-        self.op_table_init_unsafe(table_idx, ElementSegmentIdx::from(0));
-    }
-
-    pub fn add_passive_elements<T: IntoIterator<Item = u32>>(
-        &mut self,
-        segment_idx: ElementSegmentIdx,
-        elements: T,
-    ) {
-        // expand element section
-        let segment_offset = self.element_section.len() as u32;
-        self.element_section.extend(elements);
-        let segment_length = self.element_section.len() as u32 - segment_offset;
-        // store passive section info
-        self.passive_element_sections
-            .insert(segment_idx, (segment_offset, segment_length));
-    }
 
     pub fn propagate_locals(&mut self, n: usize) {
         (0..n).for_each(|_| self.op_i32_const(0));
@@ -602,8 +524,9 @@ impl InstructionSet {
 
     pub fn trace(&self) -> String {
         let mut result = String::new();
-        for (offset, opcode) in self.instr.iter().enumerate() {
-            let str = format!("{}: {:?}\n", offset, opcode);
+        for (_offset, opcode) in self.instr.iter().enumerate() {
+            // let str = format!("{}: {:?}\n", offset, opcode);
+            let str = format!("{:?}\n", opcode);
             result += str.as_str();
         }
         result

@@ -56,8 +56,12 @@ impl<'a> BinaryFormat<'a> for Instruction {
             Instruction::BrTable(targets) => sink.write_u8(0x06)? + targets.write_binary(sink)?,
             Instruction::Unreachable => sink.write_u8(0x07)?,
             Instruction::ConsumeFuel(u) => sink.write_u8(0x08)? + u.write_binary(sink)?,
-            Instruction::Return(_) => sink.write_u8(0x09)?,
-            Instruction::ReturnIfNez(_) => sink.write_u8(0xa)?,
+            Instruction::Return(drop_keep) => {
+                sink.write_u8(0x09)? + drop_keep.write_binary(sink)?
+            }
+            Instruction::ReturnIfNez(drop_keep) => {
+                sink.write_u8(0xa)? + drop_keep.write_binary(sink)?
+            }
             Instruction::CallInternal(compiled_func) => {
                 sink.write_u8(0xb)? + compiled_func.write_binary(sink)?
             }
@@ -249,6 +253,12 @@ impl<'a> BinaryFormat<'a> for Instruction {
             Instruction::I64TruncSatF32U => sink.write_u8(0xbb)?,
             Instruction::I64TruncSatF64S => sink.write_u8(0xbc)?,
             Instruction::I64TruncSatF64U => sink.write_u8(0xbd)?,
+            Instruction::BrAdjust(offset) => sink.write_u8(0xbe)? + offset.write_binary(sink)?,
+            // Instruction::DropKeep(drop_keep) => {
+            //     sink.write_u8(0xff)?
+            //         + sink.write_u32_le(drop_keep.drop() as u32)?
+            //         + sink.write_u32_le(drop_keep.keep() as u32)?
+            // }
             _ => unreachable!("not supported opcode: {:?}", self),
         };
         // we align all opcodes to 9 bytes
@@ -274,8 +284,8 @@ impl<'a> BinaryFormat<'a> for Instruction {
             0x06 => Instruction::BrTable(BranchTableTargets::read_binary(sink)?),
             0x07 => Instruction::Unreachable,
             0x08 => Instruction::ConsumeFuel(BlockFuel::read_binary(sink)?),
-            0x09 => Instruction::Return(DropKeep::none()),
-            0xa => Instruction::ReturnIfNez(DropKeep::none()),
+            0x09 => Instruction::Return(DropKeep::read_binary(sink)?),
+            0xa => Instruction::ReturnIfNez(DropKeep::read_binary(sink)?),
             0xb => Instruction::CallInternal(CompiledFunc::read_binary(sink)?),
             0xc => Instruction::Call(FuncIdx::read_binary(sink)?),
             0xd => Instruction::CallIndirect(SignatureIdx::read_binary(sink)?),
@@ -459,7 +469,11 @@ impl<'a> BinaryFormat<'a> for Instruction {
             0xbb => Instruction::I64TruncSatF32U,
             0xbc => Instruction::I64TruncSatF64S,
             0xbd => Instruction::I64TruncSatF64U,
+            0xbe => Instruction::BrAdjust(BranchOffset::read_binary(sink)?),
 
+            // 0xff => Instruction::DropKeep(
+            //     DropKeep::new(sink.read_u32_le()? as usize, sink.read_u32_le()? as
+            // usize).unwrap(), ),
             _ => return Err(BinaryFormatError::IllegalOpcode(byte)),
         };
         // we align all opcodes to 9 bytes

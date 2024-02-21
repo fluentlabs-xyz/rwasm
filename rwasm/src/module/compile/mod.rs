@@ -7,16 +7,17 @@ use crate::{
 use wasmparser::{FuncValidator, FunctionBody, ValidatorResources};
 
 mod block_type;
+mod rwasm;
 
 /// Translates the Wasm bytecode into `wasmi` bytecode.
 ///
 /// # Note
 ///
 /// - Uses the given `engine` as target for the translation.
-/// - Uses the given `parser` and `validator` for parsing and validation of
-///   the incoming Wasm bytecode stream.
-/// - Uses the given module resources `res` as shared immutable data of the
-///   already parsed and validated module parts required for the translation.
+/// - Uses the given `parser` and `validator` for parsing and validation of the incoming Wasm
+///   bytecode stream.
+/// - Uses the given module resources `res` as shared immutable data of the already parsed and
+///   validated module parts required for the translation.
 ///
 /// # Errors
 ///
@@ -38,6 +39,8 @@ struct FunctionTranslator<'parser> {
     func_body: FunctionBody<'parser>,
     /// The interface to incrementally build up the `wasmi` bytecode function.
     func_builder: FuncBuilder<'parser>,
+    /// Module resources
+    res: ModuleResources<'parser>,
 }
 
 impl<'parser> FunctionTranslator<'parser> {
@@ -54,11 +57,14 @@ impl<'parser> FunctionTranslator<'parser> {
         Self {
             func_body,
             func_builder,
+            res,
         }
     }
 
     /// Starts translation of the Wasm stream into `wasmi` bytecode.
     fn translate(mut self) -> Result<ReusableAllocations, ModuleError> {
+        self.translate_entrypoint()
+            .map_err(|err| ModuleError::Rwasm(err))?;
         self.translate_locals()?;
         let offset = self.translate_operators()?;
         let allocations = self.finish(offset)?;

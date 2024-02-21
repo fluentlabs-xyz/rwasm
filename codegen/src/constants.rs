@@ -10,5 +10,5 @@ pub const N_MAX_MEMORY_PAGES: u32 = 1024;
 /// number of pages, tables, etc. We found 1024 is enough.
 pub const N_MAX_TABLES: u32 = 1024;
 
-pub const N_MAX_STACK_HEIGHT: usize = 1024;
+pub const N_MAX_STACK_HEIGHT: usize = 4096;
 pub const N_MAX_RECURSION_DEPTH: usize = 1024;

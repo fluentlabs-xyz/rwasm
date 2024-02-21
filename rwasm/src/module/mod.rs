@@ -313,7 +313,7 @@ impl Module {
                     } else if let Some(value) = global_expr.funcref() {
                         Some(Instruction::RefFunc(value.into_u32().into()))
                     } else if let Some(index) = global_expr.global() {
-                        Some(Instruction::GlobalGet(index.into_u32().into()))
+                        Some(Instruction::GlobalGet(index.into()))
                     } else {
                         None
                     }

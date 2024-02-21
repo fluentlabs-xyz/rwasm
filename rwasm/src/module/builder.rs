@@ -65,12 +65,17 @@ impl ModuleImports {
     pub fn len_funcs(&self) -> usize {
         self.funcs.len()
     }
+
+    /// Returns the number of imported tables.
+    pub fn len_tables(&self) -> usize {
+        self.tables.len()
+    }
 }
 
 /// The resources of a [`Module`] required for translating function bodies.
 #[derive(Debug, Copy, Clone)]
 pub struct ModuleResources<'a> {
-    res: &'a ModuleBuilder<'a>,
+    pub(crate) res: &'a ModuleBuilder<'a>,
 }
 
 impl<'a> ModuleResources<'a> {

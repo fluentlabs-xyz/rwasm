@@ -4,6 +4,7 @@ mod error;
 mod inst_builder;
 mod labels;
 mod locals_registry;
+mod rwasm;
 mod translator;
 mod value_stack;
 
@@ -15,10 +16,14 @@ use self::{
 pub use self::{
     error::{TranslationError, TranslationErrorInner},
     inst_builder::{Instr, InstructionsBuilder, RelativeDepth},
+    rwasm::RwasmModuleBuilder,
     translator::FuncTranslatorAllocations,
 };
 use super::CompiledFunc;
-use crate::module::{FuncIdx, ModuleResources, ReusableAllocations};
+use crate::{
+    engine::bytecode::Instruction,
+    module::{FuncIdx, ModuleResources, ReusableAllocations},
+};
 use wasmparser::{BinaryReaderError, VisitOperator};
 
 /// The used function validator type.
@@ -35,7 +40,7 @@ pub struct FuncBuilder<'parser> {
     /// The Wasm function validator.
     validator: FuncValidator,
     /// The underlying Wasm to `wasmi` bytecode translator.
-    translator: FuncTranslator<'parser>,
+    pub(crate) translator: FuncTranslator<'parser>,
 }
 
 impl<'parser> FuncBuilder<'parser> {
@@ -62,7 +67,17 @@ impl<'parser> FuncBuilder<'parser> {
         value_type: wasmparser::ValType,
     ) -> Result<(), TranslationError> {
         self.validator.define_locals(offset, amount, value_type)?;
-        self.translator.register_locals(amount);
+        // for rWASM we initialize locals with zeros
+        if self.translator.engine().config().get_rwasm_binary() {
+            for _ in 0..amount as usize {
+                self.translator
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::I32Const(0.into()));
+            }
+        } else {
+            self.translator.register_locals(amount);
+        }
         Ok(())
     }
 

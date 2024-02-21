@@ -2,7 +2,6 @@ use crate::{
     binary_format::BinaryFormat,
     constants::{N_MAX_MEMORY_PAGES, N_MAX_TABLES},
     instruction_set::InstructionSet,
-    platform::ImportLinker,
     BinaryFormatError,
 };
 use alloc::{
@@ -11,6 +10,7 @@ use alloc::{
     vec::Vec,
 };
 use rwasm::{
+    core::ImportLinker,
     engine::bytecode::Instruction,
     module::{FuncIdx, FuncTypeIdx, MemoryIdx, ModuleBuilder, ModuleError, ModuleResources},
     Engine,

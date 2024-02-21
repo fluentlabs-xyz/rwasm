@@ -10,6 +10,7 @@ extern crate std as alloc;
 pub mod binary_format;
 pub mod compiler;
 mod constants;
+pub use constants::*;
 mod instruction_set;
 mod platform;
 mod reduced_module;

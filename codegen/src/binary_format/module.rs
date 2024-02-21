@@ -148,9 +148,9 @@ mod tests {
     #[test]
     fn test_module_encoding() {
         let instruction_set = instruction_set! {
-            .add_memory_pages(1)
-            .add_default_memory(0, &[0, 1, 2, 3])
-            .add_default_memory(100, &[4, 5, 6, 7])
+            // .add_memory_pages(1)
+            // .add_default_memory(0, &[0, 1, 2, 3])
+            // .add_default_memory(100, &[4, 5, 6, 7])
             I32Const(100)
             I32Const(20)
             I32Add
@@ -158,10 +158,10 @@ mod tests {
             I32Add
             Drop
         };
-        let memory_section = instruction_set.memory_section.clone();
+        // let memory_section = instruction_set.memory_section.clone();
         let module = RwasmModule {
             code_section: instruction_set,
-            memory_section,
+            memory_section: Default::default(),
             decl_section: vec![1, 2, 3],
             element_section: vec![5, 6, 7, 8, 9],
         };

@@ -1,11 +1,18 @@
 use crate::{
     compiler::{compiler::Compiler2, config::CompilerConfig, types::FuncOrExport},
     instruction_set,
-    platform::ImportLinker,
-    ImportFunc,
 };
 use alloc::string::ToString;
-use rwasm::{core::ValueType, AsContextMut, Caller, Config, Engine, Func, Linker, Store};
+use rwasm::{
+    core::{ImportFunc, ImportLinker, ValueType},
+    AsContextMut,
+    Caller,
+    Config,
+    Engine,
+    Func,
+    Linker,
+    Store,
+};
 
 #[derive(Default, Debug, Clone)]
 struct HostState {
@@ -34,7 +41,7 @@ fn execute_binary(wat: &str, run_config: RunConfig) -> HostState {
         1,
     ));
 
-    let mut translator = Compiler2::new_with_linker(
+    let mut compiler = Compiler2::new_with_linker(
         &wasm_binary,
         CompilerConfig::default()
             .translate_sections(true)
@@ -42,20 +49,17 @@ fn execute_binary(wat: &str, run_config: RunConfig) -> HostState {
         Some(&import_linker),
     )
     .unwrap();
-    translator.translate(run_config.entrypoint).unwrap();
-    let reduced_module = translator.finalize().unwrap();
+
+    let (engine, module) = compiler.finalize();
     // assert_eq!(translator.code_section, reduced_module.bytecode().clone());
-    let trace = reduced_module.trace();
-    println!("{}", trace);
+    // let trace = reduced_module.trace();
+    // println!("{}", trace);
 
     // execute translated rwasm
-    let mut config = Config::default();
-    config.consume_fuel(true);
-    let engine = Engine::new(&config);
     let mut store = Store::new(&engine, HostState::default());
     store.add_fuel(1_000_000).unwrap();
     let mut linker = Linker::<HostState>::new(&engine);
-    let module = reduced_module.to_module(&engine, &mut import_linker);
+    // let module = reduced_module.to_module(&engine, &mut import_linker);
     linker
         .define(
             "env",

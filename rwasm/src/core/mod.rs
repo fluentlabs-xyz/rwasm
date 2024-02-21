@@ -11,6 +11,7 @@
 )]
 
 mod host_error;
+mod import_linker;
 mod nan_preserving_float;
 mod trap;
 mod units;
@@ -36,9 +37,10 @@ use self::value::{
 };
 pub use self::{
     host_error::HostError,
+    import_linker::*,
     nan_preserving_float::{F32, F64},
     trap::{Trap, TrapCode},
-    units::Pages,
+    units::{Bytes, Pages},
     untyped::{DecodeUntypedSlice, EncodeUntypedSlice, UntypedError, UntypedValue},
     value::ValueType,
 };
