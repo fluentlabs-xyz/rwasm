@@ -87,7 +87,7 @@ impl<'parser> FunctionTranslator<'parser> {
             .into_func_idx()
             .ok_or(RwasmBuilderError::MissingEntrypoint)?;
         // we do plus one to skip entrypoint section
-        instr_builder.push_inst(Instruction::CallInternal((export_index + 1).into()));
+        instr_builder.push_inst(Instruction::CallInternal(export_index.into()));
         instr_builder.push_inst(Instruction::Return(DropKeep::none()));
         Ok(())
     }

@@ -1276,6 +1276,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     }
 
     fn visit_call(&mut self, func_idx: u32) -> Result<(), TranslationError> {
+        let is_rwasm = self.engine().config().get_rwasm_binary();
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().call)?;
             let func_idx = FuncIdx::from(func_idx);
@@ -1285,6 +1286,11 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                 Some(compiled_func) => {
                     // Case: We are calling an internal function and can optimize
                     //       this case by using the special instruction for it.
+                    // let compiled_func = if is_rwasm {
+                    //     (compiled_func.to_u32() + 1).into()
+                    // } else {
+                    //     compiled_func
+                    // };
                     builder
                         .alloc
                         .inst_builder

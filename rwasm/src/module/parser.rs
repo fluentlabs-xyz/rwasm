@@ -68,6 +68,8 @@ pub struct ModuleParser<'engine> {
     compiled_funcs: u32,
     /// Reusable allocations for validating and translation functions.
     allocations: ReusableAllocations,
+    /// Index of empty function type
+    empty_func_type: Option<u32>,
 }
 
 /// Reusable heap allocations for function validation and translation.
@@ -89,6 +91,7 @@ impl<'engine> ModuleParser<'engine> {
             parser,
             compiled_funcs: 0,
             allocations: ReusableAllocations::default(),
+            empty_func_type: None,
         }
     }
 
@@ -115,7 +118,8 @@ impl<'engine> ModuleParser<'engine> {
                 }
                 Chunk::Parsed { consumed, payload } => {
                     eof = self.process_payload(payload)?;
-                    // Cut away the parts from the intermediate buffer that have already been parsed.
+                    // Cut away the parts from the intermediate buffer that have already been
+                    // parsed.
                     buffer.drain(..consumed);
                     if eof {
                         break 'outer;
@@ -252,7 +256,9 @@ impl<'engine> ModuleParser<'engine> {
         let func_types = section.into_iter().map(|result| match result? {
             wasmparser::Type::Func(ty) => Ok(FuncType::from_wasmparser(ty)),
         });
+        let func_types = func_types.chain(core::iter::once(Ok(FuncType::new([], []))));
         self.builder.push_func_types(func_types)?;
+        self.empty_func_type = Some(self.builder.func_types.len() as u32);
         Ok(())
     }
 
@@ -304,6 +310,11 @@ impl<'engine> ModuleParser<'engine> {
         let funcs = section
             .into_iter()
             .map(|func| func.map(FuncTypeIdx::from).map_err(ModuleError::from));
+        let entrypoint_function = Ok(self
+            .empty_func_type
+            .expect("empty function type is not found")
+            .into());
+        let funcs = core::iter::once(entrypoint_function).chain(funcs);
         self.builder.push_funcs(funcs)?;
         Ok(())
     }

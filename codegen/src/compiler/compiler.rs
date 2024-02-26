@@ -77,6 +77,27 @@ impl<'linker> Compiler2<'linker> {
         })
     }
 
+    #[cfg(feature = "std")]
+    pub fn trace_bytecode(&self) {
+        let import_len = self.module.imports.len_funcs;
+        let mut result = String::new();
+        for fn_index in 0..self.module.compiled_funcs.len() {
+            // don't translate import functions because we can't translate them
+            if fn_index < import_len {
+                continue;
+            }
+            let func_body = self
+                .module
+                .compiled_funcs
+                .get(fn_index - import_len)
+                .unwrap();
+            for instr in self.engine.instr_vec(*func_body) {
+                result += format!("{:?}\n", instr).as_str();
+            }
+        }
+        println!("{}", result)
+    }
+
     pub fn finalize(self) -> (Engine, Module) {
         (self.engine, self.module)
     }

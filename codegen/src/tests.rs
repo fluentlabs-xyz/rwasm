@@ -50,6 +50,8 @@ fn execute_binary(wat: &str, run_config: RunConfig) -> HostState {
     )
     .unwrap();
 
+    compiler.trace_bytecode();
+
     let (engine, module) = compiler.finalize();
     // assert_eq!(translator.code_section, reduced_module.bytecode().clone());
     // let trace = reduced_module.trace();

@@ -268,19 +268,19 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             // );
             #[cfg(feature = "std")]
             {
-                let stack = self.value_stack.dump_stack(self.sp);
-                println!(
-                    "{}:\t {:?} \tstack({}):{:?}",
-                    self.ip.pc(),
-                    instr,
-                    stack.len(),
-                    stack
-                        .iter()
-                        .rev()
-                        .take(10)
-                        .map(|v| v.as_usize())
-                        .collect::<Vec<_>>()
-                );
+                // let stack = self.value_stack.dump_stack(self.sp);
+                // println!(
+                //     "{}:\t {:?} \tstack({}):{:?}",
+                //     self.ip.pc(),
+                //     instr,
+                //     stack.len(),
+                //     stack
+                //         .iter()
+                //         .rev()
+                //         .take(10)
+                //         .map(|v| v.as_usize())
+                //         .collect::<Vec<_>>()
+                // );
             }
 
             match instr {
@@ -710,22 +710,22 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     #[inline(always)]
     fn call_func_internal(&mut self, func: CompiledFunc, kind: CallKind) -> Result<(), TrapCode> {
         // in a rWASM compatibility mode we must convert function offset to index
-        let func = self
-            .code_map
-            .resolve_function_by_offset(func.into_usize())
-            .unwrap_or(func);
+        // let func = self
+        //     .code_map
+        //     .resolve_function_by_offset(func.into_usize())
+        //     .unwrap_or(func);
         self.next_instr_at(match kind {
             CallKind::Nested => 1,
             CallKind::Tail => 2,
         });
-        self.sync_stack_ptr();
-        if matches!(kind, CallKind::Nested) {
-            self.call_stack
-                .push(FuncFrame::new(self.ip, self.cache.instance()))?;
-        }
+        // self.sync_stack_ptr();
+        // if matches!(kind, CallKind::Nested) {
+        //     self.call_stack
+        //         .push(FuncFrame::new(self.ip, self.cache.instance()))?;
+        // }
         let header = self.code_map.header(func);
-        self.value_stack.prepare_wasm_call(header)?;
-        self.sp = self.value_stack.stack_ptr();
+        // self.value_stack.prepare_wasm_call(header)?;
+        // self.sp = self.value_stack.stack_ptr();
         self.ip = self.code_map.instr_ptr(header.iref());
         Ok(())
     }
