@@ -231,15 +231,15 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             //     return Err(TrapCode::StackOverflow.into());
             // }
 
-            // let dump = self.value_stack.dump_stack(self.sp);
-            // if dump.len() < 20 {
-            //     println!(
-            //         "{} {:?} {:?}",
-            //         self.ip.pc(),
-            //         instr,
-            //         dump.iter().map(|v| v.as_u64()).collect::<Vec<_>>()
-            //     );
-            // }
+            let dump = self.value_stack.dump_stack(self.sp);
+            if dump.len() < 20 {
+                println!(
+                    "{} {:?} {:?}",
+                    self.ip.pc(),
+                    instr,
+                    dump.iter().map(|v| v.as_u64()).collect::<Vec<_>>()
+                );
+            }
 
             // handle pre-instruction state
             // let has_default_memory = {
@@ -718,14 +718,14 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             CallKind::Nested => 1,
             CallKind::Tail => 2,
         });
-        // self.sync_stack_ptr();
-        // if matches!(kind, CallKind::Nested) {
-        //     self.call_stack
-        //         .push(FuncFrame::new(self.ip, self.cache.instance()))?;
-        // }
+        self.sync_stack_ptr();
+        if matches!(kind, CallKind::Nested) {
+            self.call_stack
+                .push(FuncFrame::new(self.ip, self.cache.instance()))?;
+        }
         let header = self.code_map.header(func);
-        // self.value_stack.prepare_wasm_call(header)?;
-        // self.sp = self.value_stack.stack_ptr();
+        self.value_stack.prepare_wasm_call(header)?;
+        self.sp = self.value_stack.stack_ptr();
         self.ip = self.code_map.instr_ptr(header.iref());
         Ok(())
     }
@@ -1083,8 +1083,25 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
 
     #[inline(always)]
     fn visit_call(&mut self, func_index: FuncIdx) -> Result<CallOutcome, TrapCode> {
-        let callee = self.cache.get_func(self.ctx, func_index);
-        self.call_func(1, &callee, CallKind::Nested)
+        if self.ctx.engine().config().get_rwasm_binary() {
+            let func_entity = self
+                .ctx
+                .engine()
+                .resolve_trampoline(func_index.to_u32())
+                .ok_or(TrapCode::UnresolvedFunction)?;
+            self.next_instr_at(1);
+            self.sync_stack_ptr();
+            self.call_stack
+                .push(FuncFrame::new(self.ip, self.cache.instance()))?;
+            self.cache.reset();
+            Ok(CallOutcome::Call {
+                host_func: func_entity,
+                instance: *self.cache.instance(),
+            })
+        } else {
+            let callee = self.cache.get_func(self.ctx, func_index);
+            self.call_func(1, &callee, CallKind::Nested)
+        }
     }
 
     #[inline(always)]

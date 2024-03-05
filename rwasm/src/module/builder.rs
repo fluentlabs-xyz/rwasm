@@ -16,7 +16,7 @@ use super::{
     Module,
 };
 use crate::{
-    core::ValueType,
+    core::{ValueType, N_MAX_TABLES},
     engine::{CompiledFunc, DedupFuncType},
     errors::ModuleError,
     Engine,
@@ -44,6 +44,7 @@ pub struct ModuleBuilder<'engine> {
     pub compiled_funcs: Vec<CompiledFunc>,
     pub element_segments: Vec<ElementSegment>,
     pub data_segments: Vec<DataSegment>,
+    pub import_mapping: BTreeMap<u32, FuncIdx>,
 }
 
 /// The import names of the [`Module`] imports.
@@ -108,9 +109,11 @@ impl<'a> ModuleResources<'a> {
     ///
     /// Returns `None` if [`FuncIdx`] refers to an imported function.
     pub fn get_compiled_func(&self, func_idx: FuncIdx) -> Option<CompiledFunc> {
-        let index = func_idx.into_u32() as usize;
-        let len_imported = self.res.imports.len_funcs();
-        let index = index.checked_sub(len_imported)?;
+        let index = if self.engine().config().get_rwasm_binary() {
+            func_idx.into_u32() as usize
+        } else {
+            (func_idx.into_u32() as usize).checked_sub(self.res.imports.len_funcs())?
+        };
         // Note: It is a bug if this index access is out of bounds
         //       therefore we panic here instead of using `get`.
         Some(self.res.compiled_funcs[index])
@@ -149,6 +152,7 @@ impl<'engine> ModuleBuilder<'engine> {
             compiled_funcs: Vec::new(),
             element_segments: Vec::new(),
             data_segments: Vec::new(),
+            import_mapping: BTreeMap::new(),
         }
     }
 
@@ -182,6 +186,26 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
+    pub(crate) fn ensure_empty_func_type_exists(&mut self) -> FuncTypeIdx {
+        self.resolve_func_type_index(FuncType::new([], []))
+    }
+
+    pub(crate) fn resolve_func_type_index(&mut self, func_type: FuncType) -> FuncTypeIdx {
+        let empty_type = self
+            .func_types
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (i, self.engine.resolve_func_type(t, |t| t.clone())))
+            .find(|(_, t)| *t == func_type);
+        if let Some(func_type) = empty_type {
+            return FuncTypeIdx::from(func_type.0 as u32);
+        }
+        let empty_func_type = FuncType::new([], []);
+        self.func_types
+            .push(self.engine.alloc_func_type(empty_func_type.clone()));
+        return FuncTypeIdx::from(self.func_types.len() as u32 - 1);
+    }
+
     pub fn push_func_type(&mut self, func_type: FuncType) -> Result<(), ModuleError> {
         let dedup = self.engine.alloc_func_type(func_type);
         self.func_types.push(dedup);
@@ -209,6 +233,10 @@ impl<'engine> ModuleBuilder<'engine> {
                     self.imports.funcs.push(name);
                     let func_type = self.func_types[func_type_idx.into_u32() as usize];
                     self.funcs.push(func_type);
+                    // for rWASM we store special compiled wrapper, it's needed for tables
+                    if self.engine.config().get_rwasm_binary() {
+                        self.compiled_funcs.push(self.engine.alloc_func());
+                    }
                 }
                 ExternTypeIdx::Table(table_type) => {
                     self.imports.tables.push(name);
@@ -224,7 +252,21 @@ impl<'engine> ModuleBuilder<'engine> {
                 }
             }
         }
+        // if self.engine.config().get_rwasm_binary() {
+        //     for (index, _import_name) in self.imports.funcs.iter().enumerate() {
+        //         let func_type = self.funcs[index + 1];
+        //         self.funcs.push(func_type);
+        //         self.compiled_funcs.push(self.engine.alloc_func());
+        //     }
+        // }
         Ok(())
+    }
+
+    pub fn push_entrypoint(&mut self) {
+        let func_type_index = self.ensure_empty_func_type_exists().into_u32() as usize;
+        let empty_func_type = self.func_types[func_type_index];
+        self.funcs.push(empty_func_type);
+        self.compiled_funcs.push(self.engine.alloc_func());
     }
 
     pub fn push_function_import(
@@ -361,6 +403,32 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
+    pub fn rewrite_elements(&mut self) -> Result<(), ModuleError> {
+        let mut data_section = Vec::with_capacity(0);
+        for data in self.element_segments.iter() {
+            data_section.extend(data.items.exprs.iter().cloned());
+        }
+        self.element_segments.clear();
+        self.element_segments.push(ElementSegment {
+            kind: ElementSegmentKind::Passive,
+            ty: ValueType::FuncRef,
+            items: ElementSegmentItems {
+                exprs: data_section.into(),
+            },
+        });
+        Ok(())
+    }
+
+    pub fn rewrite_tables(&mut self) -> Result<(), ModuleError> {
+        let num_tables = self.tables.len();
+        self.tables.clear();
+        let global_decl = TableType::new(ValueType::FuncRef, 0, Some(N_MAX_TABLES));
+        (0..num_tables).for_each(|_| {
+            self.tables.push(global_decl);
+        });
+        Ok(())
+    }
+
     pub fn push_empty_tables(
         &mut self,
         num_tables: u32,
@@ -391,6 +459,15 @@ impl<'engine> ModuleBuilder<'engine> {
             "tried to initialize module export declarations twice"
         );
         self.exports = exports.into_iter().collect::<Result<BTreeMap<_, _>, _>>()?;
+        Ok(())
+    }
+
+    pub fn rewrite_exports<I>(&mut self, name: Box<str>, index: I) -> Result<(), ModuleError>
+    where
+        I: Into<ExternIdx>,
+    {
+        self.exports.clear();
+        self.exports.insert(name, index.into());
         Ok(())
     }
 
@@ -480,10 +557,10 @@ impl<'engine> ModuleBuilder<'engine> {
 
     /// Finishes construction of the WebAssembly [`Module`].
     pub fn finish(self) -> Module {
-        Module::from_builder(self, false)
+        Module::from_builder(self)
     }
 
     pub fn finish_rwasm(self) -> Module {
-        Module::from_builder(self, true)
+        Module::from_builder(self)
     }
 }

@@ -1,45 +1,76 @@
 use crate::{
     core::{UntypedValue, ValueType},
-    engine::{bytecode::Instruction, DropKeep, InstructionsBuilder, RwasmModuleBuilder},
+    engine::{
+        bytecode::Instruction,
+        CompiledFunc,
+        DropKeep,
+        FuncBuilder,
+        FuncTranslatorAllocations,
+    },
+    errors::ModuleError,
     module::{
-        compile::FunctionTranslator,
         error::RwasmBuilderError,
         ConstExpr,
         DataSegment,
         DataSegmentKind,
         ElementSegmentKind,
-        ImportName,
-        Imported,
+        FuncIdx,
         ModuleResources,
+        ReusableAllocations,
     },
 };
-use core::{fmt, fmt::Display};
 
-impl<'parser> FunctionTranslator<'parser> {
-    pub fn translate_entrypoint(&mut self) -> Result<(), RwasmBuilderError> {
-        // if we already did injection then just skip it
-        if self
+pub struct RwasmTranslator<'parser> {
+    /// The interface to incrementally build up the `wasmi` bytecode function.
+    func_builder: FuncBuilder<'parser>,
+    /// Module resources
+    res: ModuleResources<'parser>,
+}
+
+impl<'parser> RwasmTranslator<'parser> {
+    pub fn new(
+        func: FuncIdx,
+        compiled_func: CompiledFunc,
+        res: ModuleResources<'parser>,
+        allocations: FuncTranslatorAllocations,
+    ) -> Self {
+        let func_builder = FuncBuilder::new(func, compiled_func, res, None, allocations);
+        Self { func_builder, res }
+    }
+
+    pub fn translate_entrypoint(mut self) -> Result<ReusableAllocations, ModuleError> {
+        self.translate_entrypoint_internal()
+            .map_err(|err| ModuleError::Rwasm(err))?;
+        let allocations = self
             .func_builder
-            .translator
-            .alloc
-            .rwasm_builder
-            .entrypoint_injected
-        {
-            return Ok(());
-        }
-        self.func_builder
-            .translator
-            .alloc
-            .rwasm_builder
-            .entrypoint_injected = true;
+            .finish(None)
+            .map_err(Into::<ModuleError>::into)?;
+        Ok(allocations)
+    }
+
+    pub fn translate_import_func(
+        mut self,
+        import_func_index: u32,
+    ) -> Result<(ReusableAllocations, u32), ModuleError> {
+        let sys_index = self
+            .translate_import_func_internal(import_func_index)
+            .map_err(|err| ModuleError::Rwasm(err))?;
+        let allocations = self
+            .func_builder
+            .finish(None)
+            .map_err(Into::<ModuleError>::into)?;
+        Ok((allocations, sys_index))
+    }
+
+    fn translate_entrypoint_internal(&mut self) -> Result<(), RwasmBuilderError> {
         // first we must translate all sections, this is an entrypoint
         self.translate_sections()?;
         // translate router for main index
         self.translate_router("main")?;
         // translate import functions
-        for i in 0..self.res.res.imports.len_funcs() {
-            self.translate_import_func(i as u32)?;
-        }
+        // for i in 0..self.res.res.imports.len_funcs() {
+        //     self.translate_import_func(i as u32)?;
+        // }
         // push unreachable in the end (indication of the entrypoint end)
         self.func_builder
             .translator
@@ -48,32 +79,6 @@ impl<'parser> FunctionTranslator<'parser> {
             .push_inst(Instruction::Unreachable);
         Ok(())
     }
-
-    // fn translate_function(&mut self, fn_index: u32) -> Result<(), RwasmBuilderError> {
-    //     let instr_builder = &mut self.func_builder.translator.alloc.inst_builder;
-    //     let import_len = self.res.res.imports.len_funcs();
-    //     // don't translate import functions because we can't translate them
-    //     if fn_index < import_len as u32 {
-    //         return Ok(());
-    //     }
-    //     let func_body = self
-    //         .res
-    //         .res
-    //         .compiled_funcs
-    //         .get(fn_index as usize - import_len)
-    //         .ok_or(RwasmBuilderError::MissingFunction)?;
-    //     // reserve stack for locals
-    //     let len_locals = self.res.res.engine().num_locals(*func_body);
-    //     (0..len_locals).for_each(|_| {
-    //         instr_builder.push_inst(Instruction::I32Const(0.into()));
-    //     });
-    //     // translate instructions
-    //     let (mut instr_ptr, instr_end) = self.res.res.engine().instr_ptr(*func_body);
-    //     while instr_ptr != instr_end {
-    //         self.translate_opcode(&mut instr_ptr, 0)?;
-    //     }
-    //     Ok(())
-    // }
 
     fn translate_router(&mut self, entrypoint_name: &'static str) -> Result<(), RwasmBuilderError> {
         // translate router into separate instruction set
@@ -92,15 +97,19 @@ impl<'parser> FunctionTranslator<'parser> {
         Ok(())
     }
 
-    fn translate_import_func(&mut self, import_fn_index: u32) -> Result<(), RwasmBuilderError> {
+    fn translate_import_func_internal(
+        &mut self,
+        import_fn_index: u32,
+    ) -> Result<u32, RwasmBuilderError> {
         let (import_index, fuel_cost) = self.resolve_host_call(import_fn_index)?;
         let instr_builder = &mut self.func_builder.translator.alloc.inst_builder;
         if self.res.engine().config().get_consume_fuel() {
             instr_builder.push_inst(Instruction::ConsumeFuel(fuel_cost.into()));
         }
+        // instr_builder.push_inst(Instruction::Call((import_fn_index + 1).into()));
         instr_builder.push_inst(Instruction::Call(import_index.into()));
         instr_builder.push_inst(Instruction::Return(DropKeep::none()));
-        Ok(())
+        Ok(import_index)
     }
 
     fn resolve_host_call(&mut self, fn_index: u32) -> Result<(u32, u32), RwasmBuilderError> {
@@ -218,15 +227,6 @@ impl<'parser> FunctionTranslator<'parser> {
                         aes.table_index().into_u32().into(),
                         into_inter,
                     );
-                    // TODO: "do we need this condition here? if yes, then why?"
-                    if cfg!(feature = "e2e") {
-                        instr_builder.push_inst(Instruction::I64Const(dest_offset.into()));
-                        instr_builder.push_inst(Instruction::I64Const(0.into()));
-                        instr_builder.push_inst(Instruction::I64Const(0.into()));
-                        instr_builder.push_inst(Instruction::TableInit((i as u32).into()));
-                        instr_builder
-                            .push_inst(Instruction::TableGet(aes.table_index().into_u32().into()));
-                    }
                 }
                 ElementSegmentKind::Declared => return Ok(()),
             };

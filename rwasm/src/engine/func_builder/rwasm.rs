@@ -1,4 +1,5 @@
 use crate::{
+    core::{N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES},
     engine::{
         bytecode::{DataSegmentIdx, ElementSegmentIdx, Instruction, TableIdx},
         func_builder::InstructionsBuilder,
@@ -7,21 +8,6 @@ use crate::{
 };
 use hashbrown::HashMap;
 
-/// This constant is driven by WebAssembly standard, default
-/// memory page size is 64kB
-pub const N_BYTES_PER_MEMORY_PAGE: u32 = 65536;
-
-/// We have a hard limit for max possible memory used
-/// that is equal to ~64mB
-pub const N_MAX_MEMORY_PAGES: u32 = 1024;
-
-/// To optimize proving process we have to limit max
-/// number of pages, tables, etc. We found 1024 is enough.
-pub const N_MAX_TABLES: u32 = 1024;
-
-pub const N_MAX_STACK_HEIGHT: usize = 4096;
-pub const N_MAX_RECURSION_DEPTH: usize = 1024;
-
 #[derive(Debug, Default)]
 pub struct RwasmModuleBuilder {
     pub(crate) memory_section: Vec<u8>,
@@ -29,7 +15,6 @@ pub struct RwasmModuleBuilder {
     pub(crate) element_section: Vec<u32>,
     pub(crate) passive_element_sections: HashMap<ElementSegmentIdx, (u32, u32)>,
     pub(crate) total_allocated_pages: u32,
-    pub(crate) entrypoint_injected: bool,
 }
 
 impl RwasmModuleBuilder {

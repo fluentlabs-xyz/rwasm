@@ -78,7 +78,7 @@ impl Trampoline {
 }
 
 /// A Wasm or host function instance.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FuncEntity {
     /// A Wasm function.
     Wasm(WasmFuncEntity),

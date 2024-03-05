@@ -13,6 +13,7 @@
 mod host_error;
 mod import_linker;
 mod nan_preserving_float;
+mod rwasm;
 mod trap;
 mod units;
 mod untyped;
@@ -39,6 +40,7 @@ pub use self::{
     host_error::HostError,
     import_linker::*,
     nan_preserving_float::{F32, F64},
+    rwasm::*,
     trap::{Trap, TrapCode},
     units::{Bytes, Pages},
     untyped::{DecodeUntypedSlice, EncodeUntypedSlice, UntypedError, UntypedValue},

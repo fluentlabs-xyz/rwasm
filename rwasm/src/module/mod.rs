@@ -62,7 +62,7 @@ pub struct Module {
     pub compiled_funcs: Box<[CompiledFunc]>,
     pub element_segments: Box<[ElementSegment]>,
     pub data_segments: Box<[DataSegment]>,
-    pub is_rwasm: bool,
+    pub import_mapping: BTreeMap<u32, FuncIdx>,
 }
 
 /// The index of the default Wasm linear memory.
@@ -151,7 +151,7 @@ impl Module {
     }
 
     /// Creates a new [`Module`] from the [`ModuleBuilder`].
-    fn from_builder(builder: ModuleBuilder, is_rwasm: bool) -> Self {
+    fn from_builder(builder: ModuleBuilder) -> Self {
         Self {
             engine: builder.engine().clone(),
             func_types: builder.func_types.into(),
@@ -166,7 +166,7 @@ impl Module {
             compiled_funcs: builder.compiled_funcs.into(),
             element_segments: builder.element_segments.into(),
             data_segments: builder.data_segments.into(),
-            is_rwasm,
+            import_mapping: builder.import_mapping.into(),
         }
     }
 
@@ -218,7 +218,11 @@ impl Module {
         // We skip the first `len_imported` elements in `funcs`
         // since they refer to imported and not internally defined
         // functions.
-        let funcs = &self.funcs[len_imported..];
+        let funcs = if self.engine.config().get_rwasm_binary() {
+            &self.funcs[..]
+        } else {
+            &self.funcs[len_imported..]
+        };
         let compiled_funcs = &self.compiled_funcs[..];
         assert_eq!(funcs.len(), compiled_funcs.len());
         InternalFuncsIter {

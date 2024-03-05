@@ -1,17 +1,16 @@
 use crate::{
     compiler::{
         config::CompilerConfig,
-        types::{CompilerError, FuncOrExport, Injection, Translator},
+        types::{CompilerError, FuncOrExport, Injection},
     },
     constants::{N_MAX_RECURSION_DEPTH, N_MAX_STACK_HEIGHT},
     InstructionSet,
-    RwasmModule,
 };
 use alloc::vec::Vec;
 use rwasm::{
     core::ImportLinker,
     engine::{
-        bytecode::{BranchOffset, Instruction, TableIdx},
+        bytecode::{Instruction, TableIdx},
         code_map::InstructionPtr,
         DropKeep,
     },
@@ -55,13 +54,9 @@ impl<'linker> Compiler2<'linker> {
             .unwrap(),
         );
         engine_config.wasm_bulk_memory(true);
-        engine_config.wasm_tail_call(true);
+        engine_config.wasm_tail_call(false);
         engine_config.wasm_extended_const(config.extended_const);
         engine_config.consume_fuel(config.fuel_consume);
-        engine_config.wasm_tail_call(config.tail_call);
-        if let Some(import_linker) = import_linker {
-            engine_config.import_linker(import_linker.clone());
-        }
         engine_config.rwasm_binary(true);
         let engine = Engine::new(&engine_config);
         let module =
@@ -80,22 +75,18 @@ impl<'linker> Compiler2<'linker> {
     #[cfg(feature = "std")]
     pub fn trace_bytecode(&self) {
         let import_len = self.module.imports.len_funcs;
-        let mut result = String::new();
-        for fn_index in 0..self.module.compiled_funcs.len() {
-            // don't translate import functions because we can't translate them
-            if fn_index < import_len {
-                continue;
+        for fn_index in 0..self.module.funcs.len() {
+            if fn_index != 0 && fn_index - 1 < import_len {
+                println!("# imported func {}", fn_index);
+            } else {
+                println!("# func {}", fn_index);
             }
-            let func_body = self
-                .module
-                .compiled_funcs
-                .get(fn_index - import_len)
-                .unwrap();
+            let func_body = self.module.compiled_funcs.get(fn_index).unwrap();
             for instr in self.engine.instr_vec(*func_body) {
-                result += format!("{:?}\n", instr).as_str();
+                println!("{:?}", instr);
             }
         }
-        println!("{}", result)
+        println!()
     }
 
     pub fn finalize(self) -> (Engine, Module) {
@@ -165,29 +156,29 @@ impl<'linker> Compiler2<'linker> {
         let mut opcode_count_origin = 1;
 
         match *instr_ptr.get() {
-            WI::BrAdjust(branch_offset) => {
-                opcode_count_origin += 1;
-                Self::extract_drop_keep(instr_ptr).translate(&mut self.code_section)?;
-                self.code_section.op_br(branch_offset);
-                self.code_section.op_return();
-            }
-            WI::BrAdjustIfNez(branch_offset) => {
-                opcode_count_origin += 1;
-                let br_if_offset = self.code_section.len();
-                self.code_section.op_br_if_eqz(0);
-                Self::extract_drop_keep(instr_ptr).translate(&mut self.code_section)?;
-                let drop_keep_len = self.code_section.len() - br_if_offset + 1;
-                self.code_section
-                    .get_mut(br_if_offset as usize)
-                    .unwrap()
-                    .update_branch_offset(BranchOffset::from(1 + drop_keep_len as i32));
-                let mut branch_offset = branch_offset.to_i32();
-                if branch_offset < 0 {
-                    branch_offset -= 3;
-                }
-                self.code_section.op_br(branch_offset);
-                self.code_section.op_return();
-            }
+            // WI::BrAdjust(branch_offset) => {
+            //     opcode_count_origin += 1;
+            //     Self::extract_drop_keep(instr_ptr).translate(&mut self.code_section)?;
+            //     self.code_section.op_br(branch_offset);
+            //     self.code_section.op_return();
+            // }
+            // WI::BrAdjustIfNez(branch_offset) => {
+            //     opcode_count_origin += 1;
+            //     let br_if_offset = self.code_section.len();
+            //     self.code_section.op_br_if_eqz(0);
+            //     Self::extract_drop_keep(instr_ptr).translate(&mut self.code_section)?;
+            //     let drop_keep_len = self.code_section.len() - br_if_offset + 1;
+            //     self.code_section
+            //         .get_mut(br_if_offset as usize)
+            //         .unwrap()
+            //         .update_branch_offset(BranchOffset::from(1 + drop_keep_len as i32));
+            //     let mut branch_offset = branch_offset.to_i32();
+            //     if branch_offset < 0 {
+            //         branch_offset -= 3;
+            //     }
+            //     self.code_section.op_br(branch_offset);
+            //     self.code_section.op_return();
+            // }
             WI::ReturnCallInternal(_) | WI::ReturnCall(_) | WI::ReturnCallIndirect(_) => {
                 unreachable!("not supported tail call")
             }
@@ -218,21 +209,21 @@ impl<'linker> Compiler2<'linker> {
                     self.code_section.push(opcode2);
                 }
             }
-            WI::Return(drop_keep) => {
-                drop_keep.translate(&mut self.code_section)?;
-                self.code_section.op_return();
-            }
-            WI::ReturnIfNez(drop_keep) => {
-                let br_if_offset = self.code_section.len();
-                self.code_section.op_br_if_eqz(0);
-                drop_keep.translate(&mut self.code_section)?;
-                let drop_keep_len = self.code_section.len() - br_if_offset;
-                self.code_section
-                    .get_mut(br_if_offset as usize)
-                    .unwrap()
-                    .update_branch_offset(BranchOffset::from(1 + drop_keep_len as i32));
-                self.code_section.op_return();
-            }
+            // WI::Return(drop_keep) => {
+            //     drop_keep.translate(&mut self.code_section)?;
+            //     self.code_section.op_return();
+            // }
+            // WI::ReturnIfNez(drop_keep) => {
+            //     let br_if_offset = self.code_section.len();
+            //     self.code_section.op_br_if_eqz(0);
+            //     drop_keep.translate(&mut self.code_section)?;
+            //     let drop_keep_len = self.code_section.len() - br_if_offset;
+            //     self.code_section
+            //         .get_mut(br_if_offset as usize)
+            //         .unwrap()
+            //         .update_branch_offset(BranchOffset::from(1 + drop_keep_len as i32));
+            //     self.code_section.op_return();
+            // }
             WI::Call(func_idx) => {
                 self.code_section.op_call_internal(func_idx.to_u32());
             }
@@ -241,17 +232,17 @@ impl<'linker> Compiler2<'linker> {
                 self.code_section
                     .op_call_internal(func_idx.to_u32() + import_len);
             }
-            WI::ConstRef(const_ref) => {
-                let resolved_const = self.engine.resolve_const(const_ref).unwrap();
-                self.code_section.op_i64_const(resolved_const);
-            }
-            WI::MemoryInit(data_segment_idx) => {
-                self.code_section.op_memory_init(data_segment_idx);
-            }
-            WI::TableInit(elem_segment_idx) => {
-                let table = Self::extract_table(instr_ptr);
-                self.code_section.op_table_init(table, elem_segment_idx);
-            }
+            // WI::ConstRef(const_ref) => {
+            //     let resolved_const = self.engine.resolve_const(const_ref).unwrap();
+            //     self.code_section.op_i64_const(resolved_const);
+            // }
+            // WI::MemoryInit(data_segment_idx) => {
+            //     self.code_section.op_memory_init(data_segment_idx);
+            // }
+            // WI::TableInit(elem_segment_idx) => {
+            //     let table = Self::extract_table(instr_ptr);
+            //     self.code_section.op_table_init(table, elem_segment_idx);
+            // }
             // WI::MemoryGrow => {
             //     assert!(!self.module.memories.is_empty(), "memory must be provided");
             //     let max_pages = self.module.memories[0]
@@ -404,75 +395,4 @@ impl<'linker> Compiler2<'linker> {
             .ok_or(CompilerError::MissingEntrypoint)?;
         Ok(export_index)
     }
-
-    // pub fn finalize(&mut self) -> Result<RwasmModule, CompilerError> {
-    //     let bytecode = &mut self.code_section;
-    //
-    //     let mut i = 0;
-    //     while i < bytecode.len() as usize {
-    //         match bytecode.instr[i] {
-    //             Instruction::Br(offset)
-    //             | Instruction::BrIfNez(offset)
-    //             | Instruction::BrAdjust(offset)
-    //             | Instruction::BrAdjustIfNez(offset)
-    //             | Instruction::BrIfEqz(offset) => {
-    //                 let mut offset = offset.to_i32();
-    //                 let start = i as i32;
-    //                 let mut target = start + offset;
-    //                 if offset > 0 {
-    //                     for injection in &self.injection_segments {
-    //                         if injection.begin < target && start < injection.begin {
-    //                             offset += injection.end - injection.begin - injection.origin_len;
-    //                             target += injection.end - injection.begin - injection.origin_len;
-    //                         }
-    //                     }
-    //                 } else {
-    //                     for injection in self.injection_segments.iter().rev() {
-    //                         if injection.end < start && target < injection.end {
-    //                             offset -= injection.end - injection.begin - injection.origin_len;
-    //                             target -= injection.end - injection.begin - injection.origin_len;
-    //                         }
-    //                     }
-    //                 };
-    //                 bytecode.instr[i].update_branch_offset(BranchOffset::from(offset));
-    //             }
-    //             Instruction::BrTable(target) => {
-    //                 i += target.to_usize() * 2;
-    //             }
-    //             _ => {}
-    //         };
-    //         i += 1;
-    //     }
-    //
-    //     for instr in bytecode.instr.iter_mut() {
-    //         let func_idx = match instr {
-    //             Instruction::CallInternal(func_idx) => func_idx.to_u32(),
-    //             Instruction::RefFunc(func_idx) => func_idx.to_u32(),
-    //             _ => continue,
-    //         };
-    //         let func_offset = self
-    //             .function_beginning
-    //             .get(func_idx as usize)
-    //             .copied()
-    //             .ok_or(CompilerError::MissingFunction)?;
-    //         instr.update_call_index(func_offset);
-    //     }
-    //
-    //     let element_section = bytecode
-    //         .element_section
-    //         .iter()
-    //         .map_while(|func_index| self.function_beginning.get(*func_index as usize))
-    //         .copied()
-    //         .collect::<Vec<_>>();
-    //     if element_section.len() != bytecode.element_section.len() {
-    //         return Err(CompilerError::MissingFunction);
-    //     }
-    //
-    //     Ok(RwasmModule {
-    //         code_section: bytecode.clone(),
-    //         memory_section: bytecode.memory_section.clone(),
-    //         decl_section: self.function_beginning.clone(),
-    //         element_section,
-    //     })
-    // }
 }

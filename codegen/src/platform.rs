@@ -1,9 +1,5 @@
-use alloc::{collections::BTreeMap, string::String, vec::Vec};
-use rwasm::{
-    core::{UntypedValue, ValueType},
-    module::ImportName,
-    FuncType,
-};
+use alloc::vec::Vec;
+use rwasm::core::UntypedValue;
 
 pub trait ImportHandler {
     // sys calls
@@ -58,7 +54,7 @@ impl DefaultImportHandler {
         self.output_len
     }
 
-    pub fn clear_ouput(&mut self, new_output_len: u32) {
+    pub fn clear_output(&mut self, new_output_len: u32) {
         self.output = vec![];
         self.output_len = new_output_len;
     }

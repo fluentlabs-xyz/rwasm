@@ -435,6 +435,10 @@ impl<'parser> FuncTranslator<'parser> {
         init_value: Option<&ConstExpr>,
         engine: &Engine,
     ) -> Result<Option<Instruction>, TranslationError> {
+        // don't do global get optimization for rWASM (not needed and misleading)
+        if engine.config().get_rwasm_binary() {
+            return Ok(None);
+        }
         if let (Mutability::Const, Some(init_expr)) = (global_type.mutability(), init_value) {
             if let Some(value) = init_expr.eval_const() {
                 // We can optimize `global.get` to the constant value.
@@ -1276,9 +1280,9 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     }
 
     fn visit_call(&mut self, func_idx: u32) -> Result<(), TranslationError> {
-        let is_rwasm = self.engine().config().get_rwasm_binary();
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().call)?;
+            // for rWASM first function is reserved for an entrypoint
             let func_idx = FuncIdx::from(func_idx);
             let func_type = builder.func_type_of(func_idx);
             builder.adjust_value_stack_for_call(&func_type);
@@ -1286,11 +1290,6 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                 Some(compiled_func) => {
                     // Case: We are calling an internal function and can optimize
                     //       this case by using the special instruction for it.
-                    // let compiled_func = if is_rwasm {
-                    //     (compiled_func.to_u32() + 1).into()
-                    // } else {
-                    //     compiled_func
-                    // };
                     builder
                         .alloc
                         .inst_builder

@@ -11,7 +11,7 @@ const RWASM_VERSION: u8 = 0x52;
 /// - element
 const SECTION_CODE: u8 = 0x01;
 const SECTION_MEMORY: u8 = 0x02;
-const SECTION_DECL: u8 = 0x03;
+const SECTION_FUNC: u8 = 0x03;
 const SECTION_ELEMENT: u8 = 0x04;
 const SECTION_END: u8 = 0x00;
 
@@ -29,10 +29,11 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         5 + // memory section header
         5 + // decl section header
         5 + // element section header
+        5 + // start section header
         1 + // terminator
             self.code_section.encoded_length() + // code section
             self.memory_section.len() + // memory section
-            self.decl_section.len() * core::mem::size_of::<u32>() + // decl section
+            self.func_section.len() * core::mem::size_of::<u32>() + // decl section
             self.element_section.len() * core::mem::size_of::<u32>() // element section
     }
 
@@ -52,8 +53,8 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         n += sink.write_u32_le(memory_section_length)?;
         // decl section header
         let decl_section_length =
-            self.decl_section.len() as u32 * (core::mem::size_of::<u32>() as u32);
-        n += sink.write_u8(SECTION_DECL)?;
+            self.func_section.len() as u32 * (core::mem::size_of::<u32>() as u32);
+        n += sink.write_u8(SECTION_FUNC)?;
         n += sink.write_u32_le(decl_section_length)?;
         // element section header
         let element_section_length =
@@ -67,7 +68,7 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
             n += opcode.write_binary(sink)?;
         }
         n += sink.write_bytes(&self.memory_section)?;
-        for x in self.decl_section.iter() {
+        for x in self.func_section.iter() {
             n += x.write_binary(sink)?;
         }
         for x in self.element_section.iter() {
@@ -94,7 +95,7 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         sink.assert_u8(SECTION_MEMORY)?;
         let memory_section_length = sink.read_u32_le()?;
         // decl section header
-        sink.assert_u8(SECTION_DECL)?;
+        sink.assert_u8(SECTION_FUNC)?;
         let decl_section_length = sink.read_u32_le()?;
         // element section header
         sink.assert_u8(SECTION_ELEMENT)?;
@@ -122,7 +123,7 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         {
             let mut decl_section_sink = sink.limit_with(decl_section_length as usize);
             while !decl_section_sink.is_empty() {
-                result.decl_section.push(decl_section_sink.read_u32_le()?);
+                result.func_section.push(decl_section_sink.read_u32_le()?);
             }
             sink.pos += decl_section_length as usize;
         }
@@ -147,22 +148,17 @@ mod tests {
 
     #[test]
     fn test_module_encoding() {
-        let instruction_set = instruction_set! {
-            // .add_memory_pages(1)
-            // .add_default_memory(0, &[0, 1, 2, 3])
-            // .add_default_memory(100, &[4, 5, 6, 7])
-            I32Const(100)
-            I32Const(20)
-            I32Add
-            I32Const(3)
-            I32Add
-            Drop
-        };
-        // let memory_section = instruction_set.memory_section.clone();
         let module = RwasmModule {
-            code_section: instruction_set,
+            code_section: instruction_set! {
+                I32Const(100)
+                I32Const(20)
+                I32Add
+                I32Const(3)
+                I32Add
+                Drop
+            },
             memory_section: Default::default(),
-            decl_section: vec![1, 2, 3],
+            func_section: vec![1, 2, 3],
             element_section: vec![5, 6, 7, 8, 9],
         };
         let mut encoded_data = Vec::new();

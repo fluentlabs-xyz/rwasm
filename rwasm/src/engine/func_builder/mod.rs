@@ -38,7 +38,7 @@ pub struct FuncBuilder<'parser> {
     /// The current position in the Wasm binary while parsing operators.
     pos: usize,
     /// The Wasm function validator.
-    validator: FuncValidator,
+    validator: Option<FuncValidator>,
     /// The underlying Wasm to `wasmi` bytecode translator.
     pub(crate) translator: FuncTranslator<'parser>,
 }
@@ -49,7 +49,7 @@ impl<'parser> FuncBuilder<'parser> {
         func: FuncIdx,
         compiled_func: CompiledFunc,
         res: ModuleResources<'parser>,
-        validator: FuncValidator,
+        validator: Option<FuncValidator>,
         allocations: FuncTranslatorAllocations,
     ) -> Self {
         Self {
@@ -66,7 +66,9 @@ impl<'parser> FuncBuilder<'parser> {
         amount: u32,
         value_type: wasmparser::ValType,
     ) -> Result<(), TranslationError> {
-        self.validator.define_locals(offset, amount, value_type)?;
+        if let Some(validator) = self.validator.as_mut() {
+            validator.define_locals(offset, amount, value_type)?;
+        }
         // for rWASM we initialize locals with zeros
         if self.translator.engine().config().get_rwasm_binary() {
             for _ in 0..amount as usize {
@@ -103,12 +105,22 @@ impl<'parser> FuncBuilder<'parser> {
     }
 
     /// Finishes constructing the function by initializing its [`CompiledFunc`].
-    pub fn finish(mut self, offset: usize) -> Result<ReusableAllocations, TranslationError> {
-        self.validator.finish(offset)?;
+    pub fn finish(
+        mut self,
+        offset: Option<usize>,
+    ) -> Result<ReusableAllocations, TranslationError> {
+        if let Some(offset) = offset {
+            if let Some(validator) = self.validator.as_mut() {
+                validator.finish(offset)?;
+            }
+        }
         self.translator.finish()?;
         let allocations = ReusableAllocations {
             translation: self.translator.into_allocations(),
-            validation: self.validator.into_allocations(),
+            validation: self
+                .validator
+                .map(|v| v.into_allocations())
+                .unwrap_or_default(),
         };
         Ok(allocations)
     }
@@ -123,7 +135,9 @@ impl<'parser> FuncBuilder<'parser> {
         V: FnOnce(&mut FuncValidator) -> Result<(), BinaryReaderError>,
         T: FnOnce(&mut FuncTranslator<'parser>) -> Result<(), TranslationError>,
     {
-        validate(&mut self.validator)?;
+        if let Some(validator) = self.validator.as_mut() {
+            validate(validator)?;
+        }
         translate(&mut self.translator)?;
         Ok(())
     }
@@ -176,7 +190,11 @@ macro_rules! impl_visit_operator {
         // Wildcard match arm for all the other (yet) unsupported Wasm proposals.
         fn $visit(&mut self $($(, $arg: $argty)*)?) -> Self::Output {
             let offset = self.current_pos();
-            self.validator.visitor(offset).$visit($($($arg),*)?).map_err(::core::convert::Into::into)
+            if let Some(validator) = self.validator.as_mut() {
+                validator.visitor(offset).$visit($($($arg),*)?).map_err(::core::convert::Into::into)
+            } else {
+                Ok(())
+            }
         }
         impl_visit_operator!($($rest)*);
     };

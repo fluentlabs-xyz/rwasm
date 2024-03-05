@@ -14,6 +14,7 @@ use super::{
 };
 use crate::{
     engine::{CompiledFunc, FuncTranslatorAllocations},
+    module::compile::RwasmTranslator,
     Engine,
     FuncType,
     MemoryType,
@@ -68,8 +69,6 @@ pub struct ModuleParser<'engine> {
     compiled_funcs: u32,
     /// Reusable allocations for validating and translation functions.
     allocations: ReusableAllocations,
-    /// Index of empty function type
-    empty_func_type: Option<u32>,
 }
 
 /// Reusable heap allocations for function validation and translation.
@@ -91,7 +90,6 @@ impl<'engine> ModuleParser<'engine> {
             parser,
             compiled_funcs: 0,
             allocations: ReusableAllocations::default(),
-            empty_func_type: None,
         }
     }
 
@@ -227,6 +225,9 @@ impl<'engine> ModuleParser<'engine> {
     /// Processes the end of the Wasm binary.
     fn process_end(&mut self, offset: usize) -> Result<(), ModuleError> {
         self.validator.end(offset)?;
+        if self.builder.engine().config().get_rwasm_binary() {
+            self.process_rwasm_entrypoint()?;
+        }
         Ok(())
     }
 
@@ -256,9 +257,8 @@ impl<'engine> ModuleParser<'engine> {
         let func_types = section.into_iter().map(|result| match result? {
             wasmparser::Type::Func(ty) => Ok(FuncType::from_wasmparser(ty)),
         });
-        let func_types = func_types.chain(core::iter::once(Ok(FuncType::new([], []))));
         self.builder.push_func_types(func_types)?;
-        self.empty_func_type = Some(self.builder.func_types.len() as u32);
+        self.builder.ensure_empty_func_type_exists();
         Ok(())
     }
 
@@ -278,6 +278,25 @@ impl<'engine> ModuleParser<'engine> {
             .into_iter()
             .map(|import| import.map(Import::from).map_err(ModuleError::from));
         self.builder.push_imports(imports)?;
+        // translate import functions
+        if self.builder.engine().config().get_rwasm_binary() {
+            let mut allocations = take(&mut self.allocations);
+            for import_func_index in 0..self.builder.imports.len_funcs() {
+                let (func, compiled_func) = self.next_func();
+                let sys_index: u32;
+                (allocations, sys_index) = RwasmTranslator::new(
+                    func,
+                    compiled_func,
+                    ModuleResources::new(&self.builder),
+                    allocations.translation,
+                )
+                .translate_import_func(import_func_index as u32)?;
+                self.builder
+                    .import_mapping
+                    .insert(sys_index, (import_func_index as u32).into());
+            }
+            let _ = replace(&mut self.allocations, allocations);
+        }
         Ok(())
     }
 
@@ -310,11 +329,6 @@ impl<'engine> ModuleParser<'engine> {
         let funcs = section
             .into_iter()
             .map(|func| func.map(FuncTypeIdx::from).map_err(ModuleError::from));
-        let entrypoint_function = Ok(self
-            .empty_func_type
-            .expect("empty function type is not found")
-            .into());
-        let funcs = core::iter::once(entrypoint_function).chain(funcs);
         self.builder.push_funcs(funcs)?;
         Ok(())
     }
@@ -464,10 +478,20 @@ impl<'engine> ModuleParser<'engine> {
     /// If any of the table elements fail to validate.
     fn process_data(&mut self, section: DataSectionReader) -> Result<(), ModuleError> {
         self.validator.data_section(&section)?;
-        let segments = section
-            .into_iter()
-            .map(|segment| segment.map(DataSegment::from).map_err(ModuleError::from));
-        self.builder.push_data_segments(segments)?;
+        if self.builder.engine().config().get_rwasm_binary() {
+            let count = section.range().count();
+            let mut data_section = Vec::with_capacity(count);
+            for data in section.into_iter() {
+                let data = data?;
+                data_section.extend(data.data);
+            }
+            self.builder.push_default_data_segment(&data_section);
+        } else {
+            let segments = section
+                .into_iter()
+                .map(|segment| segment.map(DataSegment::from).map_err(ModuleError::from));
+            self.builder.push_data_segments(segments)?;
+        }
         Ok(())
     }
 
@@ -492,11 +516,15 @@ impl<'engine> ModuleParser<'engine> {
         let index = self.compiled_funcs;
         let compiled_func = self.builder.compiled_funcs[index as usize];
         self.compiled_funcs += 1;
-        // We have to adjust the initial func reference to the first
-        // internal function before we process any of the internal functions.
-        let len_func_imports = u32::try_from(self.builder.imports.funcs.len())
-            .unwrap_or_else(|_| panic!("too many imported functions"));
-        let func_idx = FuncIdx::from(index + len_func_imports);
+        let func_idx = if self.builder.engine().config().get_rwasm_binary() {
+            FuncIdx::from(index)
+        } else {
+            // We have to adjust the initial func reference to the first
+            // internal function before we process any of the internal functions.
+            let len_func_imports = u32::try_from(self.builder.imports.funcs.len())
+                .unwrap_or_else(|_| panic!("too many imported functions"));
+            FuncIdx::from(index + len_func_imports)
+        };
         (func_idx, compiled_func)
     }
 
@@ -513,10 +541,10 @@ impl<'engine> ModuleParser<'engine> {
     /// If the function body fails to validate.
     fn process_code_entry(&mut self, func_body: FunctionBody) -> Result<(), ModuleError> {
         let (func, compiled_func) = self.next_func();
+        let mut allocations = take(&mut self.allocations);
         let validator = self.validator.code_section_entry(&func_body)?;
         let module_resources = ModuleResources::new(&self.builder);
-        let allocations = take(&mut self.allocations);
-        let allocations = translate(
+        allocations = translate(
             func,
             compiled_func,
             func_body,
@@ -525,6 +553,26 @@ impl<'engine> ModuleParser<'engine> {
             allocations.translation,
         )?;
         let _ = replace(&mut self.allocations, allocations);
+        Ok(())
+    }
+
+    fn process_rwasm_entrypoint(&mut self) -> Result<(), ModuleError> {
+        // we must register new compiled func for an entrypoint
+        self.builder.push_entrypoint();
+        let (func, compiled_func) = self.next_func();
+        let mut allocations = take(&mut self.allocations);
+        // translate entrypoint
+        allocations = RwasmTranslator::new(
+            func,
+            compiled_func,
+            ModuleResources::new(&self.builder),
+            allocations.translation,
+        )
+        .translate_entrypoint()?;
+        let _ = replace(&mut self.allocations, allocations);
+        self.builder.rewrite_exports("main".into(), func)?;
+        self.builder.rewrite_tables()?;
+        self.builder.rewrite_elements()?;
         Ok(())
     }
 

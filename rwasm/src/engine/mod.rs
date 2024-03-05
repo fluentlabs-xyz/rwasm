@@ -60,6 +60,7 @@ use crate::{
 };
 use alloc::{sync::Arc, vec::Vec};
 use core::sync::atomic::{AtomicU32, Ordering};
+use hashbrown::HashMap;
 use spin::{Mutex, RwLock};
 
 /// A unique engine index.
@@ -129,6 +130,14 @@ impl Engine {
     /// Returns a shared reference to the [`Config`] of the [`Engine`].
     pub fn config(&self) -> &Config {
         self.inner.config()
+    }
+
+    pub fn register_trampoline(&self, sys_func_index: u32, func: Func) {
+        self.inner.register_trampoline(sys_func_index, func)
+    }
+
+    pub fn resolve_trampoline(&self, sys_func_index: u32) -> Option<Func> {
+        self.inner.resolve_trampoline(sys_func_index)
     }
 
     /// Returns `true` if both [`Engine`] references `a` and `b` refer to the same [`Engine`].
@@ -414,6 +423,21 @@ impl EngineInner {
         &self.config
     }
 
+    fn register_trampoline(&self, sys_func_index: u32, func: Func) {
+        self.res
+            .write()
+            .trampoline_mapping
+            .insert(sys_func_index, func);
+    }
+
+    fn resolve_trampoline(&self, sys_func_index: u32) -> Option<Func> {
+        self.res
+            .read()
+            .trampoline_mapping
+            .get(&sys_func_index)
+            .copied()
+    }
+
     /// Allocates a new function type to the [`EngineInner`].
     fn alloc_func_type(&self, func_type: FuncType) -> DedupFuncType {
         self.res.write().func_types.alloc_func_type(func_type)
@@ -614,6 +638,7 @@ pub struct EngineResources {
     /// The engine deduplicates function types to make the equality
     /// comparison very fast. This helps to speed up indirect calls.
     func_types: FuncTypeRegistry,
+    trampoline_mapping: HashMap<u32, Func>,
 }
 
 impl EngineResources {
@@ -624,6 +649,7 @@ impl EngineResources {
             code_map: CodeMap::default(),
             const_pool: ConstPool::default(),
             func_types: FuncTypeRegistry::new(engine_idx),
+            trampoline_mapping: HashMap::new(),
         }
     }
 }

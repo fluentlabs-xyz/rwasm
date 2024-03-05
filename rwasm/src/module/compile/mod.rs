@@ -8,6 +8,7 @@ use wasmparser::{FuncValidator, FunctionBody, ValidatorResources};
 
 mod block_type;
 mod rwasm;
+pub use rwasm::RwasmTranslator;
 
 /// Translates the Wasm bytecode into `wasmi` bytecode.
 ///
@@ -30,7 +31,15 @@ pub fn translate<'parser>(
     res: ModuleResources<'parser>,
     allocations: FuncTranslatorAllocations,
 ) -> Result<ReusableAllocations, ModuleError> {
-    FunctionTranslator::new(func, compiled_func, func_body, validator, res, allocations).translate()
+    FunctionTranslator::new(
+        func,
+        compiled_func,
+        func_body,
+        Some(validator),
+        res,
+        allocations,
+    )
+    .translate()
 }
 
 /// Translates Wasm bytecode into `wasmi` bytecode for a single Wasm function.
@@ -39,8 +48,6 @@ struct FunctionTranslator<'parser> {
     func_body: FunctionBody<'parser>,
     /// The interface to incrementally build up the `wasmi` bytecode function.
     func_builder: FuncBuilder<'parser>,
-    /// Module resources
-    res: ModuleResources<'parser>,
 }
 
 impl<'parser> FunctionTranslator<'parser> {
@@ -49,7 +56,7 @@ impl<'parser> FunctionTranslator<'parser> {
         func: FuncIdx,
         compiled_func: CompiledFunc,
         func_body: FunctionBody<'parser>,
-        validator: FuncValidator<ValidatorResources>,
+        validator: Option<FuncValidator<ValidatorResources>>,
         res: ModuleResources<'parser>,
         allocations: FuncTranslatorAllocations,
     ) -> Self {
@@ -57,14 +64,11 @@ impl<'parser> FunctionTranslator<'parser> {
         Self {
             func_body,
             func_builder,
-            res,
         }
     }
 
     /// Starts translation of the Wasm stream into `wasmi` bytecode.
     fn translate(mut self) -> Result<ReusableAllocations, ModuleError> {
-        self.translate_entrypoint()
-            .map_err(|err| ModuleError::Rwasm(err))?;
         self.translate_locals()?;
         let offset = self.translate_operators()?;
         let allocations = self.finish(offset)?;
@@ -73,7 +77,7 @@ impl<'parser> FunctionTranslator<'parser> {
 
     /// Finishes construction of the function and returns its [`CompiledFunc`].
     fn finish(self, offset: usize) -> Result<ReusableAllocations, ModuleError> {
-        self.func_builder.finish(offset).map_err(Into::into)
+        self.func_builder.finish(Some(offset)).map_err(Into::into)
     }
 
     /// Translates local variables of the Wasm function.

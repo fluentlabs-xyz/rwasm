@@ -1,6 +1,8 @@
 use crate::{
-    compiler::{compiler::Compiler2, config::CompilerConfig, types::FuncOrExport},
+    compiler::types::{CompilerError, FuncOrExport},
     instruction_set,
+    N_MAX_RECURSION_DEPTH,
+    N_MAX_STACK_HEIGHT,
 };
 use alloc::string::ToString;
 use rwasm::{
@@ -11,6 +13,8 @@ use rwasm::{
     Engine,
     Func,
     Linker,
+    Module,
+    StackLimits,
     Store,
 };
 
@@ -28,52 +32,77 @@ fn execute_binary_default(wat: &str) -> HostState {
     execute_binary(wat, Default::default())
 }
 
+#[cfg(feature = "std")]
+pub fn trace_bytecode(module: &Module, engine: &Engine) {
+    let import_len = module.imports.len_funcs;
+    for fn_index in 0..module.funcs.len() {
+        if fn_index == module.funcs.len() - 1 {
+            println!("# entrypoint {}", fn_index);
+        } else if fn_index < import_len {
+            println!("# imported func {}", fn_index);
+        } else {
+            println!("# func {}", fn_index);
+        }
+        let func_body = module.compiled_funcs.get(fn_index).unwrap();
+        for instr in engine.instr_vec(*func_body) {
+            println!("{:?}", instr);
+        }
+    }
+    println!()
+}
+
 fn execute_binary(wat: &str, run_config: RunConfig) -> HostState {
+    const SYS_HALT_CODE: u32 = 1010;
+
     let wasm_binary = wat::parse_str(wat).unwrap();
     // translate and compile module
-    let mut import_linker = ImportLinker::default();
-    import_linker.insert_function(ImportFunc::new_env(
-        "env".to_string(),
-        "_sys_halt".to_string(),
-        10,
-        &[ValueType::I32],
-        &[],
-        1,
-    ));
 
-    let mut compiler = Compiler2::new_with_linker(
-        &wasm_binary,
-        CompilerConfig::default()
-            .translate_sections(true)
-            .fuel_consume(true),
-        Some(&import_linker),
-    )
-    .unwrap();
+    let mut engine_config = Config::default();
+    engine_config.set_stack_limits(
+        StackLimits::new(
+            N_MAX_STACK_HEIGHT,
+            N_MAX_STACK_HEIGHT,
+            N_MAX_RECURSION_DEPTH,
+        )
+        .unwrap(),
+    );
+    engine_config.wasm_bulk_memory(true);
+    engine_config.wasm_tail_call(false);
+    // engine_config.wasm_extended_const(config.extended_const);
+    engine_config.consume_fuel(true);
+    engine_config.rwasm_binary(true);
+    {
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(ImportFunc::new_env(
+            "env".to_string(),
+            "_sys_halt".to_string(),
+            SYS_HALT_CODE,
+            &[ValueType::I32],
+            &[],
+            1,
+        ));
+        engine_config.import_linker(import_linker);
+    }
+    let engine = Engine::new(&engine_config);
 
-    compiler.trace_bytecode();
-
-    let (engine, module) = compiler.finalize();
-    // assert_eq!(translator.code_section, reduced_module.bytecode().clone());
-    // let trace = reduced_module.trace();
-    // println!("{}", trace);
+    let module = Module::new(&engine, wasm_binary.as_slice())
+        .map_err(|e| CompilerError::ModuleError(e))
+        .unwrap();
+    trace_bytecode(&module, &engine);
 
     // execute translated rwasm
     let mut store = Store::new(&engine, HostState::default());
     store.add_fuel(1_000_000).unwrap();
     let mut linker = Linker::<HostState>::new(&engine);
     // let module = reduced_module.to_module(&engine, &mut import_linker);
-    linker
-        .define(
-            "env",
-            "_sys_halt",
-            Func::wrap(
-                store.as_context_mut(),
-                |mut caller: Caller<'_, HostState>, exit_code: i32| {
-                    caller.data_mut().exit_code = exit_code;
-                },
-            ),
-        )
-        .unwrap();
+    let func = Func::wrap(
+        store.as_context_mut(),
+        |mut caller: Caller<'_, HostState>, exit_code: i32| {
+            caller.data_mut().exit_code = exit_code;
+        },
+    );
+    engine.register_trampoline(SYS_HALT_CODE, func);
+    linker.define("env", "_sys_halt", func).unwrap();
     // run start entrypoint
     let instance = linker
         .instantiate(&mut store, &module)
@@ -92,6 +121,9 @@ fn test_memory_section() {
     (module
       (type (;0;) (func))
       (func (;0;) (type 0)
+        i32.const 0
+        i64.load offset=0
+        drop
         return
         )
       (memory (;0;) 17)

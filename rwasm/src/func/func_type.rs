@@ -60,6 +60,11 @@ impl FuncType {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        let (input, output) = self.len_params();
+        input == 0 && output == 0
+    }
+
     pub fn len_params(&self) -> (usize, usize) {
         (self.len_params, self.params_results.len() - self.len_params)
     }

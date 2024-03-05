@@ -898,7 +898,7 @@ impl TestContext<'_> {
         self.store.data_mut().input = args.into_iter().rev().map(|v| v.into()).collect();
         self.store
             .data_mut()
-            .clear_ouput(func_ty.results().len() as u32);
+            .clear_output(func_ty.results().len() as u32);
         func.call(&mut self.store, &[], &mut self.results)?;
         Ok(self
             .store

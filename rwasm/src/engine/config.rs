@@ -213,8 +213,8 @@ impl Default for Config {
             consume_fuel: false,
             fuel_costs: FuelCosts::default(),
             fuel_consumption_mode: FuelConsumptionMode::default(),
-            import_linker: None,
             rwasm_binary: false,
+            import_linker: None,
         }
     }
 }

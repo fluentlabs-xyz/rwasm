@@ -22,7 +22,7 @@ use rwasm::{
 pub struct RwasmModule {
     pub(crate) code_section: InstructionSet,
     pub(crate) memory_section: Vec<u8>,
-    pub(crate) decl_section: Vec<u32>,
+    pub(crate) func_section: Vec<u32>,
     pub(crate) element_section: Vec<u32>,
 }
 
@@ -96,7 +96,7 @@ impl RwasmModule {
         let import_len = import_mapping.len() as u32;
 
         // push main functions
-        let total_functions = self.decl_section.len() + 1;
+        let total_functions = self.func_section.len() + 1;
         let builder_functions = (0..total_functions)
             .map(|_| Result::<FuncTypeIdx, ModuleError>::Ok(FuncTypeIdx::from(0)))
             .collect::<Vec<_>>();
@@ -112,7 +112,7 @@ impl RwasmModule {
             code_section.push(Instruction::Unreachable);
         }
         engine.init_func(compiled_func, 0, 0, code_section);
-        for (fn_index, fn_pos) in self.decl_section.iter().copied().enumerate() {
+        for (fn_index, fn_pos) in self.func_section.iter().copied().enumerate() {
             let compiled_func = resources
                 .get_compiled_func(FuncIdx::from(import_len + fn_index as u32 + 1))
                 .unwrap();
