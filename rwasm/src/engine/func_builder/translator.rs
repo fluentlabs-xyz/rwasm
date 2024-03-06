@@ -1572,22 +1572,27 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         _mem_byte: u8,
     ) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
+            let is_rwasm = builder.engine().config().get_rwasm_binary();
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let ib = &mut builder.alloc.inst_builder;
-            assert!(!self.res.res.memories.is_empty(), "memory must be provided");
-            let max_pages = self.res.res.memories[0]
-                .maximum_pages()
-                .unwrap_or(Pages::max())
-                .into_inner();
-            ib.push_inst(Instruction::LocalGet(1.into()));
-            ib.push_inst(Instruction::MemorySize);
-            ib.push_inst(Instruction::I32Add);
-            ib.push_inst(Instruction::I32Const(max_pages.into()));
-            ib.push_inst(Instruction::I32GtS);
-            ib.push_inst(Instruction::BrIfEqz(4.into()));
-            ib.push_inst(Instruction::Drop);
-            ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+            // for rWASM we inject memory limit error check, if we exceed number of allowed pages
+            // then we push `u32::MAX` on the stack to trigger memory grow overflow
+            if is_rwasm {
+                assert!(!self.res.res.memories.is_empty(), "memory must be provided");
+                let max_pages = self.res.res.memories[0]
+                    .maximum_pages()
+                    .unwrap_or(Pages::max())
+                    .into_inner();
+                ib.push_inst(Instruction::LocalGet(1.into()));
+                ib.push_inst(Instruction::MemorySize);
+                ib.push_inst(Instruction::I32Add);
+                ib.push_inst(Instruction::I32Const(max_pages.into()));
+                ib.push_inst(Instruction::I32GtS);
+                ib.push_inst(Instruction::BrIfEqz(4.into()));
+                ib.push_inst(Instruction::Drop);
+                ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+            }
             ib.push_inst(Instruction::MemoryGrow);
             Ok(())
         })
@@ -1779,21 +1784,15 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     }
 
     fn visit_i64_const(&mut self, value: i64) -> Result<(), TranslationError> {
-        match i64::try_from(value) {
-            Ok(value) => self.translate_if_reachable(|builder| {
-                // Case: The constant value is small enough that we can apply
-                //       a small value optimization and use a more efficient
-                //       instruction to encode the constant value instruction.
-                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-                builder.stack_height.push();
-                builder
-                    .alloc
-                    .inst_builder
-                    .push_inst(Instruction::I64Const(UntypedValue::from(value)));
-                Ok(())
-            }),
-            Err(_) => self.translate_const_ref(value),
-        }
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.stack_height.push();
+            builder
+                .alloc
+                .inst_builder
+                .push_inst(Instruction::I64Const(UntypedValue::from(value)));
+            Ok(())
+        })
     }
 
     fn visit_f32_const(&mut self, value: wasmparser::Ieee32) -> Result<(), TranslationError> {
