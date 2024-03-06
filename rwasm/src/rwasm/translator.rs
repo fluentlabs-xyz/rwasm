@@ -9,15 +9,14 @@ use crate::{
     },
     errors::ModuleError,
     module::{
-        error::RwasmBuilderError,
         ConstExpr,
-        DataSegment,
         DataSegmentKind,
         ElementSegmentKind,
         FuncIdx,
         ModuleResources,
         ReusableAllocations,
     },
+    rwasm::RwasmBuilderError,
 };
 
 pub struct RwasmTranslator<'parser> {
@@ -67,10 +66,6 @@ impl<'parser> RwasmTranslator<'parser> {
         self.translate_sections()?;
         // translate router for main index
         self.translate_router("main")?;
-        // translate import functions
-        // for i in 0..self.res.res.imports.len_funcs() {
-        //     self.translate_import_func(i as u32)?;
-        // }
         // push unreachable in the end (indication of the entrypoint end)
         self.func_builder
             .translator
@@ -135,7 +130,7 @@ impl<'parser> RwasmTranslator<'parser> {
         self.translate_tables()?;
         self.translate_elements()?;
         // translate memory section (replace with grow/load memory opcodes)
-        self.translate_memories()?;
+        self.translate_memory()?;
         self.translate_data()?;
         Ok(())
     }
@@ -234,7 +229,7 @@ impl<'parser> RwasmTranslator<'parser> {
         Ok(())
     }
 
-    fn translate_memories(&mut self) -> Result<(), RwasmBuilderError> {
+    fn translate_memory(&mut self) -> Result<(), RwasmBuilderError> {
         let (rwasm_builder, instr_builder) = (
             &mut self.func_builder.translator.alloc.rwasm_builder,
             &mut self.func_builder.translator.alloc.inst_builder,
@@ -251,35 +246,26 @@ impl<'parser> RwasmTranslator<'parser> {
             &mut self.func_builder.translator.alloc.inst_builder,
         );
         for (idx, memory) in self.res.res.data_segments.iter().enumerate() {
-            let (offset, bytes, is_active) = Self::read_memory_segment(memory)?;
-            if is_active {
-                rwasm_builder.add_default_memory(instr_builder, offset.as_u32(), bytes);
-            } else {
-                rwasm_builder.add_passive_memory((idx as u32).into(), bytes);
+            match memory.kind() {
+                DataSegmentKind::Active(seg) => {
+                    let data_offset = Self::translate_const_expr(seg.offset())?;
+                    rwasm_builder.add_active_memory(
+                        instr_builder,
+                        data_offset.as_u32(),
+                        &memory.bytes,
+                    );
+                }
+                DataSegmentKind::Passive => {
+                    rwasm_builder.add_passive_memory((idx as u32).into(), &memory.bytes)
+                }
             }
         }
         Ok(())
     }
 
-    fn read_memory_segment(
-        memory: &DataSegment,
-    ) -> Result<(UntypedValue, &[u8], bool), RwasmBuilderError> {
-        match memory.kind() {
-            DataSegmentKind::Active(seg) => {
-                assert_eq!(
-                    seg.memory_index().into_u32(),
-                    0,
-                    "memory index can't be zero"
-                );
-                let data_offset = Self::translate_const_expr(seg.offset())?;
-                return Ok((data_offset, memory.bytes(), true));
-            }
-            DataSegmentKind::Passive => Ok((0.into(), memory.bytes(), false)),
-        }
-    }
-
     pub fn translate_const_expr(const_expr: &ConstExpr) -> Result<UntypedValue, RwasmBuilderError> {
         return if cfg!(feature = "e2e") {
+            // TODO: "can we avoid having this hardcode here?"
             let init_value = const_expr
                 .eval_with_context(|_| crate::Value::I32(666), |_| crate::FuncRef::default())
                 .ok_or(RwasmBuilderError::NotSupportedGlobalExpr)?;

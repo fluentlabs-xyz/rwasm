@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     engine::{CompiledFunc, FuncTranslatorAllocations},
-    module::compile::RwasmTranslator,
+    rwasm::RwasmTranslator,
     Engine,
     FuncType,
     MemoryType,
@@ -517,6 +517,8 @@ impl<'engine> ModuleParser<'engine> {
         let compiled_func = self.builder.compiled_funcs[index as usize];
         self.compiled_funcs += 1;
         let func_idx = if self.builder.engine().config().get_rwasm_binary() {
+            // We don't have to adjust the initial func reference because we replace
+            // imported functions with compiled func wrapper in rWASM
             FuncIdx::from(index)
         } else {
             // We have to adjust the initial func reference to the first
@@ -573,6 +575,7 @@ impl<'engine> ModuleParser<'engine> {
         self.builder.rewrite_exports("main".into(), func)?;
         self.builder.rewrite_tables()?;
         self.builder.rewrite_elements()?;
+        self.builder.rewrite_memory()?;
         Ok(())
     }
 

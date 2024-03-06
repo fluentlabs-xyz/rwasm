@@ -215,12 +215,14 @@ impl Module {
     /// [`Func`]: [`crate::Func`]
     pub(crate) fn internal_funcs(&self) -> InternalFuncsIter {
         let len_imported = self.imports.len_funcs;
-        // We skip the first `len_imported` elements in `funcs`
-        // since they refer to imported and not internally defined
-        // functions.
         let funcs = if self.engine.config().get_rwasm_binary() {
+            // We don't skip the first `len_imported` elements in `funcs`
+            // since we store `Call` opcode wrappers in these indices
             &self.funcs[..]
         } else {
+            // We skip the first `len_imported` elements in `funcs`
+            // since they refer to imported and not internally defined
+            // functions.
             &self.funcs[len_imported..]
         };
         let compiled_funcs = &self.compiled_funcs[..];

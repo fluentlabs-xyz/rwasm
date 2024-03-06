@@ -28,7 +28,7 @@ use crate::{
             TableIdx,
         },
         config::FuelCosts,
-        func_builder::{control_frame::ControlFrameKind, rwasm::RwasmModuleBuilder},
+        func_builder::control_frame::ControlFrameKind,
         CompiledFunc,
         DropKeep,
         Instr,
@@ -44,6 +44,7 @@ use crate::{
         ModuleResources,
         DEFAULT_MEMORY_INDEX,
     },
+    rwasm::RwasmModuleBuilder,
     Engine,
     FuncType,
     GlobalType,
@@ -80,7 +81,6 @@ impl FuncTranslatorAllocations {
         self.control_frames.reset();
         self.inst_builder.reset();
         self.br_table_branches.clear();
-        self.rwasm_builder.reset();
     }
 }
 

@@ -18,8 +18,6 @@ pub struct RwasmModuleBuilder {
 }
 
 impl RwasmModuleBuilder {
-    pub fn reset(&mut self) {}
-
     pub fn add_memory_pages(
         &mut self,
         code_section: &mut InstructionsBuilder,
@@ -40,7 +38,7 @@ impl RwasmModuleBuilder {
         return true;
     }
 
-    pub fn add_default_memory(
+    pub fn add_active_memory(
         &mut self,
         code_section: &mut InstructionsBuilder,
         offset: u32,

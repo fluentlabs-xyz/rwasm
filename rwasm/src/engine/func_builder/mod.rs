@@ -4,7 +4,6 @@ mod error;
 mod inst_builder;
 mod labels;
 mod locals_registry;
-mod rwasm;
 mod translator;
 mod value_stack;
 
@@ -16,7 +15,6 @@ use self::{
 pub use self::{
     error::{TranslationError, TranslationErrorInner},
     inst_builder::{Instr, InstructionsBuilder, RelativeDepth},
-    rwasm::RwasmModuleBuilder,
     translator::FuncTranslatorAllocations,
 };
 use super::CompiledFunc;

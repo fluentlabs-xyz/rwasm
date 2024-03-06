@@ -16,7 +16,7 @@ use super::{
     Module,
 };
 use crate::{
-    core::{ValueType, N_MAX_TABLES},
+    core::{ValueType, N_MAX_MEMORY_PAGES, N_MAX_TABLES},
     engine::{CompiledFunc, DedupFuncType},
     errors::ModuleError,
     Engine,
@@ -415,6 +415,25 @@ impl<'engine> ModuleBuilder<'engine> {
             items: ElementSegmentItems {
                 exprs: data_section.into(),
             },
+        });
+        Ok(())
+    }
+
+    pub fn rewrite_memory(&mut self) -> Result<(), ModuleError> {
+        // rewrite memory section
+        self.memories.clear();
+        self.memories
+            .push(MemoryType::new(0, Some(N_MAX_MEMORY_PAGES)).unwrap());
+        // calc one big passive data section
+        let mut data_section = Vec::with_capacity(0);
+        for data in self.data_segments.iter() {
+            data_section.extend(&*data.bytes);
+        }
+        // rewrite data section
+        self.data_segments.clear();
+        self.data_segments.push(DataSegment {
+            kind: DataSegmentKind::Passive,
+            bytes: data_section.into(),
         });
         Ok(())
     }

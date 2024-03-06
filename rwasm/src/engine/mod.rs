@@ -7,7 +7,7 @@ mod config;
 pub mod const_pool;
 pub mod executor;
 mod func_args;
-mod func_builder;
+pub(crate) mod func_builder;
 mod func_types;
 mod resumable;
 pub mod stack;
@@ -26,7 +26,6 @@ pub use self::{
         Instr,
         InstructionsBuilder,
         RelativeDepth,
-        RwasmModuleBuilder,
         TranslationError,
     },
     resumable::{ResumableCall, ResumableInvocation, TypedResumableCall, TypedResumableInvocation},

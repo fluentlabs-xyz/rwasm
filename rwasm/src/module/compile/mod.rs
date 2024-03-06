@@ -7,8 +7,6 @@ use crate::{
 use wasmparser::{FuncValidator, FunctionBody, ValidatorResources};
 
 mod block_type;
-mod rwasm;
-pub use rwasm::RwasmTranslator;
 
 /// Translates the Wasm bytecode into `wasmi` bytecode.
 ///
