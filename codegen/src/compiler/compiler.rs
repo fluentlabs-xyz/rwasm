@@ -57,7 +57,7 @@ impl<'linker> Compiler2<'linker> {
         engine_config.wasm_tail_call(false);
         engine_config.wasm_extended_const(config.extended_const);
         engine_config.consume_fuel(config.fuel_consume);
-        engine_config.rwasm_binary(true);
+        engine_config.rwasm_mode(true);
         let engine = Engine::new(&engine_config);
         let module =
             Module::new(&engine, wasm_binary).map_err(|e| CompilerError::ModuleError(e))?;

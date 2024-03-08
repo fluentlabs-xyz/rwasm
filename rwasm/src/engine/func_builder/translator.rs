@@ -436,7 +436,7 @@ impl<'parser> FuncTranslator<'parser> {
         engine: &Engine,
     ) -> Result<Option<Instruction>, TranslationError> {
         // don't do global get optimization for rWASM (not needed and misleading)
-        if engine.config().get_rwasm_binary() {
+        if let Some(_) = engine.config().get_rwasm_config() {
             return Ok(None);
         }
         if let (Mutability::Const, Some(init_expr)) = (global_type.mutability(), init_value) {
@@ -1572,18 +1572,23 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         _mem_byte: u8,
     ) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
-            let is_rwasm = builder.engine().config().get_rwasm_binary();
+            let is_rwasm = builder.engine().config().get_rwasm_config().is_some();
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let ib = &mut builder.alloc.inst_builder;
             // for rWASM we inject memory limit error check, if we exceed number of allowed pages
-            // then we push `u32::MAX` on the stack to trigger memory grow overflow
+            // then we push `u32::MAX` on the stack that is equal to memory grow overflow error
             if is_rwasm {
                 assert!(!self.res.res.memories.is_empty(), "memory must be provided");
                 let max_pages = self.res.res.memories[0]
                     .maximum_pages()
                     .unwrap_or(Pages::max())
                     .into_inner();
+                /// if delta + memory_size >= max_pages {
+                ///   return u32::MAX
+                /// } else {
+                ///   memory_grow()
+                /// }
                 ib.push_inst(Instruction::LocalGet(1.into()));
                 ib.push_inst(Instruction::MemorySize);
                 ib.push_inst(Instruction::I32Add);
@@ -1592,25 +1597,82 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                 ib.push_inst(Instruction::BrIfEqz(4.into()));
                 ib.push_inst(Instruction::Drop);
                 ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+                ib.push_inst(Instruction::Br(2.into()));
+                ib.push_inst(Instruction::MemoryGrow);
+            } else {
+                ib.push_inst(Instruction::MemoryGrow);
             }
-            ib.push_inst(Instruction::MemoryGrow);
             Ok(())
         })
     }
 
+    /// MemoryInit opcode reads 3 elements from stack (dst, src, len), where:
+    /// - dst - Memory destination of copied data
+    /// - src - Data source of copied data (in the passive section)
+    /// - len - Length of copied data
+    ///
+    /// In the `passive_sections` field we store info about all passive sections
+    /// that are presented in the WebAssembly binary. When passive section is activated
+    /// though `memory.init` opcode we find modified offsets in the data section
+    /// and put the on the stack by removing previous values.
+    ///
+    /// Here is the stack structure for `memory.init` call:
+    /// - ... some other stack elements
+    /// - dst
+    /// - src
+    /// - len
+    /// - ... call of `memory.init` happens here
+    ///
+    /// Here we need to replace `src` field with our modified, but since we don't know
+    /// how stack was structured then we can achieve it by replacing stack element using `local.set`
+    /// opcode.
+    ///
+    /// - dst
+    /// - src  <----+
+    /// - len       |
+    /// - new_src --+
+    /// - ... call `local.set(1)` to replace prev offset
+    ///
+    /// Here we use 1 offset because we pop `new_src`, and then count from the top, `len`
+    /// has 0 offset and `src` has offset 1.
+    ///
+    /// Before doing these ops we must ensure that specified length of copied data
+    /// doesn't exceed original section size. We also inject GT check to make sure that
+    /// there is no data section overflow.
     fn visit_memory_init(
         &mut self,
         segment_index: u32,
         memory_index: u32,
     ) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
+            let is_rwasm = builder.engine().config().get_rwasm_config().is_some();
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             builder.stack_height.pop3();
-            builder
-                .alloc
-                .inst_builder
-                .push_inst(Instruction::MemoryInit(DataSegmentIdx::from(segment_index)));
+            if is_rwasm {
+                let (ib, rb) = (
+                    &mut builder.alloc.inst_builder,
+                    &mut builder.alloc.rwasm_builder,
+                );
+                let data_segment_index: DataSegmentIdx = segment_index.into();
+                let (offset, _length) = rb
+                    .passive_memory_sections
+                    .get(&data_segment_index)
+                    .copied()
+                    .expect("can't resolve passive segment by index");
+                // TODO: "ideally we need to have an overflow check for length"
+                // we need to replace offset on the stack with the new value
+                ib.push_inst(Instruction::I32Const((offset as i32).into()));
+                ib.push_inst(Instruction::I32Add);
+                ib.push_inst(Instruction::LocalSet(1.into()));
+                // since we store all data sections in the one segment then index is always 0
+                ib.push_inst(Instruction::MemoryInit(DEFAULT_MEMORY_INDEX.into()));
+            } else {
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::MemoryInit(DataSegmentIdx::from(segment_index)));
+            }
             Ok(())
         })
     }

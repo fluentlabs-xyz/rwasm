@@ -6,6 +6,27 @@ use wasmparser::WasmFeatures;
 /// The default amount of stacks kept in the cache at most.
 const DEFAULT_CACHED_STACKS: usize = 2;
 
+#[derive(Debug, Clone)]
+pub struct RwasmConfig {
+    /// Entrypoint that stores bytecode for module init
+    pub entrypoint_name: Option<String>,
+    /// Import linker that stores mapping from function to special identifiers
+    pub import_linker: Option<ImportLinker>,
+    /// Do we need to wrap input functions to convert them from ExternRef to FuncRef (we need it to
+    /// simplify tables sometimes)?
+    pub wrap_import_functions: bool,
+}
+
+impl Default for RwasmConfig {
+    fn default() -> Self {
+        Self {
+            entrypoint_name: Some("main".to_string()),
+            import_linker: None,
+            wrap_import_functions: false,
+        }
+    }
+}
+
 /// Configuration for an [`Engine`].
 ///
 /// [`Engine`]: [`crate::Engine`]
@@ -40,9 +61,7 @@ pub struct Config {
     /// The configured fuel costs of all `wasmi` bytecode instructions.
     fuel_costs: FuelCosts,
     /// Translate into rWASM compatible binary
-    rwasm_binary: bool,
-    /// Rwasm import linker
-    import_linker: Option<ImportLinker>,
+    rwasm_config: Option<RwasmConfig>,
 }
 
 /// The fuel consumption mode of the `wasmi` [`Engine`].
@@ -213,8 +232,7 @@ impl Default for Config {
             consume_fuel: false,
             fuel_costs: FuelCosts::default(),
             fuel_consumption_mode: FuelConsumptionMode::default(),
-            rwasm_binary: false,
-            import_linker: None,
+            rwasm_config: None,
         }
     }
 }
@@ -409,22 +427,20 @@ impl Config {
             .then_some(self.fuel_consumption_mode)
     }
 
-    pub fn import_linker(&mut self, import_linker: ImportLinker) -> &mut Self {
-        self.import_linker = Some(import_linker);
+    pub fn rwasm_config(&mut self, rwasm_config: RwasmConfig) -> &mut Self {
+        self.rwasm_config = Some(rwasm_config);
         self
     }
 
-    pub fn get_import_linker(&self) -> Option<&ImportLinker> {
-        self.import_linker.as_ref()
+    pub fn get_rwasm_config(&self) -> Option<&RwasmConfig> {
+        self.rwasm_config.as_ref()
     }
 
-    pub fn rwasm_binary(&mut self, rwasm_binary: bool) -> &mut Self {
-        self.rwasm_binary = rwasm_binary;
-        self
-    }
-
-    pub fn get_rwasm_binary(&self) -> bool {
-        self.rwasm_binary
+    pub fn get_rwasm_wrap_import_funcs(&self) -> bool {
+        self.rwasm_config
+            .as_ref()
+            .map(|rwasm_config| rwasm_config.wrap_import_functions)
+            .unwrap_or_default()
     }
 
     /// Returns the [`WasmFeatures`] represented by the [`Config`].

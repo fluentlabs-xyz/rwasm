@@ -82,7 +82,7 @@ impl InstanceCache {
     #[inline]
     pub fn get_data_segment(&mut self, ctx: &StoreInner, index: u32) -> DataSegment {
         let instance = self.instance();
-        ctx.resolve_instance(self.instance())
+        ctx.resolve_instance(instance)
             .get_data_segment(index)
             .unwrap_or_else(|| {
                 unreachable!("missing data segment ({index:?}) for instance: {instance:?}",)

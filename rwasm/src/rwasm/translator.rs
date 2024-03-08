@@ -64,31 +64,36 @@ impl<'parser> RwasmTranslator<'parser> {
     fn translate_entrypoint_internal(&mut self) -> Result<(), RwasmBuilderError> {
         // first we must translate all sections, this is an entrypoint
         self.translate_sections()?;
-        // translate router for main index
-        self.translate_router("main")?;
+        // translate router for main index (only if entrypoint is enabled)
+        let entrypoint_name = self
+            .res
+            .engine()
+            .config()
+            .get_rwasm_config()
+            .and_then(|rwasm_config| rwasm_config.entrypoint_name.as_ref());
+        if let Some(entrypoint_name) = entrypoint_name {
+            self.translate_router(entrypoint_name.clone())?;
+        }
         // push unreachable in the end (indication of the entrypoint end)
         self.func_builder
             .translator
             .alloc
             .inst_builder
-            .push_inst(Instruction::Unreachable);
+            .push_inst(Instruction::Return(DropKeep::none()));
         Ok(())
     }
 
-    fn translate_router(&mut self, entrypoint_name: &'static str) -> Result<(), RwasmBuilderError> {
-        // translate router into separate instruction set
+    fn translate_router(&mut self, entrypoint_name: String) -> Result<(), RwasmBuilderError> {
         let instr_builder = &mut self.func_builder.translator.alloc.inst_builder;
         let export_index = self
             .res
             .res
             .exports
-            .get(entrypoint_name)
+            .get(entrypoint_name.as_str())
             .ok_or(RwasmBuilderError::MissingEntrypoint)?
             .into_func_idx()
             .ok_or(RwasmBuilderError::MissingEntrypoint)?;
-        // we do plus one to skip entrypoint section
         instr_builder.push_inst(Instruction::CallInternal(export_index.into()));
-        instr_builder.push_inst(Instruction::Return(DropKeep::none()));
         Ok(())
     }
 
@@ -101,7 +106,6 @@ impl<'parser> RwasmTranslator<'parser> {
         if self.res.engine().config().get_consume_fuel() {
             instr_builder.push_inst(Instruction::ConsumeFuel(fuel_cost.into()));
         }
-        // instr_builder.push_inst(Instruction::Call((import_fn_index + 1).into()));
         instr_builder.push_inst(Instruction::Call(import_index.into()));
         instr_builder.push_inst(Instruction::Return(DropKeep::none()));
         Ok(import_index)
@@ -113,7 +117,13 @@ impl<'parser> RwasmTranslator<'parser> {
             return Err(RwasmBuilderError::NotSupportedImport);
         }
         let import_name = imports[fn_index as usize];
-        let import_linker = self.res.res.engine().config().get_import_linker();
+        let import_linker = self
+            .res
+            .res
+            .engine()
+            .config()
+            .get_rwasm_config()
+            .and_then(|rwasm_config| rwasm_config.import_linker.as_ref());
         let (index, fuel_cost) = import_linker
             .ok_or(RwasmBuilderError::UnknownImport(import_name.clone()))?
             .index_mapping()
@@ -203,9 +213,21 @@ impl<'parser> RwasmTranslator<'parser> {
             match &e.kind() {
                 ElementSegmentKind::Passive => {
                     let into_inter = e.items.exprs.into_iter().map(|v| {
-                        v.funcref()
-                            .expect("only funcref type is allowed to sections")
-                            .into_u32()
+                        if let Some(const_value) = v.eval_const() {
+                            assert_eq!(
+                                const_value.as_u32(),
+                                0,
+                                "const as funcref must only be null value"
+                            );
+                            // we encode nullptr as `u32::MAX` since its impossible number of
+                            // function refs
+                            // TODO: "is it right decision? more tests needed"
+                            u32::MAX
+                        } else {
+                            v.funcref()
+                                .expect("only funcref type is allowed to sections")
+                                .into_u32()
+                        }
                     });
                     rwasm_builder.add_passive_elements((i as u32).into(), into_inter);
                 }

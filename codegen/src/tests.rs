@@ -70,7 +70,7 @@ fn execute_binary(wat: &str, run_config: RunConfig) -> HostState {
     engine_config.wasm_tail_call(false);
     // engine_config.wasm_extended_const(config.extended_const);
     engine_config.consume_fuel(true);
-    engine_config.rwasm_binary(true);
+    engine_config.rwasm_mode(true);
     {
         let mut import_linker = ImportLinker::default();
         import_linker.insert_function(ImportFunc::new_env(

@@ -19,7 +19,7 @@ mod tests;
 pub use self::{
     bytecode::DropKeep,
     code_map::CompiledFunc,
-    config::{Config, FuelConsumptionMode},
+    config::{Config, FuelConsumptionMode, RwasmConfig},
     func_builder::{
         FuncBuilder,
         FuncTranslatorAllocations,

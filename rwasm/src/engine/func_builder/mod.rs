@@ -18,10 +18,7 @@ pub use self::{
     translator::FuncTranslatorAllocations,
 };
 use super::CompiledFunc;
-use crate::{
-    engine::bytecode::Instruction,
-    module::{FuncIdx, ModuleResources, ReusableAllocations},
-};
+use crate::module::{FuncIdx, ModuleResources, ReusableAllocations};
 use wasmparser::{BinaryReaderError, VisitOperator};
 
 /// The used function validator type.
@@ -68,16 +65,15 @@ impl<'parser> FuncBuilder<'parser> {
             validator.define_locals(offset, amount, value_type)?;
         }
         // for rWASM we initialize locals with zeros
-        if self.translator.engine().config().get_rwasm_binary() {
-            for _ in 0..amount as usize {
-                self.translator
-                    .alloc
-                    .inst_builder
-                    .push_inst(Instruction::I32Const(0.into()));
-            }
-        } else {
-            self.translator.register_locals(amount);
-        }
+        // if self.translator.engine().config().get_rwasm_binary() {
+        //     for _ in 0..amount as usize {
+        //         self.translator
+        //             .alloc
+        //             .inst_builder
+        //             .push_inst(Instruction::I32Const(0.into()));
+        //     }
+        // }
+        self.translator.register_locals(amount);
         Ok(())
     }
 

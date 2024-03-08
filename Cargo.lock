@@ -1349,9 +1349,8 @@ dependencies = [
  "anyhow",
  "byteorder",
  "rwasm",
- "rwasm-codegen",
  "serial_test",
- "wast 70.0.2",
+ "wast 62.0.1",
  "wat",
 ]
 
@@ -1681,6 +1680,15 @@ dependencies = [
 
 [[package]]
 name = "wasm-encoder"
+version = "0.31.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41763f20eafed1399fff1afb466496d3a959f58241436cfdc17e3f5ca954de16"
+dependencies = [
+ "leb128",
+]
+
+[[package]]
+name = "wasm-encoder"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e09bca7d6388637d27fb5edbeab11f56bfabcef8743c55ae34370e1e5030a071"
@@ -1707,6 +1715,18 @@ dependencies = [
  "memchr",
  "unicode-width",
  "wasm-encoder 0.22.1",
+]
+
+[[package]]
+name = "wast"
+version = "62.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8ae06f09dbe377b889fbd620ff8fa21e1d49d1d9d364983c0cdbf9870cb9f1f"
+dependencies = [
+ "leb128",
+ "memchr",
+ "unicode-width",
+ "wasm-encoder 0.31.1",
 ]
 
 [[package]]

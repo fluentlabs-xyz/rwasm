@@ -109,7 +109,7 @@ impl<'a> ModuleResources<'a> {
     ///
     /// Returns `None` if [`FuncIdx`] refers to an imported function.
     pub fn get_compiled_func(&self, func_idx: FuncIdx) -> Option<CompiledFunc> {
-        let index = if self.engine().config().get_rwasm_binary() {
+        let index = if self.engine().config().get_rwasm_config().is_some() {
             func_idx.into_u32() as usize
         } else {
             (func_idx.into_u32() as usize).checked_sub(self.res.imports.len_funcs())?
@@ -234,8 +234,10 @@ impl<'engine> ModuleBuilder<'engine> {
                     let func_type = self.func_types[func_type_idx.into_u32() as usize];
                     self.funcs.push(func_type);
                     // for rWASM we store special compiled wrapper, it's needed for tables
-                    if self.engine.config().get_rwasm_binary() {
-                        self.compiled_funcs.push(self.engine.alloc_func());
+                    if let Some(rwasm_config) = self.engine.config().get_rwasm_config() {
+                        if rwasm_config.wrap_import_functions {
+                            self.compiled_funcs.push(self.engine.alloc_func());
+                        }
                     }
                 }
                 ExternTypeIdx::Table(table_type) => {
