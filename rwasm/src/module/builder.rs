@@ -16,7 +16,7 @@ use super::{
     Module,
 };
 use crate::{
-    core::{ValueType, N_MAX_DATA_SEGMENTS, N_MAX_ELEM_SEGMENTS, N_MAX_MEMORY_PAGES, N_MAX_TABLES},
+    core::{ValueType, N_MAX_DATA_SEGMENTS, N_MAX_ELEM_SEGMENTS, N_MAX_MEMORY_PAGES},
     engine::{CompiledFunc, DedupFuncType},
     errors::ModuleError,
     Engine,
@@ -70,6 +70,10 @@ impl ModuleImports {
     /// Returns the number of imported tables.
     pub fn len_tables(&self) -> usize {
         self.tables.len()
+    }
+    /// Returns the number of imported memories.
+    pub fn len_memories(&self) -> usize {
+        self.memories.len()
     }
 }
 

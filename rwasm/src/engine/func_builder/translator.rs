@@ -551,6 +551,7 @@ impl<'parser> FuncTranslator<'parser> {
     ///
     /// - `i64.const`
     /// - `f64.const`
+    #[allow(dead_code)]
     fn translate_const_ref<T>(&mut self, value: T) -> Result<(), TranslationError>
     where
         T: Into<UntypedValue>,

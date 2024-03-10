@@ -1,7 +1,7 @@
 use super::{TestDescriptor, TestError, TestProfile, TestSpan};
 use anyhow::Result;
 use rwasm::{
-    core::{ImportLinker, ValueType, F32, F64},
+    core::{ValueType, F32, F64},
     module::FuncIdx,
     Config,
     Engine,
@@ -48,11 +48,6 @@ pub struct TestContext<'a> {
 }
 
 impl<'a> TestContext<'a> {
-    pub fn import_linker() -> ImportLinker {
-        let mut import_linker = ImportLinker::default();
-        import_linker
-    }
-
     /// Creates a new [`TestContext`] with the given [`TestDescriptor`].
     pub fn new(descriptor: &'a TestDescriptor, config: Config) -> Self {
         let engine = Engine::new(&config);

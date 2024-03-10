@@ -193,7 +193,6 @@ fn execute_directives(wast: Wast, test_context: &mut TestContext) -> Result<()> 
                     )
                 }
             }
-            _ => unreachable!("unknown WAST directive"),
         }
     }
     Ok(())

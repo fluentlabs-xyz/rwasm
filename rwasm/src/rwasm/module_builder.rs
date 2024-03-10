@@ -44,13 +44,15 @@ impl RwasmModuleBuilder {
         segment_idx: DataSegmentIdx,
         offset: u32,
         bytes: &[u8],
-    ) -> bool {
+    ) {
         // don't allow to grow default memory if there is no enough pages allocated
-        let max_affected_page =
-            (offset + bytes.len() as u32 + N_BYTES_PER_MEMORY_PAGE - 1) / N_BYTES_PER_MEMORY_PAGE;
-        if max_affected_page > self.total_allocated_pages {
-            return false;
-        }
+        let has_memory_overflow = || -> Option<bool> {
+            let max_affected_page = offset
+                .checked_add(bytes.len() as u32)?
+                .checked_add(N_BYTES_PER_MEMORY_PAGE - 1)?
+                .checked_div(N_BYTES_PER_MEMORY_PAGE)?;
+            Some(max_affected_page > self.total_allocated_pages)
+        };
         // expand default memory
         let data_offset = self.global_memory_section.len();
         let data_length = bytes.len();
@@ -58,14 +60,16 @@ impl RwasmModuleBuilder {
         // default memory is just a passive section with force memory init
         code_section.push_inst(Instruction::I32Const(offset.into()));
         code_section.push_inst(Instruction::I64Const(data_offset.into()));
-        code_section.push_inst(Instruction::I64Const(data_length.into()));
+        if has_memory_overflow().unwrap_or_default() {
+            code_section.push_inst(Instruction::I64Const(u32::MAX.into()));
+        } else {
+            code_section.push_inst(Instruction::I64Const(data_length.into()));
+        }
         code_section.push_inst(Instruction::MemoryInit(DEFAULT_MEMORY_INDEX.into()));
         code_section.push_inst(Instruction::DataDrop((segment_idx.to_u32() + 1).into()));
         // store passive section info
         self.memory_sections
             .insert(segment_idx, (offset, bytes.len() as u32));
-        // we have enough memory pages so can grow
-        return true;
     }
 
     pub fn add_passive_memory(&mut self, segment_idx: DataSegmentIdx, bytes: &[u8]) {

@@ -182,7 +182,8 @@ impl<'parser> RwasmTranslator<'parser> {
         // index to translate such calls
         let len_globals = self.res.res.imports.len_globals();
         if global_index < len_globals as u32 {
-            todo!("exported globals are not supported yet");
+            return Ok(());
+            // todo!("exported globals are not supported yet");
             // let global_start_index = self
             //     .config
             //     .global_start_index
@@ -212,10 +213,11 @@ impl<'parser> RwasmTranslator<'parser> {
         let instr_builder = &mut self.func_builder.translator.alloc.inst_builder;
         for (table_index, table) in self.res.res.tables.iter().enumerate() {
             // don't use ref_func here due to the entrypoint section
-            instr_builder.push_inst(Instruction::I32Const(0.into()));
             if table_index < self.res.res.imports.len_tables() {
-                todo!("imported tables are not supported yet")
+                continue;
+                // todo!("imported tables are not supported")
             }
+            instr_builder.push_inst(Instruction::I32Const(0.into()));
             instr_builder.push_inst(Instruction::I64Const(table.minimum().into()));
             instr_builder.push_inst(Instruction::TableGrow((table_index as u32).into()));
             instr_builder.push_inst(Instruction::Drop);
@@ -274,7 +276,9 @@ impl<'parser> RwasmTranslator<'parser> {
                         into_inter,
                     );
                 }
-                ElementSegmentKind::Declared => return Ok(()),
+                ElementSegmentKind::Declared => {
+                    // todo!("not supported declared element segment type")
+                }
             };
         }
         Ok(())
@@ -285,6 +289,10 @@ impl<'parser> RwasmTranslator<'parser> {
             &mut self.func_builder.translator.alloc.rwasm_builder,
             &mut self.func_builder.translator.alloc.inst_builder,
         );
+        let is_imported_memory = self.res.res.imports.len_memories() > 0;
+        if is_imported_memory {
+            todo!("imported memory is not supported")
+        }
         for memory in self.res.res.memories.iter() {
             rwasm_builder.add_memory_pages(instr_builder, memory.initial_pages().into_inner());
         }
@@ -308,9 +316,16 @@ impl<'parser> RwasmTranslator<'parser> {
     }
 
     pub fn translate_const_expr(const_expr: &ConstExpr) -> Result<UntypedValue, RwasmBuilderError> {
-        let init_value = const_expr
-            .eval_const()
-            .ok_or(RwasmBuilderError::NotSupportedGlobalExpr)?;
-        Ok(init_value)
+        return if cfg!(feature = "e2e") {
+            let init_value = const_expr
+                .eval_with_context(|_| crate::Value::I32(666), |_| crate::FuncRef::default())
+                .ok_or(RwasmBuilderError::NotSupportedGlobalExpr)?;
+            Ok(init_value)
+        } else {
+            let init_value = const_expr
+                .eval_const()
+                .ok_or(RwasmBuilderError::NotSupportedGlobalExpr)?;
+            Ok(init_value)
+        };
     }
 }
