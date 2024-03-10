@@ -281,7 +281,7 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
                     .expect("unexpected null element")
                     .downcast_ref::<u32>()
                     .expect("unexpected non-u32 data");
-                assert_eq!(*value, expected.unwrap());
+                assert_eq!(value, expected);
             }
             (result, expected) => panic!(
                 "{}: encountered mismatch in evaluation. expected {:?} but found {:?}",

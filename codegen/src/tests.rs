@@ -7,6 +7,7 @@ use crate::{
 use alloc::string::ToString;
 use rwasm::{
     core::{ImportFunc, ImportLinker, ValueType},
+    engine::RwasmConfig,
     AsContextMut,
     Caller,
     Config,
@@ -70,7 +71,6 @@ fn execute_binary(wat: &str, run_config: RunConfig) -> HostState {
     engine_config.wasm_tail_call(false);
     // engine_config.wasm_extended_const(config.extended_const);
     engine_config.consume_fuel(true);
-    engine_config.rwasm_mode(true);
     {
         let mut import_linker = ImportLinker::default();
         import_linker.insert_function(ImportFunc::new_env(
@@ -81,7 +81,11 @@ fn execute_binary(wat: &str, run_config: RunConfig) -> HostState {
             &[],
             1,
         ));
-        engine_config.import_linker(import_linker);
+        engine_config.rwasm_config(RwasmConfig {
+            import_linker: Some(import_linker),
+            wrap_import_functions: true,
+            ..Default::default()
+        });
     }
     let engine = Engine::new(&engine_config);
 

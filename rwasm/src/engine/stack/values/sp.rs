@@ -145,8 +145,7 @@ impl ValueStackPtr {
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.sub(delta) };
-        let diff = self.ptr as isize - self.src as isize;
-        if diff < 0 {
+        if self.ptr < self.src {
             unreachable!("STACK UNDERFLOW")
         }
     }

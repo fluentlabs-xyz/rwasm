@@ -26,7 +26,7 @@ use crate::{
     },
     func::FuncEntity,
     store::ResourceLimiterRef,
-    table::TableEntity,
+    table::{ElementSegmentEntity, TableEntity},
     FuelConsumptionMode,
     Func,
     FuncRef,
@@ -231,16 +231,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             //     return Err(TrapCode::StackOverflow.into());
             // }
 
-            // let dump = self.value_stack.dump_stack(self.sp);
-            // if dump.len() < 20 {
-            //     println!(
-            //         "{} {:?} {:?}",
-            //         self.ip.pc(),
-            //         instr,
-            //         dump.iter().map(|v| v.as_u64()).collect::<Vec<_>>()
-            //     );
-            // }
-
             // handle pre-instruction state
             // let has_default_memory = {
             //     let instance = self.cache.instance();
@@ -266,22 +256,23 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             //     memory_size,
             //     consumed_fuel,
             // );
-            #[cfg(feature = "std")]
-            {
-                // let stack = self.value_stack.dump_stack(self.sp);
-                // println!(
-                //     "{}:\t {:?} \tstack({}):{:?}",
-                //     self.ip.pc(),
-                //     instr,
-                //     stack.len(),
-                //     stack
-                //         .iter()
-                //         .rev()
-                //         .take(10)
-                //         .map(|v| v.as_usize())
-                //         .collect::<Vec<_>>()
-                // );
-            }
+
+            // #[cfg(feature = "std")]
+            // {
+            //     let stack = self.value_stack.dump_stack(self.sp);
+            //     println!(
+            //         "{}:\t {:?} \tstack({}):{:?}",
+            //         self.ip.pc(),
+            //         instr,
+            //         stack.len(),
+            //         stack
+            //             .iter()
+            //             .rev()
+            //             .take(10)
+            //             .map(|v| v.as_usize())
+            //             .collect::<Vec<_>>()
+            //     );
+            // }
 
             match instr {
                 Instr::LocalGet(local_depth) => self.visit_local_get(local_depth),
@@ -1083,7 +1074,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
 
     #[inline(always)]
     fn visit_call(&mut self, func_index: FuncIdx) -> Result<CallOutcome, TrapCode> {
-        if let Some(_) = self.ctx.engine().config().get_rwasm_config() {
+        if self.ctx.engine().config().get_rwasm_wrap_import_funcs() {
             let func_entity = self
                 .ctx
                 .engine()
@@ -1263,7 +1254,19 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     }
 
     #[inline(always)]
-    fn visit_memory_init(&mut self, segment: DataSegmentIdx) -> Result<(), TrapCode> {
+    fn visit_memory_init(&mut self, mut segment: DataSegmentIdx) -> Result<(), TrapCode> {
+        // we use some tricky structure for rWASM to determine what data segments dropped
+        let is_empty_segment = if self.ctx.engine().config().get_rwasm_config().is_some() {
+            // increase segment index, because first index is used for the global data section
+            let (_, data) = self
+                .cache
+                .get_default_memory_and_data_segment(self.ctx, segment);
+            // since we have only one data segment then rewrite index with 0
+            segment = DataSegmentIdx::from(0);
+            data.len() == 0
+        } else {
+            false
+        };
         // The `n`, `s` and `d` variable bindings are extracted from the Wasm specification.
         let (d, s, n) = self.sp.pop3();
         let n = i32::from(n) as usize;
@@ -1272,9 +1275,12 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         self.consume_fuel_with(
             |costs| costs.fuel_for_bytes(n as u64),
             |this| {
-                let (memory, data) = this
+                let (memory, mut data) = this
                     .cache
                     .get_default_memory_and_data_segment(this.ctx, segment);
+                if is_empty_segment {
+                    data = &[]
+                }
                 let memory = memory
                     .get_mut(dst_offset..)
                     .and_then(|memory| memory.get_mut(..n))
@@ -1407,8 +1413,20 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     }
 
     #[inline(always)]
-    fn visit_table_init(&mut self, elem: ElementSegmentIdx) -> Result<(), TrapCode> {
+    fn visit_table_init(&mut self, mut elem: ElementSegmentIdx) -> Result<(), TrapCode> {
         let table_idx = self.fetch_table_idx(1);
+        // we use some tricky structure for rWASM to determine what element segments dropped
+        let is_empty_segment = if self.ctx.engine().config().get_rwasm_config().is_some() {
+            // increase segment index, because first index is used for the global element segment
+            let (_, _, element) = self
+                .cache
+                .get_table_and_element_segment(self.ctx, table_idx, elem);
+            // since we have only one element segment then rewrite index with 0
+            elem = ElementSegmentIdx::from(0);
+            element.items.is_none()
+        } else {
+            false
+        };
         // The `n`, `s` and `d` variable bindings are extracted from the Wasm specification.
         let (d, s, n) = self.sp.pop3();
         let len = u32::from(n);
@@ -1417,9 +1435,13 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         self.consume_fuel_with(
             |costs| costs.fuel_for_elements(u64::from(len)),
             |this| {
-                let (instance, table, element) = this
+                let (instance, table, mut element) = this
                     .cache
                     .get_table_and_element_segment(this.ctx, table_idx, elem);
+                let empty_element_segment = ElementSegmentEntity::empty(element.ty());
+                if is_empty_segment {
+                    element = &empty_element_segment;
+                }
                 table.init(dst_index, element, src_index, len, |func_index| {
                     let func_index = self
                         .code_map

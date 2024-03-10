@@ -14,7 +14,7 @@ use super::{
     TranslationError,
 };
 use crate::{
-    core::{Pages, UntypedValue, ValueType, F32},
+    core::{Pages, UntypedValue, ValueType, F32, N_MAX_TABLE_ELEMENTS},
     engine::{
         bytecode::{
             self,
@@ -1282,7 +1282,6 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     fn visit_call(&mut self, func_idx: u32) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().call)?;
-            // for rWASM first function is reserved for an entrypoint
             let func_idx = FuncIdx::from(func_idx);
             let func_type = builder.func_type_of(func_idx);
             builder.adjust_value_stack_for_call(&func_type);
@@ -1584,11 +1583,6 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                     .maximum_pages()
                     .unwrap_or(Pages::max())
                     .into_inner();
-                /// if delta + memory_size >= max_pages {
-                ///   return u32::MAX
-                /// } else {
-                ///   memory_grow()
-                /// }
                 ib.push_inst(Instruction::LocalGet(1.into()));
                 ib.push_inst(Instruction::MemorySize);
                 ib.push_inst(Instruction::I32Add);
@@ -1631,7 +1625,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     /// - src  <----+
     /// - len       |
     /// - new_src --+
-    /// - ... call `local.set(1)` to replace prev offset
+    /// - ... call `local.set` to replace prev offset
     ///
     /// Here we use 1 offset because we pop `new_src`, and then count from the top, `len`
     /// has 0 offset and `src` has offset 1.
@@ -1655,18 +1649,36 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                     &mut builder.alloc.rwasm_builder,
                 );
                 let data_segment_index: DataSegmentIdx = segment_index.into();
-                let (offset, _length) = rb
-                    .passive_memory_sections
+                let (offset, length) = rb
+                    .memory_sections
                     .get(&data_segment_index)
                     .copied()
                     .expect("can't resolve passive segment by index");
-                // TODO: "ideally we need to have an overflow check for length"
+                // do an overflow check
+                if length > 0 {
+                    ib.push_inst(Instruction::LocalGet(1u32.into()));
+                    ib.push_inst(Instruction::LocalGet(3u32.into()));
+                    ib.push_inst(Instruction::I32Add);
+                    ib.push_inst(Instruction::I32Const((length as i32).into()));
+                    ib.push_inst(Instruction::I32GtS);
+                    ib.push_inst(Instruction::BrIfEqz(3.into()));
+                    // we can't manually emit "out of bounds table access" error that is required
+                    // by WebAssembly standards, so we put impossible number of tables to trigger
+                    // overflow by rewriting number of elements to be copied
+                    ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+                    ib.push_inst(Instruction::LocalSet(1.into()));
+                }
                 // we need to replace offset on the stack with the new value
-                ib.push_inst(Instruction::I32Const((offset as i32).into()));
-                ib.push_inst(Instruction::I32Add);
-                ib.push_inst(Instruction::LocalSet(1.into()));
+                if offset > 0 {
+                    ib.push_inst(Instruction::I32Const((offset as i32).into()));
+                    ib.push_inst(Instruction::LocalGet(3.into()));
+                    ib.push_inst(Instruction::I32Add);
+                    ib.push_inst(Instruction::LocalSet(2.into()));
+                }
                 // since we store all data sections in the one segment then index is always 0
-                ib.push_inst(Instruction::MemoryInit(DEFAULT_MEMORY_INDEX.into()));
+                ib.push_inst(Instruction::MemoryInit(DataSegmentIdx::from(
+                    segment_index + 1,
+                )));
             } else {
                 builder
                     .alloc
@@ -1707,7 +1719,11 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     fn visit_data_drop(&mut self, segment_index: u32) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
-            let segment_index = DataSegmentIdx::from(segment_index);
+            let segment_index = if builder.engine().config().get_rwasm_config().is_some() {
+                DataSegmentIdx::from(segment_index + 1)
+            } else {
+                DataSegmentIdx::from(segment_index)
+            };
             builder
                 .alloc
                 .inst_builder
@@ -1731,13 +1747,36 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
 
     fn visit_table_grow(&mut self, table_index: u32) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
+            let is_rwasm = builder.engine().config().get_rwasm_config().is_some();
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let table = TableIdx::from(table_index);
             builder.stack_height.pop1();
-            builder
-                .alloc
-                .inst_builder
-                .push_inst(Instruction::TableGrow(table));
+            let ib = &mut builder.alloc.inst_builder;
+            // for rWASM we inject table limit error check, if we exceed number of allowed elements
+            // then we push `u32::MAX` on the stack that is equal to table grow overflow error
+            if is_rwasm {
+                let max_table_elements = builder
+                    .res
+                    .res
+                    .tables
+                    .get(table_index as usize)
+                    .unwrap()
+                    .maximum()
+                    .unwrap_or(N_MAX_TABLE_ELEMENTS);
+                ib.push_inst(Instruction::LocalGet(1.into()));
+                ib.push_inst(Instruction::TableSize(table));
+                ib.push_inst(Instruction::I32Add);
+                ib.push_inst(Instruction::I32Const(max_table_elements.into()));
+                ib.push_inst(Instruction::I32GtS);
+                ib.push_inst(Instruction::BrIfEqz(5.into()));
+                ib.push_inst(Instruction::Drop);
+                ib.push_inst(Instruction::Drop);
+                ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+                ib.push_inst(Instruction::Br(2.into()));
+                ib.push_inst(Instruction::TableGrow(table));
+            } else {
+                ib.push_inst(Instruction::TableGrow(table));
+            }
             Ok(())
         })
     }
@@ -1804,18 +1843,57 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         table_index: u32,
     ) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
+            let is_rwasm = builder.engine().config().get_rwasm_config().is_some();
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             builder.stack_height.pop3();
-            let table = TableIdx::from(table_index);
-            let elem = ElementSegmentIdx::from(segment_index);
-            builder
-                .alloc
-                .inst_builder
-                .push_inst(Instruction::TableInit(elem));
-            builder
-                .alloc
-                .inst_builder
-                .push_inst(Instruction::TableGet(table));
+            if is_rwasm {
+                let (ib, rb) = (
+                    &mut builder.alloc.inst_builder,
+                    &mut builder.alloc.rwasm_builder,
+                );
+                let elem_segment_index: ElementSegmentIdx = segment_index.into();
+                let (offset, length) = rb
+                    .element_sections
+                    .get(&elem_segment_index)
+                    .copied()
+                    .expect("can't resolve element segment by index");
+                // do an overflow check
+                if length > 0 {
+                    ib.push_inst(Instruction::LocalGet(1u32.into()));
+                    ib.push_inst(Instruction::LocalGet(3u32.into()));
+                    ib.push_inst(Instruction::I32Add);
+                    ib.push_inst(Instruction::I32Const((length as i32).into()));
+                    ib.push_inst(Instruction::I32GtS);
+                    ib.push_inst(Instruction::BrIfEqz(3.into()));
+                    // we can't manually emit "out of bounds table access" error that is required
+                    // by WebAssembly standards, so we put impossible number of tables to trigger
+                    // overflow by rewriting number of elements to be copied
+                    ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+                    ib.push_inst(Instruction::LocalSet(1.into()));
+                }
+                // we need to replace offset on the stack with the new value
+                if offset > 0 {
+                    // replace offset with an adjusted value
+                    ib.push_inst(Instruction::I32Const((offset as i32).into()));
+                    ib.push_inst(Instruction::LocalGet(3.into()));
+                    ib.push_inst(Instruction::I32Add);
+                    ib.push_inst(Instruction::LocalSet(2.into()));
+                }
+                // since we store all element sections in the one segment then index is always 0
+                ib.push_inst(Instruction::TableInit((segment_index + 1).into()));
+                ib.push_inst(Instruction::TableGet(table_index.into()));
+            } else {
+                let table = TableIdx::from(table_index);
+                let elem = ElementSegmentIdx::from(segment_index);
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::TableInit(elem));
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::TableGet(table));
+            }
             Ok(())
         })
     }
@@ -1823,12 +1901,15 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     fn visit_elem_drop(&mut self, segment_index: u32) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            let segment_index = if builder.engine().config().get_rwasm_config().is_some() {
+                ElementSegmentIdx::from(segment_index + 1)
+            } else {
+                ElementSegmentIdx::from(segment_index)
+            };
             builder
                 .alloc
                 .inst_builder
-                .push_inst(Instruction::ElemDrop(ElementSegmentIdx::from(
-                    segment_index,
-                )));
+                .push_inst(Instruction::ElemDrop(segment_index));
             Ok(())
         })
     }

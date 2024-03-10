@@ -16,7 +16,7 @@ use super::{
     Module,
 };
 use crate::{
-    core::{ValueType, N_MAX_MEMORY_PAGES, N_MAX_TABLES},
+    core::{ValueType, N_MAX_DATA_SEGMENTS, N_MAX_ELEM_SEGMENTS, N_MAX_MEMORY_PAGES, N_MAX_TABLES},
     engine::{CompiledFunc, DedupFuncType},
     errors::ModuleError,
     Engine,
@@ -109,8 +109,21 @@ impl<'a> ModuleResources<'a> {
     ///
     /// Returns `None` if [`FuncIdx`] refers to an imported function.
     pub fn get_compiled_func(&self, func_idx: FuncIdx) -> Option<CompiledFunc> {
-        let index = if self.engine().config().get_rwasm_config().is_some() {
-            func_idx.into_u32() as usize
+        let index = if let Some(rwasm_config) = self.engine().config().get_rwasm_config() {
+            if rwasm_config.wrap_import_functions {
+                // if we wrap import functions then just return index, there is no intersection
+                // between imports and compiled functions
+                func_idx.into_u32() as usize
+            } else {
+                let index =
+                    (func_idx.into_u32() as usize).checked_sub(self.res.imports.len_funcs())?;
+                // otherwise we must disallow accessing entrypoint
+                if index == self.res.compiled_funcs.len() - 1 {
+                    return None;
+                }
+                // return adjusted compiled func index
+                index
+            }
         } else {
             (func_idx.into_u32() as usize).checked_sub(self.res.imports.len_funcs())?
         };
@@ -264,11 +277,19 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
-    pub fn push_entrypoint(&mut self) {
+    pub fn push_entrypoint(&mut self) -> (FuncIdx, CompiledFunc) {
+        // resolve empty func type of create if its missing
         let func_type_index = self.ensure_empty_func_type_exists().into_u32() as usize;
         let empty_func_type = self.func_types[func_type_index];
+        // push new func and compiled func for our entrypoint
         self.funcs.push(empty_func_type);
         self.compiled_funcs.push(self.engine.alloc_func());
+        // resolve compiled func
+        let index = self.compiled_funcs.len() - 1;
+        let compiled_func = self.compiled_funcs[index];
+        // resolve func index
+        let func_idx = FuncIdx::from(self.funcs.len() as u32 - 1);
+        (func_idx, compiled_func)
     }
 
     pub fn push_function_import(
@@ -405,27 +426,16 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
-    pub fn rewrite_elements(&mut self) -> Result<(), ModuleError> {
-        let mut data_section = Vec::with_capacity(0);
-        for data in self.element_segments.iter() {
-            data_section.extend(data.items.exprs.iter().cloned());
-        }
-        self.element_segments.clear();
-        self.element_segments.push(ElementSegment {
-            kind: ElementSegmentKind::Passive,
-            ty: ValueType::FuncRef,
-            items: ElementSegmentItems {
-                exprs: data_section.into(),
-            },
-        });
-        Ok(())
-    }
-
     pub fn rewrite_memory(&mut self) -> Result<(), ModuleError> {
         // rewrite memory section
+        let max_memory_pages = self
+            .memories
+            .get(0)
+            .and_then(|memory| memory.maximum_pages().map(|v| v.into_inner()))
+            .unwrap_or(N_MAX_MEMORY_PAGES);
         self.memories.clear();
         self.memories
-            .push(MemoryType::new(0, Some(N_MAX_MEMORY_PAGES)).unwrap());
+            .push(MemoryType::new(0, Some(max_memory_pages)).unwrap());
         // calc one big passive data section
         let mut data_section = Vec::with_capacity(0);
         for data in self.data_segments.iter() {
@@ -437,15 +447,46 @@ impl<'engine> ModuleBuilder<'engine> {
             kind: DataSegmentKind::Passive,
             bytes: data_section.into(),
         });
+        // fill max possible data segments (save some random byte, we use it as an indicator that
+        // means data is not dropped)
+        (0..N_MAX_DATA_SEGMENTS).for_each(|_| {
+            self.data_segments.push(DataSegment {
+                kind: DataSegmentKind::Passive,
+                bytes: [0x1].into(),
+            });
+        });
         Ok(())
     }
 
     pub fn rewrite_tables(&mut self) -> Result<(), ModuleError> {
+        // rewrite tables
         let num_tables = self.tables.len();
         self.tables.clear();
-        let global_decl = TableType::new(ValueType::FuncRef, 0, Some(N_MAX_TABLES));
         (0..num_tables).for_each(|_| {
-            self.tables.push(global_decl);
+            self.tables
+                .push(TableType::new(ValueType::FuncRef, 0, None))
+        });
+        // rewrite elements
+        let mut element_section = Vec::with_capacity(0);
+        for data in self.element_segments.iter() {
+            element_section.extend(data.items.exprs.iter().cloned());
+        }
+        self.element_segments.clear();
+        self.element_segments.push(ElementSegment {
+            kind: ElementSegmentKind::Passive,
+            ty: ValueType::FuncRef,
+            items: ElementSegmentItems {
+                exprs: element_section.into(),
+            },
+        });
+        // fill max possible data segments (save some random byte, we use it as an indicator that
+        // means data is not dropped)
+        (0..N_MAX_ELEM_SEGMENTS).for_each(|_| {
+            self.element_segments.push(ElementSegment {
+                kind: ElementSegmentKind::Passive,
+                ty: ValueType::FuncRef,
+                items: ElementSegmentItems { exprs: [].into() },
+            });
         });
         Ok(())
     }

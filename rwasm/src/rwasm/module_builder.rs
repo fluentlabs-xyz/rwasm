@@ -10,10 +10,10 @@ use hashbrown::HashMap;
 
 #[derive(Debug, Default)]
 pub struct RwasmModuleBuilder {
-    pub(crate) memory_section: Vec<u8>,
-    pub(crate) passive_memory_sections: HashMap<DataSegmentIdx, (u32, u32)>,
-    pub(crate) element_section: Vec<u32>,
-    pub(crate) passive_element_sections: HashMap<ElementSegmentIdx, (u32, u32)>,
+    pub(crate) global_memory_section: Vec<u8>,
+    pub(crate) memory_sections: HashMap<DataSegmentIdx, (u32, u32)>,
+    pub(crate) global_element_section: Vec<u32>,
+    pub(crate) element_sections: HashMap<ElementSegmentIdx, (u32, u32)>,
     pub(crate) total_allocated_pages: u32,
 }
 
@@ -41,6 +41,7 @@ impl RwasmModuleBuilder {
     pub fn add_active_memory(
         &mut self,
         code_section: &mut InstructionsBuilder,
+        segment_idx: DataSegmentIdx,
         offset: u32,
         bytes: &[u8],
     ) -> bool {
@@ -51,45 +52,54 @@ impl RwasmModuleBuilder {
             return false;
         }
         // expand default memory
-        let data_offset = self.memory_section.len();
+        let data_offset = self.global_memory_section.len();
         let data_length = bytes.len();
-        self.memory_section.extend(bytes);
+        self.global_memory_section.extend(bytes);
         // default memory is just a passive section with force memory init
         code_section.push_inst(Instruction::I32Const(offset.into()));
         code_section.push_inst(Instruction::I64Const(data_offset.into()));
         code_section.push_inst(Instruction::I64Const(data_length.into()));
         code_section.push_inst(Instruction::MemoryInit(DEFAULT_MEMORY_INDEX.into()));
+        code_section.push_inst(Instruction::DataDrop((segment_idx.to_u32() + 1).into()));
+        // store passive section info
+        self.memory_sections
+            .insert(segment_idx, (offset, bytes.len() as u32));
         // we have enough memory pages so can grow
         return true;
     }
 
     pub fn add_passive_memory(&mut self, segment_idx: DataSegmentIdx, bytes: &[u8]) {
         // expand default memory
-        let data_offset = self.memory_section.len() as u32;
+        let data_offset = self.global_memory_section.len() as u32;
         let data_length = bytes.len() as u32;
-        self.memory_section.extend(bytes);
+        self.global_memory_section.extend(bytes);
         // store passive section info
-        self.passive_memory_sections
+        self.memory_sections
             .insert(segment_idx, (data_offset, data_length));
     }
 
     pub fn add_active_elements<T: IntoIterator<Item = u32>>(
         &mut self,
         code_section: &mut InstructionsBuilder,
+        segment_idx: ElementSegmentIdx,
         offset: u32,
         table_idx: TableIdx,
         elements: T,
     ) {
         // expand element section (remember offset and length)
-        let segment_offset = self.element_section.len();
-        self.element_section.extend(elements);
-        let segment_length = self.element_section.len() - segment_offset;
+        let segment_offset = self.global_element_section.len();
+        self.global_element_section.extend(elements);
+        let segment_length = self.global_element_section.len() - segment_offset;
         // init table with these elements
         code_section.push_inst(Instruction::I32Const(offset.into()));
         code_section.push_inst(Instruction::I64Const(segment_offset.into()));
         code_section.push_inst(Instruction::I64Const(segment_length.into()));
-        code_section.push_inst(Instruction::TableInit(0.into()));
+        code_section.push_inst(Instruction::TableInit((segment_idx.to_u32() + 1).into()));
         code_section.push_inst(Instruction::TableGet(table_idx.into()));
+        code_section.push_inst(Instruction::ElemDrop((segment_idx.to_u32() + 1).into()));
+        // store active section info
+        self.element_sections
+            .insert(segment_idx, (offset, segment_length as u32));
     }
 
     pub fn add_passive_elements<T: IntoIterator<Item = u32>>(
@@ -98,11 +108,11 @@ impl RwasmModuleBuilder {
         elements: T,
     ) {
         // expand element section
-        let segment_offset = self.element_section.len() as u32;
-        self.element_section.extend(elements);
-        let segment_length = self.element_section.len() as u32 - segment_offset;
+        let segment_offset = self.global_element_section.len() as u32;
+        self.global_element_section.extend(elements);
+        let segment_length = self.global_element_section.len() as u32 - segment_offset;
         // store passive section info
-        self.passive_element_sections
+        self.element_sections
             .insert(segment_idx, (segment_offset, segment_length));
     }
 }

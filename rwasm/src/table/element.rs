@@ -91,7 +91,7 @@ pub struct ElementSegmentEntity {
     /// These items are just readable after instantiation.
     /// Using Wasm `elem.drop` simply replaces the instance
     /// with an empty one.
-    items: Option<ElementSegmentItems>,
+    pub(crate) items: Option<ElementSegmentItems>,
 }
 
 impl From<&'_ module::ElementSegment> for ElementSegmentEntity {
@@ -109,7 +109,7 @@ impl From<&'_ module::ElementSegment> for ElementSegmentEntity {
 
 impl ElementSegmentEntity {
     /// Create an empty [`ElementSegmentEntity`] representing dropped element segments.
-    fn empty(ty: ValueType) -> Self {
+    pub fn empty(ty: ValueType) -> Self {
         Self { ty, items: None }
     }
 

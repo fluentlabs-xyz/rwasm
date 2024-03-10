@@ -1,6 +1,7 @@
 use crate::{
     core::{UntypedValue, ValueType},
     engine::{
+        bytecode,
         bytecode::Instruction,
         CompiledFunc,
         DropKeep,
@@ -65,14 +66,36 @@ impl<'parser> RwasmTranslator<'parser> {
         // first we must translate all sections, this is an entrypoint
         self.translate_sections()?;
         // translate router for main index (only if entrypoint is enabled)
-        let entrypoint_name = self
-            .res
-            .engine()
-            .config()
-            .get_rwasm_config()
-            .and_then(|rwasm_config| rwasm_config.entrypoint_name.as_ref());
-        if let Some(entrypoint_name) = entrypoint_name {
-            self.translate_router(entrypoint_name.clone())?;
+        if let Some(start) = self.res.res.start {
+            // for start section we must always invoke even if there is a main function,
+            // otherwise it might be super misleading for devs why
+            match self.res.get_compiled_func(start) {
+                Some(compiled_func) => {
+                    self.func_builder
+                        .translator
+                        .alloc
+                        .inst_builder
+                        .push_inst(Instruction::CallInternal(compiled_func));
+                }
+                None => {
+                    let func_idx = bytecode::FuncIdx::from(start.into_u32());
+                    self.func_builder
+                        .translator
+                        .alloc
+                        .inst_builder
+                        .push_inst(Instruction::Call(func_idx));
+                }
+            }
+        } else {
+            let entrypoint_name = self
+                .res
+                .engine()
+                .config()
+                .get_rwasm_config()
+                .and_then(|rwasm_config| rwasm_config.entrypoint_name.as_ref());
+            if let Some(entrypoint_name) = entrypoint_name {
+                self.translate_router(entrypoint_name.clone())?;
+            }
         }
         // push unreachable in the end (indication of the entrypoint end)
         self.func_builder
@@ -141,7 +164,6 @@ impl<'parser> RwasmTranslator<'parser> {
         self.translate_elements()?;
         // translate memory section (replace with grow/load memory opcodes)
         self.translate_memory()?;
-        self.translate_data()?;
         Ok(())
     }
 
@@ -201,6 +223,24 @@ impl<'parser> RwasmTranslator<'parser> {
         Ok(())
     }
 
+    fn func_ref_or_const_zero(v: &ConstExpr) -> u32 {
+        if let Some(const_value) = v.eval_const() {
+            assert_eq!(
+                const_value.as_u32(),
+                0,
+                "const as funcref must only be null value"
+            );
+            // we encode nullptr as `u32::MAX` since its impossible number of
+            // function refs
+            // TODO: "is it right decision? more tests needed"
+            u32::MAX
+        } else {
+            v.funcref()
+                .expect("only funcref type is allowed to sections")
+                .into_u32()
+        }
+    }
+
     pub fn translate_elements(&mut self) -> Result<(), RwasmBuilderError> {
         let (rwasm_builder, instr_builder) = (
             &mut self.func_builder.translator.alloc.rwasm_builder,
@@ -212,34 +252,23 @@ impl<'parser> RwasmTranslator<'parser> {
             }
             match &e.kind() {
                 ElementSegmentKind::Passive => {
-                    let into_inter = e.items.exprs.into_iter().map(|v| {
-                        if let Some(const_value) = v.eval_const() {
-                            assert_eq!(
-                                const_value.as_u32(),
-                                0,
-                                "const as funcref must only be null value"
-                            );
-                            // we encode nullptr as `u32::MAX` since its impossible number of
-                            // function refs
-                            // TODO: "is it right decision? more tests needed"
-                            u32::MAX
-                        } else {
-                            v.funcref()
-                                .expect("only funcref type is allowed to sections")
-                                .into_u32()
-                        }
-                    });
+                    let into_inter = e
+                        .items
+                        .exprs
+                        .into_iter()
+                        .map(|v| Self::func_ref_or_const_zero(v));
                     rwasm_builder.add_passive_elements((i as u32).into(), into_inter);
                 }
                 ElementSegmentKind::Active(aes) => {
                     let dest_offset = Self::translate_const_expr(aes.offset())?;
-                    let into_inter = e.items.exprs.into_iter().map(|v| {
-                        v.funcref()
-                            .expect("only funcref type is allowed to sections")
-                            .into_u32()
-                    });
+                    let into_inter = e
+                        .items
+                        .exprs
+                        .into_iter()
+                        .map(|v| Self::func_ref_or_const_zero(v));
                     rwasm_builder.add_active_elements(
                         instr_builder,
+                        (i as u32).into(),
                         dest_offset.as_u32(),
                         aes.table_index().into_u32().into(),
                         into_inter,
@@ -259,20 +288,13 @@ impl<'parser> RwasmTranslator<'parser> {
         for memory in self.res.res.memories.iter() {
             rwasm_builder.add_memory_pages(instr_builder, memory.initial_pages().into_inner());
         }
-        Ok(())
-    }
-
-    pub fn translate_data(&mut self) -> Result<(), RwasmBuilderError> {
-        let (rwasm_builder, instr_builder) = (
-            &mut self.func_builder.translator.alloc.rwasm_builder,
-            &mut self.func_builder.translator.alloc.inst_builder,
-        );
         for (idx, memory) in self.res.res.data_segments.iter().enumerate() {
             match memory.kind() {
                 DataSegmentKind::Active(seg) => {
                     let data_offset = Self::translate_const_expr(seg.offset())?;
                     rwasm_builder.add_active_memory(
                         instr_builder,
+                        (idx as u32).into(),
                         data_offset.as_u32(),
                         &memory.bytes,
                     );
@@ -286,17 +308,9 @@ impl<'parser> RwasmTranslator<'parser> {
     }
 
     pub fn translate_const_expr(const_expr: &ConstExpr) -> Result<UntypedValue, RwasmBuilderError> {
-        return if cfg!(feature = "e2e") {
-            // TODO: "can we avoid having this hardcode here?"
-            let init_value = const_expr
-                .eval_with_context(|_| crate::Value::I32(666), |_| crate::FuncRef::default())
-                .ok_or(RwasmBuilderError::NotSupportedGlobalExpr)?;
-            Ok(init_value)
-        } else {
-            let init_value = const_expr
-                .eval_const()
-                .ok_or(RwasmBuilderError::NotSupportedGlobalExpr)?;
-            Ok(init_value)
-        };
+        let init_value = const_expr
+            .eval_const()
+            .ok_or(RwasmBuilderError::NotSupportedGlobalExpr)?;
+        Ok(init_value)
     }
 }

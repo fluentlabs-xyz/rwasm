@@ -141,7 +141,7 @@ impl Module {
     ///
     /// - If the `stream` cannot be decoded into a valid Wasm module.
     /// - If unsupported Wasm proposals are encountered.
-    pub fn new(engine: &Engine, stream: impl Read) -> Result<Self, Error> {
+    pub fn new(engine: &Engine, stream: &[u8]) -> Result<Self, Error> {
         parse(engine, stream).map_err(Into::into)
     }
 

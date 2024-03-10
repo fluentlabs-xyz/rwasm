@@ -161,6 +161,9 @@ impl TestContext<'_> {
         &mut self,
         mut module: wast::core::Module,
     ) -> Result<Instance, TestError> {
+        println!("\n --- creating module ---");
+        println!("{:?}", module);
+        println!(" -----------------------\n");
         let module_name = module.id.map(|id| id.name());
         let wasm = module.encode().unwrap_or_else(|error| {
             panic!(
@@ -170,8 +173,11 @@ impl TestContext<'_> {
             )
         });
         let mut module = Module::new(self.engine(), &wasm[..])?;
-        let entrypoint_func_index = module.funcs.len() - 1;
-        module.start = Some(FuncIdx::from(entrypoint_func_index as u32));
+        // for rWASM set entrypoint as a start function to init module and sections
+        if self.engine.config().get_rwasm_config().is_some() {
+            let entrypoint_func_index = module.funcs.len() - 1;
+            module.start = Some(FuncIdx::from(entrypoint_func_index as u32));
+        }
         let instance_pre = self.linker.instantiate(&mut self.store, &module)?;
         let instance = instance_pre.start(&mut self.store)?;
         self.modules.push(module);

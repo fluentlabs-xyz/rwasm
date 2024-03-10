@@ -101,7 +101,7 @@ impl InstanceCache {
         index: ElementSegmentIdx,
     ) -> ElementSegment {
         let instance = self.instance();
-        ctx.resolve_instance(self.instance())
+        ctx.resolve_instance(instance)
             .get_element_segment(index.to_u32())
             .unwrap_or_else(|| {
                 unreachable!("missing element segment ({index:?}) for instance: {instance:?}",)
