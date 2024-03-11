@@ -20,11 +20,13 @@ use crate::{
         code_map::{CodeMap, InstructionPtr},
         config::FuelCosts,
         stack::{CallStack, ValueStackPtr},
+        tracer::Tracer,
         DropKeep,
         FuncFrame,
         ValueStack,
     },
     func::FuncEntity,
+    module::DEFAULT_MEMORY_INDEX,
     store::ResourceLimiterRef,
     table::{ElementSegmentEntity, TableEntity},
     FuelConsumptionMode,
@@ -101,9 +103,18 @@ pub fn execute_wasm<'ctx, 'engine>(
     code_map: &'engine CodeMap,
     const_pool: ConstPoolView<'engine>,
     resource_limiter: &'ctx mut ResourceLimiterRef<'ctx>,
+    tracer: &'engine mut Tracer,
 ) -> Result<WasmOutcome, TrapCode> {
-    Executor::new(ctx, cache, value_stack, call_stack, code_map, const_pool)
-        .execute(resource_limiter)
+    Executor::new(
+        ctx,
+        cache,
+        value_stack,
+        call_stack,
+        code_map,
+        const_pool,
+        tracer,
+    )
+    .execute(resource_limiter)
 }
 
 /// The function signature of Wasm load operations.
@@ -171,6 +182,8 @@ struct Executor<'ctx, 'engine> {
     code_map: &'engine CodeMap,
     /// A read-only view to a pool of constant values.
     const_pool: ConstPoolView<'engine>,
+    /// A tracer that stores execution info
+    tracer: &'engine mut Tracer,
 }
 
 macro_rules! forward_call {
@@ -198,6 +211,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         call_stack: &'engine mut CallStack,
         code_map: &'engine CodeMap,
         const_pool: ConstPoolView<'engine>,
+        tracer: &'engine mut Tracer,
     ) -> Self {
         let frame = call_stack.pop().expect("must have frame on the call stack");
         let sp = value_stack.stack_ptr();
@@ -211,6 +225,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             call_stack,
             code_map,
             const_pool,
+            tracer,
         }
     }
 
@@ -223,39 +238,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         use Instruction as Instr;
         loop {
             let instr = *self.ip.get();
-            // let meta = *self.ip.meta();
-
-            // TODO: Need to add recursive check while call function
-            // TODO: Create more optimized check for stack overflowed
-            // if self.value_stack.is_stack_overflowed(self.sp) {
-            //     return Err(TrapCode::StackOverflow.into());
-            // }
-
-            // handle pre-instruction state
-            // let has_default_memory = {
-            //     let instance = self.cache.instance();
-            //     self.ctx
-            //         .resolve_instance(instance)
-            //         .get_memory(DEFAULT_MEMORY_INDEX)
-            //         .is_some()
-            // };
-            // let memory_size: u32 = if has_default_memory {
-            //     self.ctx
-            //         .resolve_memory(self.cache.default_memory(self.ctx))
-            //         .current_pages()
-            //         .into()
-            // } else {
-            //     0
-            // };
-            // let consumed_fuel = self.ctx.fuel().fuel_consumed();
-            // self.tracer.pre_opcode_state(
-            //     self.ip.pc(),
-            //     instr,
-            //     stack,
-            //     &meta,
-            //     memory_size,
-            //     consumed_fuel,
-            // );
+            let meta = *self.ip.meta();
 
             // #[cfg(feature = "std")]
             // {
@@ -273,6 +256,34 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             //             .collect::<Vec<_>>()
             //     );
             // }
+
+            // handle pre-instruction state
+            let has_default_memory = {
+                let instance = self.cache.instance();
+                self.ctx
+                    .resolve_instance(instance)
+                    .get_memory(DEFAULT_MEMORY_INDEX)
+                    .is_some()
+            };
+            let memory_size: u32 = if has_default_memory {
+                self.ctx
+                    .resolve_memory(self.cache.default_memory(self.ctx))
+                    .current_pages()
+                    .into()
+            } else {
+                0
+            };
+            let consumed_fuel = self.ctx.fuel().fuel_consumed();
+            let stack = self.value_stack.dump_stack(self.sp);
+            // println!("pc:{} instr:{:?} stack:{:?}", self.ip.pc(), instr, stack);
+            self.tracer.pre_opcode_state(
+                self.ip.pc(),
+                instr,
+                stack,
+                &meta,
+                memory_size,
+                consumed_fuel,
+            );
 
             match instr {
                 Instr::LocalGet(local_depth) => self.visit_local_get(local_depth),
@@ -535,10 +546,19 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         &mut self,
         offset: AddressOffset,
         store_wrap: WasmStoreOp,
+        len: u32,
     ) -> Result<(), TrapCode> {
         let (address, value) = self.sp.pop2();
         let memory = self.cache.default_memory_bytes(self.ctx);
         store_wrap(memory, address, offset.into_inner(), value)?;
+        self.ip.offset(0);
+        let address = u32::from(address);
+        let base_address = offset.into_inner() + address;
+        self.tracer.memory_change(
+            base_address,
+            len,
+            &memory[base_address as usize..(base_address + len) as usize],
+        );
         self.try_next_instr()
     }
 
@@ -667,6 +687,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         skip: usize,
         func: &Func,
         kind: CallKind,
+        func_index: u32,
     ) -> Result<CallOutcome, TrapCode> {
         self.next_instr_at(skip);
         self.sync_stack_ptr();
@@ -677,6 +698,12 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         match self.ctx.resolve_func(func) {
             FuncEntity::Wasm(wasm_func) => {
                 let header = self.code_map.header(wasm_func.func_body());
+                self.tracer.function_call(
+                    func_index,
+                    header.max_stack_height(),
+                    header.len_locals(),
+                    String::new(),
+                );
                 self.value_stack.prepare_wasm_call(header)?;
                 self.sp = self.value_stack.stack_ptr();
                 self.cache.update_instance(wasm_func.instance());
@@ -700,11 +727,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     /// with the outer structures.
     #[inline(always)]
     fn call_func_internal(&mut self, func: CompiledFunc, kind: CallKind) -> Result<(), TrapCode> {
-        // in a rWASM compatibility mode we must convert function offset to index
-        // let func = self
-        //     .code_map
-        //     .resolve_function_by_offset(func.into_usize())
-        //     .unwrap_or(func);
         self.next_instr_at(match kind {
             CallKind::Nested => 1,
             CallKind::Tail => 2,
@@ -883,7 +905,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         if actual_signature != expected_signature {
             return Err(TrapCode::BadSignature).map_err(Into::into);
         }
-        self.call_func(skip, func, kind)
+        self.call_func(skip, func, kind, func_index)
     }
 }
 
@@ -927,13 +949,15 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     ///   actual instruction where the [`TableIdx`] paremeter belongs to.
     /// - This is required for some instructions that do not fit into a single instruction word and
     ///   store a [`TableIdx`] value in another instruction word.
-    fn fetch_table_idx(&self, offset: usize) -> TableIdx {
+    fn fetch_table_idx(&mut self, offset: usize) -> TableIdx {
         let mut addr: InstructionPtr = self.ip;
         addr.add(offset);
-        match addr.get() {
+        let table_idx = match addr.get() {
             Instruction::TableGet(table_idx) => *table_idx,
             _ => unreachable!("expected TableGet instruction word at this point"),
-        }
+        };
+        self.tracer.remember_next_table(table_idx);
+        table_idx
     }
 
     #[inline(always)]
@@ -1052,7 +1076,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         let drop_keep = self.fetch_drop_keep(1);
         self.sp.drop_keep(drop_keep);
         let callee = self.cache.get_func(self.ctx, func_index);
-        self.call_func(2, &callee, CallKind::Tail)
+        self.call_func(2, &callee, CallKind::Tail, func_index.to_u32())
     }
 
     #[inline(always)]
@@ -1091,7 +1115,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             })
         } else {
             let callee = self.cache.get_func(self.ctx, func_index);
-            self.call_func(1, &callee, CallKind::Nested)
+            self.call_func(1, &callee, CallKind::Nested, func_index.to_u32())
         }
     }
 
@@ -1222,6 +1246,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     .and_then(|memory| memory.get_mut(..n))
                     .ok_or(TrapCode::MemoryOutOfBounds)?;
                 memory.fill(byte);
+                this.tracer.memory_change(offset as u32, n as u32, memory);
                 Ok(())
             },
         )?;
@@ -1247,6 +1272,11 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     .and_then(|memory| memory.get(..n))
                     .ok_or(TrapCode::MemoryOutOfBounds)?;
                 data.copy_within(src_offset..src_offset.wrapping_add(n), dst_offset);
+                this.tracer.memory_change(
+                    dst_offset as u32,
+                    n as u32,
+                    &data[dst_offset..(dst_offset + n)],
+                );
                 Ok(())
             },
         )?;
@@ -1290,6 +1320,8 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     .and_then(|data| data.get(..n))
                     .ok_or(TrapCode::MemoryOutOfBounds)?;
                 memory.copy_from_slice(data);
+                this.tracer
+                    .global_memory(dst_offset as u32, n as u32, memory);
                 Ok(())
             },
         )?;
@@ -1336,6 +1368,8 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             Err(EntityGrowError::TrapCode(trap_code)) => return Err(trap_code),
         };
         self.sp.push_as(result);
+        self.tracer
+            .table_size_change(table_index.to_u32(), init.as_u32(), delta);
         self.try_next_instr()
     }
 
@@ -1380,6 +1414,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             .resolve_table_mut(&table)
             .set_untyped(index, value)
             .map_err(|_| TrapCode::TableOutOfBounds)?;
+        self.tracer.table_change(table_index.to_u32(), index, value);
         self.try_next_instr()
     }
 
@@ -1516,31 +1551,31 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
 }
 
 macro_rules! impl_visit_store {
-    ( $( fn $visit_ident:ident($untyped_ident:ident); )* ) => {
+    ( $( fn $visit_ident:ident($untyped_ident:ident, $type_size:literal); )* ) => {
         $(
             #[inline(always)]
             fn $visit_ident(
                 &mut self,
                 offset: AddressOffset,
             ) -> Result<(), TrapCode> {
-                self.execute_store_wrap(offset, UntypedValue::$untyped_ident)
+                self.execute_store_wrap(offset, UntypedValue::$untyped_ident, $type_size)
             }
         )*
     }
 }
 impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     impl_visit_store! {
-        fn visit_i32_store(i32_store);
-        fn visit_i64_store(i64_store);
-        fn visit_f32_store(f32_store);
-        fn visit_f64_store(f64_store);
+        fn visit_i32_store(i32_store, 4);
+        fn visit_i64_store(i64_store, 8);
+        fn visit_f32_store(f32_store, 4);
+        fn visit_f64_store(f64_store, 8);
 
-        fn visit_i32_store_8(i32_store8);
-        fn visit_i32_store_16(i32_store16);
+        fn visit_i32_store_8(i32_store8, 1);
+        fn visit_i32_store_16(i32_store16, 2);
 
-        fn visit_i64_store_8(i64_store8);
-        fn visit_i64_store_16(i64_store16);
-        fn visit_i64_store_32(i64_store32);
+        fn visit_i64_store_8(i64_store8, 1);
+        fn visit_i64_store_16(i64_store16, 2);
+        fn visit_i64_store_32(i64_store32, 4);
     }
 }
 

@@ -13,6 +13,7 @@ use rwasm::{
             ElementSegmentIdx,
             FuncIdx,
             GlobalIdx,
+            InstrMeta,
             Instruction,
             LocalDepth,
             SignatureIdx,
@@ -27,7 +28,7 @@ use rwasm::{
 #[derive(Default, Debug, Clone)]
 pub struct InstructionSet {
     pub instr: Vec<Instruction>,
-    // pub metas: Option<Vec<InstrMeta>>,
+    pub metas: Option<Vec<InstrMeta>>,
     // translate state
     pub(crate) memory_section: Vec<u8>,
     pub(crate) passive_memory_sections: HashMap<DataSegmentIdx, (u32, u32)>,
@@ -70,6 +71,7 @@ impl From<Vec<Instruction>> for InstructionSet {
     fn from(value: Vec<Instruction>) -> Self {
         Self {
             instr: value,
+            metas: None,
             memory_section: vec![],
             passive_memory_sections: Default::default(),
             element_section: vec![],
@@ -91,18 +93,18 @@ impl InstructionSet {
         opcode_pos
     }
 
-    // pub fn push_with_meta(&mut self, opcode: Instruction, meta: InstrMeta) -> u32 {
-    //     let opcode_pos = self.push(opcode);
-    //     let metas_len = if let Some(metas) = &mut self.metas {
-    //         metas.push(meta);
-    //         metas.len()
-    //     } else {
-    //         self.metas = Some(vec![meta]);
-    //         1
-    //     };
-    //     assert_eq!(self.instr.len(), metas_len, "instr len and meta mismatched");
-    //     opcode_pos
-    // }
+    pub fn push_with_meta(&mut self, opcode: Instruction, meta: InstrMeta) -> u32 {
+        let opcode_pos = self.push(opcode);
+        let metas_len = if let Some(metas) = &mut self.metas {
+            metas.push(meta);
+            metas.len()
+        } else {
+            self.metas = Some(vec![meta]);
+            1
+        };
+        assert_eq!(self.instr.len(), metas_len, "instr len and meta mismatched");
+        opcode_pos
+    }
 
     pub fn propagate_locals(&mut self, n: usize) {
         (0..n).for_each(|_| self.op_i32_const(0));
@@ -140,9 +142,9 @@ impl InstructionSet {
         }
     }
 
-    // pub fn has_meta(&self) -> bool {
-    //     self.metas.is_some()
-    // }
+    pub fn has_meta(&self) -> bool {
+        self.metas.is_some()
+    }
 
     pub fn get<I>(&self, index: I) -> Option<&Instruction>
     where
@@ -492,9 +494,9 @@ impl InstructionSet {
 
     pub fn extend(&mut self, with: &InstructionSet) {
         self.instr.extend(&with.instr);
-        // if let Some(metas) = &mut self.metas {
-        //     metas.extend(with.metas.as_ref().unwrap());
-        // }
+        if let Some(metas) = &mut self.metas {
+            metas.extend(with.metas.as_ref().unwrap());
+        }
     }
 
     // pub fn fix_br_indirect_offset(

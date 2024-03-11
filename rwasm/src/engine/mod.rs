@@ -15,6 +15,7 @@ mod traits;
 
 #[cfg(test)]
 mod tests;
+mod tracer;
 
 pub use self::{
     bytecode::DropKeep,
@@ -30,6 +31,13 @@ pub use self::{
     },
     resumable::{ResumableCall, ResumableInvocation, TypedResumableCall, TypedResumableInvocation},
     stack::StackLimits,
+    tracer::{
+        Tracer,
+        TracerFunctionMeta,
+        TracerGlobalVariable,
+        TracerInstrState,
+        TracerMemoryState,
+    },
     traits::{CallParams, CallResults},
 };
 use self::{
@@ -49,7 +57,7 @@ pub(crate) use self::{
 use crate::{
     arena::{ArenaIndex, GuardedEntity},
     core::{Trap, TrapCode, UntypedValue},
-    engine::code_map::InstructionPtr,
+    engine::{bytecode::InstrMeta, code_map::InstructionPtr},
     func::FuncEntity,
     AsContext,
     AsContextMut,
@@ -188,17 +196,19 @@ impl Engine {
     ///
     /// - If `func` is an invalid [`CompiledFunc`] reference for this [`CodeMap`].
     /// - If `func` refers to an already initialized [`CompiledFunc`].
-    pub fn init_func<I>(
+    pub fn init_func<I, M>(
         &self,
         func: CompiledFunc,
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
+        metas: M,
     ) where
         I: IntoIterator<Item = Instruction>,
+        M: IntoIterator<Item = InstrMeta>,
     {
         self.inner
-            .init_func(func, len_locals, local_stack_height, instrs)
+            .init_func(func, len_locals, local_stack_height, instrs, metas)
     }
 
     pub fn mark_func(
@@ -468,19 +478,21 @@ impl EngineInner {
     ///
     /// - If `func` is an invalid [`CompiledFunc`] reference for this [`CodeMap`].
     /// - If `func` refers to an already initialized [`CompiledFunc`].
-    fn init_func<I>(
+    fn init_func<I, M>(
         &self,
         func: CompiledFunc,
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
+        metas: M,
     ) where
         I: IntoIterator<Item = Instruction>,
+        M: IntoIterator<Item = InstrMeta>,
     {
         self.res
             .write()
             .code_map
-            .init_func(func, len_locals, local_stack_height, instrs)
+            .init_func(func, len_locals, local_stack_height, instrs, metas)
     }
 
     fn mark_func(
@@ -877,7 +889,8 @@ impl<'engine> EngineExecutor<'engine> {
             code.into()
         }
 
-        let (store_inner, mut resource_limiter) = ctx.store.store_inner_and_resource_limiter_ref();
+        let (store_inner, tracer, mut resource_limiter) =
+            ctx.store.store_inner_and_tracer_and_resource_limiter_ref();
         let value_stack = &mut self.stack.values;
         let call_stack = &mut self.stack.frames;
         let code_map = &self.res.code_map;
@@ -891,6 +904,7 @@ impl<'engine> EngineExecutor<'engine> {
             code_map,
             const_pool,
             &mut resource_limiter,
+            tracer,
         )
         .map_err(make_trap)
     }

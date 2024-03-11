@@ -1,7 +1,7 @@
 use crate::{
     arena::{Arena, ArenaIndex, GuardedEntity},
     core::TrapCode,
-    engine::DedupFuncType,
+    engine::{DedupFuncType, Tracer},
     externref::{ExternObject, ExternObjectEntity, ExternObjectIdx},
     func::{Trampoline, TrampolineEntity, TrampolineIdx},
     memory::{DataSegment, MemoryError},
@@ -118,6 +118,8 @@ pub struct Store<T> {
     /// User provided hook to retrieve a
     /// [`ResourceLimiter`](crate::ResourceLimiter).
     limiter: Option<ResourceLimiterQuery<T>>,
+    /// Tracer
+    tracer: Tracer,
 }
 
 /// The inner store that owns all data not associated to the host state.
@@ -738,6 +740,7 @@ impl<T> Store<T> {
             trampolines: Arena::new(),
             data,
             limiter: None,
+            tracer: Tracer::default(),
         }
     }
 
@@ -759,6 +762,14 @@ impl<T> Store<T> {
     /// Consumes `self` and returns its user provided data.
     pub fn into_data(self) -> T {
         self.data
+    }
+
+    pub fn tracer(&self) -> &Tracer {
+        &self.tracer
+    }
+
+    pub fn tracer_mut(&mut self) -> &mut Tracer {
+        &mut self.tracer
     }
 
     /// Installs a function into the [`Store`] that will be called with the user
@@ -818,6 +829,16 @@ impl<T> Store<T> {
             None => None,
         });
         (&mut self.inner, resource_limiter)
+    }
+
+    pub(crate) fn store_inner_and_tracer_and_resource_limiter_ref(
+        &mut self,
+    ) -> (&mut StoreInner, &mut Tracer, ResourceLimiterRef) {
+        let resource_limiter = ResourceLimiterRef(match &mut self.limiter {
+            Some(q) => Some(q.0(&mut self.data)),
+            None => None,
+        });
+        (&mut self.inner, &mut self.tracer, resource_limiter)
     }
 
     /// Returns `true` if fuel metering has been enabled.
@@ -950,7 +971,7 @@ impl<'a, T> StoreContext<'a, T> {
 
     /// Access the underlying data owned by this store.
     ///
-    /// Same as [`Store::data`].    
+    /// Same as [`Store::data`].
     pub fn data(&self) -> &T {
         self.store.data()
     }
@@ -993,16 +1014,20 @@ impl<'a, T> StoreContextMut<'a, T> {
         self.store.engine()
     }
 
+    pub fn tracer_mut(&mut self) -> &mut Tracer {
+        self.store.tracer_mut()
+    }
+
     /// Access the underlying data owned by this store.
     ///
-    /// Same as [`Store::data`].    
+    /// Same as [`Store::data`].
     pub fn data(&self) -> &T {
         self.store.data()
     }
 
     /// Access the underlying data owned by this store.
     ///
-    /// Same as [`Store::data_mut`].    
+    /// Same as [`Store::data_mut`].
     pub fn data_mut(&mut self) -> &mut T {
         self.store.data_mut()
     }

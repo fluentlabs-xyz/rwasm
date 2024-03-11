@@ -173,6 +173,10 @@ impl<'parser> FuncTranslator<'parser> {
         self.locals.register_locals(amount);
     }
 
+    pub fn register_opcode_metadata(&mut self, pos: usize, opcode: u16) {
+        self.alloc.inst_builder.register_meta(pos, opcode);
+    }
+
     /// This informs the [`FuncTranslator`] that the function header translation is finished.
     ///
     /// # Note

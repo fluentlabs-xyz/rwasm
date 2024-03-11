@@ -5,7 +5,7 @@ use super::{
     TranslationError,
 };
 use crate::engine::{
-    bytecode::{BranchOffset, FuncIdx, Instruction},
+    bytecode::{BranchOffset, FuncIdx, InstrMeta, Instruction},
     CompiledFunc,
     DropKeep,
     Engine,
@@ -75,8 +75,11 @@ impl RelativeDepth {
 pub struct InstructionsBuilder {
     /// The instructions of the partially constructed function body.
     insts: Vec<Instruction>,
+    metas: Vec<InstrMeta>,
     /// All labels and their uses.
     labels: LabelRegistry,
+    /// Instruction meta state (pc and opcode number)
+    temp_meta: InstrMeta,
 }
 
 impl InstructionsBuilder {
@@ -132,6 +135,7 @@ impl InstructionsBuilder {
     pub fn push_inst(&mut self, inst: Instruction) -> Instr {
         let idx = self.current_pc();
         self.insts.push(inst);
+        self.metas.push(self.temp_meta);
         idx
     }
 
@@ -170,6 +174,10 @@ impl InstructionsBuilder {
         self.try_resolve_label_for(label, user)
     }
 
+    pub fn register_meta(&mut self, pc: usize, opcode: u16) {
+        self.temp_meta = InstrMeta::new(pc, opcode, self.metas.len());
+    }
+
     /// Try resolving the `label` for the given `instr`.
     ///
     /// Returns an uninitialized [`BranchOffset`] if the `label` cannot yet
@@ -198,7 +206,15 @@ impl InstructionsBuilder {
         local_stack_height: usize,
     ) -> Result<(), TranslationError> {
         self.update_branch_offsets()?;
-        engine.init_func(func, len_locals, local_stack_height, self.insts.drain(..));
+        let metas = core::mem::take(&mut self.metas);
+        assert_eq!(self.insts.len(), metas.len());
+        engine.init_func(
+            func,
+            len_locals,
+            local_stack_height,
+            self.insts.drain(..),
+            metas,
+        );
         Ok(())
     }
 

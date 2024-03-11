@@ -107,11 +107,12 @@ impl RwasmModule {
         let compiled_func = resources
             .get_compiled_func(FuncIdx::from(import_len))
             .unwrap();
-        let mut code_section = code_section.instr.clone();
-        if code_section.is_empty() {
-            code_section.push(Instruction::Unreachable);
+        let mut instr = code_section.instr.clone();
+        if instr.is_empty() {
+            instr.push(Instruction::Unreachable);
         }
-        engine.init_func(compiled_func, 0, 0, code_section);
+        let metas = code_section.metas.unwrap();
+        engine.init_func(compiled_func, 0, 0, instr, metas);
         for (fn_index, fn_pos) in self.func_section.iter().copied().enumerate() {
             let compiled_func = resources
                 .get_compiled_func(FuncIdx::from(import_len + fn_index as u32 + 1))

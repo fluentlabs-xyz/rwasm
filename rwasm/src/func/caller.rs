@@ -72,10 +72,10 @@ impl<'a, T> Caller<'a, T> {
         let address = address as usize;
         let memory = self.exported_memory().data_mut(self.as_context_mut());
         memory[address..(address + data.len())].clone_from_slice(data);
-        // self.ctx
-        //     .store
-        //     .tracer_mut()
-        //     .memory_change(address as u32, data.len() as u32, data);
+        self.ctx
+            .store
+            .tracer_mut()
+            .memory_change(address as u32, data.len() as u32, data);
     }
 
     /// Adds `delta` quantity of fuel to the remaining fuel.

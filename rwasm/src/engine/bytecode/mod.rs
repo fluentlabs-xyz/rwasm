@@ -623,3 +623,24 @@ impl Instruction {
         }
     }
 }
+
+#[derive(Default, Debug, Copy, Clone, PartialEq)]
+pub struct InstrMeta(usize, u16, pub(crate) usize);
+
+impl InstrMeta {
+    pub fn new(pos: usize, code: u16, index: usize) -> Self {
+        Self(pos, code, index)
+    }
+
+    pub fn offset(&self) -> usize {
+        self.0
+    }
+
+    pub fn opcode(&self) -> u16 {
+        self.1
+    }
+
+    pub fn index(&self) -> usize {
+        self.2
+    }
+}
