@@ -9,7 +9,7 @@ use crate::{
 use hashbrown::HashMap;
 
 #[derive(Debug, Default)]
-pub struct RwasmModuleBuilder {
+pub struct SegmentBuilder {
     pub(crate) global_memory_section: Vec<u8>,
     pub(crate) memory_sections: HashMap<DataSegmentIdx, (u32, u32)>,
     pub(crate) global_element_section: Vec<u32>,
@@ -17,7 +17,7 @@ pub struct RwasmModuleBuilder {
     pub(crate) total_allocated_pages: u32,
 }
 
-impl RwasmModuleBuilder {
+impl SegmentBuilder {
     pub fn add_memory_pages(
         &mut self,
         code_section: &mut InstructionsBuilder,

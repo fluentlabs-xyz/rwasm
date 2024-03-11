@@ -1,6 +1,6 @@
 mod types;
 pub use types::*;
-mod module_builder;
-pub use module_builder::*;
+mod segment_builder;
+pub use segment_builder::*;
 mod translator;
 pub use translator::*;

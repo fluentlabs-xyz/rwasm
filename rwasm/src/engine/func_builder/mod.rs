@@ -7,15 +7,11 @@ mod locals_registry;
 mod translator;
 mod value_stack;
 
-use self::{
-    control_frame::ControlFrame,
-    control_stack::ControlFlowStack,
-    translator::FuncTranslator,
-};
+use self::{control_frame::ControlFrame, control_stack::ControlFlowStack};
 pub use self::{
     error::{TranslationError, TranslationErrorInner},
     inst_builder::{Instr, InstructionsBuilder, RelativeDepth},
-    translator::FuncTranslatorAllocations,
+    translator::{FuncTranslator, FuncTranslatorAllocations},
 };
 use super::CompiledFunc;
 use crate::module::{FuncIdx, ModuleResources, ReusableAllocations};
@@ -33,9 +29,9 @@ pub struct FuncBuilder<'parser> {
     /// The current position in the Wasm binary while parsing operators.
     pos: usize,
     /// The Wasm function validator.
-    validator: Option<FuncValidator>,
+    validator: FuncValidator,
     /// The underlying Wasm to `wasmi` bytecode translator.
-    pub(crate) translator: FuncTranslator<'parser>,
+    translator: FuncTranslator<'parser>,
 }
 
 impl<'parser> FuncBuilder<'parser> {
@@ -44,7 +40,7 @@ impl<'parser> FuncBuilder<'parser> {
         func: FuncIdx,
         compiled_func: CompiledFunc,
         res: ModuleResources<'parser>,
-        validator: Option<FuncValidator>,
+        validator: FuncValidator,
         allocations: FuncTranslatorAllocations,
     ) -> Self {
         Self {
@@ -61,18 +57,7 @@ impl<'parser> FuncBuilder<'parser> {
         amount: u32,
         value_type: wasmparser::ValType,
     ) -> Result<(), TranslationError> {
-        if let Some(validator) = self.validator.as_mut() {
-            validator.define_locals(offset, amount, value_type)?;
-        }
-        // for rWASM we initialize locals with zeros
-        // if self.translator.engine().config().get_rwasm_binary() {
-        //     for _ in 0..amount as usize {
-        //         self.translator
-        //             .alloc
-        //             .inst_builder
-        //             .push_inst(Instruction::I32Const(0.into()));
-        //     }
-        // }
+        self.validator.define_locals(offset, amount, value_type)?;
         self.translator.register_locals(amount);
         Ok(())
     }
@@ -99,22 +84,12 @@ impl<'parser> FuncBuilder<'parser> {
     }
 
     /// Finishes constructing the function by initializing its [`CompiledFunc`].
-    pub fn finish(
-        mut self,
-        offset: Option<usize>,
-    ) -> Result<ReusableAllocations, TranslationError> {
-        if let Some(offset) = offset {
-            if let Some(validator) = self.validator.as_mut() {
-                validator.finish(offset)?;
-            }
-        }
+    pub fn finish(mut self, offset: usize) -> Result<ReusableAllocations, TranslationError> {
+        self.validator.finish(offset)?;
         self.translator.finish()?;
         let allocations = ReusableAllocations {
             translation: self.translator.into_allocations(),
-            validation: self
-                .validator
-                .map(|v| v.into_allocations())
-                .unwrap_or_default(),
+            validation: self.validator.into_allocations(),
         };
         Ok(allocations)
     }
@@ -129,9 +104,7 @@ impl<'parser> FuncBuilder<'parser> {
         V: FnOnce(&mut FuncValidator) -> Result<(), BinaryReaderError>,
         T: FnOnce(&mut FuncTranslator<'parser>) -> Result<(), TranslationError>,
     {
-        if let Some(validator) = self.validator.as_mut() {
-            validate(validator)?;
-        }
+        validate(&mut self.validator)?;
         translate(&mut self.translator)?;
         Ok(())
     }
@@ -184,11 +157,7 @@ macro_rules! impl_visit_operator {
         // Wildcard match arm for all the other (yet) unsupported Wasm proposals.
         fn $visit(&mut self $($(, $arg: $argty)*)?) -> Self::Output {
             let offset = self.current_pos();
-            if let Some(validator) = self.validator.as_mut() {
-                validator.visitor(offset).$visit($($($arg),*)?).map_err(::core::convert::Into::into)
-            } else {
-                Ok(())
-            }
+            self.validator.visitor(offset).$visit($($($arg),*)?).map_err(::core::convert::Into::into)
         }
         impl_visit_operator!($($rest)*);
     };

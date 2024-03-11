@@ -22,7 +22,7 @@ use rwasm::{
     StackLimits,
 };
 
-pub struct Compiler2<'linker> {
+pub struct Compiler<'linker> {
     // input params
     pub(crate) import_linker: Option<&'linker ImportLinker>,
     pub(crate) config: CompilerConfig,
@@ -35,7 +35,7 @@ pub struct Compiler2<'linker> {
     injection_segments: Vec<Injection>,
 }
 
-impl<'linker> Compiler2<'linker> {
+impl<'linker> Compiler<'linker> {
     pub fn new(wasm_binary: &[u8], config: CompilerConfig) -> Result<Self, CompilerError> {
         Self::new_with_linker(wasm_binary, config, None)
     }
@@ -62,7 +62,7 @@ impl<'linker> Compiler2<'linker> {
         let engine = Engine::new(&engine_config);
         let module =
             Module::new(&engine, wasm_binary).map_err(|e| CompilerError::ModuleError(e))?;
-        Ok(Compiler2 {
+        Ok(Compiler {
             engine,
             module,
             code_section: InstructionSet::new(),

@@ -1,9 +1,4 @@
-use crate::{
-    compiler::types::{CompilerError, FuncOrExport},
-    instruction_set,
-    N_MAX_RECURSION_DEPTH,
-    N_MAX_STACK_HEIGHT,
-};
+use crate::{compiler::types::CompilerError, N_MAX_RECURSION_DEPTH, N_MAX_STACK_HEIGHT};
 use alloc::string::ToString;
 use rwasm::{
     core::{ImportFunc, ImportLinker, ValueType},
@@ -24,13 +19,8 @@ struct HostState {
     exit_code: i32,
 }
 
-#[derive(Default)]
-struct RunConfig {
-    entrypoint: FuncOrExport,
-}
-
 fn execute_binary_default(wat: &str) -> HostState {
-    execute_binary(wat, Default::default())
+    execute_binary(wat)
 }
 
 #[cfg(feature = "std")]
@@ -52,7 +42,7 @@ pub fn trace_bytecode(module: &Module, engine: &Engine) {
     println!()
 }
 
-fn execute_binary(wat: &str, run_config: RunConfig) -> HostState {
+fn execute_binary(wat: &str) -> HostState {
     const SYS_HALT_CODE: u32 = 1010;
 
     let wasm_binary = wat::parse_str(wat).unwrap();
@@ -275,65 +265,6 @@ fn test_call_indirect() {
         )
       (export "main" (func $main)))
         "#,
-    );
-}
-
-#[test]
-#[ignore]
-fn test_state_router() {
-    execute_binary(
-        r#"
-    (module
-      (type $check (func (param i32) (param i32) (result i32)))
-      (func $main
-        i32.const 100
-        drop
-        )
-      (func $deploy
-        )
-      (func $add (type $check)
-        local.get 0
-        local.get 1
-        i32.add
-        )
-      (export "main" (func $main))
-      (export "deploy" (func $deploy)))
-        "#,
-        RunConfig {
-            entrypoint: FuncOrExport::StateRouter(
-                vec![FuncOrExport::Export("main"), FuncOrExport::Export("deploy")],
-                instruction_set! {
-                    I32Const(0)
-                },
-            ),
-        },
-    );
-    execute_binary(
-        r#"
-    (module
-      (type $check (func (param i32) (param i32) (result i32)))
-      (func $main
-        i32.const 100
-        drop
-        )
-      (func $deploy
-        )
-      (func $add (type $check)
-        local.get 0
-        local.get 1
-        i32.add
-        )
-      (export "main" (func $main))
-      (export "deploy" (func $deploy)))
-        "#,
-        RunConfig {
-            entrypoint: FuncOrExport::StateRouter(
-                vec![FuncOrExport::Export("main"), FuncOrExport::Export("deploy")],
-                instruction_set! {
-                    I32Const(1)
-                },
-            ),
-        },
     );
 }
 

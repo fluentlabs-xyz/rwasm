@@ -246,6 +246,8 @@ impl CodeMap {
         let header = self.header(func_body);
         let start = header.iref.to_usize();
         let end = self.instr_end(func_body);
+        // it's possible in rWASM mode because we emit entrypoint before functions
+        if start > end {}
         let start_ptr = InstructionPtr::new(self.instrs[start..end].as_ptr());
         let mut end_ptr = start_ptr;
         end_ptr.add(end - start);

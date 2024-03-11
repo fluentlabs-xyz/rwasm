@@ -12,7 +12,7 @@ use super::{
     ModuleResources,
 };
 use crate::{
-    engine::{CompiledFunc, FuncTranslatorAllocations},
+    engine::{CompiledFunc, FuncTranslatorAllocations, InstructionsBuilder},
     rwasm::RwasmTranslator,
     Engine,
     FuncType,
@@ -111,14 +111,19 @@ impl<'engine> ModuleParser<'engine> {
                 }
                 Payload::End(offset) => {
                     // before processing code entries we must process an entrypoint
-                    if self.builder.engine().config().get_rwasm_config().is_some() {
-                        self.process_rwasm_entrypoint()?;
-                    }
+                    let instr_builder =
+                        if self.builder.engine().config().get_rwasm_config().is_some() {
+                            Some(self.process_rwasm_entrypoint()?)
+                        } else {
+                            None
+                        };
                     for func_body in take(&mut func_bodies) {
                         self.process_code_entry(func_body)?;
                     }
                     // rewrite memory & table sections for rWASM (encoding/decoding simulation)
                     if self.builder.engine().config().get_rwasm_config().is_some() {
+                        let (mut instr_builder, compiled_func) = instr_builder.unwrap();
+                        instr_builder.finish(self.builder.engine(), compiled_func, 0, 0)?;
                         self.rewrite_sections()?;
                     }
                     self.process_end(offset)?;
@@ -258,14 +263,17 @@ impl<'engine> ModuleParser<'engine> {
             let mut allocations = take(&mut self.allocations);
             for import_func_index in 0..self.builder.imports.len_funcs() {
                 let (func, compiled_func) = self.next_func();
-                let sys_index: u32;
-                (allocations, sys_index) = RwasmTranslator::new(
+                let (func_allocations, sys_index) = RwasmTranslator::new(
                     func,
                     compiled_func,
                     ModuleResources::new(&self.builder),
                     allocations.translation,
                 )
                 .translate_import_func(import_func_index as u32)?;
+                allocations = ReusableAllocations {
+                    translation: func_allocations,
+                    validation: allocations.validation,
+                };
                 self.builder
                     .import_mapping
                     .insert(sys_index, (import_func_index as u32).into());
@@ -523,19 +531,28 @@ impl<'engine> ModuleParser<'engine> {
         Ok(())
     }
 
-    fn process_rwasm_entrypoint(&mut self) -> Result<(), ModuleError> {
+    fn process_rwasm_entrypoint(
+        &mut self,
+    ) -> Result<(InstructionsBuilder, CompiledFunc), ModuleError> {
         // we must register new compiled func for an entrypoint
         let (func, compiled_func) = self.builder.push_entrypoint();
-        let mut allocations = take(&mut self.allocations);
+        let allocations = take(&mut self.allocations);
         // translate entrypoint
-        allocations = RwasmTranslator::new(
+        let mut func_allocations = RwasmTranslator::new(
             func,
             compiled_func,
             ModuleResources::new(&self.builder),
             allocations.translation,
         )
         .translate_entrypoint()?;
-        let _ = replace(&mut self.allocations, allocations);
+        let instr_builder = take(&mut func_allocations.inst_builder);
+        let _ = replace(
+            &mut self.allocations,
+            ReusableAllocations {
+                translation: func_allocations,
+                validation: allocations.validation,
+            },
+        );
         let has_entrypoint = self
             .builder
             .engine()
@@ -546,7 +563,7 @@ impl<'engine> ModuleParser<'engine> {
         if has_entrypoint {
             self.builder.rewrite_exports("main".into(), func)?;
         }
-        Ok(())
+        Ok((instr_builder, compiled_func))
     }
 
     fn rewrite_sections(&mut self) -> Result<(), ModuleError> {

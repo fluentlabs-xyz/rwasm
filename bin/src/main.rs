@@ -5,7 +5,7 @@ use clap::Parser;
 use fluentbase_runtime::Runtime;
 use log::debug;
 use rwasm_codegen::{
-    compiler::{compiler::Compiler2, config::CompilerConfig, types::FuncOrExport},
+    compiler::{compiler::Compiler, config::CompilerConfig, types::FuncOrExport},
     instruction::INSTRUCTION_SIZE_BYTES,
 };
 use std::{fs, path::Path};
@@ -70,7 +70,7 @@ fn main() {
     }
 
     let import_linker = Runtime::<()>::new_sovereign_linker();
-    let mut compiler = Compiler2::new_with_linker(
+    let mut compiler = Compiler::new_with_linker(
         &wasm_binary,
         CompilerConfig::default()
             .translate_sections(!args.skip_translate_sections)

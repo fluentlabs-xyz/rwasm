@@ -44,7 +44,7 @@ use crate::{
         ModuleResources,
         DEFAULT_MEMORY_INDEX,
     },
-    rwasm::RwasmModuleBuilder,
+    rwasm::SegmentBuilder,
     Engine,
     FuncType,
     GlobalType,
@@ -67,7 +67,7 @@ pub struct FuncTranslatorAllocations {
     /// Buffer for translating `br_table`.
     br_table_branches: Vec<Instruction>,
     /// Module builder for rWASM
-    pub(crate) rwasm_builder: RwasmModuleBuilder,
+    pub(crate) segment_builder: SegmentBuilder,
 }
 
 impl FuncTranslatorAllocations {
@@ -1647,7 +1647,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             if is_rwasm {
                 let (ib, rb) = (
                     &mut builder.alloc.inst_builder,
-                    &mut builder.alloc.rwasm_builder,
+                    &mut builder.alloc.segment_builder,
                 );
                 let data_segment_index: DataSegmentIdx = segment_index.into();
                 let (offset, length) = rb
@@ -1850,7 +1850,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             if is_rwasm {
                 let (ib, rb) = (
                     &mut builder.alloc.inst_builder,
-                    &mut builder.alloc.rwasm_builder,
+                    &mut builder.alloc.segment_builder,
                 );
                 let elem_segment_index: ElementSegmentIdx = segment_index.into();
                 let (offset, length) = rb
