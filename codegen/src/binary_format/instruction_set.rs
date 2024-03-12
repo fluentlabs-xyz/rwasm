@@ -13,12 +13,12 @@ impl<'a> BinaryFormat<'a> for InstructionSet {
     type SelfType = InstructionSet;
 
     fn encoded_length(&self) -> usize {
-        (self.len() as usize) * INSTRUCTION_SIZE_BYTES
+        self.len() * INSTRUCTION_SIZE_BYTES
     }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
         let mut n = 0;
-        for opcode in self.instr.iter() {
+        for opcode in self.instrs().iter() {
             n += opcode.write_binary(sink)?;
         }
         Ok(n)

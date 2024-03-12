@@ -103,7 +103,7 @@ pub struct FuncTranslator<'parser> {
     /// reachability to `true` again.
     reachable: bool,
     /// The height of the emulated value stack.
-    stack_height: ValueStackHeight,
+    pub(crate) stack_height: ValueStackHeight,
     /// Stores and resolves local variable types.
     locals: LocalsRegistry,
     /// The reusable data structures of the [`FuncTranslator`].

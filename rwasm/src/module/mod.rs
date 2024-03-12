@@ -34,7 +34,7 @@ use self::{
     read::ReadError,
 };
 use crate::{
-    engine::{bytecode::Instruction, CompiledFunc, DedupFuncType},
+    engine::{CompiledFunc, DedupFuncType},
     Engine,
     Error,
     ExternType,
@@ -62,7 +62,6 @@ pub struct Module {
     pub compiled_funcs: Box<[CompiledFunc]>,
     pub element_segments: Box<[ElementSegment]>,
     pub data_segments: Box<[DataSegment]>,
-    pub import_mapping: BTreeMap<u32, FuncIdx>,
 }
 
 /// The index of the default Wasm linear memory.
@@ -166,7 +165,6 @@ impl Module {
             compiled_funcs: builder.compiled_funcs.into(),
             element_segments: builder.element_segments.into(),
             data_segments: builder.data_segments.into(),
-            import_mapping: builder.import_mapping.into(),
         }
     }
 
@@ -308,24 +306,6 @@ impl Module {
                 ExternType::Global(global_type)
             }
         }
-    }
-
-    pub fn get_global_init(&self, idx: &ExternIdx) -> Option<Instruction> {
-        idx.into_global_idx().and_then(|idx| {
-            self.internal_globals().skip(idx as usize).next().and_then(
-                |(_global_type, global_expr)| {
-                    if let Some(value) = global_expr.eval_const() {
-                        Some(Instruction::I64Const(value.into()))
-                    } else if let Some(value) = global_expr.funcref() {
-                        Some(Instruction::RefFunc(value.into_u32().into()))
-                    } else if let Some(index) = global_expr.global() {
-                        Some(Instruction::GlobalGet(index.into()))
-                    } else {
-                        None
-                    }
-                },
-            )
-        })
     }
 }
 

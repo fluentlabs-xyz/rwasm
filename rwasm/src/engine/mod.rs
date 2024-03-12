@@ -153,7 +153,7 @@ impl Engine {
     }
 
     /// Allocates a new function type to the [`Engine`].
-    pub(super) fn alloc_func_type(&self, func_type: FuncType) -> DedupFuncType {
+    pub fn alloc_func_type(&self, func_type: FuncType) -> DedupFuncType {
         self.inner.alloc_func_type(func_type)
     }
 
@@ -186,7 +186,7 @@ impl Engine {
     /// Allocates a new uninitialized [`CompiledFunc`] to the [`Engine`].
     ///
     /// Returns a [`CompiledFunc`] reference to allow accessing the allocated [`CompiledFunc`].
-    pub(super) fn alloc_func(&self) -> CompiledFunc {
+    pub fn alloc_func(&self) -> CompiledFunc {
         self.inner.alloc_func()
     }
 

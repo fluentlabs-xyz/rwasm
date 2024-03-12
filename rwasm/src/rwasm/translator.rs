@@ -100,7 +100,8 @@ impl<'parser> RwasmTranslator<'parser> {
             .get(entrypoint_name.as_str())
             .ok_or(RwasmBuilderError::MissingEntrypoint)?
             .into_func_idx()
-            .ok_or(RwasmBuilderError::MissingEntrypoint)?;
+            .ok_or(RwasmBuilderError::MissingEntrypoint)?
+            .into_u32();
         instr_builder.push_inst(Instruction::CallInternal(export_index.into()));
         Ok(())
     }

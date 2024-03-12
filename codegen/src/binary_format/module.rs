@@ -64,7 +64,7 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         // section terminator
         n += sink.write_u8(SECTION_END)?;
         // write code/decl/element sections
-        for opcode in self.code_section.instr.iter() {
+        for opcode in self.code_section.instrs().iter() {
             n += opcode.write_binary(sink)?;
         }
         n += sink.write_bytes(&self.memory_section)?;

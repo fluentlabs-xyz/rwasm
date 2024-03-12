@@ -2,7 +2,7 @@ use super::{TestDescriptor, TestError, TestProfile, TestSpan};
 use anyhow::Result;
 use rwasm::{
     core::{ValueType, F32, F64},
-    module::FuncIdx,
+    module::{FuncIdx, Imported},
     Config,
     Engine,
     Extern,
@@ -19,12 +19,15 @@ use rwasm::{
     TableType,
     Value,
 };
+use rwasm_codegen::RwasmModule;
 use std::collections::HashMap;
 use wast::token::{Id, Span};
 
 /// The context of a single Wasm test spec suite run.
 #[derive(Debug)]
 pub struct TestContext<'a> {
+    /// The wasmi config
+    config: Config,
     /// The `wasmi` engine used for executing functions used during the test.
     engine: Engine,
     /// The linker for linking together Wasm test modules.
@@ -103,6 +106,7 @@ impl<'a> TestContext<'a> {
             .define("spectest", "print_f64_f64", print_f64_f64)
             .unwrap();
         TestContext {
+            config,
             engine,
             linker,
             store,
@@ -167,12 +171,53 @@ impl TestContext<'_> {
                 error
             )
         });
-        let mut module = Module::new(self.engine(), &wasm[..])?;
-        // for rWASM set entrypoint as a start function to init module and sections
-        if self.engine.config().get_rwasm_config().is_some() {
+        let module = if self.engine.config().get_rwasm_config().is_some() {
+            // let original_engine = Engine::new(&self.config);
+            let original_engine = self.engine();
+            let original_module = Module::new(original_engine, &wasm[..])?;
+            let rwasm_module = RwasmModule::from_module(&original_module);
+            let mut module_builder = rwasm_module.to_module_builder(self.engine());
+            // copy imports
+            for (i, imported) in original_module.imports.items.iter().enumerate() {
+                match imported {
+                    Imported::Func(import_name) => {
+                        let func_type = original_module.funcs[i];
+                        let func_type =
+                            original_engine.resolve_func_type(&func_type, |v| v.clone());
+                        let new_func_type = self.engine.alloc_func_type(func_type);
+                        module_builder.funcs.insert(0, new_func_type);
+                        module_builder.imports.funcs.push(import_name.clone());
+                    }
+                    _ => unreachable!("not supported import type ({:?})", imported),
+                }
+            }
+            // copy exports indices (it's not affected, so we can safely copy)
+            for (k, v) in original_module.exports.iter() {
+                if let Some(func_index) = v.into_func_idx() {
+                    let func_index = func_index.into_u32();
+                    if func_index < original_module.imports.len_funcs as u32 {
+                        unreachable!("this is imported and exported func at the same time... ?")
+                    }
+                    let func_type = original_module.funcs[func_index as usize];
+                    let func_type = original_engine.resolve_func_type(&func_type, |v| v.clone());
+                    // remap exported func type
+                    let new_func_type = self.engine.alloc_func_type(func_type);
+                    module_builder.funcs[func_index as usize] = new_func_type;
+                }
+                module_builder.push_export(k.clone(), *v);
+            }
+            let mut module = module_builder.finish();
+            // for rWASM set entrypoint as a start function to init module and sections
             let entrypoint_func_index = module.funcs.len() - 1;
             module.start = Some(FuncIdx::from(entrypoint_func_index as u32));
-        }
+            module
+            // let mut module = Module::new(self.engine(), &wasm[..])?;
+            // let entrypoint_func_index = module.funcs.len() - 1;
+            // module.start = Some(FuncIdx::from(entrypoint_func_index as u32));
+            // module
+        } else {
+            Module::new(self.engine(), &wasm[..])?
+        };
         let instance_pre = self.linker.instantiate(&mut self.store, &module)?;
         let instance = instance_pre.start(&mut self.store)?;
         self.modules.push(module);

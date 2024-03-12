@@ -14,8 +14,11 @@ pub use self::{
     translator::{FuncTranslator, FuncTranslatorAllocations},
 };
 use super::CompiledFunc;
-use crate::module::{FuncIdx, ModuleResources, ReusableAllocations};
-use wasmparser::{BinaryReaderError, VisitOperator};
+use crate::{
+    engine::bytecode::Instruction,
+    module::{FuncIdx, ModuleResources, ReusableAllocations},
+};
+use wasmparser::{BinaryReaderError, ValType, VisitOperator};
 
 /// The used function validator type.
 type FuncValidator = wasmparser::FuncValidator<wasmparser::ValidatorResources>;
@@ -32,6 +35,7 @@ pub struct FuncBuilder<'parser> {
     validator: FuncValidator,
     /// The underlying Wasm to `wasmi` bytecode translator.
     translator: FuncTranslator<'parser>,
+    is_rwasm: bool,
 }
 
 impl<'parser> FuncBuilder<'parser> {
@@ -43,10 +47,12 @@ impl<'parser> FuncBuilder<'parser> {
         validator: FuncValidator,
         allocations: FuncTranslatorAllocations,
     ) -> Self {
+        let is_rwasm = res.res.engine().config().get_rwasm_config().is_some();
         Self {
             pos: 0,
             validator,
             translator: FuncTranslator::new(func, compiled_func, res, allocations),
+            is_rwasm,
         }
     }
 
@@ -58,7 +64,23 @@ impl<'parser> FuncBuilder<'parser> {
         value_type: wasmparser::ValType,
     ) -> Result<(), TranslationError> {
         self.validator.define_locals(offset, amount, value_type)?;
-        self.translator.register_locals(amount);
+        // for rWASM we fill locals with zero values
+        if self.is_rwasm {
+            let instr = match value_type {
+                ValType::I32 => Instruction::I32Const(0i32.into()),
+                ValType::I64 => Instruction::I64Const(0i64.into()),
+                ValType::F32 => Instruction::F32Const(0f32.into()),
+                ValType::F64 => Instruction::F64Const(0f64.into()),
+                ValType::FuncRef => Instruction::RefFunc(0u32.into()),
+                _ => unreachable!("not supported local type ({:?})", value_type),
+            };
+            (0..amount as usize).for_each(|_| {
+                self.translator.alloc.inst_builder.push_inst(instr);
+            });
+            self.translator.stack_height.push_n(amount);
+        } else {
+            self.translator.register_locals(amount);
+        }
         Ok(())
     }
 

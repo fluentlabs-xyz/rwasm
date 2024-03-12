@@ -1,4 +1,9 @@
-use crate::{compiler::types::CompilerError, N_MAX_RECURSION_DEPTH, N_MAX_STACK_HEIGHT};
+use crate::{
+    compiler::types::CompilerError,
+    RwasmModule,
+    N_MAX_RECURSION_DEPTH,
+    N_MAX_STACK_HEIGHT,
+};
 use alloc::string::ToString;
 use rwasm::{
     core::{ImportFunc, ImportLinker, ValueType},
@@ -17,10 +22,6 @@ use rwasm::{
 #[derive(Default, Debug, Clone)]
 struct HostState {
     exit_code: i32,
-}
-
-fn execute_binary_default(wat: &str) -> HostState {
-    execute_binary(wat)
 }
 
 #[cfg(feature = "std")]
@@ -42,7 +43,7 @@ pub fn trace_bytecode(module: &Module, engine: &Engine) {
     println!()
 }
 
-fn execute_binary(wat: &str) -> HostState {
+fn execute_binary_default(wat: &str) -> HostState {
     const SYS_HALT_CODE: u32 = 1010;
 
     let wasm_binary = wat::parse_str(wat).unwrap();
@@ -77,12 +78,16 @@ fn execute_binary(wat: &str) -> HostState {
             ..Default::default()
         });
     }
+    let rwasm_module = {
+        let engine = Engine::new(&engine_config);
+        let module = Module::new(&engine, wasm_binary.as_slice())
+            .map_err(|e| CompilerError::ModuleError(e))
+            .unwrap();
+        trace_bytecode(&module, &engine);
+        RwasmModule::from_module(&module)
+    };
     let engine = Engine::new(&engine_config);
-
-    let module = Module::new(&engine, wasm_binary.as_slice())
-        .map_err(|e| CompilerError::ModuleError(e))
-        .unwrap();
-    trace_bytecode(&module, &engine);
+    let module = rwasm_module.to_module(&engine);
 
     // execute translated rwasm
     let mut store = Store::new(&engine, HostState::default());
@@ -304,4 +309,21 @@ fn test_passive_elem_section() {
   (export "main" (func $main)))
     "#,
     );
+}
+
+#[test]
+fn test_locals() {
+    let host_state = execute_binary_default(
+        r#"
+    (module
+      (type (;0;) (func))
+      (func (;0;) (type 0)
+        (local i32)
+        return)
+      (memory (;0;) 1)
+      (export "memory" (memory 0))
+      (export "main" (func 0)))
+        "#,
+    );
+    assert_eq!(host_state.exit_code, 0);
 }

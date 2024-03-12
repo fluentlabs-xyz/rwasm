@@ -1,6 +1,4 @@
-use alloc::{string::String, vec::Vec};
-use core::slice::SliceIndex;
-use hashbrown::HashMap;
+use alloc::vec::Vec;
 use rwasm::{
     core::UntypedValue,
     engine::{
@@ -25,23 +23,10 @@ use rwasm::{
     },
 };
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, PartialEq)]
 pub struct InstructionSet {
-    pub instr: Vec<Instruction>,
-    pub metas: Option<Vec<InstrMeta>>,
-    // translate state
-    pub(crate) memory_section: Vec<u8>,
-    pub(crate) passive_memory_sections: HashMap<DataSegmentIdx, (u32, u32)>,
-    pub(crate) element_section: Vec<u32>,
-    pub(crate) passive_element_sections: HashMap<ElementSegmentIdx, (u32, u32)>,
-    total_locals: Vec<usize>,
-    total_pages: u32,
-}
-
-impl PartialEq for InstructionSet {
-    fn eq(&self, other: &Self) -> bool {
-        self.instr.eq(&other.instr)
-    }
+    pub(crate) instr: Vec<Instruction>,
+    pub(crate) metas: Vec<InstrMeta>,
 }
 
 macro_rules! impl_opcode {
@@ -67,57 +52,33 @@ macro_rules! impl_opcode {
     };
 }
 
-impl From<Vec<Instruction>> for InstructionSet {
-    fn from(value: Vec<Instruction>) -> Self {
-        Self {
-            instr: value,
-            metas: None,
-            memory_section: vec![],
-            passive_memory_sections: Default::default(),
-            element_section: vec![],
-            passive_element_sections: Default::default(),
-            total_locals: vec![],
-            total_pages: 0,
-        }
-    }
-}
-
 impl InstructionSet {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn push(&mut self, opcode: Instruction) -> u32 {
-        let opcode_pos = self.len();
-        self.instr.push(opcode);
-        opcode_pos
+    pub fn instrs(&self) -> &Vec<Instruction> {
+        &self.instr
     }
 
-    pub fn push_with_meta(&mut self, opcode: Instruction, meta: InstrMeta) -> u32 {
-        let opcode_pos = self.push(opcode);
-        let metas_len = if let Some(metas) = &mut self.metas {
-            metas.push(meta);
-            metas.len()
-        } else {
-            self.metas = Some(vec![meta]);
-            1
-        };
-        assert_eq!(self.instr.len(), metas_len, "instr len and meta mismatched");
-        opcode_pos
+    pub fn push(&mut self, instr: Instruction) {
+        let index = self.instr.len();
+        self.instr.push(instr);
+        self.metas.push(InstrMeta::new(0, 0, index));
     }
 
-    pub fn propagate_locals(&mut self, n: usize) {
-        (0..n).for_each(|_| self.op_i32_const(0));
-        self.total_locals.push(n);
-    }
-
-    pub fn drop_locals(&mut self) {
-        let n = self
-            .total_locals
-            .pop()
-            .unwrap_or_else(|| unreachable!("there is no locals on the stack"));
-        (0..n).for_each(|_| self.op_drop());
-    }
+    // pub fn propagate_locals(&mut self, n: usize) {
+    //     (0..n).for_each(|_| self.op_i32_const(0));
+    //     self.locals_stack.push(n);
+    // }
+    //
+    // pub fn drop_locals(&mut self) {
+    //     let n = self
+    //         .locals_stack
+    //         .pop()
+    //         .unwrap_or_else(|| unreachable!("there is no locals on the stack"));
+    //     (0..n).for_each(|_| self.op_drop());
+    // }
 
     fn is_return_last(&self) -> bool {
         self.instr
@@ -131,84 +92,19 @@ impl InstructionSet {
 
     pub fn finalize(&mut self, inject_return: bool) {
         // 0 means there is no locals, 1 means main locals, 1+ means error
-        if self.total_locals.len() > 1 {
-            unreachable!("missing [drop_locals] call/s somewhere");
-        } else if self.total_locals.len() == 1 {
-            self.drop_locals();
-        }
+        // if self.locals_stack.len() > 1 {
+        //     unreachable!("missing [drop_locals] call/s somewhere");
+        // } else if self.locals_stack.len() == 1 {
+        //     self.drop_locals();
+        // }
         // inject return in the end (its used mostly for unit tests)
         if inject_return && !self.is_return_last() {
             self.op_return();
         }
     }
 
-    pub fn has_meta(&self) -> bool {
-        self.metas.is_some()
-    }
-
-    pub fn get<I>(&self, index: I) -> Option<&Instruction>
-    where
-        I: SliceIndex<[Instruction], Output = Instruction>,
-    {
-        self.instr.get(index)
-    }
-
-    pub fn get_mut<I>(&mut self, index: I) -> Option<&mut Instruction>
-    where
-        I: SliceIndex<[Instruction], Output = Instruction>,
-    {
-        self.instr.get_mut(index)
-    }
-
-    pub fn count_globals(&self) -> u32 {
-        self.instr
-            .iter()
-            .filter_map(|opcode| match opcode {
-                Instruction::GlobalGet(index) | Instruction::GlobalSet(index) => {
-                    Some(index.to_u32())
-                }
-                _ => None,
-            })
-            .max()
-            .map(|v| v + 1)
-            .unwrap_or_default()
-    }
-
-    pub fn count_tables(&self) -> u32 {
-        self.instr
-            .iter()
-            .filter_map(|opcode| match opcode {
-                Instruction::TableSize(index)
-                | Instruction::TableGrow(index)
-                | Instruction::TableFill(index)
-                | Instruction::TableGet(index)
-                | Instruction::TableSet(index)
-                | Instruction::TableCopy(index) => Some(index.to_u32()),
-                _ => None,
-            })
-            .max()
-            .map(|v| v + 1)
-            .unwrap_or_default()
-    }
-
-    pub fn instr(&self) -> &Vec<Instruction> {
-        &self.instr
-    }
-
-    pub fn instr_mut(&mut self) -> &mut Vec<Instruction> {
-        &mut self.instr
-    }
-
-    pub fn offset(&self, jump_dist: u32) -> u32 {
-        self.instr.len() as u32 + jump_dist
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.instr.is_empty()
-    }
-
-    pub fn len(&self) -> u32 {
-        self.instr.len() as u32
+    pub fn len(&self) -> usize {
+        self.instr.len()
     }
 
     impl_opcode!(op_local_get, LocalGet(LocalDepth));
@@ -261,60 +157,7 @@ impl InstructionSet {
     impl_opcode!(op_memory_grow, MemoryGrow);
     impl_opcode!(op_memory_fill, MemoryFill);
     impl_opcode!(op_memory_copy, MemoryCopy);
-
-    /// MemoryInit opcode reads 3 elements from stack (dst, src, len), where:
-    /// - dst - Memory destination of copied data
-    /// - src - Data source of copied data (in the passive section)
-    /// - len - Length of copied data
-    ///
-    /// In the `passive_sections` field we store info about all passive sections
-    /// that are presented in the WebAssembly binary. When passive section is activated
-    /// though `memory.init` opcode we find modified offsets in the data section
-    /// and put the on the stack by removing previous values.
-    ///
-    /// Here is the stack structure for `memory.init` call:
-    /// - ... some other stack elements
-    /// - dst
-    /// - src
-    /// - len
-    /// - ... call of `memory.init` happens here
-    ///
-    /// Here we need to replace `src` field with our modified, but since we don't know
-    /// how stack was structured then we can achieve it by replacing stack element using `local.set`
-    /// opcode.
-    ///
-    /// - dst
-    /// - src  <----+
-    /// - len       |
-    /// - new_src --+
-    /// - ... call `local.set(1)` to replace prev offset
-    ///
-    /// Here we use 1 offset because we pop `new_src`, and then count from the top, `len`
-    /// has 0 offset and `src` has offset 1.
-    ///
-    /// Before doing these ops we must ensure that specified length of copied data
-    /// doesn't exceed original section size. We also inject GT check to make sure that
-    /// there is no data section overflow.
-    pub fn op_memory_init<T>(&mut self, data_segment_index: T)
-    where
-        T: Into<DataSegmentIdx>,
-    {
-        let data_segment_index: DataSegmentIdx = data_segment_index.into();
-        let (offset, _length) = self
-            .passive_memory_sections
-            .get(&data_segment_index)
-            .copied()
-            .expect("can't resolve passive segment by index");
-        // TODO: "ideally we need to have an overflow check for length"
-        // we need to replace offset on the stack with the new value
-        self.push(Instruction::I32Const((offset as i32).into()));
-        self.push(Instruction::I32Add);
-        self.push(Instruction::LocalSet(1.into()));
-        // since we store all data sections in the one segment then index is always 0
-        self.push(Instruction::MemoryInit(0.into()));
-    }
-    impl_opcode!(op_memory_init_unsafe, MemoryInit(DataSegmentIdx));
-
+    impl_opcode!(op_memory_init, MemoryInit(DataSegmentIdx));
     impl_opcode!(op_data_drop, DataDrop(DataSegmentIdx));
     impl_opcode!(op_table_size, TableSize(TableIdx));
     impl_opcode!(op_table_grow, TableGrow(TableIdx));
@@ -322,30 +165,7 @@ impl InstructionSet {
     impl_opcode!(op_table_get, TableGet(TableIdx));
     impl_opcode!(op_table_set, TableSet(TableIdx));
     impl_opcode!(op_table_copy, TableCopy(TableIdx));
-
-    /// The semantics of this function is the same as for `MemoryInit` opcode, read
-    /// upper docs for `op_memory_init` function for more info.
     pub fn op_table_init<T, E>(&mut self, table_idx: T, elem_idx: E)
-    where
-        T: Into<TableIdx>,
-        E: Into<ElementSegmentIdx>,
-    {
-        let elem_segment_index: ElementSegmentIdx = elem_idx.into();
-        let (offset, _length) = self
-            .passive_element_sections
-            .get(&elem_segment_index)
-            .copied()
-            .expect("can't resolve passive segment by index");
-        // TODO: "ideally we need to have an overflow check for length"
-        // we need to replace offset on the stack with the new value
-        self.push(Instruction::I32Const((offset as i32).into()));
-        self.push(Instruction::I32Add);
-        self.push(Instruction::LocalSet(1.into()));
-        // since we store all data sections in the one segment then index is always 0
-        self.push(Instruction::TableInit(elem_segment_index));
-        self.push(Instruction::TableGet(table_idx.into()));
-    }
-    pub fn op_table_init_unsafe<T, E>(&mut self, table_idx: T, elem_idx: E)
     where
         T: Into<TableIdx>,
         E: Into<ElementSegmentIdx>,
@@ -353,7 +173,6 @@ impl InstructionSet {
         self.push(Instruction::TableInit(elem_idx.into()));
         self.push(Instruction::TableGet(table_idx.into()));
     }
-
     impl_opcode!(op_elem_drop, ElemDrop(ElementSegmentIdx));
     impl_opcode!(op_ref_func, RefFunc(FuncIdx));
     impl_opcode!(op_i32_const, I32Const(UntypedValue));
@@ -491,48 +310,6 @@ impl InstructionSet {
     impl_opcode!(op_i64_trunc_sat_f32u, I64TruncSatF32U);
     impl_opcode!(op_i64_trunc_sat_f64s, I64TruncSatF64S);
     impl_opcode!(op_i64_trunc_sat_f64u, I64TruncSatF64U);
-
-    pub fn extend(&mut self, with: &InstructionSet) {
-        self.instr.extend(&with.instr);
-        if let Some(metas) = &mut self.metas {
-            metas.extend(with.metas.as_ref().unwrap());
-        }
-    }
-
-    // pub fn fix_br_indirect_offset(
-    //     &mut self,
-    //     from_idx: Option<usize>,
-    //     to_idx: Option<usize>,
-    //     offset_change: i32,
-    // ) {
-    //     for offset in from_idx.unwrap_or(0)..=to_idx.unwrap_or(self.instr.len() - 1) {
-    //         let instr = &mut self.instr[offset];
-    //         match instr {
-    //             // Instruction::BrTable(_) |
-    //             // Instruction::Br(offset)
-    //             // | Instruction::BrIndirect(offset)
-    //             // | Instruction::BrIfEqz(offset)
-    //             // | Instruction::BrAdjust(offset)
-    //             // | Instruction::BrAdjustIfNez(offset)
-    //             // | Instruction::BrIfEqz(offset)
-    //             // | Instruction::BrIfNez(offset)
-    //             // => {
-    //             //     *offset = BranchOffset::from(offset.to_i32() + offset_change)
-    //             // }
-    //             _ => {}
-    //         }
-    //     }
-    // }
-
-    pub fn trace(&self) -> String {
-        let mut result = String::new();
-        for (_offset, opcode) in self.instr.iter().enumerate() {
-            // let str = format!("{}: {:?}\n", offset, opcode);
-            let str = format!("{:?}\n", opcode);
-            result += str.as_str();
-        }
-        result
-    }
 }
 
 #[macro_export]

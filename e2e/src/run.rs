@@ -244,6 +244,14 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
             (Value::I64(result), WastRetCore::I64(expected)) => {
                 assert_eq!(result, expected, "in {}", context.spanned(span))
             }
+            // in rWASM we support only 64 bit globals, but technically both these types are having
+            // 64 bit representation, so there is no diff, and we can safely compare them
+            (Value::I32(result), WastRetCore::I64(expected)) => {
+                assert_eq!(*result as i64, *expected, "in {}", context.spanned(span))
+            }
+            (Value::I64(result), WastRetCore::I32(expected)) => {
+                assert_eq!(*result, *expected as i64, "in {}", context.spanned(span))
+            }
             (Value::F32(result), WastRetCore::F32(expected)) => match expected {
                 NanPattern::CanonicalNan | NanPattern::ArithmeticNan => assert!(result.is_nan()),
                 NanPattern::Value(expected) => {

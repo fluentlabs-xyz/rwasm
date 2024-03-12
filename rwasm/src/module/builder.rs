@@ -16,7 +16,15 @@ use super::{
     Module,
 };
 use crate::{
-    core::{ValueType, N_MAX_DATA_SEGMENTS, N_MAX_ELEM_SEGMENTS, N_MAX_MEMORY_PAGES},
+    core::{
+        ValueType,
+        N_MAX_DATA_SEGMENTS,
+        N_MAX_ELEM_SEGMENTS,
+        N_MAX_GLOBALS,
+        N_MAX_MEMORY_PAGES,
+        N_MAX_TABLES,
+        N_MAX_TABLE_ELEMENTS,
+    },
     engine::{CompiledFunc, DedupFuncType},
     errors::ModuleError,
     Engine,
@@ -251,10 +259,8 @@ impl<'engine> ModuleBuilder<'engine> {
                     let func_type = self.func_types[func_type_idx.into_u32() as usize];
                     self.funcs.push(func_type);
                     // for rWASM we store special compiled wrapper, it's needed for tables
-                    if let Some(rwasm_config) = self.engine.config().get_rwasm_config() {
-                        if rwasm_config.wrap_import_functions {
-                            self.compiled_funcs.push(self.engine.alloc_func());
-                        }
+                    if self.engine.config().get_rwasm_wrap_import_funcs() {
+                        self.compiled_funcs.push(self.engine.alloc_func());
                     }
                 }
                 ExternTypeIdx::Table(table_type) => {
@@ -271,13 +277,6 @@ impl<'engine> ModuleBuilder<'engine> {
                 }
             }
         }
-        // if self.engine.config().get_rwasm_binary() {
-        //     for (index, _import_name) in self.imports.funcs.iter().enumerate() {
-        //         let func_type = self.funcs[index + 1];
-        //         self.funcs.push(func_type);
-        //         self.compiled_funcs.push(self.engine.alloc_func());
-        //     }
-        // }
         Ok(())
     }
 
@@ -384,14 +383,9 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
-    pub fn push_default_memory(
-        &mut self,
-        initial: u32,
-        maximum: Option<u32>,
-    ) -> Result<(), ModuleError> {
+    pub fn push_default_memory(&mut self, initial: u32, maximum: Option<u32>) {
         self.memories
             .push(MemoryType::new(initial, maximum).unwrap());
-        Ok(())
     }
 
     /// Pushes the given global variables to the [`Module`] under construction.
@@ -421,13 +415,12 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
-    pub fn push_empty_globals(&mut self, num_globals: usize) -> Result<(), ModuleError> {
+    pub fn push_rwasm_globals(&mut self) {
         let global_decl = GlobalType::new(ValueType::I64, Mutability::Var);
-        (0..num_globals).for_each(|_| {
+        (0..N_MAX_GLOBALS).for_each(|_| {
             self.globals.push(global_decl);
             self.globals_init.push(ConstExpr::zero());
         });
-        Ok(())
     }
 
     pub fn rewrite_memory(&mut self) -> Result<(), ModuleError> {
@@ -447,18 +440,7 @@ impl<'engine> ModuleBuilder<'engine> {
         }
         // rewrite data section
         self.data_segments.clear();
-        self.data_segments.push(DataSegment {
-            kind: DataSegmentKind::Passive,
-            bytes: data_section.into(),
-        });
-        // fill max possible data segments (save some random byte, we use it as an indicator that
-        // means data is not dropped)
-        (0..N_MAX_DATA_SEGMENTS).for_each(|_| {
-            self.data_segments.push(DataSegment {
-                kind: DataSegmentKind::Passive,
-                bytes: [0x1].into(),
-            });
-        });
+        self.push_rwasm_data_segment(&data_section);
         Ok(())
     }
 
@@ -473,38 +455,24 @@ impl<'engine> ModuleBuilder<'engine> {
         // rewrite elements
         let mut element_section = Vec::with_capacity(0);
         for data in self.element_segments.iter() {
-            element_section.extend(data.items.exprs.iter().cloned());
+            element_section.extend(data.items.exprs.iter().map(|v| {
+                if let Some(value) = v.eval_const() {
+                    value.as_u32()
+                } else {
+                    v.funcref().unwrap().into_u32()
+                }
+            }));
         }
         self.element_segments.clear();
-        self.element_segments.push(ElementSegment {
-            kind: ElementSegmentKind::Passive,
-            ty: ValueType::FuncRef,
-            items: ElementSegmentItems {
-                exprs: element_section.into(),
-            },
-        });
-        // fill max possible data segments (save some random byte, we use it as an indicator that
-        // means data is not dropped)
-        (0..N_MAX_ELEM_SEGMENTS).for_each(|_| {
-            self.element_segments.push(ElementSegment {
-                kind: ElementSegmentKind::Passive,
-                ty: ValueType::FuncRef,
-                items: ElementSegmentItems { exprs: [].into() },
-            });
-        });
+        self.push_rwasm_elem_segment(&element_section);
         Ok(())
     }
 
-    pub fn push_empty_tables(
-        &mut self,
-        num_tables: u32,
-        max_tables: u32,
-    ) -> Result<(), ModuleError> {
-        let global_decl = TableType::new(ValueType::FuncRef, 0, Some(max_tables));
-        (0..num_tables).for_each(|_| {
+    pub fn push_rwasm_tables(&mut self) {
+        let global_decl = TableType::new(ValueType::FuncRef, 0, Some(N_MAX_TABLE_ELEMENTS));
+        (0..N_MAX_TABLES).for_each(|_| {
             self.tables.push(global_decl);
         });
-        Ok(())
     }
 
     /// Pushes the given exports to the [`Module`] under construction.
@@ -537,12 +505,11 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
-    pub fn push_export<I>(&mut self, name: Box<str>, index: I) -> Result<(), ModuleError>
+    pub fn push_export<I>(&mut self, name: Box<str>, index: I)
     where
         I: Into<ExternIdx>,
     {
         self.exports.insert(name, index.into());
-        Ok(())
     }
 
     /// Sets the start function of the [`Module`] to the given index.
@@ -603,14 +570,22 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
-    pub fn push_default_data_segment(&mut self, bytes: &[u8]) {
+    pub fn push_rwasm_data_segment(&mut self, bytes: &[u8]) {
         self.data_segments.push(DataSegment {
             kind: DataSegmentKind::Passive,
             bytes: bytes.into(),
         });
+        // fill max possible data segments (save some random byte, we use it as an indicator that
+        // means data is not dropped)
+        (0..N_MAX_DATA_SEGMENTS).for_each(|_| {
+            self.data_segments.push(DataSegment {
+                kind: DataSegmentKind::Passive,
+                bytes: [0x1].into(),
+            });
+        });
     }
 
-    pub fn push_default_elem_segment(&mut self, bytes: &[u32]) {
+    pub fn push_rwasm_elem_segment(&mut self, bytes: &[u32]) {
         let items = ElementSegmentItems {
             exprs: bytes.iter().map(|v| ConstExpr::new_funcref(*v)).collect(),
         };
@@ -619,14 +594,19 @@ impl<'engine> ModuleBuilder<'engine> {
             ty: ValueType::FuncRef,
             items,
         });
+        // fill max possible data segments (save some random byte, we use it as an indicator that
+        // means data is not dropped)
+        (0..N_MAX_ELEM_SEGMENTS).for_each(|_| {
+            self.element_segments.push(ElementSegment {
+                kind: ElementSegmentKind::Passive,
+                ty: ValueType::FuncRef,
+                items: ElementSegmentItems { exprs: [].into() },
+            });
+        });
     }
 
     /// Finishes construction of the WebAssembly [`Module`].
     pub fn finish(self) -> Module {
-        Module::from_builder(self)
-    }
-
-    pub fn finish_rwasm(self) -> Module {
         Module::from_builder(self)
     }
 }

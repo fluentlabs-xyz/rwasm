@@ -2,10 +2,6 @@ use crate::{BinaryFormatError, InstructionSet};
 use alloc::vec::Vec;
 use rwasm::{engine::bytecode::Instruction, module::ImportName, Error};
 
-pub trait Translator {
-    fn translate(&self, result: &mut InstructionSet) -> Result<(), CompilerError>;
-}
-
 #[derive(Debug)]
 pub enum CompilerError {
     ModuleError(Error),

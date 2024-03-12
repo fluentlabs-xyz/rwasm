@@ -102,7 +102,7 @@ impl ValueStack {
         sp.offset_from(base) as usize
     }
 
-    pub fn is_stack_overflowed(&mut self, sp: ValueStackPtr) -> bool {
+    pub fn has_stack_overflowed(&mut self, sp: ValueStackPtr) -> bool {
         self.stack_len(sp) > self.maximum_len
     }
 

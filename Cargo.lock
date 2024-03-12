@@ -1349,6 +1349,7 @@ dependencies = [
  "anyhow",
  "byteorder",
  "rwasm",
+ "rwasm-codegen",
  "serial_test",
  "wast 62.0.1",
  "wat",

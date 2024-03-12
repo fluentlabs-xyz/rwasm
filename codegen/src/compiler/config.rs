@@ -1,5 +1,3 @@
-use crate::InstructionSet;
-
 #[derive(Debug, Clone)]
 pub struct CompilerConfig {
     pub(crate) fuel_consume: bool,
@@ -9,8 +7,6 @@ pub struct CompilerConfig {
     pub(crate) with_state: bool,
     pub(crate) translate_func_as_inline: bool,
     pub(crate) type_check: bool,
-    pub(crate) input_code: Option<InstructionSet>,
-    pub(crate) output_code: Option<InstructionSet>,
     pub(crate) global_start_index: Option<u32>,
     pub(crate) swap_stack_params: bool,
     pub(crate) with_router: bool,
@@ -27,8 +23,6 @@ impl Default for CompilerConfig {
             with_state: false,
             translate_func_as_inline: false,
             type_check: true,
-            input_code: None,
-            output_code: None,
             global_start_index: None,
             swap_stack_params: true,
             with_router: true,
@@ -80,16 +74,6 @@ impl CompilerConfig {
 
     pub fn translate_func_as_inline(mut self, value: bool) -> Self {
         self.translate_func_as_inline = value;
-        self
-    }
-
-    pub fn with_input_code(mut self, input_code: InstructionSet) -> Self {
-        self.input_code = Some(input_code);
-        self
-    }
-
-    pub fn with_output_code(mut self, output_code: InstructionSet) -> Self {
-        self.output_code = Some(output_code);
         self
     }
 

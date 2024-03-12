@@ -240,6 +240,12 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             let instr = *self.ip.get();
             let meta = *self.ip.meta();
 
+            // TODO: Need to add recursive check while call function
+            // TODO: Create more optimized check for stack overflowed
+            if self.value_stack.has_stack_overflowed(self.sp) {
+                return Err(TrapCode::StackOverflow.into());
+            }
+
             // #[cfg(feature = "std")]
             // {
             //     let stack = self.value_stack.dump_stack(self.sp);
@@ -275,7 +281,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             };
             let consumed_fuel = self.ctx.fuel().fuel_consumed();
             let stack = self.value_stack.dump_stack(self.sp);
-            // println!("pc:{} instr:{:?} stack:{:?}", self.ip.pc(), instr, stack);
             self.tracer.pre_opcode_state(
                 self.ip.pc(),
                 instr,
