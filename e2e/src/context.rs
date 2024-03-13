@@ -19,7 +19,7 @@ use rwasm::{
     TableType,
     Value,
 };
-use rwasm_codegen::RwasmModule;
+use rwasm_codegen::{BinaryFormat, RwasmModule};
 use std::collections::HashMap;
 use wast::token::{Id, Span};
 
@@ -176,6 +176,13 @@ impl TestContext<'_> {
             let original_engine = self.engine();
             let original_module = Module::new(original_engine, &wasm[..])?;
             let rwasm_module = RwasmModule::from_module(&original_module);
+            // encode and decode rwasm module (to tests encoding/decoding flow)
+            let mut encoded_rwasm_module = Vec::new();
+            rwasm_module
+                .write_binary_to_vec(&mut encoded_rwasm_module)
+                .unwrap();
+            let rwasm_module = RwasmModule::read_from_slice(&encoded_rwasm_module).unwrap();
+            // create module builder
             let mut module_builder = rwasm_module.to_module_builder(self.engine());
             // copy imports
             for (i, imported) in original_module.imports.items.iter().enumerate() {

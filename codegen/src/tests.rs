@@ -1,5 +1,6 @@
 use crate::{
     compiler::types::CompilerError,
+    BinaryFormat,
     RwasmModule,
     N_MAX_RECURSION_DEPTH,
     N_MAX_STACK_HEIGHT,
@@ -84,7 +85,12 @@ fn execute_binary_default(wat: &str) -> HostState {
             .map_err(|e| CompilerError::ModuleError(e))
             .unwrap();
         trace_bytecode(&module, &engine);
-        RwasmModule::from_module(&module)
+        let rwasm_module = RwasmModule::from_module(&module);
+        let mut encoded_rwasm_module = Vec::new();
+        rwasm_module
+            .write_binary_to_vec(&mut encoded_rwasm_module)
+            .unwrap();
+        RwasmModule::read_from_slice(&encoded_rwasm_module).unwrap()
     };
     let engine = Engine::new(&engine_config);
     let module = rwasm_module.to_module(&engine);
