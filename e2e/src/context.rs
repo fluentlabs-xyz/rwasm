@@ -188,6 +188,7 @@ impl TestContext<'_> {
                         module_builder.funcs.insert(0, new_func_type);
                         module_builder.imports.funcs.push(import_name.clone());
                     }
+                    Imported::Global(_) => continue,
                     _ => unreachable!("not supported import type ({:?})", imported),
                 }
             }

@@ -1877,19 +1877,17 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                     .copied()
                     .expect("can't resolve element segment by index");
                 // do an overflow check
-                if length > 0 {
-                    ib.push_inst(Instruction::LocalGet(1u32.into()));
-                    ib.push_inst(Instruction::LocalGet(3u32.into()));
-                    ib.push_inst(Instruction::I32Add);
-                    ib.push_inst(Instruction::I32Const((length as i32).into()));
-                    ib.push_inst(Instruction::I32GtS);
-                    ib.push_inst(Instruction::BrIfEqz(3.into()));
-                    // we can't manually emit "out of bounds table access" error that is required
-                    // by WebAssembly standards, so we put impossible number of tables to trigger
-                    // overflow by rewriting number of elements to be copied
-                    ib.push_inst(Instruction::I32Const(u32::MAX.into()));
-                    ib.push_inst(Instruction::LocalSet(1.into()));
-                }
+                ib.push_inst(Instruction::LocalGet(1u32.into()));
+                ib.push_inst(Instruction::LocalGet(3u32.into()));
+                ib.push_inst(Instruction::I32Add);
+                ib.push_inst(Instruction::I32Const((length as i32).into()));
+                ib.push_inst(Instruction::I32GtS);
+                ib.push_inst(Instruction::BrIfEqz(3.into()));
+                // we can't manually emit "out of bounds table access" error that is required
+                // by WebAssembly standards, so we put impossible number of tables to trigger
+                // overflow by rewriting number of elements to be copied
+                ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+                ib.push_inst(Instruction::LocalSet(1.into()));
                 // we need to replace offset on the stack with the new value
                 if offset > 0 {
                     // replace offset with an adjusted value
