@@ -57,7 +57,11 @@ pub(crate) use self::{
 use crate::{
     arena::{ArenaIndex, GuardedEntity},
     core::{Trap, TrapCode, UntypedValue},
-    engine::{bytecode::InstrMeta, code_map::InstructionPtr},
+    engine::{
+        bytecode::{InstrMeta, SignatureIdx},
+        code_map::InstructionPtr,
+        func_types::DedupFuncTypeIdx,
+    },
     func::FuncEntity,
     AsContext,
     AsContextMut,
@@ -139,6 +143,14 @@ impl Engine {
         self.inner.config()
     }
 
+    pub fn remember_signature(&self, signature_idx: SignatureIdx) {
+        self.inner.remember_signature(signature_idx)
+    }
+
+    pub fn resolve_signature(&self) -> Option<SignatureIdx> {
+        self.inner.resolve_signature()
+    }
+
     pub fn register_trampoline(&self, sys_func_index: u32, func: Func) {
         self.inner.register_trampoline(sys_func_index, func)
     }
@@ -181,6 +193,10 @@ impl Engine {
         F: FnOnce(&FuncType) -> R,
     {
         self.inner.resolve_func_type(func_type, f)
+    }
+
+    pub fn resolve_func_signature(&self, func_type: &DedupFuncType) -> DedupFuncTypeIdx {
+        self.inner.resolve_func_signature(func_type)
     }
 
     /// Allocates a new uninitialized [`CompiledFunc`] to the [`Engine`].
@@ -447,6 +463,14 @@ impl EngineInner {
             .copied()
     }
 
+    fn remember_signature(&self, signature_idx: SignatureIdx) {
+        self.res.write().last_signature = Some(signature_idx)
+    }
+
+    fn resolve_signature(&self) -> Option<SignatureIdx> {
+        self.res.write().last_signature.take()
+    }
+
     /// Allocates a new function type to the [`EngineInner`].
     fn alloc_func_type(&self, func_type: FuncType) -> DedupFuncType {
         self.res.write().func_types.alloc_func_type(func_type)
@@ -513,6 +537,10 @@ impl EngineInner {
         F: FnOnce(&FuncType) -> R,
     {
         f(self.res.read().func_types.resolve_func_type(func_type))
+    }
+
+    fn resolve_func_signature(&self, func_type: &DedupFuncType) -> DedupFuncTypeIdx {
+        self.res.read().func_types.resolve_func_signature(func_type)
     }
 
     #[cfg(test)]
@@ -649,6 +677,11 @@ pub struct EngineResources {
     /// The engine deduplicates function types to make the equality
     /// comparison very fast. This helps to speed up indirect calls.
     func_types: FuncTypeRegistry,
+    /// Last remembered signature for indirect calls, we need this to check signature for
+    /// indirect calls to trigger proper error
+    last_signature: Option<SignatureIdx>,
+    /// We store mapping from sys func index to the function index to map
+    /// rWASM calls to WASM calls
     trampoline_mapping: HashMap<u32, Func>,
 }
 
@@ -660,6 +693,7 @@ impl EngineResources {
             code_map: CodeMap::default(),
             const_pool: ConstPool::default(),
             func_types: FuncTypeRegistry::new(engine_idx),
+            last_signature: None,
             trampoline_mapping: HashMap::new(),
         }
     }

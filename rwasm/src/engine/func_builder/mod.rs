@@ -15,6 +15,7 @@ pub use self::{
 };
 use super::CompiledFunc;
 use crate::{
+    arena::ArenaIndex,
     engine::bytecode::Instruction,
     module::{FuncIdx, ModuleResources, ReusableAllocations},
 };
@@ -35,7 +36,8 @@ pub struct FuncBuilder<'parser> {
     validator: FuncValidator,
     /// The underlying Wasm to `wasmi` bytecode translator.
     translator: FuncTranslator<'parser>,
-    is_rwasm: bool,
+    /// If we're in rWASM mode
+    pub(crate) is_rwasm: bool,
 }
 
 impl<'parser> FuncBuilder<'parser> {
@@ -54,6 +56,22 @@ impl<'parser> FuncBuilder<'parser> {
             translator: FuncTranslator::new(func, compiled_func, res, allocations),
             is_rwasm,
         }
+    }
+
+    pub fn translate_signature_check(&mut self) {
+        let func_type = &self.translator.res.res.funcs[self.translator.func.into_u32() as usize];
+        let func_type = self
+            .translator
+            .res
+            .res
+            .engine()
+            .resolve_func_signature(&func_type);
+        self.translator
+            .alloc
+            .inst_builder
+            .push_inst(Instruction::SignatureCheck(
+                (func_type.into_usize() as u32).into(),
+            ));
     }
 
     /// Translates the given local variables for the translated function.

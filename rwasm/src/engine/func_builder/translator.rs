@@ -14,6 +14,7 @@ use super::{
     TranslationError,
 };
 use crate::{
+    arena::ArenaIndex,
     core::{Pages, UntypedValue, ValueType, F32, N_MAX_TABLE_ELEMENTS},
     engine::{
         bytecode::{
@@ -87,11 +88,11 @@ impl FuncTranslatorAllocations {
 /// Type concerned with translating from Wasm bytecode to `wasmi` bytecode.
 pub struct FuncTranslator<'parser> {
     /// The reference to the Wasm module function under construction.
-    func: FuncIdx,
+    pub(crate) func: FuncIdx,
     /// The reference to the compiled func allocated to the [`Engine`].
     compiled_func: CompiledFunc,
     /// The immutable `wasmi` module resources.
-    res: ModuleResources<'parser>,
+    pub(crate) res: ModuleResources<'parser>,
     /// This represents the reachability of the currently translated code.
     ///
     /// - `true`: The currently translated code is reachable.
@@ -440,7 +441,7 @@ impl<'parser> FuncTranslator<'parser> {
         engine: &Engine,
     ) -> Result<Option<Instruction>, TranslationError> {
         // don't do global get optimization for rWASM (not needed and misleading)
-        if let Some(_) = engine.config().get_rwasm_config() {
+        if engine.config().get_rwasm_config().is_some() {
             return Ok(None);
         }
         if let (Mutability::Const, Some(init_expr)) = (global_type.mutability(), init_value) {
@@ -780,6 +781,15 @@ impl<'parser> FuncTranslator<'parser> {
         let len_params_locals = self.locals.len_registered();
         let drop = height_diff - keep + len_params_locals;
         DropKeep::new(drop as usize, keep as usize).map_err(Into::into)
+    }
+
+    fn resolve_signature_idx(&self, func_type_idx: u32) -> SignatureIdx {
+        if !self.engine().config().get_rwasm_config().is_some() {
+            return SignatureIdx::from(func_type_idx);
+        }
+        let func_type = &self.res.res.func_types[func_type_idx as usize];
+        let func_type = self.res.res.engine().resolve_func_signature(&func_type);
+        SignatureIdx::from(func_type.into_usize() as u32)
     }
 }
 
@@ -1270,7 +1280,9 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder
                 .alloc
                 .inst_builder
-                .push_inst(Instruction::ReturnCallIndirect(signature));
+                .push_inst(Instruction::ReturnCallIndirect(
+                    builder.resolve_signature_idx(func_type_index),
+                ));
             builder
                 .alloc
                 .inst_builder
@@ -1328,7 +1340,9 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder
                 .alloc
                 .inst_builder
-                .push_inst(Instruction::CallIndirect(func_type));
+                .push_inst(Instruction::CallIndirect(
+                    builder.resolve_signature_idx(func_type_index),
+                ));
             builder
                 .alloc
                 .inst_builder

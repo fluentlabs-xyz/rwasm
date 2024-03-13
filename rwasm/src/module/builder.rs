@@ -212,23 +212,32 @@ impl<'engine> ModuleBuilder<'engine> {
     }
 
     pub(crate) fn ensure_empty_func_type_exists(&mut self) -> FuncTypeIdx {
-        self.resolve_func_type_index(FuncType::new([], []))
+        self.ensure_func_type_index(FuncType::new([], []))
     }
 
-    pub(crate) fn resolve_func_type_index(&mut self, func_type: FuncType) -> FuncTypeIdx {
-        let empty_type = self
+    pub(crate) fn ensure_func_type_index(&mut self, func_type: FuncType) -> FuncTypeIdx {
+        let found_type = self
             .func_types
             .iter()
             .enumerate()
             .map(|(i, t)| (i, self.engine.resolve_func_type(t, |t| t.clone())))
             .find(|(_, t)| *t == func_type);
-        if let Some(func_type) = empty_type {
+        if let Some(func_type) = found_type {
             return FuncTypeIdx::from(func_type.0 as u32);
         }
         let empty_func_type = FuncType::new([], []);
         self.func_types
             .push(self.engine.alloc_func_type(empty_func_type.clone()));
         return FuncTypeIdx::from(self.func_types.len() as u32 - 1);
+    }
+
+    pub(crate) fn resolve_func_type_index(&self, func_type: FuncType) -> Option<FuncTypeIdx> {
+        self.func_types
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (i, self.engine.resolve_func_type(t, |t| t.clone())))
+            .find(|(_, t)| *t == func_type)
+            .map(|(i, _)| FuncTypeIdx::from(i as u32))
     }
 
     pub fn push_func_type(&mut self, func_type: FuncType) -> Result<(), ModuleError> {

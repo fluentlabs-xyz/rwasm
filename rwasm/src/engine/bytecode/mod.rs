@@ -150,6 +150,7 @@ pub enum Instruction {
     /// only acts as a storage for the parameter of the [`Instruction::CallIndirect`]
     /// and will never be executed by itself.
     CallIndirect(SignatureIdx),
+    SignatureCheck(SignatureIdx),
     Drop,
     Select,
     GlobalGet(GlobalIdx),

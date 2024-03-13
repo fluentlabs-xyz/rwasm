@@ -184,6 +184,8 @@ struct Executor<'ctx, 'engine> {
     const_pool: ConstPoolView<'engine>,
     /// A tracer that stores execution info
     tracer: &'engine mut Tracer,
+    /// Store an information about last signature used by IndirectCall
+    last_signature: Option<SignatureIdx>,
 }
 
 macro_rules! forward_call {
@@ -226,6 +228,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             code_map,
             const_pool,
             tracer,
+            last_signature: None,
         }
     }
 
@@ -326,6 +329,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 Instr::CallIndirect(func_type) => {
                     forward_call!(self.visit_call_indirect(func_type))
                 }
+                Instr::SignatureCheck(func_type) => self.visit_signature_check(func_type)?,
                 Instr::Drop => self.visit_drop(),
                 Instr::Select => self.visit_select(),
                 Instr::GlobalGet(global_idx) => self.visit_global_get(global_idx),
@@ -899,16 +903,20 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             .map(FuncRef::from)
             .ok_or(TrapCode::TableOutOfBounds)?;
         let func = funcref.func().ok_or(TrapCode::IndirectCallToNull)?;
-        let actual_signature = self.ctx.resolve_func(func).ty_dedup();
-        let expected_signature = self
-            .ctx
-            .resolve_instance(self.cache.instance())
-            .get_signature(func_type.to_u32())
-            .unwrap_or_else(|| {
-                panic!("missing signature for call_indirect at index: {func_type:?}")
-            });
-        if actual_signature != expected_signature {
-            return Err(TrapCode::BadSignature).map_err(Into::into);
+        // for rWASM we do signature check using special additional opcode
+        let is_rwasm = self.ctx.engine().config().get_rwasm_config().is_some();
+        if !is_rwasm {
+            let actual_signature = self.ctx.resolve_func(func).ty_dedup();
+            let expected_signature = self
+                .ctx
+                .resolve_instance(self.cache.instance())
+                .get_signature(func_type.to_u32())
+                .unwrap_or_else(|| {
+                    panic!("missing signature for call_indirect at index: {func_type:?}")
+                });
+            if actual_signature != expected_signature {
+                return Err(TrapCode::BadSignature).map_err(Into::into);
+            }
         }
         self.call_func(skip, func, kind, func_index)
     }
@@ -1093,6 +1101,10 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         let table = self.fetch_table_idx(2);
         let func_index: u32 = self.sp.pop_as();
         self.sp.drop_keep(drop_keep);
+        // for rWASM let's store func type on the stack
+        if self.ctx.engine().config().get_rwasm_config().is_some() {
+            self.last_signature = Some(func_type);
+        }
         self.execute_call_indirect(3, table, func_index, func_type, CallKind::Tail)
     }
 
@@ -1128,7 +1140,26 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     fn visit_call_indirect(&mut self, func_type: SignatureIdx) -> Result<CallOutcome, TrapCode> {
         let table = self.fetch_table_idx(1);
         let func_index: u32 = self.sp.pop_as();
+        // for rWASM let's store func type on the stack
+        if self.ctx.engine().config().get_rwasm_config().is_some() {
+            self.last_signature = Some(func_type);
+        }
         self.execute_call_indirect(2, table, func_index, func_type, CallKind::Nested)
+    }
+
+    #[inline(always)]
+    fn visit_signature_check(&mut self, expected_signature: SignatureIdx) -> Result<(), TrapCode> {
+        debug_assert!(
+            self.ctx.engine().config().get_rwasm_config().is_some(),
+            "this instruction can be used only in rWASM mode"
+        );
+        if let Some(actual_signature) = self.last_signature.take() {
+            if actual_signature != expected_signature {
+                return Err(TrapCode::BadSignature).map_err(Into::into);
+            }
+        }
+        self.next_instr();
+        Ok(())
     }
 
     #[inline(always)]

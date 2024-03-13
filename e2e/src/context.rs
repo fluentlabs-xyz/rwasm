@@ -219,6 +219,7 @@ impl TestContext<'_> {
             Module::new(self.engine(), &wasm[..])?
         };
         let instance_pre = self.linker.instantiate(&mut self.store, &module)?;
+        println!(" --- entrypoint ---");
         let instance = instance_pre.start(&mut self.store)?;
         self.modules.push(module);
         if let Some(module_name) = module_name {
