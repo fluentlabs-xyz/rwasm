@@ -231,15 +231,6 @@ impl<'engine> ModuleBuilder<'engine> {
         return FuncTypeIdx::from(self.func_types.len() as u32 - 1);
     }
 
-    pub(crate) fn resolve_func_type_index(&self, func_type: FuncType) -> Option<FuncTypeIdx> {
-        self.func_types
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (i, self.engine.resolve_func_type(t, |t| t.clone())))
-            .find(|(_, t)| *t == func_type)
-            .map(|(i, _)| FuncTypeIdx::from(i as u32))
-    }
-
     pub fn push_func_type(&mut self, func_type: FuncType) -> Result<(), ModuleError> {
         let dedup = self.engine.alloc_func_type(func_type);
         self.func_types.push(dedup);

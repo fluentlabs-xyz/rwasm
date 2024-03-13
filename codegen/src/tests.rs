@@ -1,22 +1,13 @@
-use crate::{
-    compiler::types::CompilerError,
-    BinaryFormat,
-    RwasmModule,
-    N_MAX_RECURSION_DEPTH,
-    N_MAX_STACK_HEIGHT,
-};
+use crate::{BinaryFormat, RwasmModule};
 use alloc::string::ToString;
 use rwasm::{
     core::{ImportFunc, ImportLinker, ValueType},
-    engine::RwasmConfig,
     AsContextMut,
     Caller,
-    Config,
     Engine,
     Func,
     Linker,
     Module,
-    StackLimits,
     Store,
 };
 
@@ -44,57 +35,34 @@ pub fn trace_bytecode(module: &Module, engine: &Engine) {
     println!()
 }
 
+const SYS_HALT_CODE: u32 = 1010;
+
 fn execute_binary_default(wat: &str) -> HostState {
-    const SYS_HALT_CODE: u32 = 1010;
-
     let wasm_binary = wat::parse_str(wat).unwrap();
-    // translate and compile module
-
-    let mut engine_config = Config::default();
-    engine_config.set_stack_limits(
-        StackLimits::new(
-            N_MAX_STACK_HEIGHT,
-            N_MAX_STACK_HEIGHT,
-            N_MAX_RECURSION_DEPTH,
-        )
-        .unwrap(),
-    );
-    engine_config.wasm_bulk_memory(true);
-    engine_config.wasm_tail_call(false);
-    // engine_config.wasm_extended_const(config.extended_const);
-    engine_config.consume_fuel(true);
-    {
-        let mut import_linker = ImportLinker::default();
-        import_linker.insert_function(ImportFunc::new_env(
-            "env".to_string(),
-            "_sys_halt".to_string(),
-            SYS_HALT_CODE,
-            &[ValueType::I32],
-            &[],
-            1,
-        ));
-        engine_config.rwasm_config(RwasmConfig {
-            import_linker: Some(import_linker),
-            wrap_import_functions: true,
-            ..Default::default()
-        });
-    }
-    let rwasm_module = {
-        let engine = Engine::new(&engine_config);
-        let module = Module::new(&engine, wasm_binary.as_slice())
-            .map_err(|e| CompilerError::ModuleError(e))
-            .unwrap();
-        trace_bytecode(&module, &engine);
-        let rwasm_module = RwasmModule::from_module(&module);
-        let mut encoded_rwasm_module = Vec::new();
-        rwasm_module
-            .write_binary_to_vec(&mut encoded_rwasm_module)
-            .unwrap();
-        RwasmModule::read_from_slice(&encoded_rwasm_module).unwrap()
-    };
-    let engine = Engine::new(&engine_config);
+    // create import linker
+    let mut import_linker = ImportLinker::default();
+    import_linker.insert_function(ImportFunc::new_env(
+        "env".to_string(),
+        "_sys_halt".to_string(),
+        SYS_HALT_CODE,
+        &[ValueType::I32],
+        &[],
+        1,
+    ));
+    let config = RwasmModule::default_config(Some(import_linker));
+    // compile rWASM module from WASM binary
+    let rwasm_module = RwasmModule::compile_with_config(&wasm_binary, &config).unwrap();
+    // lets encode/decode rWASM module
+    let mut encoded_rwasm_module = Vec::new();
+    rwasm_module
+        .write_binary_to_vec(&mut encoded_rwasm_module)
+        .unwrap();
+    let rwasm_module = RwasmModule::read_from_slice(&encoded_rwasm_module).unwrap();
+    // init engine and module
+    let engine = Engine::new(&config);
     let module = rwasm_module.to_module(&engine);
-
+    // trace bytecode for debug purposes
+    trace_bytecode(&module, &engine);
     // execute translated rwasm
     let mut store = Store::new(&engine, HostState::default());
     store.add_fuel(1_000_000).unwrap();

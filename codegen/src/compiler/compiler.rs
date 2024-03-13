@@ -1,10 +1,11 @@
+#![allow(dead_code, deprecated)]
+
 use crate::{
     compiler::{
         config::CompilerConfig,
         types::{CompilerError, FuncOrExport},
     },
     constants::{N_MAX_RECURSION_DEPTH, N_MAX_STACK_HEIGHT},
-    InstructionSet,
 };
 use alloc::vec::Vec;
 use rwasm::{
@@ -16,19 +17,18 @@ use rwasm::{
     StackLimits,
 };
 
-pub struct Compiler<'linker> {
+#[deprecated(note = "doesn't work, will be removed, use `RwasmModule` instead")]
+pub struct Compiler {
     // input params
-    pub(crate) import_linker: Option<&'linker ImportLinker>,
     pub(crate) config: CompilerConfig,
     // parsed wasmi state
     engine: Engine,
     module: Module,
     // translation state
-    pub(crate) code_section: InstructionSet,
     function_beginning: Vec<u32>,
 }
 
-impl<'linker> Compiler<'linker> {
+impl Compiler {
     pub fn new(wasm_binary: &[u8], config: CompilerConfig) -> Result<Self, CompilerError> {
         Self::new_with_linker(wasm_binary, config, None)
     }
@@ -36,7 +36,7 @@ impl<'linker> Compiler<'linker> {
     pub fn new_with_linker(
         wasm_binary: &[u8],
         config: CompilerConfig,
-        import_linker: Option<&'linker ImportLinker>,
+        _import_linker: Option<&ImportLinker>,
     ) -> Result<Self, CompilerError> {
         let mut engine_config = Config::default();
         engine_config.set_stack_limits(
@@ -58,9 +58,7 @@ impl<'linker> Compiler<'linker> {
         Ok(Compiler {
             engine,
             module,
-            code_section: InstructionSet::new(),
             function_beginning: Vec::new(),
-            import_linker,
             config,
         })
     }
@@ -122,9 +120,7 @@ impl<'linker> Compiler<'linker> {
             //         .update_branch_offset(BranchOffset::from(1 + drop_keep_len as i32));
             //     self.code_section.op_return();
             // }
-            _ => {
-                self.code_section.push(*instr_ptr.get());
-            }
+            _ => {}
         };
 
         instr_ptr.add(1);

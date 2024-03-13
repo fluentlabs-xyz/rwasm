@@ -3,13 +3,21 @@ use crate::{
     constants::N_MAX_MEMORY_PAGES,
     instruction_set::InstructionSet,
     BinaryFormatError,
+    N_MAX_RECURSION_DEPTH,
+    N_MAX_STACK_HEIGHT,
 };
 use alloc::{collections::BTreeMap, string::ToString, vec::Vec};
 use rwasm::{
+    core::ImportLinker,
+    engine::RwasmConfig,
     module::{FuncIdx, FuncTypeIdx, MemoryIdx, ModuleBuilder, ModuleError},
+    Config,
     Engine,
+    Error,
+    FuelConsumptionMode,
     FuncType,
     Module,
+    StackLimits,
 };
 
 #[derive(Debug, Default, PartialEq)]
@@ -21,6 +29,41 @@ pub struct RwasmModule {
 }
 
 impl RwasmModule {
+    pub fn default_config(import_linker: Option<ImportLinker>) -> Config {
+        let mut config = Config::default();
+        config.set_stack_limits(
+            StackLimits::new(
+                N_MAX_STACK_HEIGHT,
+                N_MAX_STACK_HEIGHT,
+                N_MAX_RECURSION_DEPTH,
+            )
+            .unwrap(),
+        );
+        config.consume_fuel(true);
+        config.fuel_consumption_mode(FuelConsumptionMode::Eager);
+        config.rwasm_config(RwasmConfig {
+            import_linker,
+            wrap_import_functions: true,
+            ..Default::default()
+        });
+        config
+    }
+
+    pub fn compile(wasm_binary: &[u8], import_linker: Option<ImportLinker>) -> Result<Self, Error> {
+        let default_config = Self::default_config(import_linker);
+        Self::compile_with_config(wasm_binary, &default_config)
+    }
+
+    pub fn compile_with_config(wasm_binary: &[u8], config: &Config) -> Result<Self, Error> {
+        assert!(
+            config.get_rwasm_config().is_some(),
+            "rWASM mode must be enabled in config"
+        );
+        let engine = Engine::new(&config);
+        let module = Module::new(&engine, wasm_binary)?;
+        Ok(Self::from_module(&module))
+    }
+
     pub fn new(module: &[u8]) -> Result<Self, BinaryFormatError> {
         Self::read_from_slice(module)
     }

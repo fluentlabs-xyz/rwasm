@@ -277,7 +277,6 @@ impl<'a> BinaryFormat<'a> for Instruction {
             Instruction::I64TruncSatF32U => sink.write_u8(0xc3)?,
             Instruction::I64TruncSatF64S => sink.write_u8(0xc4)?,
             Instruction::I64TruncSatF64U => sink.write_u8(0xc5)?,
-            Instruction::BrAdjust(offset) => sink.write_u8(0xc6)? + offset.write_binary(sink)?,
             _ => unreachable!("not supported opcode: {:?}", self),
         };
         // we align all opcodes to 9 bytes
@@ -496,7 +495,6 @@ impl<'a> BinaryFormat<'a> for Instruction {
             0xc3 => Instruction::I64TruncSatF32U,
             0xc4 => Instruction::I64TruncSatF64S,
             0xc5 => Instruction::I64TruncSatF64U,
-            0xc6 => Instruction::BrAdjust(BranchOffset::read_binary(sink)?),
 
             _ => return Err(BinaryFormatError::IllegalOpcode(byte)),
         };
