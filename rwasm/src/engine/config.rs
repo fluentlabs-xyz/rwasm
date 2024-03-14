@@ -1,5 +1,6 @@
 use super::{stack::StackLimits, DropKeep};
 use crate::core::{ImportLinker, UntypedValue};
+use alloc::string::{String, ToString};
 use core::{mem::size_of, num::NonZeroU64};
 use wasmparser::WasmFeatures;
 

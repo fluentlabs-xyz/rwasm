@@ -1,5 +1,5 @@
 use crate::{core::ValueType, module::ImportName, Func, FuncType};
-use std::collections::BTreeMap;
+use alloc::{collections::BTreeMap, string::String};
 
 #[derive(Debug, Clone)]
 pub struct ImportFuncName(String, String);

@@ -12,7 +12,8 @@ use crate::{
     module::{ConstExpr, DataSegmentKind, ElementSegmentKind, FuncIdx, ModuleResources},
     rwasm::RwasmBuilderError,
 };
-use std::iter;
+use alloc::{string::String, vec::Vec};
+use core::iter;
 
 pub struct RwasmTranslator<'parser> {
     /// The interface to incrementally build up the `wasmi` bytecode function.

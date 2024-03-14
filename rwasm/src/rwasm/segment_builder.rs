@@ -6,6 +6,7 @@ use crate::{
     },
     module::DEFAULT_MEMORY_INDEX,
 };
+use alloc::vec::Vec;
 use hashbrown::HashMap;
 
 #[derive(Debug, Default)]
