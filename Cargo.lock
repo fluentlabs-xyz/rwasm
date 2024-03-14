@@ -1316,6 +1316,7 @@ name = "rwasm-codegen"
 version = "0.30.0"
 dependencies = [
  "byteorder",
+ "fluentbase-types",
  "rwasm",
  "strum",
  "strum_macros",

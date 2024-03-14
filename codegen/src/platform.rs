@@ -1,5 +1,6 @@
 use crate::alloc::string::ToString;
 use alloc::{collections::BTreeMap, string::String, vec::Vec};
+use fluentbase_types::SysFuncIdx;
 use rwasm::{
     common::{UntypedValue, ValueType},
     module::ImportName,
@@ -187,39 +188,35 @@ impl ImportLinkerDefaults {
     }
 
     pub fn register_import_funcs(mut self, import_linker: &mut ImportLinker) -> Self {
-        let mut index = self.base_idx;
         import_linker.insert_function(ImportFunc::new_env(
             self.module_name.clone(),
             "_sys_halt".to_string(),
-            index,
+            SysFuncIdx::SYS_HALT as u16,
             &[ValueType::I32],
             &[],
             0,
         ));
-        index += 1;
         import_linker.insert_function(ImportFunc::new_env(
             self.module_name.clone(),
-            "_sys_write".to_string(),
-            index,
-            &[ValueType::I32; 2],
+            "_sys_read".to_string(),
+            SysFuncIdx::SYS_READ as u16,
+            &[ValueType::I32; 3],
             &[],
             0,
         ));
-        index += 1;
         import_linker.insert_function(ImportFunc::new_env(
             self.module_name.clone(),
             "_sys_input_size".to_string(),
-            index,
+            SysFuncIdx::SYS_INPUT_SIZE as u16,
             &[],
             &[ValueType::I32; 1],
             0,
         ));
-        index += 1;
         import_linker.insert_function(ImportFunc::new_env(
             self.module_name.clone(),
-            "_sys_read".to_string(),
-            index,
-            &[ValueType::I32; 3],
+            "_sys_write".to_string(),
+            SysFuncIdx::SYS_WRITE as u16,
+            &[ValueType::I32; 2],
             &[],
             0,
         ));

@@ -7,14 +7,14 @@ extern crate core;
 #[cfg(feature = "std")]
 extern crate std as alloc;
 
+pub use self::{binary_format::*, compiler::*, instruction_set::*, platform::*, reduced_module::*};
+pub use rwasm;
+
 pub mod binary_format;
 mod compiler;
 mod instruction_set;
 mod platform;
 mod reduced_module;
-
-pub use self::{binary_format::*, compiler::*, instruction_set::*, platform::*, reduced_module::*};
-pub use rwasm;
 
 #[cfg(test)]
 mod tests {
@@ -25,11 +25,10 @@ mod tests {
         reduced_module::ReducedModule,
         CompilerConfig,
         FuncOrExport,
-        ImportFunc,
         ImportLinkerDefaults,
     };
     use alloc::string::ToString;
-    use rwasm::{common::ValueType, AsContextMut, Caller, Config, Engine, Func, Linker, Store};
+    use rwasm::{AsContextMut, Caller, Config, Engine, Func, Linker, Store};
 
     #[derive(Default, Debug, Clone)]
     struct HostState {
