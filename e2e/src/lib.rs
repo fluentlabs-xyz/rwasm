@@ -169,7 +169,7 @@ define_spec_tests! {
     fn wasm_store("store");
     fn wasm_switch("switch");
     fn wasm_table_sub("table-sub");
-    fn wasm_table("table"); // NOT WORKING (exported globals)
+    fn wasm_table("table");
     fn wasm_table_copy("table_copy");
     fn wasm_table_fill("table_fill");
     fn wasm_table_get("table_get");

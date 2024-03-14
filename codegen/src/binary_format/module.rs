@@ -27,9 +27,8 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         1 + // version
         5 + // code section header
         5 + // memory section header
-        5 + // decl section header
+        5 + // func section header
         5 + // element section header
-        5 + // start section header
         1 + // terminator
             self.code_section.encoded_length() + // code section
             self.memory_section.len() + // memory section
