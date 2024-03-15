@@ -1,7 +1,7 @@
 use super::{AsContext, AsContextMut, Stored};
 use crate::{
     arena::ArenaIndex,
-    common::{UntypedValue, ValueType},
+    core::{UntypedValue, ValueType},
     value::WithType,
     Value,
 };

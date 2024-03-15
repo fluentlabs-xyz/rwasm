@@ -1,13 +1,12 @@
 use crate::{
     arena::ArenaIndex,
-    common::ValueType,
+    core::ValueType,
     module,
     module::{ConstExpr, ElementSegmentItems},
     store::Stored,
     AsContext,
     AsContextMut,
 };
-use alloc::sync::Arc;
 
 /// A raw index to a element segment entity.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -92,7 +91,7 @@ pub struct ElementSegmentEntity {
     /// These items are just readable after instantiation.
     /// Using Wasm `elem.drop` simply replaces the instance
     /// with an empty one.
-    items: Option<ElementSegmentItems>,
+    pub(crate) items: Option<ElementSegmentItems>,
 }
 
 impl From<&'_ module::ElementSegment> for ElementSegmentEntity {
@@ -110,7 +109,7 @@ impl From<&'_ module::ElementSegment> for ElementSegmentEntity {
 
 impl ElementSegmentEntity {
     /// Create an empty [`ElementSegmentEntity`] representing dropped element segments.
-    fn empty(ty: ValueType) -> Self {
+    pub fn empty(ty: ValueType) -> Self {
         Self { ty, items: None }
     }
 
@@ -135,18 +134,5 @@ impl ElementSegmentEntity {
     /// Drops the items of the [`ElementSegmentEntity`].
     pub fn drop_items(&mut self) {
         self.items = None;
-    }
-
-    pub fn add_item(&mut self, expr: ConstExpr) {
-        assert!(expr.funcref().is_some(), "expr must be funcref only");
-        let mut new_items = self
-            .items
-            .as_ref()
-            .map(|v| v.items())
-            .unwrap_or_default()
-            .to_vec();
-        new_items.push(expr);
-        let new_items: Arc<[ConstExpr]> = new_items.as_slice().into();
-        self.items = Some(ElementSegmentItems::from_items(new_items));
     }
 }

@@ -8,7 +8,7 @@
 
 use super::FuncIdx;
 use crate::{
-    common::{UntypedValue, F32, F64},
+    core::{UntypedValue, F32, F64},
     ExternRef,
     FuncRef,
     Value,
@@ -346,9 +346,9 @@ impl ConstExpr {
         None
     }
 
-    pub fn global(&self) -> Option<FuncIdx> {
+    pub fn global(&self) -> Option<u32> {
         if let Op::Global(op) = &self.op {
-            return Some(FuncIdx::from(op.global_index));
+            return Some(op.global_index);
         }
         None
     }

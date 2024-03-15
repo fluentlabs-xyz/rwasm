@@ -8,7 +8,7 @@
 //! those entities.
 
 use crate::{
-    common::ValueType,
+    core::ValueType,
     instance::InstanceEntity,
     Engine,
     Error,
@@ -26,7 +26,7 @@ use crate::{
 fn try_instantiate_from_wat(wat: &str) -> Result<(Store<()>, Instance), Error> {
     let wasm = wat::parse_str(wat).unwrap();
     let engine = Engine::default();
-    let module = Module::new(&engine, &wasm[..])?;
+    let module = Module::new(&engine, &mut &wasm[..])?;
     let mut store = Store::new(&engine, ());
     let mut linker = <Linker<()>>::new(&engine);
     // Define one memory that can be used by the tests as import.

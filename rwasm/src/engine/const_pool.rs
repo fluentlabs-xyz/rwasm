@@ -1,5 +1,5 @@
 use super::{func_builder::TranslationErrorInner, TranslationError};
-use crate::common::UntypedValue;
+use crate::core::UntypedValue;
 use alloc::{
     collections::{btree_map, BTreeMap},
     vec::Vec,

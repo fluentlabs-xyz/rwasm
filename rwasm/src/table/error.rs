@@ -1,5 +1,5 @@
 use super::TableType;
-use crate::common::ValueType;
+use crate::core::ValueType;
 use core::{fmt, fmt::Display};
 
 /// Errors that may occur upon operating with table entities.

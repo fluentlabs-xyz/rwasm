@@ -1,8 +1,6 @@
-use crate::{BinaryFormat, BinaryFormatWriter, N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES};
-use alloc::{slice::SliceIndex, string::String, vec::Vec};
-use byteorder::{ByteOrder, LittleEndian};
+use alloc::vec::Vec;
 use rwasm::{
-    common::UntypedValue,
+    core::UntypedValue,
     engine::{
         bytecode::{
             AddressOffset,
@@ -19,33 +17,16 @@ use rwasm::{
             SignatureIdx,
             TableIdx,
         },
+        const_pool::ConstRef,
         CompiledFunc,
-        ConstRef,
         DropKeep,
     },
 };
 
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, PartialEq)]
 pub struct InstructionSet {
-    pub instr: Vec<Instruction>,
-    pub metas: Option<Vec<InstrMeta>>,
-    // translate state
-    total_locals: Vec<usize>,
-    init_memory_size: u32,
-    init_memory_pages: u32,
-    relative_offset: u32,
-}
-
-impl Into<Vec<u8>> for InstructionSet {
-    fn into(mut self) -> Vec<u8> {
-        self.finalize(true);
-        let mut buffer = vec![0; 65536 * 2];
-        let mut binary_writer = BinaryFormatWriter::new(buffer.as_mut_slice());
-        let n = self.write_binary(&mut binary_writer).unwrap();
-        assert_ne!(n, buffer.len());
-        buffer.resize(n, 0);
-        buffer
-    }
+    pub(crate) instr: Vec<Instruction>,
+    pub(crate) metas: Vec<InstrMeta>,
 }
 
 macro_rules! impl_opcode {
@@ -71,137 +52,33 @@ macro_rules! impl_opcode {
     };
 }
 
-impl From<Vec<Instruction>> for InstructionSet {
-    fn from(value: Vec<Instruction>) -> Self {
-        Self {
-            instr: value,
-            metas: None,
-            total_locals: vec![],
-            init_memory_size: 0,
-            init_memory_pages: 0,
-            relative_offset: 0,
-        }
-    }
-}
-
 impl InstructionSet {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn with_relative_offset(relative_offset: u32) -> Self {
-        Self {
-            relative_offset,
-            ..Default::default()
-        }
+    pub fn instrs(&self) -> &Vec<Instruction> {
+        &self.instr
     }
 
-    pub fn push(&mut self, opcode: Instruction) -> u32 {
-        let opcode_pos = self.len();
-        self.instr.push(opcode);
-        opcode_pos
+    pub fn push(&mut self, instr: Instruction) {
+        let index = self.instr.len();
+        self.instr.push(instr);
+        self.metas.push(InstrMeta::new(0, 0, index));
     }
 
-    pub fn push_with_meta(&mut self, opcode: Instruction, meta: InstrMeta) -> u32 {
-        let opcode_pos = self.push(opcode);
-        let metas_len = if let Some(metas) = &mut self.metas {
-            metas.push(meta);
-            metas.len()
-        } else {
-            self.metas = Some(vec![meta]);
-            1
-        };
-        assert_eq!(self.instr.len(), metas_len, "instr len and meta mismatched");
-        opcode_pos
-    }
-
-    pub fn add_memory_pages(&mut self, initial_pages: u32) {
-        assert_eq!(self.init_memory_pages, 0);
-        if initial_pages != 0 {
-            self.op_i32_const(initial_pages);
-            self.op_memory_grow();
-            self.op_drop();
-        }
-        self.init_memory_pages = initial_pages;
-        // we set here 0 because this memory is not used yet
-        self.init_memory_size = 0;
-    }
-
-    pub fn add_memory(&mut self, mut offset: i32, mut bytes: &[u8]) -> bool {
-        // make sure we have enough allocated memory
-        let new_size = self.init_memory_size + offset as u32 + bytes.len() as u32;
-        let total_pages = (new_size + N_BYTES_PER_MEMORY_PAGE - 1) / N_BYTES_PER_MEMORY_PAGE;
-        if total_pages > N_MAX_MEMORY_PAGES {
-            return false;
-        }
-        self.init_memory_size += bytes.len() as u32;
-        self.init_memory_pages = total_pages;
-
-        // translate input bytes
-        [8, 4, 2, 1].iter().copied().for_each(|chunk_size| {
-            let mut it = bytes.chunks_exact(chunk_size);
-            while let Some(chunk) = it.next() {
-                let value = match chunk_size {
-                    8 => LittleEndian::read_u64(chunk),
-                    4 => LittleEndian::read_u32(chunk) as u64,
-                    2 => LittleEndian::read_u16(chunk) as u64,
-                    1 => chunk[0] as u64,
-                    _ => unreachable!("not supported chunk size: {}", chunk_size),
-                };
-                self.op_i32_const(offset);
-                self.op_i64_const(value);
-                match chunk_size {
-                    8 => self.op_i64_store(0u32),
-                    4 => self.op_i32_store(0u32),
-                    2 => self.op_i32_store16(0u32),
-                    1 => self.op_i64_store8(0u32),
-                    _ => unreachable!("not supported chunk size: {}", chunk_size),
-                }
-                offset += chunk_size as i32;
-            }
-            bytes = it.remainder();
-        });
-
-        return true;
-    }
-
-    pub fn add_data(&mut self, mut bytes: &[u8], segment_idx: u32) {
-        // translate input bytes
-        [8, 4, 2, 1].iter().copied().for_each(|chunk_size| {
-            let mut it = bytes.chunks_exact(chunk_size);
-            while let Some(chunk) = it.next() {
-                let value = match chunk_size {
-                    8 => LittleEndian::read_u64(chunk),
-                    4 => LittleEndian::read_u32(chunk) as u64,
-                    2 => LittleEndian::read_u16(chunk) as u64,
-                    1 => chunk[0] as u64,
-                    _ => unreachable!("not supported chunk size: {}", chunk_size),
-                };
-                self.op_i64_const(value);
-                match chunk_size {
-                    8 => self.op_data_store64(segment_idx),
-                    4 => self.op_data_store32(segment_idx),
-                    2 => self.op_data_store16(segment_idx),
-                    1 => self.op_data_store8(segment_idx),
-                    _ => unreachable!("not supported chunk size: {}", chunk_size),
-                }
-            }
-            bytes = it.remainder();
-        });
-    }
-
-    pub fn propagate_locals(&mut self, n: usize) {
-        (0..n).for_each(|_| self.op_i32_const(0));
-        self.total_locals.push(n);
-    }
-
-    pub fn drop_locals(&mut self) {
-        let n = self
-            .total_locals
-            .pop()
-            .unwrap_or_else(|| unreachable!("there is no locals on the stack"));
-        (0..n).for_each(|_| self.op_drop());
-    }
+    // pub fn propagate_locals(&mut self, n: usize) {
+    //     (0..n).for_each(|_| self.op_i32_const(0));
+    //     self.locals_stack.push(n);
+    // }
+    //
+    // pub fn drop_locals(&mut self) {
+    //     let n = self
+    //         .locals_stack
+    //         .pop()
+    //         .unwrap_or_else(|| unreachable!("there is no locals on the stack"));
+    //     (0..n).for_each(|_| self.op_drop());
+    // }
 
     fn is_return_last(&self) -> bool {
         self.instr
@@ -215,86 +92,21 @@ impl InstructionSet {
 
     pub fn finalize(&mut self, inject_return: bool) {
         // 0 means there is no locals, 1 means main locals, 1+ means error
-        if self.total_locals.len() > 1 {
-            unreachable!("missing [drop_locals] call/s somewhere");
-        } else if self.total_locals.len() == 1 {
-            self.drop_locals();
-        }
+        // if self.locals_stack.len() > 1 {
+        //     unreachable!("missing [drop_locals] call/s somewhere");
+        // } else if self.locals_stack.len() == 1 {
+        //     self.drop_locals();
+        // }
         // inject return in the end (its used mostly for unit tests)
         if inject_return && !self.is_return_last() {
             self.op_return();
         }
     }
 
-    pub fn has_meta(&self) -> bool {
-        self.metas.is_some()
+    pub fn len(&self) -> usize {
+        self.instr.len()
     }
 
-    pub fn get<I>(&self, index: I) -> Option<&Instruction>
-    where
-        I: SliceIndex<[Instruction], Output = Instruction>,
-    {
-        self.instr.get(index)
-    }
-
-    pub fn get_mut<I>(&mut self, index: I) -> Option<&mut Instruction>
-    where
-        I: SliceIndex<[Instruction], Output = Instruction>,
-    {
-        self.instr.get_mut(index)
-    }
-
-    pub fn count_globals(&self) -> u32 {
-        self.instr
-            .iter()
-            .filter_map(|opcode| match opcode {
-                Instruction::GlobalGet(index) | Instruction::GlobalSet(index) => {
-                    Some(index.to_u32())
-                }
-                _ => None,
-            })
-            .max()
-            .map(|v| v + 1)
-            .unwrap_or_default()
-    }
-
-    pub fn count_tables(&self) -> u32 {
-        self.instr
-            .iter()
-            .filter_map(|opcode| match opcode {
-                Instruction::TableSize(index)
-                | Instruction::TableGrow(index)
-                | Instruction::TableFill(index)
-                | Instruction::TableGet(index)
-                | Instruction::TableSet(index)
-                | Instruction::TableCopy(index) => Some(index.to_u32()),
-                _ => None,
-            })
-            .max()
-            .map(|v| v + 1)
-            .unwrap_or_default()
-    }
-
-    pub fn instr(&self) -> &Vec<Instruction> {
-        &self.instr
-    }
-
-    pub fn instr_mut(&mut self) -> &mut Vec<Instruction> {
-        &mut self.instr
-    }
-
-    pub fn offset(&self, jump_dist: u32) -> u32 {
-        self.relative_offset + self.instr.len() as u32 + jump_dist
-    }
-
-    pub fn len(&self) -> u32 {
-        self.instr.len() as u32
-    }
-
-    pub fn op_magic_prefix(&mut self, value: [u8; 8]) {
-        let value = byteorder::BigEndian::read_u64(&value);
-        self.push(Instruction::MagicPrefix(value.into()));
-    }
     impl_opcode!(op_local_get, LocalGet(LocalDepth));
     impl_opcode!(op_local_set, LocalSet(LocalDepth));
     impl_opcode!(op_local_tee, LocalTee(LocalDepth));
@@ -307,25 +119,11 @@ impl InstructionSet {
     impl_opcode!(op_unreachable, Unreachable);
     impl_opcode!(op_consume_fuel, ConsumeFuel(BlockFuel));
     impl_opcode!(op_return, Return, DropKeep::none());
-    impl_opcode!(op_br_indirect, BrIndirect(BranchOffset));
-    impl_opcode!(op_type_check, TypeCheck(SignatureIdx));
     impl_opcode!(op_return_if_nez, ReturnIfNez, DropKeep::none());
     impl_opcode!(op_return_call_internal, ReturnCallInternal(CompiledFunc));
     impl_opcode!(op_return_call, ReturnCall(FuncIdx));
     impl_opcode!(op_return_call_indirect, ReturnCallIndirect(SignatureIdx));
-    pub fn op_call_internal<I>(&mut self, fn_index: I, type_index: u32)
-    where
-        I: Into<CompiledFunc>,
-    {
-        self.push(Instruction::I32Const(type_index.into()));
-        self.push(Instruction::CallInternal(fn_index.into()));
-    }
-    pub fn op_call_internal_unsafe<I>(&mut self, fn_index: I)
-    where
-        I: Into<CompiledFunc>,
-    {
-        self.push(Instruction::CallInternal(fn_index.into()));
-    }
+    impl_opcode!(op_call_internal, CallInternal(CompiledFunc));
     impl_opcode!(op_call, Call(FuncIdx));
     impl_opcode!(op_call_indirect, CallIndirect(SignatureIdx));
     impl_opcode!(op_drop, Drop);
@@ -360,10 +158,6 @@ impl InstructionSet {
     impl_opcode!(op_memory_fill, MemoryFill);
     impl_opcode!(op_memory_copy, MemoryCopy);
     impl_opcode!(op_memory_init, MemoryInit(DataSegmentIdx));
-    impl_opcode!(op_data_store8, DataStore8(DataSegmentIdx));
-    impl_opcode!(op_data_store16, DataStore16(DataSegmentIdx));
-    impl_opcode!(op_data_store32, DataStore32(DataSegmentIdx));
-    impl_opcode!(op_data_store64, DataStore64(DataSegmentIdx));
     impl_opcode!(op_data_drop, DataDrop(DataSegmentIdx));
     impl_opcode!(op_table_size, TableSize(TableIdx));
     impl_opcode!(op_table_grow, TableGrow(TableIdx));
@@ -379,7 +173,6 @@ impl InstructionSet {
         self.push(Instruction::TableInit(elem_idx.into()));
         self.push(Instruction::TableGet(table_idx.into()));
     }
-    impl_opcode!(op_elem_store, ElemStore(ElementSegmentIdx));
     impl_opcode!(op_elem_drop, ElemDrop(ElementSegmentIdx));
     impl_opcode!(op_ref_func, RefFunc(FuncIdx));
     impl_opcode!(op_i32_const, I32Const(UntypedValue));
@@ -517,47 +310,6 @@ impl InstructionSet {
     impl_opcode!(op_i64_trunc_sat_f32u, I64TruncSatF32U);
     impl_opcode!(op_i64_trunc_sat_f64s, I64TruncSatF64S);
     impl_opcode!(op_i64_trunc_sat_f64u, I64TruncSatF64U);
-
-    pub fn extend(&mut self, with: &InstructionSet) {
-        self.instr.extend(&with.instr);
-        if let Some(metas) = &mut self.metas {
-            metas.extend(with.metas.as_ref().unwrap());
-        }
-    }
-
-    pub fn fix_br_indirect_offset(
-        &mut self,
-        from_idx: Option<usize>,
-        to_idx: Option<usize>,
-        offset_change: i32,
-    ) {
-        for offset in from_idx.unwrap_or(0)..=to_idx.unwrap_or(self.instr.len() - 1) {
-            let instr = &mut self.instr[offset];
-            match instr {
-                // Instruction::BrTable(_) |
-                // Instruction::Br(offset)
-                | Instruction::BrIndirect(offset)
-                // | Instruction::BrIfEqz(offset)
-                // | Instruction::BrAdjust(offset)
-                // | Instruction::BrAdjustIfNez(offset)
-                // | Instruction::BrIfEqz(offset)
-                // | Instruction::BrIfNez(offset) 
-                => {
-                    *offset = BranchOffset::from(offset.to_i32() + offset_change)
-                }
-                _ => {}
-            }
-        }
-    }
-
-    pub fn trace(&self) -> String {
-        let mut result = String::new();
-        for (offset, opcode) in self.instr.iter().enumerate() {
-            let str = format!("{}: {:?}\n", offset, opcode);
-            result += str.as_str();
-        }
-        result
-    }
 }
 
 #[macro_export]

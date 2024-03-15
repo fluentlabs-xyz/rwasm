@@ -3,6 +3,7 @@
 use super::Instruction;
 use crate::{arena::ArenaIndex, engine::bytecode::InstrMeta};
 use alloc::vec::Vec;
+use hashbrown::HashMap;
 
 /// A reference to a compiled function stored in the [`CodeMap`] of an [`Engine`](crate::Engine).
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
@@ -136,6 +137,7 @@ impl FuncHeader {
 pub struct CodeMap {
     /// The headers of all compiled functions.
     headers: Vec<FuncHeader>,
+    index_by_offset: HashMap<usize, CompiledFunc>,
     /// The instructions of all allocated function bodies.
     ///
     /// By storing all `wasmi` bytecode instructions in a single
@@ -143,7 +145,7 @@ pub struct CodeMap {
     /// compared to a solution that stores instructions of different
     /// function bodies in different allocations.
     ///
-    /// Also this improves efficiency of deallocating the [`CodeMap`]
+    /// Also, this improves efficiency of deallocating the [`CodeMap`]
     /// and generally improves data locality.
     instrs: Vec<Instruction>,
     metas: Vec<InstrMeta>,
@@ -153,6 +155,7 @@ impl Default for CodeMap {
     fn default() -> Self {
         Self {
             headers: Vec::new(),
+            index_by_offset: Default::default(),
             // The first instruction always is a simple trapping instruction
             // so that we safely can use `InstructionsRef(0)` as an uninitialized
             // index value for compiled functions that have yet to be
@@ -182,15 +185,16 @@ impl CodeMap {
     ///
     /// - If `func` is an invalid [`CompiledFunc`] reference for this [`CodeMap`].
     /// - If `func` refers to an already initialized [`CompiledFunc`].
-    pub fn init_func<I>(
+    pub fn init_func<I, M>(
         &mut self,
         func: CompiledFunc,
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
-        metas: Vec<InstrMeta>,
+        metas: M,
     ) where
         I: IntoIterator<Item = Instruction>,
+        M: IntoIterator<Item = InstrMeta>,
     {
         assert!(
             self.header(func).is_uninit(),
@@ -224,6 +228,15 @@ impl CodeMap {
             self.instrs.len()
         );
         self.headers[func.into_usize()] = FuncHeader::new(iref, len_locals, local_stack_height);
+        assert!(
+            !self.index_by_offset.contains_key(&start),
+            "function with such offset already exists"
+        );
+        self.index_by_offset.insert(start - 1, func);
+    }
+
+    pub fn resolve_function_by_offset(&self, offset: usize) -> Option<CompiledFunc> {
+        self.index_by_offset.get(&offset).copied()
     }
 
     /// Returns an [`InstructionPtr`] to the instruction at [`InstructionsRef`].
@@ -293,7 +306,7 @@ impl CodeMap {
 pub struct InstructionPtr {
     /// The pointer to the instruction.
     pub(crate) ptr: *const Instruction,
-    pub(crate) source: *const Instruction,
+    pub(crate) src: *const Instruction,
     /// The pointer to metas
     pub(crate) meta: *const InstrMeta,
 }
@@ -314,7 +327,7 @@ impl InstructionPtr {
     pub fn new(ptr: *const Instruction, meta: *const InstrMeta) -> Self {
         Self {
             ptr,
-            source: ptr,
+            src: ptr,
             meta,
         }
     }
@@ -322,7 +335,7 @@ impl InstructionPtr {
     #[inline(always)]
     pub fn pc(&self) -> u32 {
         let size = core::mem::size_of::<Instruction>() as u32;
-        let diff = self.ptr as u32 - self.source as u32;
+        let diff = self.ptr as u32 - self.src as u32;
         diff / size
     }
 

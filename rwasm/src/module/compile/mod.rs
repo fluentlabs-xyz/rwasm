@@ -13,10 +13,10 @@ mod block_type;
 /// # Note
 ///
 /// - Uses the given `engine` as target for the translation.
-/// - Uses the given `parser` and `validator` for parsing and validation of
-///   the incoming Wasm bytecode stream.
-/// - Uses the given module resources `res` as shared immutable data of the
-///   already parsed and validated module parts required for the translation.
+/// - Uses the given `parser` and `validator` for parsing and validation of the incoming Wasm
+///   bytecode stream.
+/// - Uses the given module resources `res` as shared immutable data of the already parsed and
+///   validated module parts required for the translation.
 ///
 /// # Errors
 ///
@@ -74,6 +74,9 @@ impl<'parser> FunctionTranslator<'parser> {
     fn translate_locals(&mut self) -> Result<(), ModuleError> {
         let mut reader = self.func_body.get_locals_reader()?;
         let len_locals = reader.get_count();
+        if self.func_builder.is_rwasm {
+            self.func_builder.translate_signature_check();
+        }
         for _ in 0..len_locals {
             let offset = reader.original_position();
             let (amount, value_type) = reader.read()?;

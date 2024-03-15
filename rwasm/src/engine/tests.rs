@@ -30,7 +30,7 @@ fn create_module(config: &Config, bytes: &[u8]) -> Module {
 /// Contains some utility methods to construct instructions simpler.
 mod instr {
     use super::Instruction;
-    use crate::{common::UntypedValue, engine::bytecode::BlockFuel};
+    use crate::{core::UntypedValue, engine::bytecode::BlockFuel};
 
     /// Creates a new [`Instruction::LocalGet`] with the `local_depth`.
     ///
@@ -737,14 +737,13 @@ fn br_table_returns_result() {
 }
 
 #[test]
-#[ignore]
 fn wabt_example() {
     let wasm = wat2wasm(
         r#"
         (module
             (func (export "call") (param i32) (result i32)
                 block $exit
-                    get_local 0
+                    local.get 0
                     br_if $exit
                     i32.const 1
                     return

@@ -1,4 +1,4 @@
-use crate::{common::ValueType, func::FuncError, Value};
+use crate::{core::ValueType, func::FuncError, Value};
 use alloc::{sync::Arc, vec::Vec};
 use core::fmt;
 
@@ -58,6 +58,15 @@ impl FuncType {
             params_results: params_results.into(),
             len_params,
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        let (input, output) = self.len_params();
+        input == 0 && output == 0
+    }
+
+    pub fn len_params(&self) -> (usize, usize) {
+        (self.len_params, self.params_results.len() - self.len_params)
     }
 
     /// Returns the parameter types of the function type.

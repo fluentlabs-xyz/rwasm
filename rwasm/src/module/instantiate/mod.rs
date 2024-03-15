@@ -7,10 +7,9 @@ mod tests;
 pub use self::{error::InstantiationError, pre::InstancePre};
 use super::{element::ElementSegmentKind, export, ConstExpr, DataSegmentKind, Module};
 use crate::{
-    common::{Trap, UntypedValue},
+    core::{Trap, UntypedValue},
     func::WasmFuncEntity,
     memory::{DataSegment, MemoryError},
-    module::FuncIdx,
     value::WithType,
     AsContext,
     AsContextMut,
@@ -62,7 +61,7 @@ impl Module {
         let handle = context.as_context_mut().store.inner.alloc_instance();
         let mut builder = InstanceEntity::build(self);
 
-        self.extract_imports(&mut context, &mut builder, externals)?;
+        self.extract_imports(&context, &mut builder, externals)?;
         self.extract_functions(&mut context, &mut builder, handle);
         self.extract_tables(&mut context, &mut builder)?;
         self.extract_memories(&mut context, &mut builder)?;
@@ -94,7 +93,7 @@ impl Module {
     /// [`Func`]: [`crate::Func`]
     fn extract_imports<I>(
         &self,
-        context: &mut impl AsContextMut,
+        context: &impl AsContextMut,
         builder: &mut InstanceEntityBuilder,
         externals: I,
     ) -> Result<(), InstantiationError>
@@ -300,10 +299,6 @@ impl Module {
         }
     }
 
-    pub fn get_start_fn(&self) -> Option<FuncIdx> {
-        self.start
-    }
-
     /// Initializes the [`Instance`] tables with the Wasm element segments of the [`Module`].
     fn initialize_table_elements(
         &self,
@@ -341,7 +336,7 @@ impl Module {
                         .resolve_table_element(&table, &element);
                     table
                         .init(dst_index, element, 0, len_items, |func_index| {
-                            builder.get_func(func_index)
+                            Some(builder.get_func(func_index))
                         })
                         .map_err(Trap::from)?;
                 }

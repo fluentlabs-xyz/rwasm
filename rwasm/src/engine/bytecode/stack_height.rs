@@ -3,10 +3,10 @@ use alloc::vec::Vec;
 
 #[derive(Debug, Copy, Clone)]
 pub enum RwTableOp {
-    ElemRead(u32, u32),
-    ElemWrite(u32, u32),
-    SizeRead(u32),
-    SizeWrite(u32),
+    // ElemRead(u32, u32),
+    // ElemWrite(u32, u32),
+    // SizeRead(u32),
+    // SizeWrite(u32),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -165,13 +165,6 @@ impl Instruction {
                 // unreachable!("not implemented here")
             }
             Instruction::MemoryInit(_) => {}
-            Instruction::DataStore8(seg)
-            | Instruction::DataStore16(seg)
-            | Instruction::DataStore32(seg)
-            | Instruction::DataStore64(seg) => {
-                stack_ops.push(RwOp::StackRead(0));
-                stack_ops.push(RwOp::DataWrite(seg.to_u32()))
-            }
             Instruction::DataDrop(_) => {}
 
             Instruction::TableSize(table_idx) => {
@@ -206,16 +199,9 @@ impl Instruction {
             }
             Instruction::TableInit(_) => {}
 
-            Instruction::ElemStore(seg) => {
-                stack_ops.push(RwOp::StackRead(0));
-                stack_ops.push(RwOp::TableElemWrite(seg.to_u32()))
-            }
             Instruction::ElemDrop(_) => {}
             Instruction::RefFunc(_) => {
                 stack_ops.push(RwOp::StackWrite(0));
-            }
-            Instruction::I32Const(_) | Instruction::I64Const(_) => {
-                stack_ops.push(RwOp::StackWrite(0))
             }
             Instruction::ConstRef(_) => stack_ops.push(RwOp::StackWrite(0)),
 
@@ -236,8 +222,6 @@ impl Instruction {
             | Instruction::I32LeU
             | Instruction::I32GeS
             | Instruction::I32GeU
-            | Instruction::I32Eq
-            | Instruction::I32Ne
             | Instruction::I64LtS
             | Instruction::I64LtU
             | Instruction::I64GtS
@@ -263,7 +247,12 @@ impl Instruction {
                 stack_ops.push(RwOp::StackWrite(0));
             }
 
-            Instruction::I32Clz | Instruction::I32Ctz | Instruction::I32Popcnt => {
+            Instruction::I32Clz
+            | Instruction::I64Clz
+            | Instruction::I32Ctz
+            | Instruction::I64Ctz
+            | Instruction::I32Popcnt
+            | Instruction::I64Popcnt => {
                 stack_ops.push(RwOp::StackRead(0));
                 stack_ops.push(RwOp::StackWrite(0));
             }
@@ -355,26 +344,6 @@ impl Instruction {
                 stack_ops.push(RwOp::StackWrite(0));
             }
 
-            Instruction::I32Ctz
-            | Instruction::I64Ctz
-            | Instruction::I32Clz
-            | Instruction::I64Clz
-            | Instruction::I32Popcnt
-            | Instruction::I64Popcnt => {
-                stack_ops.push(RwOp::StackRead(0));
-                stack_ops.push(RwOp::StackWrite(0));
-            }
-
-            Instruction::F32Add => {
-                stack_ops.push(RwOp::StackRead(0));
-                stack_ops.push(RwOp::StackRead(0));
-                stack_ops.push(RwOp::StackWrite(0));
-            }
-            Instruction::F32Mul => {
-                stack_ops.push(RwOp::StackRead(0));
-                stack_ops.push(RwOp::StackRead(0));
-                stack_ops.push(RwOp::StackWrite(0));
-            }
             Instruction::F32Sqrt => {
                 stack_ops.push(RwOp::StackRead(0));
                 stack_ops.push(RwOp::StackWrite(0));

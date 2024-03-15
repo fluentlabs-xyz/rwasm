@@ -11,7 +11,6 @@ use crate::engine::{
     Engine,
 };
 use alloc::vec::Vec;
-use core::mem::take;
 
 /// A reference to an instruction of the partially
 /// constructed function body of the [`InstructionsBuilder`].
@@ -207,16 +206,41 @@ impl InstructionsBuilder {
         local_stack_height: usize,
     ) -> Result<(), TranslationError> {
         self.update_branch_offsets()?;
-        let metas = take(&mut self.metas);
-        assert_eq!(self.insts.len(), metas.len());
+        assert_eq!(
+            self.insts.len(),
+            self.metas.len(),
+            "instr and meta length mismatch"
+        );
         engine.init_func(
             func,
             len_locals,
             local_stack_height,
             self.insts.drain(..),
-            metas,
+            self.metas.drain(..),
         );
         Ok(())
+    }
+
+    pub fn finalize(mut self) -> Result<(Vec<Instruction>, Vec<InstrMeta>), TranslationError> {
+        self.update_branch_offsets()?;
+        assert_eq!(
+            self.insts.len(),
+            self.metas.len(),
+            "instr and meta length mismatch"
+        );
+        Ok((self.insts, self.metas))
+    }
+
+    pub fn last(&self) -> Option<&Instruction> {
+        self.insts.last()
+    }
+
+    pub fn len(&self) -> usize {
+        self.insts.len()
+    }
+
+    pub fn instrs(&self) -> &Vec<Instruction> {
+        &self.insts
     }
 
     /// Updates the branch offsets of all branch instructions inplace.

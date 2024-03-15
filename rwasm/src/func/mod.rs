@@ -22,7 +22,7 @@ use super::{
     StoreContext,
     Stored,
 };
-use crate::{arena::ArenaIndex, common::Trap, engine::ResumableCall, Engine, Error, Value};
+use crate::{arena::ArenaIndex, core::Trap, engine::ResumableCall, Engine, Error, Value};
 use alloc::{boxed::Box, sync::Arc};
 use core::{fmt, fmt::Debug, num::NonZeroU32};
 
@@ -78,7 +78,7 @@ impl Trampoline {
 }
 
 /// A Wasm or host function instance.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FuncEntity {
     /// A Wasm function.
     Wasm(WasmFuncEntity),

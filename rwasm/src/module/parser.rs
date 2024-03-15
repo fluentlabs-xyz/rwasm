@@ -10,10 +10,10 @@ use super::{
     ModuleBuilder,
     ModuleError,
     ModuleResources,
-    Read,
 };
 use crate::{
-    engine::{CompiledFunc, FuncTranslatorAllocations},
+    engine::{CompiledFunc, FuncTranslatorAllocations, InstructionsBuilder},
+    rwasm::RwasmTranslator,
     Engine,
     FuncType,
     MemoryType,
@@ -25,7 +25,6 @@ use core::{
     ops::Range,
 };
 use wasmparser::{
-    Chunk,
     DataSectionReader,
     ElementSectionReader,
     Encoding,
@@ -52,7 +51,7 @@ use wasmparser::{
 /// # Errors
 ///
 /// If the Wasm bytecode stream fails to validate.
-pub fn parse(engine: &Engine, stream: impl Read) -> Result<Module, ModuleError> {
+pub fn parse(engine: &Engine, stream: &[u8]) -> Result<Module, ModuleError> {
     ModuleParser::new(engine).parse(stream)
 }
 
@@ -62,8 +61,6 @@ pub struct ModuleParser<'engine> {
     builder: ModuleBuilder<'engine>,
     /// The Wasm validator used throughout stream parsing.
     validator: Validator,
-    /// The underlying Wasm parser.
-    parser: WasmParser,
     /// The number of compiled or processed functions.
     compiled_funcs: u32,
     /// Reusable allocations for validating and translation functions.
@@ -82,11 +79,9 @@ impl<'engine> ModuleParser<'engine> {
     fn new(engine: &'engine Engine) -> Self {
         let builder = ModuleBuilder::new(engine);
         let validator = Validator::new_with_features(Self::features(engine));
-        let parser = WasmParser::new(0);
         Self {
             builder,
             validator,
-            parser,
             compiled_funcs: 0,
             allocations: ReusableAllocations::default(),
         }
@@ -104,51 +99,41 @@ impl<'engine> ModuleParser<'engine> {
     /// # Errors
     ///
     /// If the Wasm bytecode stream fails to validate.
-    pub fn parse(mut self, mut stream: impl Read) -> Result<Module, ModuleError> {
-        let mut buffer = Vec::new();
-        let mut eof = false;
-        'outer: loop {
-            match self.parser.parse(&buffer[..], eof)? {
-                Chunk::NeedMoreData(hint) => {
-                    eof = Self::pull_bytes(&mut buffer, hint, &mut stream)?;
-                    continue 'outer;
+    pub fn parse(mut self, stream: &'engine [u8]) -> Result<Module, ModuleError> {
+        let mut func_bodies: Vec<FunctionBody> = Vec::new();
+        let parser = WasmParser::new(0);
+        let payloads = parser.parse_all(stream).collect::<Vec<_>>();
+        for payload in payloads {
+            let payload = payload?;
+            match payload {
+                Payload::CodeSectionEntry(func_body) => {
+                    func_bodies.push(func_body);
                 }
-                Chunk::Parsed { consumed, payload } => {
-                    eof = self.process_payload(payload)?;
-                    // Cut away the parts from the intermediate buffer that have already been parsed.
-                    buffer.drain(..consumed);
-                    if eof {
-                        break 'outer;
+                Payload::End(offset) => {
+                    // before processing code entries we must process an entrypoint
+                    let instr_builder =
+                        if self.builder.engine().config().get_rwasm_config().is_some() {
+                            Some(self.process_rwasm_entrypoint()?)
+                        } else {
+                            None
+                        };
+                    for func_body in take(&mut func_bodies) {
+                        self.process_code_entry(func_body)?;
                     }
+                    // rewrite memory & table sections for rWASM (encoding/decoding simulation)
+                    if self.builder.engine().config().get_rwasm_config().is_some() {
+                        let (mut instr_builder, compiled_func) = instr_builder.unwrap();
+                        instr_builder.finish(self.builder.engine(), compiled_func, 0, 0)?;
+                        self.rewrite_sections()?;
+                    }
+                    self.process_end(offset)?;
+                }
+                _ => {
+                    self.process_payload(payload)?;
                 }
             }
         }
         Ok(self.builder.finish())
-    }
-
-    /// Pulls more bytes from the `stream` in order to produce Wasm payload.
-    ///
-    /// Returns `true` if the parser reached the end of the stream.
-    ///
-    /// # Note
-    ///
-    /// Uses `hint` to efficiently preallocate enough space for the next payload.
-    fn pull_bytes(
-        buffer: &mut Vec<u8>,
-        hint: u64,
-        stream: &mut impl Read,
-    ) -> Result<bool, ModuleError> {
-        // Use the hint to preallocate more space, then read
-        // some more data into the buffer.
-        //
-        // Note that the buffer management here is not ideal,
-        // but it's compact enough to fit in an example!
-        let len = buffer.len();
-        buffer.extend((0..hint).map(|_| 0u8));
-        let read_bytes = stream.read(&mut buffer[len..])?;
-        buffer.truncate(len + read_bytes);
-        let reached_end = read_bytes == 0;
-        Ok(reached_end)
     }
 
     /// Processes the `wasmparser` payload.
@@ -158,7 +143,7 @@ impl<'engine> ModuleParser<'engine> {
     /// - If Wasm validation of the payload fails.
     /// - If some unsupported Wasm proposal definition is encountered.
     /// - If `wasmi` limits are exceeded.
-    fn process_payload(&mut self, payload: Payload) -> Result<bool, ModuleError> {
+    fn process_payload(&mut self, payload: Payload<'engine>) -> Result<bool, ModuleError> {
         match payload {
             Payload::Version {
                 num,
@@ -253,6 +238,7 @@ impl<'engine> ModuleParser<'engine> {
             wasmparser::Type::Func(ty) => Ok(FuncType::from_wasmparser(ty)),
         });
         self.builder.push_func_types(func_types)?;
+        self.builder.ensure_empty_func_type_exists();
         Ok(())
     }
 
@@ -272,6 +258,28 @@ impl<'engine> ModuleParser<'engine> {
             .into_iter()
             .map(|import| import.map(Import::from).map_err(ModuleError::from));
         self.builder.push_imports(imports)?;
+        // translate import functions
+        if self.builder.engine().config().get_rwasm_wrap_import_funcs() {
+            let mut allocations = take(&mut self.allocations);
+            for import_func_index in 0..self.builder.imports.len_funcs() {
+                let (func, compiled_func) = self.next_func();
+                let (func_allocations, sys_index) = RwasmTranslator::new(
+                    func,
+                    compiled_func,
+                    ModuleResources::new(&self.builder),
+                    allocations.translation,
+                )
+                .translate_import_func(import_func_index as u32)?;
+                allocations = ReusableAllocations {
+                    translation: func_allocations,
+                    validation: allocations.validation,
+                };
+                self.builder
+                    .import_mapping
+                    .insert(sys_index, (import_func_index as u32).into());
+            }
+            let _ = replace(&mut self.allocations, allocations);
+        }
         Ok(())
     }
 
@@ -481,11 +489,17 @@ impl<'engine> ModuleParser<'engine> {
         let index = self.compiled_funcs;
         let compiled_func = self.builder.compiled_funcs[index as usize];
         self.compiled_funcs += 1;
-        // We have to adjust the initial func reference to the first
-        // internal function before we process any of the internal functions.
-        let len_func_imports = u32::try_from(self.builder.imports.funcs.len())
-            .unwrap_or_else(|_| panic!("too many imported functions"));
-        let func_idx = FuncIdx::from(index + len_func_imports);
+        let func_idx = if self.builder.engine().config().get_rwasm_wrap_import_funcs() {
+            // We don't have to adjust the initial func reference because we replace
+            // imported functions with compiled func wrapper in rWASM
+            FuncIdx::from(index)
+        } else {
+            // We have to adjust the initial func reference to the first
+            // internal function before we process any of the internal functions.
+            let len_func_imports = u32::try_from(self.builder.imports.funcs.len())
+                .unwrap_or_else(|_| panic!("too many imported functions"));
+            FuncIdx::from(index + len_func_imports)
+        };
         (func_idx, compiled_func)
     }
 
@@ -502,18 +516,59 @@ impl<'engine> ModuleParser<'engine> {
     /// If the function body fails to validate.
     fn process_code_entry(&mut self, func_body: FunctionBody) -> Result<(), ModuleError> {
         let (func, compiled_func) = self.next_func();
+        let mut allocations = take(&mut self.allocations);
         let validator = self.validator.code_section_entry(&func_body)?;
         let module_resources = ModuleResources::new(&self.builder);
-        let allocations = take(&mut self.allocations);
-        let allocations = translate(
+        allocations = translate(
             func,
             compiled_func,
-            func_body,
+            func_body.clone(),
             validator.into_validator(allocations.validation),
             module_resources,
             allocations.translation,
         )?;
         let _ = replace(&mut self.allocations, allocations);
+        Ok(())
+    }
+
+    fn process_rwasm_entrypoint(
+        &mut self,
+    ) -> Result<(InstructionsBuilder, CompiledFunc), ModuleError> {
+        // we must register new compiled func for an entrypoint
+        let (func, compiled_func) = self.builder.push_entrypoint();
+        let allocations = take(&mut self.allocations);
+        // translate entrypoint
+        let mut func_allocations = RwasmTranslator::new(
+            func,
+            compiled_func,
+            ModuleResources::new(&self.builder),
+            allocations.translation,
+        )
+        .translate_entrypoint()?;
+        let instr_builder = take(&mut func_allocations.inst_builder);
+        let _ = replace(
+            &mut self.allocations,
+            ReusableAllocations {
+                translation: func_allocations,
+                validation: allocations.validation,
+            },
+        );
+        let has_entrypoint = self
+            .builder
+            .engine()
+            .config()
+            .get_rwasm_config()
+            .map(|rwasm_config| rwasm_config.entrypoint_name.is_some())
+            .unwrap_or_default();
+        if has_entrypoint {
+            self.builder.rewrite_exports("main".into(), func)?;
+        }
+        Ok((instr_builder, compiled_func))
+    }
+
+    fn rewrite_sections(&mut self) -> Result<(), ModuleError> {
+        self.builder.rewrite_tables()?;
+        self.builder.rewrite_memory()?;
         Ok(())
     }
 

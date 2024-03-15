@@ -1,4 +1,4 @@
-use crate::common::{
+use crate::core::{
     value::{LoadInto, StoreFrom},
     ArithmeticOps,
     ExtendInto,
@@ -14,7 +14,7 @@ use crate::common::{
     F64,
 };
 use core::{
-    fmt::{self, Display},
+    fmt::{self, Display, Formatter},
     ops::{Neg, Shl, Shr},
 };
 use paste::paste;
@@ -22,12 +22,19 @@ use paste::paste;
 /// An untyped value.
 ///
 /// Provides a dense and simple interface to all functional Wasm operations.
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct UntypedValue {
     /// This inner value is required to have enough bits to represent
     /// all fundamental WebAssembly types `i32`, `i64`, `f32` and `f64`.
     bits: u64,
+}
+
+impl Display for UntypedValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let name = format!("{:?}", self.bits);
+        write!(f, "{}", name)
+    }
 }
 
 impl UntypedValue {
@@ -1317,7 +1324,6 @@ impl UntypedValue {
 }
 
 /// Macro to help implement generic trait implementations for tuple types.
-#[macro_export]
 macro_rules! for_each_tuple {
     ($mac:ident) => {
         $mac!( 0 );
@@ -1507,22 +1513,22 @@ for_each_tuple!(impl_encode_untyped_slice);
 
 impl UntypedValue {
     pub fn as_u16(self) -> u16 {
-        self.to_bits() as u16
+        u16::from(self)
     }
 
     pub fn as_u32(self) -> u32 {
-        self.to_bits() as u32
+        u32::from(self)
     }
 
     pub fn as_i32(self) -> i32 {
-        self.to_bits() as i32
+        i32::from(self)
     }
 
     pub fn as_u64(self) -> u64 {
-        self.to_bits()
+        u64::from(self)
     }
 
     pub fn as_usize(self) -> usize {
-        self.to_bits() as usize
+        self.as_u64() as usize
     }
 }

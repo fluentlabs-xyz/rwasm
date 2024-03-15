@@ -1,7 +1,7 @@
 //! Data structures to represent the Wasm call stack during execution.
 
 use super::{err_stack_overflow, DEFAULT_MAX_RECURSION_DEPTH};
-use crate::{common::TrapCode, engine::code_map::InstructionPtr, Instance};
+use crate::{core::TrapCode, engine::code_map::InstructionPtr, Instance};
 use alloc::vec::Vec;
 
 /// A function frame of a function on the call stack.

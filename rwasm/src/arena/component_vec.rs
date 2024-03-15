@@ -152,7 +152,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use alloc::string::String;
     use super::*;
 
     /// Add `n` components and perform checks along the way.

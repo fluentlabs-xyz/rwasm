@@ -1,4 +1,4 @@
-use crate::common::{
+use crate::core::{
     nan_preserving_float::{F32, F64},
     TrapCode,
 };
@@ -820,7 +820,7 @@ impl_float!(F64, f64, i64);
 #[test]
 fn copysign_regression_works() {
     // This test has been directly extracted from a WebAssembly Specification assertion.
-    use crate::common::Float as _;
+    use Float as _;
     assert!(F32::from_bits(0xFFC00000).is_nan());
     assert_eq!(
         F32::from_bits(0xFFC00000)

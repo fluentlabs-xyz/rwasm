@@ -1,5 +1,5 @@
 use super::ReadError;
-use crate::engine::TranslationError;
+use crate::{engine::TranslationError, rwasm::RwasmBuilderError};
 use core::{
     fmt,
     fmt::{Debug, Display},
@@ -15,6 +15,8 @@ pub enum ModuleError {
     Parser(ParserError),
     /// Encountered when there is a Wasm to `wasmi` translation error.
     Translation(TranslationError),
+    /// Error that happens during rWASM build
+    Rwasm(RwasmBuilderError),
 }
 
 impl Display for ModuleError {
@@ -23,6 +25,7 @@ impl Display for ModuleError {
             ModuleError::Read(error) => Display::fmt(error, f),
             ModuleError::Parser(error) => Display::fmt(error, f),
             ModuleError::Translation(error) => Display::fmt(error, f),
+            ModuleError::Rwasm(error) => Display::fmt(error, f),
         }
     }
 }
@@ -42,5 +45,11 @@ impl From<ParserError> for ModuleError {
 impl From<TranslationError> for ModuleError {
     fn from(error: TranslationError) -> Self {
         Self::Translation(error)
+    }
+}
+
+impl From<RwasmBuilderError> for ModuleError {
+    fn from(error: RwasmBuilderError) -> Self {
+        Self::Rwasm(error)
     }
 }

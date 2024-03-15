@@ -1,15 +1,37 @@
 use super::{stack::StackLimits, DropKeep};
-use crate::common::UntypedValue;
+use crate::core::{ImportLinker, UntypedValue};
+use alloc::string::{String, ToString};
 use core::{mem::size_of, num::NonZeroU64};
 use wasmparser::WasmFeatures;
 
 /// The default amount of stacks kept in the cache at most.
 const DEFAULT_CACHED_STACKS: usize = 2;
 
+#[derive(Debug, Clone)]
+pub struct RwasmConfig {
+    /// Entrypoint that stores bytecode for module init
+    pub entrypoint_name: Option<String>,
+    /// Import linker that stores mapping from function to special identifiers
+    pub import_linker: Option<ImportLinker>,
+    /// Do we need to wrap input functions to convert them from ExternRef to FuncRef (we need it to
+    /// simplify tables sometimes)?
+    pub wrap_import_functions: bool,
+}
+
+impl Default for RwasmConfig {
+    fn default() -> Self {
+        Self {
+            entrypoint_name: Some("main".to_string()),
+            import_linker: None,
+            wrap_import_functions: false,
+        }
+    }
+}
+
 /// Configuration for an [`Engine`].
 ///
 /// [`Engine`]: [`crate::Engine`]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct Config {
     /// The limits set on the value stack and call stack.
     stack_limits: StackLimits,
@@ -39,6 +61,8 @@ pub struct Config {
     fuel_consumption_mode: FuelConsumptionMode,
     /// The configured fuel costs of all `wasmi` bytecode instructions.
     fuel_costs: FuelCosts,
+    /// Translate into rWASM compatible binary
+    rwasm_config: Option<RwasmConfig>,
 }
 
 /// The fuel consumption mode of the `wasmi` [`Engine`].
@@ -209,6 +233,7 @@ impl Default for Config {
             consume_fuel: false,
             fuel_costs: FuelCosts::default(),
             fuel_consumption_mode: FuelConsumptionMode::default(),
+            rwasm_config: None,
         }
     }
 }
@@ -255,7 +280,7 @@ impl Config {
     /// Enable or disable the [`sign-extension`] Wasm proposal for the [`Config`].
     ///
     /// # Note
-    ///memory_bytes_per_fuel
+    ///
     /// Enabled by default.
     ///
     /// [`sign-extension`]: https://github.com/WebAssembly/sign-extension-ops
@@ -401,6 +426,22 @@ impl Config {
     pub fn get_fuel_consumption_mode(&self) -> Option<FuelConsumptionMode> {
         self.get_consume_fuel()
             .then_some(self.fuel_consumption_mode)
+    }
+
+    pub fn rwasm_config(&mut self, rwasm_config: RwasmConfig) -> &mut Self {
+        self.rwasm_config = Some(rwasm_config);
+        self
+    }
+
+    pub fn get_rwasm_config(&self) -> Option<&RwasmConfig> {
+        self.rwasm_config.as_ref()
+    }
+
+    pub fn get_rwasm_wrap_import_funcs(&self) -> bool {
+        self.rwasm_config
+            .as_ref()
+            .map(|rwasm_config| rwasm_config.wrap_import_functions)
+            .unwrap_or_default()
     }
 
     /// Returns the [`WasmFeatures`] represented by the [`Config`].

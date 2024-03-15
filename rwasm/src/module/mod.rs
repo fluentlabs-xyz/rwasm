@@ -14,7 +14,7 @@ mod utils;
 
 pub use self::{
     builder::{ModuleBuilder, ModuleResources},
-    compile::{translate, BlockType},
+    compile::BlockType,
     data::{DataSegment, DataSegmentKind},
     element::{ElementSegment, ElementSegmentItems, ElementSegmentKind},
     error::ModuleError,
@@ -34,7 +34,7 @@ use self::{
     read::ReadError,
 };
 use crate::{
-    engine::{bytecode::Instruction, CompiledFunc, DedupFuncType},
+    engine::{CompiledFunc, DedupFuncType},
     Engine,
     Error,
     ExternType,
@@ -62,7 +62,6 @@ pub struct Module {
     pub compiled_funcs: Box<[CompiledFunc]>,
     pub element_segments: Box<[ElementSegment]>,
     pub data_segments: Box<[DataSegment]>,
-    pub is_rwasm: bool,
 }
 
 /// The index of the default Wasm linear memory.
@@ -141,7 +140,7 @@ impl Module {
     ///
     /// - If the `stream` cannot be decoded into a valid Wasm module.
     /// - If unsupported Wasm proposals are encountered.
-    pub fn new(engine: &Engine, stream: impl Read) -> Result<Self, Error> {
+    pub fn new(engine: &Engine, stream: &[u8]) -> Result<Self, Error> {
         parse(engine, stream).map_err(Into::into)
     }
 
@@ -151,7 +150,7 @@ impl Module {
     }
 
     /// Creates a new [`Module`] from the [`ModuleBuilder`].
-    pub fn from_builder(builder: ModuleBuilder) -> Self {
+    fn from_builder(builder: ModuleBuilder) -> Self {
         Self {
             engine: builder.engine().clone(),
             func_types: builder.func_types.into(),
@@ -166,13 +165,7 @@ impl Module {
             compiled_funcs: builder.compiled_funcs.into(),
             element_segments: builder.element_segments.into(),
             data_segments: builder.data_segments.into(),
-            is_rwasm: false,
         }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn set_rwasm(&mut self) {
-        self.is_rwasm = true;
     }
 
     /// Returns the number of non-imported functions of the [`Module`].
@@ -189,7 +182,7 @@ impl Module {
     }
     /// Returns the number of non-imported global variables of the [`Module`].
     pub(crate) fn len_globals(&self) -> usize {
-        self.memories.len()
+        self.globals.len()
     }
 
     /// Returns a slice to the function types of the [`Module`].
@@ -220,10 +213,16 @@ impl Module {
     /// [`Func`]: [`crate::Func`]
     pub(crate) fn internal_funcs(&self) -> InternalFuncsIter {
         let len_imported = self.imports.len_funcs;
-        // We skip the first `len_imported` elements in `funcs`
-        // since they refer to imported and not internally defined
-        // functions.
-        let funcs = &self.funcs[len_imported..];
+        let funcs = if self.engine.config().get_rwasm_wrap_import_funcs() {
+            // We don't skip the first `len_imported` elements in `funcs`
+            // since we store `Call` opcode wrappers in these indices
+            &self.funcs[..]
+        } else {
+            // We skip the first `len_imported` elements in `funcs`
+            // since they refer to imported and not internally defined
+            // functions.
+            &self.funcs[len_imported..]
+        };
         let compiled_funcs = &self.compiled_funcs[..];
         assert_eq!(funcs.len(), compiled_funcs.len());
         InternalFuncsIter {
@@ -282,14 +281,6 @@ impl Module {
         Some(ty)
     }
 
-    pub fn get_export_func_index(&self, name: &str) -> Option<FuncIdx> {
-        let idx = self.exports.get(name).copied()?;
-        match idx {
-            ExternIdx::Func(func_idx) => Some(func_idx),
-            _ => None,
-        }
-    }
-
     /// Returns the [`ExternType`] for a given [`ExternIdx`].
     ///
     /// # Note
@@ -315,24 +306,6 @@ impl Module {
                 ExternType::Global(global_type)
             }
         }
-    }
-
-    pub fn get_global_init(&self, idx: &ExternIdx) -> Option<Instruction> {
-        idx.into_global_idx().and_then(|idx| {
-            self.internal_globals().skip(idx as usize).next().and_then(
-                |(_global_type, global_expr)| {
-                    if let Some(value) = global_expr.eval_const() {
-                        Some(Instruction::I64Const(value.into()))
-                    } else if let Some(value) = global_expr.funcref() {
-                        Some(Instruction::RefFunc(value.into_u32().into()))
-                    } else if let Some(index) = global_expr.global() {
-                        Some(Instruction::GlobalGet(index.into_u32().into()))
-                    } else {
-                        None
-                    }
-                },
-            )
-        })
     }
 }
 
@@ -400,7 +373,7 @@ impl<'a> ExactSizeIterator for ModuleImportsIter<'a> {
 /// This type is primarily accessed from the [`Module::imports`] method.
 /// Each [`ImportType`] describes an import into the Wasm module with the `module/name`
 /// that it is imported from as well as the type of item that is being imported.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ImportType<'module> {
     /// The name of the imported item.
     name: &'module ImportName,

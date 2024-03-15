@@ -3,7 +3,10 @@ use super::{
     import::FuncTypeIdx,
     ConstExpr,
     DataSegment,
+    DataSegmentKind,
     ElementSegment,
+    ElementSegmentItems,
+    ElementSegmentKind,
     ExternTypeIdx,
     FuncIdx,
     Global,
@@ -13,10 +16,17 @@ use super::{
     Module,
 };
 use crate::{
-    common::ValueType,
+    core::{
+        ValueType,
+        N_MAX_DATA_SEGMENTS,
+        N_MAX_ELEM_SEGMENTS,
+        N_MAX_GLOBALS,
+        N_MAX_MEMORY_PAGES,
+        N_MAX_TABLES,
+        N_MAX_TABLE_ELEMENTS,
+    },
     engine::{CompiledFunc, DedupFuncType},
     errors::ModuleError,
-    module::{DataSegmentKind, ElementSegmentItems, ElementSegmentKind},
     Engine,
     FuncType,
     GlobalType,
@@ -24,7 +34,7 @@ use crate::{
     Mutability,
     TableType,
 };
-use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
 
 /// A builder for a WebAssembly [`Module`].
 #[derive(Debug)]
@@ -42,6 +52,7 @@ pub struct ModuleBuilder<'engine> {
     pub compiled_funcs: Vec<CompiledFunc>,
     pub element_segments: Vec<ElementSegment>,
     pub data_segments: Vec<DataSegment>,
+    pub import_mapping: BTreeMap<u32, FuncIdx>,
 }
 
 /// The import names of the [`Module`] imports.
@@ -63,12 +74,21 @@ impl ModuleImports {
     pub fn len_funcs(&self) -> usize {
         self.funcs.len()
     }
+
+    /// Returns the number of imported tables.
+    pub fn len_tables(&self) -> usize {
+        self.tables.len()
+    }
+    /// Returns the number of imported memories.
+    pub fn len_memories(&self) -> usize {
+        self.memories.len()
+    }
 }
 
 /// The resources of a [`Module`] required for translating function bodies.
 #[derive(Debug, Copy, Clone)]
 pub struct ModuleResources<'a> {
-    res: &'a ModuleBuilder<'a>,
+    pub(crate) res: &'a ModuleBuilder<'a>,
 }
 
 impl<'a> ModuleResources<'a> {
@@ -101,9 +121,24 @@ impl<'a> ModuleResources<'a> {
     ///
     /// Returns `None` if [`FuncIdx`] refers to an imported function.
     pub fn get_compiled_func(&self, func_idx: FuncIdx) -> Option<CompiledFunc> {
-        let index = func_idx.into_u32() as usize;
-        let len_imported = self.res.imports.len_funcs();
-        let index = index.checked_sub(len_imported)?;
+        let index = if let Some(rwasm_config) = self.engine().config().get_rwasm_config() {
+            if rwasm_config.wrap_import_functions {
+                // if we wrap import functions then just return index, there is no intersection
+                // between imports and compiled functions
+                func_idx.into_u32() as usize
+            } else {
+                let index =
+                    (func_idx.into_u32() as usize).checked_sub(self.res.imports.len_funcs())?;
+                // otherwise we must disallow accessing entrypoint
+                if index == self.res.compiled_funcs.len() - 1 {
+                    return None;
+                }
+                // return adjusted compiled func index
+                index
+            }
+        } else {
+            (func_idx.into_u32() as usize).checked_sub(self.res.imports.len_funcs())?
+        };
         // Note: It is a bug if this index access is out of bounds
         //       therefore we panic here instead of using `get`.
         Some(self.res.compiled_funcs[index])
@@ -142,6 +177,7 @@ impl<'engine> ModuleBuilder<'engine> {
             compiled_funcs: Vec::new(),
             element_segments: Vec::new(),
             data_segments: Vec::new(),
+            import_mapping: BTreeMap::new(),
         }
     }
 
@@ -175,6 +211,26 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
+    pub(crate) fn ensure_empty_func_type_exists(&mut self) -> FuncTypeIdx {
+        self.ensure_func_type_index(FuncType::new([], []))
+    }
+
+    pub(crate) fn ensure_func_type_index(&mut self, func_type: FuncType) -> FuncTypeIdx {
+        let found_type = self
+            .func_types
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (i, self.engine.resolve_func_type(t, |t| t.clone())))
+            .find(|(_, t)| *t == func_type);
+        if let Some(func_type) = found_type {
+            return FuncTypeIdx::from(func_type.0 as u32);
+        }
+        let empty_func_type = FuncType::new([], []);
+        self.func_types
+            .push(self.engine.alloc_func_type(empty_func_type.clone()));
+        return FuncTypeIdx::from(self.func_types.len() as u32 - 1);
+    }
+
     pub fn push_func_type(&mut self, func_type: FuncType) -> Result<(), ModuleError> {
         let dedup = self.engine.alloc_func_type(func_type);
         self.func_types.push(dedup);
@@ -202,6 +258,10 @@ impl<'engine> ModuleBuilder<'engine> {
                     self.imports.funcs.push(name);
                     let func_type = self.func_types[func_type_idx.into_u32() as usize];
                     self.funcs.push(func_type);
+                    // for rWASM we store special compiled wrapper, it's needed for tables
+                    if self.engine.config().get_rwasm_wrap_import_funcs() {
+                        self.compiled_funcs.push(self.engine.alloc_func());
+                    }
                 }
                 ExternTypeIdx::Table(table_type) => {
                     self.imports.tables.push(name);
@@ -218,6 +278,21 @@ impl<'engine> ModuleBuilder<'engine> {
             }
         }
         Ok(())
+    }
+
+    pub fn push_entrypoint(&mut self) -> (FuncIdx, CompiledFunc) {
+        // resolve empty func type of create if its missing
+        let func_type_index = self.ensure_empty_func_type_exists().into_u32() as usize;
+        let empty_func_type = self.func_types[func_type_index];
+        // push new func and compiled func for our entrypoint
+        self.funcs.push(empty_func_type);
+        self.compiled_funcs.push(self.engine.alloc_func());
+        // resolve compiled func
+        let index = self.compiled_funcs.len() - 1;
+        let compiled_func = self.compiled_funcs[index];
+        // resolve func index
+        let func_idx = FuncIdx::from(self.funcs.len() as u32 - 1);
+        (func_idx, compiled_func)
     }
 
     pub fn push_function_import(
@@ -308,14 +383,9 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
-    pub fn push_default_memory(
-        &mut self,
-        initial: u32,
-        maximum: Option<u32>,
-    ) -> Result<(), ModuleError> {
+    pub fn push_default_memory(&mut self, initial: u32, maximum: Option<u32>) {
         self.memories
             .push(MemoryType::new(initial, maximum).unwrap());
-        Ok(())
     }
 
     /// Pushes the given global variables to the [`Module`] under construction.
@@ -345,21 +415,64 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
-    pub fn push_empty_globals(&mut self, num_globals: usize) -> Result<(), ModuleError> {
+    pub fn push_rwasm_globals(&mut self) {
         let global_decl = GlobalType::new(ValueType::I64, Mutability::Var);
-        (0..num_globals).for_each(|_| {
+        (0..N_MAX_GLOBALS).for_each(|_| {
             self.globals.push(global_decl);
             self.globals_init.push(ConstExpr::zero());
         });
+    }
+
+    pub fn rewrite_memory(&mut self) -> Result<(), ModuleError> {
+        // rewrite memory section
+        let max_memory_pages = self
+            .memories
+            .get(0)
+            .and_then(|memory| memory.maximum_pages().map(|v| v.into_inner()))
+            .unwrap_or(N_MAX_MEMORY_PAGES);
+        self.memories.clear();
+        self.memories
+            .push(MemoryType::new(0, Some(max_memory_pages)).unwrap());
+        // calc one big passive data section
+        let mut data_section = Vec::with_capacity(0);
+        for data in self.data_segments.iter() {
+            data_section.extend(&*data.bytes);
+        }
+        // rewrite data section
+        self.data_segments.clear();
+        self.push_rwasm_data_segment(&data_section);
         Ok(())
     }
 
-    pub fn push_empty_tables(&mut self, num_tables: usize) -> Result<(), ModuleError> {
-        let global_decl = TableType::new(ValueType::FuncRef, 0, Some(1024));
+    pub fn rewrite_tables(&mut self) -> Result<(), ModuleError> {
+        // rewrite tables
+        let num_tables = self.tables.len();
+        self.tables.clear();
         (0..num_tables).for_each(|_| {
+            self.tables
+                .push(TableType::new(ValueType::FuncRef, 0, None))
+        });
+        // rewrite elements
+        let mut element_section = Vec::with_capacity(0);
+        for data in self.element_segments.iter() {
+            element_section.extend(data.items.exprs.iter().map(|v| {
+                if let Some(value) = v.eval_const() {
+                    value.as_u32()
+                } else {
+                    v.funcref().unwrap().into_u32()
+                }
+            }));
+        }
+        self.element_segments.clear();
+        self.push_rwasm_elem_segment(&element_section);
+        Ok(())
+    }
+
+    pub fn push_rwasm_tables(&mut self) {
+        let global_decl = TableType::new(ValueType::FuncRef, 0, Some(N_MAX_TABLE_ELEMENTS));
+        (0..N_MAX_TABLES).for_each(|_| {
             self.tables.push(global_decl);
         });
-        Ok(())
     }
 
     /// Pushes the given exports to the [`Module`] under construction.
@@ -383,12 +496,20 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
-    pub fn push_export<I>(&mut self, name: Box<str>, index: I) -> Result<(), ModuleError>
+    pub fn rewrite_exports<I>(&mut self, name: Box<str>, index: I) -> Result<(), ModuleError>
+    where
+        I: Into<ExternIdx>,
+    {
+        self.exports.clear();
+        self.exports.insert(name, index.into());
+        Ok(())
+    }
+
+    pub fn push_export<I>(&mut self, name: Box<str>, index: I)
     where
         I: Into<ExternIdx>,
     {
         self.exports.insert(name, index.into());
-        Ok(())
     }
 
     /// Sets the start function of the [`Module`] to the given index.
@@ -449,18 +570,38 @@ impl<'engine> ModuleBuilder<'engine> {
         Ok(())
     }
 
-    pub fn push_passive_data_segment(&mut self) {
+    pub fn push_rwasm_data_segment(&mut self, bytes: &[u8]) {
         self.data_segments.push(DataSegment {
             kind: DataSegmentKind::Passive,
-            bytes: Arc::new([]),
+            bytes: bytes.into(),
+        });
+        // fill max possible data segments (save some random byte, we use it as an indicator that
+        // means data is not dropped)
+        (0..N_MAX_DATA_SEGMENTS).for_each(|_| {
+            self.data_segments.push(DataSegment {
+                kind: DataSegmentKind::Passive,
+                bytes: [0x1].into(),
+            });
         });
     }
 
-    pub fn push_passive_elem_segment(&mut self) {
+    pub fn push_rwasm_elem_segment(&mut self, bytes: &[u32]) {
+        let items = ElementSegmentItems {
+            exprs: bytes.iter().map(|v| ConstExpr::new_funcref(*v)).collect(),
+        };
         self.element_segments.push(ElementSegment {
             kind: ElementSegmentKind::Passive,
             ty: ValueType::FuncRef,
-            items: ElementSegmentItems::default(),
+            items,
+        });
+        // fill max possible data segments (save some random byte, we use it as an indicator that
+        // means data is not dropped)
+        (0..N_MAX_ELEM_SEGMENTS).for_each(|_| {
+            self.element_segments.push(ElementSegment {
+                kind: ElementSegmentKind::Passive,
+                ty: ValueType::FuncRef,
+                items: ElementSegmentItems { exprs: [].into() },
+            });
         });
     }
 

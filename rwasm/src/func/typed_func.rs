@@ -1,6 +1,6 @@
 use super::{into_func::WasmTypeList, Func};
 use crate::{
-    common::{Trap, UntypedValue},
+    core::{Trap, UntypedValue},
     engine::{CallParams, CallResults},
     AsContext,
     AsContextMut,

@@ -1,5 +1,4 @@
 use rwasm::Error as WasmiError;
-use rwasm_codegen::CompilerError;
 use std::{error::Error, fmt, fmt::Display};
 
 /// Errors that may occur upon Wasm spec test suite execution.
@@ -18,8 +17,6 @@ pub enum TestError {
         module_name: Option<String>,
         global_name: String,
     },
-    Compiler(CompilerError),
-    MainFunctionNotFound,
 }
 
 impl Error for TestError {}
@@ -49,12 +46,6 @@ impl Display for TestError {
                 )
             }
             Self::Wasmi(wasmi_error) => Display::fmt(wasmi_error, f),
-            Self::Compiler(_) => {
-                write!(f, "compiler error")
-            }
-            Self::MainFunctionNotFound => {
-                write!(f, "main funciton not found")
-            }
         }
     }
 }

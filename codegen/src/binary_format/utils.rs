@@ -4,7 +4,7 @@ use crate::binary_format::{
     BinaryFormatError,
 };
 use rwasm::{
-    common::UntypedValue,
+    core::UntypedValue,
     engine::{
         bytecode::{
             AddressOffset,
@@ -19,13 +19,17 @@ use rwasm::{
             SignatureIdx,
             TableIdx,
         },
+        const_pool::ConstRef,
         CompiledFunc,
-        ConstRef,
     },
 };
 
 impl<'a> BinaryFormat<'a> for UntypedValue {
     type SelfType = UntypedValue;
+
+    fn encoded_length(&self) -> usize {
+        8
+    }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
         self.to_bits().write_binary(sink)
@@ -40,6 +44,10 @@ macro_rules! impl_default_idx {
     ($name:ident, $to_method:ident, $nested_type:ident) => {
         impl<'a> BinaryFormat<'a> for $name {
             type SelfType = $name;
+
+            fn encoded_length(&self) -> usize {
+                core::mem::size_of::<$nested_type>()
+            }
 
             fn write_binary(
                 &self,

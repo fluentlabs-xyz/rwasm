@@ -121,16 +121,16 @@ impl ExternIdx {
         }
     }
 
-    pub fn into_func_idx(self) -> Option<u32> {
+    pub fn into_func_idx(self) -> Option<FuncIdx> {
         match self {
-            ExternIdx::Func(idx) => Some(idx.into_u32()),
+            ExternIdx::Func(idx) => Some(idx),
             _ => None,
         }
     }
 
-    pub fn into_global_idx(self) -> Option<u32> {
+    pub fn into_global_idx(self) -> Option<GlobalIdx> {
         match self {
-            ExternIdx::Global(idx) => Some(idx.into_u32()),
+            ExternIdx::Global(idx) => Some(idx),
             _ => None,
         }
     }

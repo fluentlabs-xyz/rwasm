@@ -15,7 +15,11 @@
     clippy::map_unwrap_or,
     clippy::items_after_statements
 )]
-#[allow(dead_code)]
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std as alloc;
+
 mod component_vec;
 mod dedup;
 mod guarded;

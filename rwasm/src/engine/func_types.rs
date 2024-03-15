@@ -125,4 +125,8 @@ impl FuncTypeRegistry {
             .get(entity_index)
             .unwrap_or_else(|| panic!("failed to resolve stored function type: {entity_index:?}"))
     }
+
+    pub(crate) fn resolve_func_signature(&self, func_type: &DedupFuncType) -> DedupFuncTypeIdx {
+        self.unwrap_index(func_type.into_inner())
+    }
 }

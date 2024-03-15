@@ -3,9 +3,9 @@ use crate::binary_format::{
     BinaryFormat,
     BinaryFormatError,
 };
-use alloc::vec::Vec;
 use rwasm::{
-    common::UntypedValue,
+    arena::ArenaIndex,
+    core::UntypedValue,
     engine::{
         bytecode::{
             AddressOffset,
@@ -21,7 +21,7 @@ use rwasm::{
             SignatureIdx,
             TableIdx,
         },
-        ConstRef,
+        CompiledFunc,
         DropKeep,
     },
 };
@@ -33,87 +33,116 @@ pub const INSTRUCTION_SIZE_BYTES: usize = INSTRUCTION_OPCODE_BYTES + INSTRUCTION
 impl<'a> BinaryFormat<'a> for Instruction {
     type SelfType = Instruction;
 
+    fn encoded_length(&self) -> usize {
+        INSTRUCTION_SIZE_BYTES
+    }
+
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
         let mut n = match self {
             // local Instruction family
-            Instruction::LocalGet(index) => sink.write_u8(0x01)? + index.write_binary(sink)?,
-            Instruction::LocalSet(index) => sink.write_u8(0x02)? + index.write_binary(sink)?,
-            Instruction::LocalTee(index) => sink.write_u8(0x03)? + index.write_binary(sink)?,
+            Instruction::LocalGet(index) => sink.write_u8(0x00)? + index.write_binary(sink)?,
+            Instruction::LocalSet(index) => sink.write_u8(0x01)? + index.write_binary(sink)?,
+            Instruction::LocalTee(index) => sink.write_u8(0x02)? + index.write_binary(sink)?,
             // control flow Instruction family
             Instruction::Br(branch_params) => {
+                sink.write_u8(0x03)? + branch_params.write_binary(sink)?
+            }
+            Instruction::BrIfEqz(branch_params) => {
                 sink.write_u8(0x04)? + branch_params.write_binary(sink)?
             }
-            Instruction::BrIndirect(offset) => sink.write_u8(0x05)? + offset.write_binary(sink)?,
-            Instruction::BrIfEqz(branch_params) => {
+            Instruction::BrIfNez(branch_params) => {
+                sink.write_u8(0x05)? + branch_params.write_binary(sink)?
+            }
+            Instruction::BrAdjust(branch_params) => {
                 sink.write_u8(0x06)? + branch_params.write_binary(sink)?
             }
-            Instruction::BrIfNez(branch_params) => {
+            Instruction::BrAdjustIfNez(branch_params) => {
                 sink.write_u8(0x07)? + branch_params.write_binary(sink)?
             }
             Instruction::BrTable(targets) => sink.write_u8(0x08)? + targets.write_binary(sink)?,
             Instruction::Unreachable => sink.write_u8(0x09)?,
             Instruction::ConsumeFuel(u) => sink.write_u8(0x0a)? + u.write_binary(sink)?,
-            Instruction::Return(_) => sink.write_u8(0x0b)?,
-            Instruction::ReturnIfNez(_) => sink.write_u8(0x0c)?,
-            Instruction::Call(jump_dest) => sink.write_u8(0x0d)? + jump_dest.write_binary(sink)?,
-            Instruction::Drop => sink.write_u8(0x0e)?,
-            Instruction::Select => sink.write_u8(0x0f)?,
+            Instruction::Return(drop_keep) => {
+                sink.write_u8(0x0b)? + drop_keep.write_binary(sink)?
+            }
+            Instruction::ReturnIfNez(drop_keep) => {
+                sink.write_u8(0x0c)? + drop_keep.write_binary(sink)?
+            }
+            Instruction::ReturnCallInternal(drop_keep) => {
+                sink.write_u8(0x0d)? + drop_keep.write_binary(sink)?
+            }
+            Instruction::ReturnCall(drop_keep) => {
+                sink.write_u8(0x0e)? + drop_keep.write_binary(sink)?
+            }
+            Instruction::ReturnCallIndirect(drop_keep) => {
+                sink.write_u8(0x0f)? + drop_keep.write_binary(sink)?
+            }
+            Instruction::CallInternal(compiled_func) => {
+                sink.write_u8(0x10)? + compiled_func.write_binary(sink)?
+            }
+            Instruction::Call(func_idx) => sink.write_u8(0x11)? + func_idx.write_binary(sink)?,
+            Instruction::CallIndirect(sig_idx) => {
+                sink.write_u8(0x12)? + sig_idx.write_binary(sink)?
+            }
+            Instruction::SignatureCheck(sig_idx) => {
+                sink.write_u8(0x13)? + sig_idx.write_binary(sink)?
+            }
+            Instruction::Drop => sink.write_u8(0x14)?,
+            Instruction::Select => sink.write_u8(0x15)?,
             // global Instruction family
-            Instruction::GlobalGet(index) => sink.write_u8(0x10)? + index.write_binary(sink)?,
-            Instruction::GlobalSet(index) => sink.write_u8(0x11)? + index.write_binary(sink)?,
+            Instruction::GlobalGet(index) => sink.write_u8(0x16)? + index.write_binary(sink)?,
+            Instruction::GlobalSet(index) => sink.write_u8(0x17)? + index.write_binary(sink)?,
             // memory Instruction family
-            Instruction::I32Load(offset) => sink.write_u8(0x12)? + offset.write_binary(sink)?,
-            Instruction::I64Load(offset) => sink.write_u8(0x13)? + offset.write_binary(sink)?,
-            Instruction::F32Load(offset) => sink.write_u8(0x14)? + offset.write_binary(sink)?,
-            Instruction::F64Load(offset) => sink.write_u8(0x15)? + offset.write_binary(sink)?,
-            Instruction::I32Load8S(offset) => sink.write_u8(0x16)? + offset.write_binary(sink)?,
-            Instruction::I32Load8U(offset) => sink.write_u8(0x17)? + offset.write_binary(sink)?,
-            Instruction::I32Load16S(offset) => sink.write_u8(0x18)? + offset.write_binary(sink)?,
-            Instruction::I32Load16U(offset) => sink.write_u8(0x19)? + offset.write_binary(sink)?,
-            Instruction::I64Load8S(offset) => sink.write_u8(0x1a)? + offset.write_binary(sink)?,
-            Instruction::I64Load8U(offset) => sink.write_u8(0x1b)? + offset.write_binary(sink)?,
-            Instruction::I64Load16S(offset) => sink.write_u8(0x1c)? + offset.write_binary(sink)?,
-            Instruction::I64Load16U(offset) => sink.write_u8(0x1d)? + offset.write_binary(sink)?,
-            Instruction::I64Load32S(offset) => sink.write_u8(0x1e)? + offset.write_binary(sink)?,
-            Instruction::I64Load32U(offset) => sink.write_u8(0x1f)? + offset.write_binary(sink)?,
-            Instruction::I32Store(offset) => sink.write_u8(0x20)? + offset.write_binary(sink)?,
-            Instruction::I64Store(offset) => sink.write_u8(0x21)? + offset.write_binary(sink)?,
-            Instruction::F32Store(offset) => sink.write_u8(0x22)? + offset.write_binary(sink)?,
-            Instruction::F64Store(offset) => sink.write_u8(0x23)? + offset.write_binary(sink)?,
-            Instruction::I32Store8(offset) => sink.write_u8(0x24)? + offset.write_binary(sink)?,
-            Instruction::I32Store16(offset) => sink.write_u8(0x25)? + offset.write_binary(sink)?,
-            Instruction::I64Store8(offset) => sink.write_u8(0x26)? + offset.write_binary(sink)?,
-            Instruction::I64Store16(offset) => sink.write_u8(0x27)? + offset.write_binary(sink)?,
-            Instruction::I64Store32(offset) => sink.write_u8(0x28)? + offset.write_binary(sink)?,
+            Instruction::I32Load(offset) => sink.write_u8(0x18)? + offset.write_binary(sink)?,
+            Instruction::I64Load(offset) => sink.write_u8(0x19)? + offset.write_binary(sink)?,
+            Instruction::F32Load(offset) => sink.write_u8(0x1a)? + offset.write_binary(sink)?,
+            Instruction::F64Load(offset) => sink.write_u8(0x1b)? + offset.write_binary(sink)?,
+            Instruction::I32Load8S(offset) => sink.write_u8(0x1c)? + offset.write_binary(sink)?,
+            Instruction::I32Load8U(offset) => sink.write_u8(0x1d)? + offset.write_binary(sink)?,
+            Instruction::I32Load16S(offset) => sink.write_u8(0x1e)? + offset.write_binary(sink)?,
+            Instruction::I32Load16U(offset) => sink.write_u8(0x1f)? + offset.write_binary(sink)?,
+            Instruction::I64Load8S(offset) => sink.write_u8(0x20)? + offset.write_binary(sink)?,
+            Instruction::I64Load8U(offset) => sink.write_u8(0x21)? + offset.write_binary(sink)?,
+            Instruction::I64Load16S(offset) => sink.write_u8(0x22)? + offset.write_binary(sink)?,
+            Instruction::I64Load16U(offset) => sink.write_u8(0x23)? + offset.write_binary(sink)?,
+            Instruction::I64Load32S(offset) => sink.write_u8(0x24)? + offset.write_binary(sink)?,
+            Instruction::I64Load32U(offset) => sink.write_u8(0x25)? + offset.write_binary(sink)?,
+            Instruction::I32Store(offset) => sink.write_u8(0x26)? + offset.write_binary(sink)?,
+            Instruction::I64Store(offset) => sink.write_u8(0x27)? + offset.write_binary(sink)?,
+            Instruction::F32Store(offset) => sink.write_u8(0x28)? + offset.write_binary(sink)?,
+            Instruction::F64Store(offset) => sink.write_u8(0x29)? + offset.write_binary(sink)?,
+            Instruction::I32Store8(offset) => sink.write_u8(0x2a)? + offset.write_binary(sink)?,
+            Instruction::I32Store16(offset) => sink.write_u8(0x2b)? + offset.write_binary(sink)?,
+            Instruction::I64Store8(offset) => sink.write_u8(0x2c)? + offset.write_binary(sink)?,
+            Instruction::I64Store16(offset) => sink.write_u8(0x2d)? + offset.write_binary(sink)?,
+            Instruction::I64Store32(offset) => sink.write_u8(0x2e)? + offset.write_binary(sink)?,
             // memory data Instruction family (?)
-            Instruction::MemorySize => sink.write_u8(0x29)?,
-            Instruction::MemoryGrow => sink.write_u8(0x2a)?,
-            Instruction::MemoryFill => sink.write_u8(0x2b)?,
-            Instruction::MemoryCopy => sink.write_u8(0x2c)?,
-            Instruction::MemoryInit(index) => sink.write_u8(0x2d)? + index.write_binary(sink)?,
-            Instruction::DataStore8(index) => sink.write_u8(0x2e)? + index.write_binary(sink)?,
-            Instruction::DataStore16(index) => sink.write_u8(0x2f)? + index.write_binary(sink)?,
-            Instruction::DataStore32(index) => sink.write_u8(0x30)? + index.write_binary(sink)?,
-            Instruction::DataStore64(index) => sink.write_u8(0x31)? + index.write_binary(sink)?,
-            Instruction::DataDrop(index) => sink.write_u8(0x32)? + index.write_binary(sink)?,
-            Instruction::TableSize(index) => sink.write_u8(0x33)? + index.write_binary(sink)?,
-            Instruction::TableGrow(index) => sink.write_u8(0x34)? + index.write_binary(sink)?,
-            Instruction::TableFill(index) => sink.write_u8(0x35)? + index.write_binary(sink)?,
-            Instruction::TableGet(index) => sink.write_u8(0x36)? + index.write_binary(sink)?,
-            Instruction::TableSet(index) => sink.write_u8(0x37)? + index.write_binary(sink)?,
-            Instruction::TableCopy(idx) => sink.write_u8(0x38)? + idx.write_binary(sink)?,
-            Instruction::TableInit(idx) => sink.write_u8(0x39)? + idx.write_binary(sink)?,
-            Instruction::ElemStore(idx) => sink.write_u8(0x3a)? + idx.write_binary(sink)?,
-            Instruction::ElemDrop(idx) => sink.write_u8(0x3b)? + idx.write_binary(sink)?,
-            Instruction::RefFunc(idx) => sink.write_u8(0x3c)? + idx.write_binary(sink)?,
+            Instruction::MemorySize => sink.write_u8(0x2f)?,
+            Instruction::MemoryGrow => sink.write_u8(0x30)?,
+            Instruction::MemoryFill => sink.write_u8(0x31)?,
+            Instruction::MemoryCopy => sink.write_u8(0x32)?,
+            Instruction::MemoryInit(index) => sink.write_u8(0x33)? + index.write_binary(sink)?,
+            Instruction::DataDrop(index) => sink.write_u8(0x34)? + index.write_binary(sink)?,
+            Instruction::TableSize(index) => sink.write_u8(0x35)? + index.write_binary(sink)?,
+            Instruction::TableGrow(index) => sink.write_u8(0x36)? + index.write_binary(sink)?,
+            Instruction::TableFill(index) => sink.write_u8(0x37)? + index.write_binary(sink)?,
+            Instruction::TableGet(index) => sink.write_u8(0x38)? + index.write_binary(sink)?,
+            Instruction::TableSet(index) => sink.write_u8(0x39)? + index.write_binary(sink)?,
+            Instruction::TableCopy(idx) => sink.write_u8(0x3a)? + idx.write_binary(sink)?,
+            Instruction::TableInit(idx) => sink.write_u8(0x3b)? + idx.write_binary(sink)?,
+            Instruction::ElemDrop(idx) => sink.write_u8(0x3c)? + idx.write_binary(sink)?,
+            Instruction::RefFunc(idx) => sink.write_u8(0x3d)? + idx.write_binary(sink)?,
             // i32/i64 Instruction family
-            Instruction::I32Const(untyped_value) => {
-                sink.write_u8(0x3d)? + untyped_value.write_binary(sink)?
+            Instruction::I32Const(const_ref) => {
+                sink.write_u8(0x3e)? + const_ref.write_binary(sink)?
             }
-            Instruction::I64Const(untyped_value) => {
-                sink.write_u8(0x3e)? + untyped_value.write_binary(sink)?
+            Instruction::I64Const(const_ref) => {
+                sink.write_u8(0x3f)? + const_ref.write_binary(sink)?
             }
-            Instruction::ConstRef(const_ref) => {
+            Instruction::F32Const(const_ref) => {
+                sink.write_u8(0x40)? + const_ref.write_binary(sink)?
+            }
+            Instruction::F64Const(const_ref) => {
                 sink.write_u8(0x41)? + const_ref.write_binary(sink)?
             }
             Instruction::I32Eqz => sink.write_u8(0x42)?,
@@ -248,17 +277,13 @@ impl<'a> BinaryFormat<'a> for Instruction {
             Instruction::I64TruncSatF32U => sink.write_u8(0xc3)?,
             Instruction::I64TruncSatF64S => sink.write_u8(0xc4)?,
             Instruction::I64TruncSatF64U => sink.write_u8(0xc5)?,
-            Instruction::TypeCheck(sig_idx) => sink.write_u8(0xc6)? + sig_idx.write_binary(sink)?,
-            Instruction::MagicPrefix(version) => {
-                sink.write_u8(0xef)? + version.write_binary(sink)?
-            }
             _ => unreachable!("not supported opcode: {:?}", self),
         };
         // we align all opcodes to 9 bytes
         if n == 1 {
-            n += sink.write_u64_be(0)?;
+            n += sink.write_u64_le(0)?;
         }
-        debug_assert_eq!(n, INSTRUCTION_SIZE_BYTES);
+        debug_assert_eq!(n, INSTRUCTION_SIZE_BYTES,);
         Ok(n)
     }
 
@@ -267,74 +292,77 @@ impl<'a> BinaryFormat<'a> for Instruction {
         let byte = sink.read_u8()?;
         let instr = match byte {
             // local Instruction family
-            0x01 => Instruction::LocalGet(LocalDepth::read_binary(sink)?),
-            0x02 => Instruction::LocalSet(LocalDepth::read_binary(sink)?),
-            0x03 => Instruction::LocalTee(LocalDepth::read_binary(sink)?),
+            0x00 => Instruction::LocalGet(LocalDepth::read_binary(sink)?),
+            0x01 => Instruction::LocalSet(LocalDepth::read_binary(sink)?),
+            0x02 => Instruction::LocalTee(LocalDepth::read_binary(sink)?),
             // control flow Instruction family
-            0x04 => Instruction::Br(BranchOffset::read_binary(sink)?),
-            0x05 => Instruction::BrIndirect(BranchOffset::read_binary(sink)?),
-            0x06 => Instruction::BrIfEqz(BranchOffset::read_binary(sink)?),
-            0x07 => Instruction::BrIfNez(BranchOffset::read_binary(sink)?),
+            0x03 => Instruction::Br(BranchOffset::read_binary(sink)?),
+            0x04 => Instruction::BrIfEqz(BranchOffset::read_binary(sink)?),
+            0x05 => Instruction::BrIfNez(BranchOffset::read_binary(sink)?),
+            0x06 => Instruction::BrAdjust(BranchOffset::read_binary(sink)?),
+            0x07 => Instruction::BrAdjustIfNez(BranchOffset::read_binary(sink)?),
             0x08 => Instruction::BrTable(BranchTableTargets::read_binary(sink)?),
             0x09 => Instruction::Unreachable,
             0x0a => Instruction::ConsumeFuel(BlockFuel::read_binary(sink)?),
-            0x0b => Instruction::Return(DropKeep::none()),
-            0x0c => Instruction::ReturnIfNez(DropKeep::none()),
-            0x0d => Instruction::Call(FuncIdx::read_binary(sink)?),
-            0x0e => Instruction::Drop,
-            0x0f => Instruction::Select,
+            0x0b => Instruction::Return(DropKeep::read_binary(sink)?),
+            0x0c => Instruction::ReturnIfNez(DropKeep::read_binary(sink)?),
+            0x0d => Instruction::ReturnCallInternal(CompiledFunc::read_binary(sink)?),
+            0x0e => Instruction::ReturnCall(FuncIdx::read_binary(sink)?),
+            0x0f => Instruction::ReturnCallIndirect(SignatureIdx::read_binary(sink)?),
+            0x10 => Instruction::CallInternal(CompiledFunc::read_binary(sink)?),
+            0x11 => Instruction::Call(FuncIdx::read_binary(sink)?),
+            0x12 => Instruction::CallIndirect(SignatureIdx::read_binary(sink)?),
+            0x13 => Instruction::SignatureCheck(SignatureIdx::read_binary(sink)?),
+            0x14 => Instruction::Drop,
+            0x15 => Instruction::Select,
             // global Instruction family
-            0x10 => Instruction::GlobalGet(GlobalIdx::read_binary(sink)?),
-            0x11 => Instruction::GlobalSet(GlobalIdx::read_binary(sink)?),
+            0x16 => Instruction::GlobalGet(GlobalIdx::read_binary(sink)?),
+            0x17 => Instruction::GlobalSet(GlobalIdx::read_binary(sink)?),
             // memory Instruction family
-            0x12 => Instruction::I32Load(AddressOffset::read_binary(sink)?),
-            0x13 => Instruction::I64Load(AddressOffset::read_binary(sink)?),
-            0x14 => Instruction::F32Load(AddressOffset::read_binary(sink)?),
-            0x15 => Instruction::F64Load(AddressOffset::read_binary(sink)?),
-            0x16 => Instruction::I32Load8S(AddressOffset::read_binary(sink)?),
-            0x17 => Instruction::I32Load8U(AddressOffset::read_binary(sink)?),
-            0x18 => Instruction::I32Load16S(AddressOffset::read_binary(sink)?),
-            0x19 => Instruction::I32Load16U(AddressOffset::read_binary(sink)?),
-            0x1a => Instruction::I64Load8S(AddressOffset::read_binary(sink)?),
-            0x1b => Instruction::I64Load8U(AddressOffset::read_binary(sink)?),
-            0x1c => Instruction::I64Load16S(AddressOffset::read_binary(sink)?),
-            0x1d => Instruction::I64Load16U(AddressOffset::read_binary(sink)?),
-            0x1e => Instruction::I64Load32S(AddressOffset::read_binary(sink)?),
-            0x1f => Instruction::I64Load32U(AddressOffset::read_binary(sink)?),
-            0x20 => Instruction::I32Store(AddressOffset::read_binary(sink)?),
-            0x21 => Instruction::I64Store(AddressOffset::read_binary(sink)?),
-            0x22 => Instruction::F32Store(AddressOffset::read_binary(sink)?),
-            0x23 => Instruction::F64Store(AddressOffset::read_binary(sink)?),
-            0x24 => Instruction::I32Store8(AddressOffset::read_binary(sink)?),
-            0x25 => Instruction::I32Store16(AddressOffset::read_binary(sink)?),
-            0x26 => Instruction::I64Store8(AddressOffset::read_binary(sink)?),
-            0x27 => Instruction::I64Store16(AddressOffset::read_binary(sink)?),
-            0x28 => Instruction::I64Store32(AddressOffset::read_binary(sink)?),
+            0x18 => Instruction::I32Load(AddressOffset::read_binary(sink)?),
+            0x19 => Instruction::I64Load(AddressOffset::read_binary(sink)?),
+            0x1a => Instruction::F32Load(AddressOffset::read_binary(sink)?),
+            0x1b => Instruction::F64Load(AddressOffset::read_binary(sink)?),
+            0x1c => Instruction::I32Load8S(AddressOffset::read_binary(sink)?),
+            0x1d => Instruction::I32Load8U(AddressOffset::read_binary(sink)?),
+            0x1e => Instruction::I32Load16S(AddressOffset::read_binary(sink)?),
+            0x1f => Instruction::I32Load16U(AddressOffset::read_binary(sink)?),
+            0x20 => Instruction::I64Load8S(AddressOffset::read_binary(sink)?),
+            0x21 => Instruction::I64Load8U(AddressOffset::read_binary(sink)?),
+            0x22 => Instruction::I64Load16S(AddressOffset::read_binary(sink)?),
+            0x23 => Instruction::I64Load16U(AddressOffset::read_binary(sink)?),
+            0x24 => Instruction::I64Load32S(AddressOffset::read_binary(sink)?),
+            0x25 => Instruction::I64Load32U(AddressOffset::read_binary(sink)?),
+            0x26 => Instruction::I32Store(AddressOffset::read_binary(sink)?),
+            0x27 => Instruction::I64Store(AddressOffset::read_binary(sink)?),
+            0x28 => Instruction::F32Store(AddressOffset::read_binary(sink)?),
+            0x29 => Instruction::F64Store(AddressOffset::read_binary(sink)?),
+            0x2a => Instruction::I32Store8(AddressOffset::read_binary(sink)?),
+            0x2b => Instruction::I32Store16(AddressOffset::read_binary(sink)?),
+            0x2c => Instruction::I64Store8(AddressOffset::read_binary(sink)?),
+            0x2d => Instruction::I64Store16(AddressOffset::read_binary(sink)?),
+            0x2e => Instruction::I64Store32(AddressOffset::read_binary(sink)?),
             // memory data Instruction family (?)
-            0x29 => Instruction::MemorySize,
-            0x2a => Instruction::MemoryGrow,
-            0x2b => Instruction::MemoryFill,
-            0x2c => Instruction::MemoryCopy,
-            0x2d => Instruction::MemoryInit(DataSegmentIdx::read_binary(sink)?),
-            0x2e => Instruction::DataStore8(DataSegmentIdx::read_binary(sink)?),
-            0x2f => Instruction::DataStore16(DataSegmentIdx::read_binary(sink)?),
-            0x30 => Instruction::DataStore32(DataSegmentIdx::read_binary(sink)?),
-            0x31 => Instruction::DataStore64(DataSegmentIdx::read_binary(sink)?),
-            0x32 => Instruction::DataDrop(DataSegmentIdx::read_binary(sink)?),
-            0x33 => Instruction::TableSize(TableIdx::read_binary(sink)?),
-            0x34 => Instruction::TableGrow(TableIdx::read_binary(sink)?),
-            0x35 => Instruction::TableFill(TableIdx::read_binary(sink)?),
-            0x36 => Instruction::TableGet(TableIdx::read_binary(sink)?),
-            0x37 => Instruction::TableSet(TableIdx::read_binary(sink)?),
-            0x38 => Instruction::TableCopy(TableIdx::read_binary(sink)?),
-            0x39 => Instruction::TableInit(ElementSegmentIdx::read_binary(sink)?),
-            0x3a => Instruction::ElemStore(ElementSegmentIdx::read_binary(sink)?),
-            0x3b => Instruction::ElemDrop(ElementSegmentIdx::read_binary(sink)?),
-            0x3c => Instruction::RefFunc(FuncIdx::read_binary(sink)?),
+            0x2f => Instruction::MemorySize,
+            0x30 => Instruction::MemoryGrow,
+            0x31 => Instruction::MemoryFill,
+            0x32 => Instruction::MemoryCopy,
+            0x33 => Instruction::MemoryInit(DataSegmentIdx::read_binary(sink)?),
+            0x34 => Instruction::DataDrop(DataSegmentIdx::read_binary(sink)?),
+            0x35 => Instruction::TableSize(TableIdx::read_binary(sink)?),
+            0x36 => Instruction::TableGrow(TableIdx::read_binary(sink)?),
+            0x37 => Instruction::TableFill(TableIdx::read_binary(sink)?),
+            0x38 => Instruction::TableGet(TableIdx::read_binary(sink)?),
+            0x39 => Instruction::TableSet(TableIdx::read_binary(sink)?),
+            0x3a => Instruction::TableCopy(TableIdx::read_binary(sink)?),
+            0x3b => Instruction::TableInit(ElementSegmentIdx::read_binary(sink)?),
+            0x3c => Instruction::ElemDrop(ElementSegmentIdx::read_binary(sink)?),
+            0x3d => Instruction::RefFunc(FuncIdx::read_binary(sink)?),
             // i32/i64 Instruction family
-            0x3d => Instruction::I32Const(UntypedValue::read_binary(sink)?),
-            0x3e => Instruction::I64Const(UntypedValue::read_binary(sink)?),
-            0x41 => Instruction::ConstRef(ConstRef::read_binary(sink)?),
+            0x3e => Instruction::I32Const(UntypedValue::read_binary(sink)?),
+            0x3f => Instruction::I64Const(UntypedValue::read_binary(sink)?),
+            0x40 => Instruction::F32Const(UntypedValue::read_binary(sink)?),
+            0x41 => Instruction::F64Const(UntypedValue::read_binary(sink)?),
             0x42 => Instruction::I32Eqz,
             0x43 => Instruction::I32Eq,
             0x44 => Instruction::I32Ne,
@@ -467,15 +495,12 @@ impl<'a> BinaryFormat<'a> for Instruction {
             0xc3 => Instruction::I64TruncSatF32U,
             0xc4 => Instruction::I64TruncSatF64S,
             0xc5 => Instruction::I64TruncSatF64U,
-            0xc6 => Instruction::TypeCheck(SignatureIdx::read_binary(sink)?),
-            // this opcode must always be 0xEF
-            0xef => Instruction::MagicPrefix(UntypedValue::read_binary(sink)?),
 
             _ => return Err(BinaryFormatError::IllegalOpcode(byte)),
         };
         // we align all opcodes to 9 bytes
         if sink.pos() - current_pos == 1 {
-            sink.read_u64_be()?;
+            sink.read_u64_le()?;
         }
         Ok(instr)
     }
@@ -492,16 +517,16 @@ impl InstructionExtra for Instruction {
         let value: UntypedValue = match self {
             Instruction::LocalGet(val)
             | Instruction::LocalSet(val)
-            | Instruction::LocalTee(val) => val.to_usize().into(),
+            | Instruction::LocalTee(val) => UntypedValue::from(val.to_usize() as u64),
             Instruction::Br(val)
             | Instruction::BrIfEqz(val)
             | Instruction::BrIfNez(val)
             | Instruction::BrAdjust(val)
             | Instruction::BrAdjustIfNez(val) => val.to_i32().into(),
-            Instruction::BrTable(val) => val.to_usize().into(),
+            Instruction::BrTable(val) => (val.to_usize() as u64).into(),
             Instruction::ConsumeFuel(val) => val.to_u64().into(),
             Instruction::ReturnCallInternal(val) | Instruction::CallInternal(val) => {
-                val.to_u32().into()
+                (val.into_usize() as u64).into()
             }
             Instruction::ReturnCall(val) | Instruction::Call(val) => val.to_u32().into(),
             Instruction::ReturnCallIndirect(val) | Instruction::CallIndirect(val) => {
@@ -540,8 +565,7 @@ impl InstructionExtra for Instruction {
             | Instruction::TableCopy(val) => val.to_u32().into(),
             Instruction::TableInit(val) | Instruction::ElemDrop(val) => val.to_u32().into(),
             Instruction::RefFunc(val) => val.to_u32().into(),
-            Instruction::I32Const(val) | Instruction::I64Const(val) => *val,
-            Instruction::ConstRef(val) => val.to_usize().into(),
+            Instruction::ConstRef(val) => (val.to_usize() as u64).into(),
             _ => return None,
         };
         Some(value)
@@ -553,8 +577,8 @@ impl InstructionExtra for Instruction {
     }
 
     fn info(&self) -> (u8, usize) {
-        let mut sink: Vec<u8> = vec![0; 100];
-        let mut binary_writer = BinaryFormatWriter::new(sink.as_mut_slice());
+        let mut sink = [0u8; INSTRUCTION_SIZE_BYTES];
+        let mut binary_writer = BinaryFormatWriter::new(&mut sink);
         let size = self.write_binary(&mut binary_writer).unwrap();
         (sink[0], size - 1)
     }
@@ -570,7 +594,7 @@ mod tests {
         },
         instruction::InstructionExtra,
     };
-    use rwasm::{common::UntypedValue, engine::bytecode::Instruction};
+    use rwasm::engine::bytecode::Instruction;
     use strum::IntoEnumIterator;
 
     #[test]
@@ -600,13 +624,5 @@ mod tests {
             let opcode2 = Instruction::read_binary(&mut reader).unwrap();
             assert_eq!(opcode, opcode2);
         }
-    }
-
-    #[test]
-    fn test_magic_is_always_0xef() {
-        assert_eq!(
-            Instruction::MagicPrefix(UntypedValue::default()).code_value(),
-            0xEf
-        );
     }
 }

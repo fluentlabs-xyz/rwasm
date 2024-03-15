@@ -1,6 +1,4 @@
-extern crate alloc;
-
-use crate::common::HostError;
+use crate::core::HostError;
 use alloc::{boxed::Box, string::String};
 use core::fmt::{self, Display};
 #[cfg(feature = "std")]
@@ -217,7 +215,7 @@ impl StdError for Trap {
 /// See [`Trap`] for details.
 ///
 /// [`Trap`]: struct.Trap.html
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone)]
 pub enum TrapCode {
     /// Wasm code executed `unreachable` opcode.
     ///
@@ -292,7 +290,11 @@ pub enum TrapCode {
     /// desire on the part of the embedder to trap the interpreter rather than
     /// merely fail the growth operation.
     GrowthOperationLimited,
-    //  EmptyInput,
+
+    /// This error happens when we can't resolve function by its offset, usually
+    /// it should never happen. Maybe it's better to think how to replace this
+    /// error with panic.
+    UnresolvedFunction,
 }
 
 impl TrapCode {
@@ -316,8 +318,7 @@ impl TrapCode {
             Self::BadSignature => "indirect call type mismatch",
             Self::OutOfFuel => "all fuel consumed by WebAssembly",
             Self::GrowthOperationLimited => "growth operation limited",
-            // evm inputs
-            // Self::EmptyInput => "input is empty",
+            Self::UnresolvedFunction => "unresolved function by offset",
         }
     }
 }

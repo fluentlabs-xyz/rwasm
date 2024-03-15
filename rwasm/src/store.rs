@@ -1,6 +1,6 @@
 use crate::{
     arena::{Arena, ArenaIndex, GuardedEntity},
-    common::TrapCode,
+    core::TrapCode,
     engine::{DedupFuncType, Tracer},
     externref::{ExternObject, ExternObjectEntity, ExternObjectIdx},
     func::{Trampoline, TrampolineEntity, TrampolineIdx},
@@ -308,7 +308,7 @@ impl StoreInner {
     /// # Panics
     ///
     /// If the [`Stored<Idx>`] does not originate from this [`Store`].
-    pub(crate) fn unwrap_stored<Idx>(&self, stored: &Stored<Idx>) -> Idx
+    fn unwrap_stored<Idx>(&self, stored: &Stored<Idx>) -> Idx
     where
         Idx: ArenaIndex + Debug,
     {

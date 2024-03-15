@@ -16,6 +16,7 @@ pub use self::utils::{
     DropKeep,
     DropKeepError,
     ElementSegmentIdx,
+    F64Const32,
     FuncIdx,
     GlobalIdx,
     LocalDepth,
@@ -23,12 +24,12 @@ pub use self::utils::{
     TableIdx,
 };
 use super::{const_pool::ConstRef, CompiledFunc, TranslationError};
-use crate::common::{UntypedValue, F32};
-use alloc::{fmt, vec::Vec};
-use core::fmt::{Debug, Formatter};
-pub use stack_height::RwOp;
+use crate::core::{UntypedValue, F32};
 #[cfg(feature = "std")]
-use strum_macros::EnumIter;
+use core::{
+    fmt,
+    fmt::{Debug, Formatter},
+};
 
 /// The internal `wasmi` bytecode that is stored for Wasm functions.
 ///
@@ -39,23 +40,13 @@ use strum_macros::EnumIter;
 /// For example the `BrTable` instruction is unrolled into separate instructions
 /// each representing either the `BrTable` head or one of its branching targets.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "std", derive(EnumIter))]
+#[cfg_attr(feature = "std", derive(strum_macros::EnumIter))]
 pub enum Instruction {
-    /// This opcode does nothing, but it must be placed as the first instruction in the rWASM
-    /// binary to be used as a magic signature. It must be encoded using 0xEF (execution
-    /// format) opcode since its chosen as reserved byte for EVM smart contracts and there is
-    /// no collisions in the mainnet today. For more info read EIP-3541.
-    ///
-    /// A signature inside opcode can store any information. We can use this info to determine
-    /// compiler version or some other info. It is not checked somehow, just 8 bytes.
-    MagicPrefix(UntypedValue),
     LocalGet(LocalDepth),
     LocalSet(LocalDepth),
     LocalTee(LocalDepth),
     /// An unconditional branch.
     Br(BranchOffset),
-    BrIndirect(BranchOffset),
-    TypeCheck(SignatureIdx),
     /// Branches if the top-most stack value is equal to zero.
     BrIfEqz(BranchOffset),
     /// Branches if the top-most stack value is _not_ equal to zero.
@@ -159,6 +150,7 @@ pub enum Instruction {
     /// only acts as a storage for the parameter of the [`Instruction::CallIndirect`]
     /// and will never be executed by itself.
     CallIndirect(SignatureIdx),
+    SignatureCheck(SignatureIdx),
     Drop,
     Select,
     GlobalGet(GlobalIdx),
@@ -191,10 +183,6 @@ pub enum Instruction {
     MemoryFill,
     MemoryCopy,
     MemoryInit(DataSegmentIdx),
-    DataStore8(DataSegmentIdx),
-    DataStore16(DataSegmentIdx),
-    DataStore32(DataSegmentIdx),
-    DataStore64(DataSegmentIdx),
     DataDrop(DataSegmentIdx),
     TableSize(TableIdx),
     TableGrow(TableIdx),
@@ -222,12 +210,21 @@ pub enum Instruction {
     /// [`Instruction::TableGet`] which stores a [`TableIdx`]
     /// that refers to the table to be initialized.
     TableInit(ElementSegmentIdx),
-    ElemStore(ElementSegmentIdx),
     ElemDrop(ElementSegmentIdx),
     RefFunc(FuncIdx),
     /// A 32/64-bit constant value.
     I32Const(UntypedValue),
     I64Const(UntypedValue),
+    /// A 64-bit float value losslessly encoded as 32-bit float.
+    ///
+    /// Upon execution the 32-bit float is promoted to the 64-bit float.
+    ///
+    /// # Note
+    ///
+    /// This is a space-optimized variant of [`Instruction::ConstRef`] but can
+    /// only used for certain float values that fit into a 32-bit float value.
+    F32Const(UntypedValue),
+    F64Const(UntypedValue),
     /// Pushes a constant value onto the stack.
     ///
     /// The constant value is referred to indirectly by the [`ConstRef`].
@@ -366,8 +363,9 @@ pub enum Instruction {
     I64TruncSatF64U,
 }
 
+#[cfg(feature = "std")]
 impl fmt::Display for Instruction {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let name = format!("{:?}", self);
         let name: Vec<_> = name.split('(').collect();
         write!(f, "{}", name[0])
@@ -377,12 +375,12 @@ impl fmt::Display for Instruction {
 impl Instruction {
     /// Creates an [`Instruction::Const32`] from the given `i32` constant value.
     pub fn i32_const(value: i32) -> Self {
-        Self::I32Const(UntypedValue::from(value))
+        Self::I32Const(UntypedValue::from(i64::from(value)))
     }
 
     /// Creates an [`Instruction::Const32`] from the given `f32` constant value.
     pub fn f32_const(value: F32) -> Self {
-        Self::I32Const(UntypedValue::from(value.to_bits()))
+        Self::F32Const(UntypedValue::from(value))
     }
 
     /// Creates a new `local.get` instruction from the given local depth.
@@ -424,7 +422,6 @@ impl Instruction {
             | Instruction::LocalSet(_)
             | Instruction::LocalTee(_)
             | Instruction::Br(_)
-            | Instruction::BrIndirect(_)
             | Instruction::BrIfEqz(_)
             | Instruction::BrIfNez(_)
             | Instruction::Unreachable
@@ -464,10 +461,6 @@ impl Instruction {
             | Instruction::MemoryFill
             | Instruction::MemoryCopy
             | Instruction::MemoryInit(_)
-            | Instruction::DataStore8(_)
-            | Instruction::DataStore16(_)
-            | Instruction::DataStore32(_)
-            | Instruction::DataStore64(_)
             | Instruction::DataDrop(_)
             | Instruction::TableSize(_)
             | Instruction::TableGrow(_)
@@ -476,7 +469,6 @@ impl Instruction {
             | Instruction::TableSet(_)
             | Instruction::TableCopy(_)
             | Instruction::TableInit(_)
-            | Instruction::ElemStore(_)
             | Instruction::ElemDrop(_)
             | Instruction::RefFunc(_)
             | Instruction::I32Const(_)

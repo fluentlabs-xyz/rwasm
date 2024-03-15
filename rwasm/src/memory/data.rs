@@ -1,5 +1,5 @@
 use crate::{arena::ArenaIndex, module, store::Stored, AsContextMut};
-use alloc::{sync::Arc, vec::Vec};
+use alloc::sync::Arc;
 
 /// A raw index to a data segment entity.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -92,12 +92,5 @@ impl DataSegmentEntity {
     /// Drops the bytes of the [`DataSegmentEntity`].
     pub fn drop_bytes(&mut self) {
         self.bytes = None;
-    }
-
-    pub fn add_bytes(&mut self, data: &[u8]) {
-        let mut new_data = Vec::from(self.bytes());
-        new_data.extend_from_slice(data);
-        let new_data: Arc<[u8]> = new_data.as_slice().into();
-        self.bytes = Some(new_data);
     }
 }

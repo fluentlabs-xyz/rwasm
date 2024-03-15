@@ -114,7 +114,7 @@ impl Bytes {
     ///
     /// As mandated by the WebAssembly specification every linear memory page
     /// has exactly 2^16 (65536) bytes.
-    const fn per_page() -> Self {
+    pub const fn per_page() -> Self {
         Self(65536) // 2^16
     }
 

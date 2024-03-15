@@ -8,7 +8,7 @@ mod tests;
 pub use self::sp::ValueStackPtr;
 use super::{err_stack_overflow, DEFAULT_MAX_VALUE_STACK_HEIGHT, DEFAULT_MIN_VALUE_STACK_HEIGHT};
 use crate::{
-    common::{TrapCode, UntypedValue},
+    core::{TrapCode, UntypedValue},
     engine::code_map::FuncHeader,
 };
 use alloc::vec::Vec;
@@ -102,7 +102,7 @@ impl ValueStack {
         sp.offset_from(base) as usize
     }
 
-    pub fn is_stack_overflowed(&mut self, sp: ValueStackPtr) -> bool {
+    pub fn has_stack_overflowed(&mut self, sp: ValueStackPtr) -> bool {
         self.stack_len(sp) > self.maximum_len
     }
 
@@ -115,7 +115,7 @@ impl ValueStack {
     ///
     /// The returned [`ValueStackPtr`] points to the first value on the [`ValueStack`].
     #[inline]
-    pub(crate) fn base_ptr(&mut self) -> ValueStackPtr {
+    fn base_ptr(&mut self) -> ValueStackPtr {
         ValueStackPtr::new(self.entries.as_mut_ptr(), self.entries.len())
     }
 
@@ -123,7 +123,6 @@ impl ValueStack {
     #[inline]
     pub fn sync_stack_ptr(&mut self, new_sp: ValueStackPtr) {
         let offset = new_sp.offset_from(self.base_ptr());
-        assert!(offset >= 0, "sp offset can't be negative: {}", offset);
         self.stack_ptr = offset as usize;
     }
 

@@ -4,10 +4,10 @@ pub mod bytecode;
 mod cache;
 pub mod code_map;
 mod config;
-mod const_pool;
+pub mod const_pool;
 pub mod executor;
 mod func_args;
-mod func_builder;
+pub(crate) mod func_builder;
 mod func_types;
 mod resumable;
 pub mod stack;
@@ -17,27 +17,17 @@ mod traits;
 mod tests;
 mod tracer;
 
-use self::{
-    bytecode::Instruction,
-    cache::InstanceCache,
-    code_map::CodeMap,
-    executor::{execute_wasm, WasmOutcome},
-    func_types::FuncTypeRegistry,
-    resumable::ResumableCallBase,
-    stack::{FuncFrame, Stack, ValueStack},
-};
 pub use self::{
-    bytecode::{DropKeep, RwOp},
+    bytecode::DropKeep,
     code_map::CompiledFunc,
-    config::{Config, FuelConsumptionMode},
-    const_pool::ConstRef,
+    config::{Config, FuelConsumptionMode, RwasmConfig},
     func_builder::{
         FuncBuilder,
         FuncTranslatorAllocations,
         Instr,
+        InstructionsBuilder,
         RelativeDepth,
         TranslationError,
-        ValueStackHeight,
     },
     resumable::{ResumableCall, ResumableInvocation, TypedResumableCall, TypedResumableInvocation},
     stack::StackLimits,
@@ -50,15 +40,28 @@ pub use self::{
     },
     traits::{CallParams, CallResults},
 };
+use self::{
+    bytecode::Instruction,
+    cache::InstanceCache,
+    code_map::CodeMap,
+    const_pool::{ConstPool, ConstPoolView, ConstRef},
+    executor::{execute_wasm, WasmOutcome},
+    func_types::FuncTypeRegistry,
+    resumable::ResumableCallBase,
+    stack::{FuncFrame, Stack, ValueStack},
+};
 pub(crate) use self::{
-    const_pool::{ConstPool, ConstPoolView},
     func_args::{FuncFinished, FuncParams, FuncResults},
     func_types::DedupFuncType,
 };
 use crate::{
     arena::{ArenaIndex, GuardedEntity},
-    common::{Trap, TrapCode, UntypedValue},
-    engine::{bytecode::InstrMeta, code_map::InstructionPtr},
+    core::{Trap, TrapCode, UntypedValue},
+    engine::{
+        bytecode::{InstrMeta, SignatureIdx},
+        code_map::InstructionPtr,
+        func_types::DedupFuncTypeIdx,
+    },
     func::FuncEntity,
     AsContext,
     AsContextMut,
@@ -68,6 +71,7 @@ use crate::{
 };
 use alloc::{sync::Arc, vec::Vec};
 use core::sync::atomic::{AtomicU32, Ordering};
+use hashbrown::HashMap;
 use spin::{Mutex, RwLock};
 
 /// A unique engine index.
@@ -139,13 +143,29 @@ impl Engine {
         self.inner.config()
     }
 
+    pub fn remember_signature(&self, signature_idx: SignatureIdx) {
+        self.inner.remember_signature(signature_idx)
+    }
+
+    pub fn resolve_signature(&self) -> Option<SignatureIdx> {
+        self.inner.resolve_signature()
+    }
+
+    pub fn register_trampoline(&self, sys_func_index: u32, func: Func) {
+        self.inner.register_trampoline(sys_func_index, func)
+    }
+
+    pub fn resolve_trampoline(&self, sys_func_index: u32) -> Option<Func> {
+        self.inner.resolve_trampoline(sys_func_index)
+    }
+
     /// Returns `true` if both [`Engine`] references `a` and `b` refer to the same [`Engine`].
     pub fn same(a: &Engine, b: &Engine) -> bool {
         Arc::ptr_eq(&a.inner, &b.inner)
     }
 
     /// Allocates a new function type to the [`Engine`].
-    pub(super) fn alloc_func_type(&self, func_type: FuncType) -> DedupFuncType {
+    pub fn alloc_func_type(&self, func_type: FuncType) -> DedupFuncType {
         self.inner.alloc_func_type(func_type)
     }
 
@@ -175,10 +195,14 @@ impl Engine {
         self.inner.resolve_func_type(func_type, f)
     }
 
+    pub fn resolve_func_signature(&self, func_type: &DedupFuncType) -> DedupFuncTypeIdx {
+        self.inner.resolve_func_signature(func_type)
+    }
+
     /// Allocates a new uninitialized [`CompiledFunc`] to the [`Engine`].
     ///
     /// Returns a [`CompiledFunc`] reference to allow accessing the allocated [`CompiledFunc`].
-    pub(super) fn alloc_func(&self) -> CompiledFunc {
+    pub fn alloc_func(&self) -> CompiledFunc {
         self.inner.alloc_func()
     }
 
@@ -188,21 +212,22 @@ impl Engine {
     ///
     /// - If `func` is an invalid [`CompiledFunc`] reference for this [`CodeMap`].
     /// - If `func` refers to an already initialized [`CompiledFunc`].
-    pub fn init_func<I>(
+    pub fn init_func<I, M>(
         &self,
         func: CompiledFunc,
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
-        metas: Vec<InstrMeta>,
+        metas: M,
     ) where
         I: IntoIterator<Item = Instruction>,
+        M: IntoIterator<Item = InstrMeta>,
     {
         self.inner
             .init_func(func, len_locals, local_stack_height, instrs, metas)
     }
 
-    pub(super) fn mark_func(
+    pub fn mark_func(
         &self,
         func: CompiledFunc,
         len_locals: usize,
@@ -412,7 +437,7 @@ impl EngineInner {
     /// Creates a new [`EngineInner`] with the given [`Config`].
     fn new(config: &Config) -> Self {
         Self {
-            config: *config,
+            config: config.clone(),
             res: RwLock::new(EngineResources::new()),
             stacks: Mutex::new(EngineStacks::new(config)),
         }
@@ -421,6 +446,29 @@ impl EngineInner {
     /// Returns a shared reference to the [`Config`] of the [`EngineInner`].
     fn config(&self) -> &Config {
         &self.config
+    }
+
+    fn register_trampoline(&self, sys_func_index: u32, func: Func) {
+        self.res
+            .write()
+            .trampoline_mapping
+            .insert(sys_func_index, func);
+    }
+
+    fn resolve_trampoline(&self, sys_func_index: u32) -> Option<Func> {
+        self.res
+            .read()
+            .trampoline_mapping
+            .get(&sys_func_index)
+            .copied()
+    }
+
+    fn remember_signature(&self, signature_idx: SignatureIdx) {
+        self.res.write().last_signature = Some(signature_idx)
+    }
+
+    fn resolve_signature(&self) -> Option<SignatureIdx> {
+        self.res.write().last_signature.take()
     }
 
     /// Allocates a new function type to the [`EngineInner`].
@@ -454,15 +502,16 @@ impl EngineInner {
     ///
     /// - If `func` is an invalid [`CompiledFunc`] reference for this [`CodeMap`].
     /// - If `func` refers to an already initialized [`CompiledFunc`].
-    fn init_func<I>(
+    fn init_func<I, M>(
         &self,
         func: CompiledFunc,
         len_locals: usize,
         local_stack_height: usize,
         instrs: I,
-        metas: Vec<InstrMeta>,
+        metas: M,
     ) where
         I: IntoIterator<Item = Instruction>,
+        M: IntoIterator<Item = InstrMeta>,
     {
         self.res
             .write()
@@ -488,6 +537,10 @@ impl EngineInner {
         F: FnOnce(&FuncType) -> R,
     {
         f(self.res.read().func_types.resolve_func_type(func_type))
+    }
+
+    fn resolve_func_signature(&self, func_type: &DedupFuncType) -> DedupFuncTypeIdx {
+        self.res.read().func_types.resolve_func_signature(func_type)
     }
 
     #[cfg(test)]
@@ -624,6 +677,12 @@ pub struct EngineResources {
     /// The engine deduplicates function types to make the equality
     /// comparison very fast. This helps to speed up indirect calls.
     func_types: FuncTypeRegistry,
+    /// Last remembered signature for indirect calls, we need this to check signature for
+    /// indirect calls to trigger proper error
+    last_signature: Option<SignatureIdx>,
+    /// We store mapping from sys func index to the function index to map
+    /// rWASM calls to WASM calls
+    trampoline_mapping: HashMap<u32, Func>,
 }
 
 impl EngineResources {
@@ -634,6 +693,8 @@ impl EngineResources {
             code_map: CodeMap::default(),
             const_pool: ConstPool::default(),
             func_types: FuncTypeRegistry::new(engine_idx),
+            last_signature: None,
+            trampoline_mapping: HashMap::new(),
         }
     }
 }
@@ -712,7 +773,9 @@ impl<'engine> EngineExecutor<'engine> {
         Results: CallResults,
     {
         self.stack.reset();
-        self.stack.values.extend(params.call_params());
+        let call_params = params.call_params();
+        self.stack.values.reserve(call_params.len())?;
+        self.stack.values.extend(call_params);
         match ctx.as_context().store.inner.resolve_func(func) {
             FuncEntity::Wasm(wasm_func) => {
                 self.stack
@@ -754,7 +817,9 @@ impl<'engine> EngineExecutor<'engine> {
         self.stack
             .values
             .drop(host_func.ty(ctx.as_context()).params().len());
-        self.stack.values.extend(params.call_params());
+        let call_params = params.call_params();
+        self.stack.values.reserve(call_params.len())?;
+        self.stack.values.extend(call_params);
         assert!(
             self.stack.frames.peek().is_some(),
             "a frame must be on the call stack upon resumption"

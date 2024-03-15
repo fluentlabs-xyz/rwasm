@@ -14,7 +14,8 @@ use super::{
     TranslationError,
 };
 use crate::{
-    common::{UntypedValue, ValueType, F32, F64},
+    arena::ArenaIndex,
+    core::{Pages, UntypedValue, ValueType, F32, N_MAX_TABLE_ELEMENTS},
     engine::{
         bytecode::{
             self,
@@ -44,6 +45,7 @@ use crate::{
         ModuleResources,
         DEFAULT_MEMORY_INDEX,
     },
+    rwasm::SegmentBuilder,
     Engine,
     FuncType,
     GlobalType,
@@ -62,9 +64,11 @@ pub struct FuncTranslatorAllocations {
     /// # Note
     ///
     /// Allows to incrementally construct the instruction of a function.
-    inst_builder: InstructionsBuilder,
+    pub(crate) inst_builder: InstructionsBuilder,
     /// Buffer for translating `br_table`.
     br_table_branches: Vec<Instruction>,
+    /// Module builder for rWASM
+    pub(crate) segment_builder: SegmentBuilder,
 }
 
 impl FuncTranslatorAllocations {
@@ -84,11 +88,11 @@ impl FuncTranslatorAllocations {
 /// Type concerned with translating from Wasm bytecode to `wasmi` bytecode.
 pub struct FuncTranslator<'parser> {
     /// The reference to the Wasm module function under construction.
-    func: FuncIdx,
+    pub(crate) func: FuncIdx,
     /// The reference to the compiled func allocated to the [`Engine`].
     compiled_func: CompiledFunc,
     /// The immutable `wasmi` module resources.
-    res: ModuleResources<'parser>,
+    pub(crate) res: ModuleResources<'parser>,
     /// This represents the reachability of the currently translated code.
     ///
     /// - `true`: The currently translated code is reachable.
@@ -100,11 +104,11 @@ pub struct FuncTranslator<'parser> {
     /// reachability to `true` again.
     reachable: bool,
     /// The height of the emulated value stack.
-    stack_height: ValueStackHeight,
+    pub(crate) stack_height: ValueStackHeight,
     /// Stores and resolves local variable types.
     locals: LocalsRegistry,
     /// The reusable data structures of the [`FuncTranslator`].
-    alloc: FuncTranslatorAllocations,
+    pub(crate) alloc: FuncTranslatorAllocations,
 }
 
 impl<'parser> FuncTranslator<'parser> {
@@ -128,7 +132,7 @@ impl<'parser> FuncTranslator<'parser> {
     }
 
     /// Returns a shared reference to the underlying [`Engine`].
-    fn engine(&self) -> &Engine {
+    pub(crate) fn engine(&self) -> &Engine {
         self.res.engine()
     }
 
@@ -432,35 +436,37 @@ impl<'parser> FuncTranslator<'parser> {
     /// Only internal (non-imported) and constant (non-mutable) globals
     /// have a chance to be optimized to more efficient instructions.
     fn optimize_global_get(
-        _global_type: &GlobalType,
-        _init_value: Option<&ConstExpr>,
-        _engine: &Engine,
+        global_type: &GlobalType,
+        init_value: Option<&ConstExpr>,
+        engine: &Engine,
     ) -> Result<Option<Instruction>, TranslationError> {
-        // if let (Mutability::Const, Some(init_expr)) = (global_type.mutability(), init_value) {
-        //     if let Some(value) = init_expr.eval_const() {
-        //         // We can optimize `global.get` to the constant value.
-        //         if global_type.content() == ValueType::I32 {
-        //             return Ok(Some(Instruction::i32_const(i32::from(value))));
-        //         }
-        //         if global_type.content() == ValueType::F32 {
-        //             return Ok(Some(Instruction::f32_const(F32::from(value))));
-        //         }
-        //         if global_type.content() == ValueType::I64 {
-        //             if let Ok(value) = i32::try_from(i64::from(value)) {
-        //                 return Ok(Some(Instruction::I32Const(UntypedValue::from(value))));
-        //             }
-        //         }
-        //         // No optimized case was applicable so we have to allocate
-        //         // a constant value in the const pool and reference it.
-        //         let cref = engine.alloc_const(value)?;
-        //         return Ok(Some(Instruction::ConstRef(cref)));
-        //     }
-        //     if let Some(func_index) = init_expr.funcref() {
-        //         // We can optimize `global.get` to the equivalent `ref.func x` instruction.
-        //         let func_index = bytecode::FuncIdx::from(func_index.into_u32());
-        //         return Ok(Some(Instruction::RefFunc(func_index)));
-        //     }
-        // }
+        // don't do global get optimization for rWASM (not needed and misleading)
+        if engine.config().get_rwasm_config().is_some() {
+            return Ok(None);
+        }
+        if let (Mutability::Const, Some(init_expr)) = (global_type.mutability(), init_value) {
+            if let Some(value) = init_expr.eval_const() {
+                // We can optimize `global.get` to the constant value.
+                if global_type.content() == ValueType::I32 {
+                    return Ok(Some(Instruction::i32_const(i32::from(value))));
+                }
+                if global_type.content() == ValueType::F32 {
+                    return Ok(Some(Instruction::f32_const(F32::from(value))));
+                }
+                if global_type.content() == ValueType::I64 {
+                    return Ok(Some(Instruction::I64Const(value)));
+                }
+                // No optimized case was applicable, so we have to allocate
+                // a constant value in the const pool and reference it.
+                let const_ref = engine.alloc_const(value)?;
+                return Ok(Some(Instruction::ConstRef(const_ref)));
+            }
+            if let Some(func_index) = init_expr.funcref() {
+                // We can optimize `global.get` to the equivalent `ref.func x` instruction.
+                let func_index = bytecode::FuncIdx::from(func_index.into_u32());
+                return Ok(Some(Instruction::RefFunc(func_index)));
+            }
+        }
         Ok(None)
     }
 
@@ -550,6 +556,7 @@ impl<'parser> FuncTranslator<'parser> {
     ///
     /// - `i64.const`
     /// - `f64.const`
+    #[allow(dead_code)]
     fn translate_const_ref<T>(&mut self, value: T) -> Result<(), TranslationError>
     where
         T: Into<UntypedValue>,
@@ -774,6 +781,15 @@ impl<'parser> FuncTranslator<'parser> {
         let len_params_locals = self.locals.len_registered();
         let drop = height_diff - keep + len_params_locals;
         DropKeep::new(drop as usize, keep as usize).map_err(Into::into)
+    }
+
+    fn resolve_signature_idx(&self, func_type_idx: u32) -> SignatureIdx {
+        if !self.engine().config().get_rwasm_config().is_some() {
+            return SignatureIdx::from(func_type_idx);
+        }
+        let func_type = &self.res.res.func_types[func_type_idx as usize];
+        let func_type = self.res.res.engine().resolve_func_signature(&func_type);
+        SignatureIdx::from(func_type.into_usize() as u32)
     }
 }
 
@@ -1236,7 +1252,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                     builder
                         .alloc
                         .inst_builder
-                        .push_inst(Instruction::ReturnCall(func.into()));
+                        .push_inst(Instruction::ReturnCall(func));
                 }
             }
             builder
@@ -1264,7 +1280,9 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder
                 .alloc
                 .inst_builder
-                .push_inst(Instruction::ReturnCallIndirect(signature));
+                .push_inst(Instruction::ReturnCallIndirect(
+                    builder.resolve_signature_idx(func_type_index),
+                ));
             builder
                 .alloc
                 .inst_builder
@@ -1300,7 +1318,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                     builder
                         .alloc
                         .inst_builder
-                        .push_inst(Instruction::Call(func_idx.into()));
+                        .push_inst(Instruction::Call(func_idx));
                 }
             }
             Ok(())
@@ -1322,7 +1340,9 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder
                 .alloc
                 .inst_builder
-                .push_inst(Instruction::CallIndirect(func_type));
+                .push_inst(Instruction::CallIndirect(
+                    builder.resolve_signature_idx(func_type_index),
+                ));
             builder
                 .alloc
                 .inst_builder
@@ -1570,29 +1590,120 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         _mem_byte: u8,
     ) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
+            let is_rwasm = builder.engine().config().get_rwasm_config().is_some();
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
-            builder
-                .alloc
-                .inst_builder
-                .push_inst(Instruction::MemoryGrow);
+            let ib = &mut builder.alloc.inst_builder;
+            // for rWASM we inject memory limit error check, if we exceed number of allowed pages
+            // then we push `u32::MAX` on the stack that is equal to memory grow overflow error
+            if is_rwasm {
+                assert!(!self.res.res.memories.is_empty(), "memory must be provided");
+                let max_pages = self.res.res.memories[0]
+                    .maximum_pages()
+                    .unwrap_or(Pages::max())
+                    .into_inner();
+                ib.push_inst(Instruction::LocalGet(1.into()));
+                ib.push_inst(Instruction::MemorySize);
+                ib.push_inst(Instruction::I32Add);
+                ib.push_inst(Instruction::I32Const(max_pages.into()));
+                ib.push_inst(Instruction::I32GtS);
+                ib.push_inst(Instruction::BrIfEqz(4.into()));
+                ib.push_inst(Instruction::Drop);
+                ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+                ib.push_inst(Instruction::Br(2.into()));
+                ib.push_inst(Instruction::MemoryGrow);
+            } else {
+                ib.push_inst(Instruction::MemoryGrow);
+            }
             Ok(())
         })
     }
 
+    /// MemoryInit opcode reads 3 elements from stack (dst, src, len), where:
+    /// - dst - Memory destination of copied data
+    /// - src - Data source of copied data (in the passive section)
+    /// - len - Length of copied data
+    ///
+    /// In the `passive_sections` field we store info about all passive sections
+    /// that are presented in the WebAssembly binary. When passive section is activated
+    /// though `memory.init` opcode we find modified offsets in the data section
+    /// and put the on the stack by removing previous values.
+    ///
+    /// Here is the stack structure for `memory.init` call:
+    /// - ... some other stack elements
+    /// - dst
+    /// - src
+    /// - len
+    /// - ... call of `memory.init` happens here
+    ///
+    /// Here we need to replace `src` field with our modified, but since we don't know
+    /// how stack was structured then we can achieve it by replacing stack element using `local.set`
+    /// opcode.
+    ///
+    /// - dst
+    /// - src  <----+
+    /// - len       |
+    /// - new_src --+
+    /// - ... call `local.set` to replace prev offset
+    ///
+    /// Here we use 1 offset because we pop `new_src`, and then count from the top, `len`
+    /// has 0 offset and `src` has offset 1.
+    ///
+    /// Before doing these ops we must ensure that specified length of copied data
+    /// doesn't exceed original section size. We also inject GT check to make sure that
+    /// there is no data section overflow.
     fn visit_memory_init(
         &mut self,
         segment_index: u32,
         memory_index: u32,
     ) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
+            let is_rwasm = builder.engine().config().get_rwasm_config().is_some();
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             builder.stack_height.pop3();
-            builder
-                .alloc
-                .inst_builder
-                .push_inst(Instruction::MemoryInit(DataSegmentIdx::from(segment_index)));
+            if is_rwasm {
+                let (ib, rb) = (
+                    &mut builder.alloc.inst_builder,
+                    &mut builder.alloc.segment_builder,
+                );
+                let data_segment_index: DataSegmentIdx = segment_index.into();
+                let (offset, length) = rb
+                    .memory_sections
+                    .get(&data_segment_index)
+                    .copied()
+                    .expect("can't resolve passive segment by index");
+                // do an overflow check
+                if length > 0 {
+                    ib.push_inst(Instruction::LocalGet(1u32.into()));
+                    ib.push_inst(Instruction::LocalGet(3u32.into()));
+                    ib.push_inst(Instruction::I32Add);
+                    ib.push_inst(Instruction::I32Const((length as i32).into()));
+                    ib.push_inst(Instruction::I32GtS);
+                    ib.push_inst(Instruction::BrIfEqz(3.into()));
+                    // we can't manually emit "out of bounds table access" error that is required
+                    // by WebAssembly standards, so we put impossible number of tables to trigger
+                    // overflow by rewriting number of elements to be copied
+                    ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+                    ib.push_inst(Instruction::LocalSet(1.into()));
+                }
+                // we need to replace offset on the stack with the new value
+                if offset > 0 {
+                    ib.push_inst(Instruction::I32Const((offset as i32).into()));
+                    ib.push_inst(Instruction::LocalGet(3.into()));
+                    ib.push_inst(Instruction::I32Add);
+                    ib.push_inst(Instruction::LocalSet(2.into()));
+                }
+                // since we store all data sections in the one segment then index is always 0
+                ib.push_inst(Instruction::MemoryInit(DataSegmentIdx::from(
+                    segment_index + 1,
+                )));
+            } else {
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::MemoryInit(DataSegmentIdx::from(segment_index)));
+            }
             Ok(())
         })
     }
@@ -1627,7 +1738,11 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     fn visit_data_drop(&mut self, segment_index: u32) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
-            let segment_index = DataSegmentIdx::from(segment_index);
+            let segment_index = if builder.engine().config().get_rwasm_config().is_some() {
+                DataSegmentIdx::from(segment_index + 1)
+            } else {
+                DataSegmentIdx::from(segment_index)
+            };
             builder
                 .alloc
                 .inst_builder
@@ -1651,13 +1766,36 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
 
     fn visit_table_grow(&mut self, table_index: u32) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
+            let is_rwasm = builder.engine().config().get_rwasm_config().is_some();
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let table = TableIdx::from(table_index);
             builder.stack_height.pop1();
-            builder
-                .alloc
-                .inst_builder
-                .push_inst(Instruction::TableGrow(table));
+            let ib = &mut builder.alloc.inst_builder;
+            // for rWASM we inject table limit error check, if we exceed number of allowed elements
+            // then we push `u32::MAX` on the stack that is equal to table grow overflow error
+            if is_rwasm {
+                let max_table_elements = builder
+                    .res
+                    .res
+                    .tables
+                    .get(table_index as usize)
+                    .unwrap()
+                    .maximum()
+                    .unwrap_or(N_MAX_TABLE_ELEMENTS);
+                ib.push_inst(Instruction::LocalGet(1.into()));
+                ib.push_inst(Instruction::TableSize(table));
+                ib.push_inst(Instruction::I32Add);
+                ib.push_inst(Instruction::I32Const(max_table_elements.into()));
+                ib.push_inst(Instruction::I32GtS);
+                ib.push_inst(Instruction::BrIfEqz(5.into()));
+                ib.push_inst(Instruction::Drop);
+                ib.push_inst(Instruction::Drop);
+                ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+                ib.push_inst(Instruction::Br(2.into()));
+                ib.push_inst(Instruction::TableGrow(table));
+            } else {
+                ib.push_inst(Instruction::TableGrow(table));
+            }
             Ok(())
         })
     }
@@ -1724,18 +1862,55 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         table_index: u32,
     ) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
+            let is_rwasm = builder.engine().config().get_rwasm_config().is_some();
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             builder.stack_height.pop3();
-            let table = TableIdx::from(table_index);
-            let elem = ElementSegmentIdx::from(segment_index);
-            builder
-                .alloc
-                .inst_builder
-                .push_inst(Instruction::TableInit(elem));
-            builder
-                .alloc
-                .inst_builder
-                .push_inst(Instruction::TableGet(table));
+            if is_rwasm {
+                let (ib, rb) = (
+                    &mut builder.alloc.inst_builder,
+                    &mut builder.alloc.segment_builder,
+                );
+                let elem_segment_index: ElementSegmentIdx = segment_index.into();
+                let (offset, length) = rb
+                    .element_sections
+                    .get(&elem_segment_index)
+                    .copied()
+                    .expect("can't resolve element segment by index");
+                // do an overflow check
+                ib.push_inst(Instruction::LocalGet(1u32.into()));
+                ib.push_inst(Instruction::LocalGet(3u32.into()));
+                ib.push_inst(Instruction::I32Add);
+                ib.push_inst(Instruction::I32Const((length as i32).into()));
+                ib.push_inst(Instruction::I32GtS);
+                ib.push_inst(Instruction::BrIfEqz(3.into()));
+                // we can't manually emit "out of bounds table access" error that is required
+                // by WebAssembly standards, so we put impossible number of tables to trigger
+                // overflow by rewriting number of elements to be copied
+                ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+                ib.push_inst(Instruction::LocalSet(1.into()));
+                // we need to replace offset on the stack with the new value
+                if offset > 0 {
+                    // replace offset with an adjusted value
+                    ib.push_inst(Instruction::I32Const((offset as i32).into()));
+                    ib.push_inst(Instruction::LocalGet(3.into()));
+                    ib.push_inst(Instruction::I32Add);
+                    ib.push_inst(Instruction::LocalSet(2.into()));
+                }
+                // since we store all element sections in the one segment then index is always 0
+                ib.push_inst(Instruction::TableInit((segment_index + 1).into()));
+                ib.push_inst(Instruction::TableGet(table_index.into()));
+            } else {
+                let table = TableIdx::from(table_index);
+                let elem = ElementSegmentIdx::from(segment_index);
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::TableInit(elem));
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::TableGet(table));
+            }
             Ok(())
         })
     }
@@ -1743,12 +1918,15 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     fn visit_elem_drop(&mut self, segment_index: u32) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            let segment_index = if builder.engine().config().get_rwasm_config().is_some() {
+                ElementSegmentIdx::from(segment_index + 1)
+            } else {
+                ElementSegmentIdx::from(segment_index)
+            };
             builder
                 .alloc
                 .inst_builder
-                .push_inst(Instruction::ElemDrop(ElementSegmentIdx::from(
-                    segment_index,
-                )));
+                .push_inst(Instruction::ElemDrop(segment_index));
             Ok(())
         })
     }
@@ -1790,7 +1968,15 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     }
 
     fn visit_f64_const(&mut self, value: wasmparser::Ieee64) -> Result<(), TranslationError> {
-        self.translate_const_ref(F64::from_bits(value.bits()))
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.stack_height.push();
+            builder
+                .alloc
+                .inst_builder
+                .push_inst(Instruction::F64Const(UntypedValue::from_bits(value.bits())));
+            Ok(())
+        })
     }
 
     fn visit_i32_eqz(&mut self) -> Result<(), TranslationError> {

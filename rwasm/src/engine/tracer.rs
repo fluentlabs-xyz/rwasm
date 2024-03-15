@@ -1,5 +1,5 @@
 use crate::{
-    common::UntypedValue,
+    core::UntypedValue,
     engine::bytecode::{InstrMeta, Instruction, TableIdx},
     Extern,
 };

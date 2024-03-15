@@ -6,7 +6,7 @@ pub use self::{
     values::{ValueStack, ValueStackPtr},
 };
 use crate::{
-    common::{Trap, TrapCode},
+    core::{Trap, TrapCode},
     engine::{code_map::CodeMap, func_types::FuncTypeRegistry, FuncParams},
     func::{HostFuncEntity, WasmFuncEntity},
     AsContext,

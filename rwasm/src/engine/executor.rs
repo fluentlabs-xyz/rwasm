@@ -1,7 +1,7 @@
 use super::{bytecode::BranchOffset, const_pool::ConstRef, CompiledFunc, ConstPoolView};
 use crate::{
     arena::ArenaIndex,
-    common::{Pages, TrapCode, UntypedValue},
+    core::{Pages, TrapCode, UntypedValue},
     engine::{
         bytecode::{
             AddressOffset,
@@ -26,9 +26,9 @@ use crate::{
         ValueStack,
     },
     func::FuncEntity,
-    module::{ConstExpr, DEFAULT_MEMORY_INDEX},
+    module::DEFAULT_MEMORY_INDEX,
     store::ResourceLimiterRef,
-    table::TableEntity,
+    table::{ElementSegmentEntity, TableEntity},
     FuelConsumptionMode,
     Func,
     FuncRef,
@@ -185,6 +185,8 @@ struct Executor<'ctx, 'engine> {
     const_pool: ConstPoolView<'engine>,
     /// A tracer that stores execution info
     tracer: &'engine mut Tracer,
+    /// Store an information about last signature used by IndirectCall
+    last_signature: Option<SignatureIdx>,
 }
 
 macro_rules! forward_call {
@@ -227,6 +229,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             code_map,
             const_pool,
             tracer,
+            last_signature: None,
         }
     }
 
@@ -243,17 +246,24 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
 
             // TODO: Need to add recursive check while call function
             // TODO: Create more optimized check for stack overflowed
-            if self.value_stack.is_stack_overflowed(self.sp) {
+            if self.value_stack.has_stack_overflowed(self.sp) {
                 return Err(TrapCode::StackOverflow.into());
             }
 
-            // let dump = self.value_stack.dump_stack(self.sp);
-            // if dump.len() < 20 {
+            // #[cfg(feature = "std")]
+            // {
+            //     let stack = self.value_stack.dump_stack(self.sp);
             //     println!(
-            //         "{} {:?} {:?}",
+            //         "{}:\t {:?} \tstack({}):{:?}",
             //         self.ip.pc(),
             //         instr,
-            //         dump.iter().map(|v| v.as_u64()).collect::<Vec<_>>()
+            //         stack.len(),
+            //         stack
+            //             .iter()
+            //             .rev()
+            //             .take(10)
+            //             .map(|v| v.as_usize())
+            //             .collect::<Vec<_>>()
             //     );
             // }
 
@@ -275,7 +285,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             };
             let consumed_fuel = self.ctx.fuel().fuel_consumed();
             let stack = self.value_stack.dump_stack(self.sp);
-            // println!("pc:{} instr:{:?} stack:{:?}", self.ip.pc(), instr, stack);
             self.tracer.pre_opcode_state(
                 self.ip.pc(),
                 instr,
@@ -290,8 +299,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 Instr::LocalSet(local_depth) => self.visit_local_set(local_depth),
                 Instr::LocalTee(local_depth) => self.visit_local_tee(local_depth),
                 Instr::Br(offset) => self.visit_br(offset),
-                Instr::BrIndirect(offset) => self.visit_br_indirect(offset)?,
-                Instr::TypeCheck(sig_idx) => self.visit_type_check(sig_idx)?,
                 Instr::BrIfEqz(offset) => self.visit_br_if_eqz(offset),
                 Instr::BrIfNez(offset) => self.visit_br_if_nez(offset),
                 Instr::BrAdjust(offset) => self.visit_br_adjust(offset),
@@ -313,16 +320,17 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     self.visit_return_call_internal(compiled_func)?
                 }
                 Instr::ReturnCall(func) => {
-                    forward_call!(self.visit_return_call(func.into()))
+                    forward_call!(self.visit_return_call(func))
                 }
                 Instr::ReturnCallIndirect(func_type) => {
                     forward_call!(self.visit_return_call_indirect(func_type))
                 }
                 Instr::CallInternal(compiled_func) => self.visit_call_internal(compiled_func)?,
-                Instr::Call(func) => forward_call!(self.visit_call(func.into())),
+                Instr::Call(func) => forward_call!(self.visit_call(func)),
                 Instr::CallIndirect(func_type) => {
                     forward_call!(self.visit_call_indirect(func_type))
                 }
+                Instr::SignatureCheck(func_type) => self.visit_signature_check(func_type)?,
                 Instr::Drop => self.visit_drop(),
                 Instr::Select => self.visit_select(),
                 Instr::GlobalGet(global_idx) => self.visit_global_get(global_idx),
@@ -355,10 +363,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 Instr::MemoryFill => self.visit_memory_fill()?,
                 Instr::MemoryCopy => self.visit_memory_copy()?,
                 Instr::MemoryInit(segment) => self.visit_memory_init(segment)?,
-                Instr::DataStore8(segment) => self.visit_data_store(segment, 1),
-                Instr::DataStore16(segment) => self.visit_data_store(segment, 2),
-                Instr::DataStore32(segment) => self.visit_data_store(segment, 4),
-                Instr::DataStore64(segment) => self.visit_data_store(segment, 8),
                 Instr::DataDrop(segment) => self.visit_data_drop(segment),
                 Instr::TableSize(table) => self.visit_table_size(table),
                 Instr::TableGrow(table) => self.visit_table_grow(table, &mut *resource_limiter)?,
@@ -367,11 +371,12 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 Instr::TableSet(table) => self.visit_table_set(table)?,
                 Instr::TableCopy(dst) => self.visit_table_copy(dst)?,
                 Instr::TableInit(elem) => self.visit_table_init(elem)?,
-                Instr::ElemStore(segment) => self.visit_element_store(segment),
                 Instr::ElemDrop(segment) => self.visit_element_drop(segment),
-                Instr::RefFunc(func_index) => self.visit_ref_func(func_index),
-                Instr::I32Const(value) => self.visit_untyped_const(value),
-                Instr::I64Const(value) => self.visit_untyped_const(value),
+                Instr::RefFunc(func_index) => self.visit_ref_func(func_index)?,
+                Instr::I32Const(value) => self.visit_i32_const(value),
+                Instr::I64Const(value) => self.visit_i64_const(value),
+                Instr::F32Const(value) => self.visit_f32_const(value),
+                Instr::F64Const(value) => self.visit_f64_const(value),
                 Instr::ConstRef(cref) => self.visit_const(cref),
                 Instr::I32Eqz => self.visit_i32_eqz(),
                 Instr::I32Eq => self.visit_i32_eq(),
@@ -505,9 +510,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 Instr::I64Extend8S => self.visit_i64_extend8_s(),
                 Instr::I64Extend16S => self.visit_i64_extend16_s(),
                 Instr::I64Extend32S => self.visit_i64_extend32_s(),
-                Instr::MagicPrefix(_) => {
-                    self.next_instr();
-                }
             }
         }
     }
@@ -682,11 +684,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     #[inline(always)]
     fn sync_stack_ptr(&mut self) {
         self.value_stack.sync_stack_ptr(self.sp);
-    }
-
-    #[inline(always)]
-    fn stack_diff(&mut self) -> isize {
-        self.sp.offset_from(self.value_stack.base_ptr())
     }
 
     /// Calls the given [`Func`].
@@ -896,7 +893,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         skip: usize,
         table: TableIdx,
         func_index: u32,
-        func_type: Option<SignatureIdx>,
+        func_type: SignatureIdx,
         kind: CallKind,
     ) -> Result<CallOutcome, TrapCode> {
         let table = self.cache.get_table(self.ctx, table);
@@ -907,7 +904,9 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             .map(FuncRef::from)
             .ok_or(TrapCode::TableOutOfBounds)?;
         let func = funcref.func().ok_or(TrapCode::IndirectCallToNull)?;
-        if let Some(func_type) = func_type {
+        // for rWASM we do signature check using special additional opcode
+        let is_rwasm = self.ctx.engine().config().get_rwasm_config().is_some();
+        if !is_rwasm {
             let actual_signature = self.ctx.resolve_func(func).ty_dedup();
             let expected_signature = self
                 .ctx
@@ -920,8 +919,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 return Err(TrapCode::BadSignature).map_err(Into::into);
             }
         }
-        let func_index = self.ctx.unwrap_stored(func.as_inner());
-        self.call_func(skip, &func, kind, func_index.into_usize() as u32)
+        self.call_func(skip, func, kind, func_index)
     }
 }
 
@@ -1096,45 +1094,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     }
 
     #[inline(always)]
-    fn visit_br_indirect(&mut self, offset: BranchOffset) -> Result<(), TrapCode> {
-        // assert_eq!(offset.to_i32(), 0);
-        let sp = self.sp.pop_as::<i32>();
-        let return_pointer = sp + offset.to_i32();
-        // let return_pointer = self.sp.nth_back(offset.to_i32() as usize);
-        // let drop_keep = DropKeep::new(1, offset.to_i32() as usize).unwrap();
-        // self.sp.drop_keep(drop_keep);
-
-        return_pointer
-            .ne(&0)
-            .then_some(())
-            .ok_or(TrapCode::IndirectCallToNull)?;
-
-        let pc = self.ip.pc() as i32;
-        let offset_result = return_pointer - pc;
-        // println!(
-        //     "visit_br_indirect: pc {} offset {} return_pointer {} offset_result {}",
-        //     pc,
-        //     offset.to_i32(),
-        //     return_pointer,
-        //     offset_result,
-        // );
-        self.branch_to(offset_result.into());
-
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn visit_type_check(&mut self, sig_idx: SignatureIdx) -> Result<(), TrapCode> {
-        let call_sig_idx = self.sp.pop().as_i32();
-        if sig_idx.to_u32() != call_sig_idx as u32 {
-            return Err(TrapCode::BadSignature).map_err(Into::into);
-        }
-        self.next_instr();
-
-        Ok(())
-    }
-
-    #[inline(always)]
     fn visit_return_call_indirect(
         &mut self,
         func_type: SignatureIdx,
@@ -1143,7 +1102,11 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         let table = self.fetch_table_idx(2);
         let func_index: u32 = self.sp.pop_as();
         self.sp.drop_keep(drop_keep);
-        self.execute_call_indirect(3, table, func_index, Some(func_type), CallKind::Tail)
+        // for rWASM let's store func type on the stack
+        if self.ctx.engine().config().get_rwasm_config().is_some() {
+            self.last_signature = Some(func_type);
+        }
+        self.execute_call_indirect(3, table, func_index, func_type, CallKind::Tail)
     }
 
     #[inline(always)]
@@ -1153,36 +1116,74 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
 
     #[inline(always)]
     fn visit_call(&mut self, func_index: FuncIdx) -> Result<CallOutcome, TrapCode> {
-        let callee = self.cache.get_func(self.ctx, func_index);
-        self.call_func(1, &callee, CallKind::Nested, func_index.to_u32())
+        if self.ctx.engine().config().get_rwasm_wrap_import_funcs() {
+            let func_entity = self
+                .ctx
+                .engine()
+                .resolve_trampoline(func_index.to_u32())
+                .ok_or(TrapCode::UnresolvedFunction)?;
+            self.next_instr_at(1);
+            self.sync_stack_ptr();
+            self.call_stack
+                .push(FuncFrame::new(self.ip, self.cache.instance()))?;
+            self.cache.reset();
+            Ok(CallOutcome::Call {
+                host_func: func_entity,
+                instance: *self.cache.instance(),
+            })
+        } else {
+            let callee = self.cache.get_func(self.ctx, func_index);
+            self.call_func(1, &callee, CallKind::Nested, func_index.to_u32())
+        }
     }
 
     #[inline(always)]
     fn visit_call_indirect(&mut self, func_type: SignatureIdx) -> Result<CallOutcome, TrapCode> {
         let table = self.fetch_table_idx(1);
         let func_index: u32 = self.sp.pop_as();
-        self.execute_call_indirect(2, table, func_index, Some(func_type), CallKind::Nested)
+        // for rWASM let's store func type on the stack
+        if self.ctx.engine().config().get_rwasm_config().is_some() {
+            self.last_signature = Some(func_type);
+        }
+        self.execute_call_indirect(2, table, func_index, func_type, CallKind::Nested)
     }
 
     #[inline(always)]
-    fn visit_untyped_const(&mut self, value: UntypedValue) {
+    fn visit_signature_check(&mut self, expected_signature: SignatureIdx) -> Result<(), TrapCode> {
+        debug_assert!(
+            self.ctx.engine().config().get_rwasm_config().is_some(),
+            "this instruction can be used only in rWASM mode"
+        );
+        if let Some(actual_signature) = self.last_signature.take() {
+            if actual_signature != expected_signature {
+                return Err(TrapCode::BadSignature).map_err(Into::into);
+            }
+        }
+        self.next_instr();
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn visit_i32_const(&mut self, value: UntypedValue) {
         self.sp.push(value);
         self.next_instr()
     }
 
     #[inline(always)]
-    #[allow(dead_code)]
-    fn visit_const_32(&mut self, bytes: [u8; 4]) {
-        let bytes = u32::from_ne_bytes(bytes);
-        self.sp.push(UntypedValue::from(bytes));
+    fn visit_i64_const(&mut self, value: UntypedValue) {
+        self.sp.push(value);
         self.next_instr()
     }
 
     #[inline(always)]
-    #[allow(dead_code)]
-    fn visit_i64_const_32(&mut self, value: i32) {
-        let sign_extended = i64::from(value);
-        self.sp.push(UntypedValue::from(sign_extended));
+    fn visit_f32_const(&mut self, value: UntypedValue) {
+        self.sp.push(value);
+        self.next_instr()
+    }
+
+    #[inline(always)]
+    fn visit_f64_const(&mut self, value: UntypedValue) {
+        self.sp.push(value);
         self.next_instr()
     }
 
@@ -1320,7 +1321,19 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     }
 
     #[inline(always)]
-    fn visit_memory_init(&mut self, segment: DataSegmentIdx) -> Result<(), TrapCode> {
+    fn visit_memory_init(&mut self, mut segment: DataSegmentIdx) -> Result<(), TrapCode> {
+        // we use some tricky structure for rWASM to determine what data segments dropped
+        let is_empty_segment = if self.ctx.engine().config().get_rwasm_config().is_some() {
+            // increase segment index, because first index is used for the global data section
+            let (_, data) = self
+                .cache
+                .get_default_memory_and_data_segment(self.ctx, segment);
+            // since we have only one data segment then rewrite index with 0
+            segment = DataSegmentIdx::from(0);
+            data.len() == 0
+        } else {
+            false
+        };
         // The `n`, `s` and `d` variable bindings are extracted from the Wasm specification.
         let (d, s, n) = self.sp.pop3();
         let n = i32::from(n) as usize;
@@ -1329,9 +1342,12 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         self.consume_fuel_with(
             |costs| costs.fuel_for_bytes(n as u64),
             |this| {
-                let (memory, data) = this
+                let (memory, mut data) = this
                     .cache
                     .get_default_memory_and_data_segment(this.ctx, segment);
+                if is_empty_segment {
+                    data = &[]
+                }
                 let memory = memory
                     .get_mut(dst_offset..)
                     .and_then(|memory| memory.get_mut(..n))
@@ -1347,26 +1363,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             },
         )?;
         self.try_next_instr()
-    }
-
-    #[inline(always)]
-    fn visit_data_store(&mut self, segment_index: DataSegmentIdx, size: usize) {
-        // get offset and value from stack
-        let v = self.sp.pop();
-        let le_bytes = match size {
-            8 => v.as_u64().to_le_bytes().to_vec(),
-            4 => v.as_u32().to_le_bytes().to_vec(),
-            2 => v.as_u16().to_le_bytes().to_vec(),
-            1 => vec![v.as_u32() as u8],
-            _ => unreachable!("unknown size"),
-        };
-        let segment = self
-            .cache
-            .get_data_segment(self.ctx, segment_index.to_u32());
-        self.ctx
-            .resolve_data_segment_mut(&segment)
-            .add_bytes(le_bytes.as_slice());
-        self.next_instr()
     }
 
     #[inline(always)]
@@ -1425,10 +1421,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             |this| {
                 let table = this.cache.get_table(this.ctx, table_index);
                 this.ctx
-                    .resolve_table(&table)
-                    .get_untyped(dst + len - 1)
-                    .ok_or(TrapCode::TableOutOfBounds)?;
-                this.ctx
                     .resolve_table_mut(&table)
                     .fill_untyped(dst, val, len)?;
                 Ok(())
@@ -1477,24 +1469,6 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 // Query both tables and check if they are the same:
                 let dst = this.cache.get_table(this.ctx, dst);
                 let src = this.cache.get_table(this.ctx, src);
-                if len != 0 {
-                    this.ctx
-                        .resolve_table(&dst)
-                        .get_untyped(
-                            dst_index
-                                .checked_add(len - 1)
-                                .ok_or(TrapCode::TableOutOfBounds)?,
-                        )
-                        .ok_or(TrapCode::TableOutOfBounds)?;
-                    this.ctx
-                        .resolve_table(&src)
-                        .get_untyped(
-                            src_index
-                                .checked_add(len - 1)
-                                .ok_or(TrapCode::TableOutOfBounds)?,
-                        )
-                        .ok_or(TrapCode::TableOutOfBounds)?;
-                }
                 if Table::eq(&dst, &src) {
                     // Copy within the same table:
                     let table = this.ctx.resolve_table_mut(&dst);
@@ -1511,8 +1485,20 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     }
 
     #[inline(always)]
-    fn visit_table_init(&mut self, elem: ElementSegmentIdx) -> Result<(), TrapCode> {
-        let table = self.fetch_table_idx(1);
+    fn visit_table_init(&mut self, mut elem: ElementSegmentIdx) -> Result<(), TrapCode> {
+        let table_idx = self.fetch_table_idx(1);
+        // we use some tricky structure for rWASM to determine what element segments dropped
+        let is_empty_segment = if self.ctx.engine().config().get_rwasm_config().is_some() {
+            // increase segment index, because first index is used for the global element segment
+            let (_, _, element) = self
+                .cache
+                .get_table_and_element_segment(self.ctx, table_idx, elem);
+            // since we have only one element segment then rewrite index with 0
+            elem = ElementSegmentIdx::from(0);
+            element.items.is_none()
+        } else {
+            false
+        };
         // The `n`, `s` and `d` variable bindings are extracted from the Wasm specification.
         let (d, s, n) = self.sp.pop3();
         let len = u32::from(n);
@@ -1521,29 +1507,28 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         self.consume_fuel_with(
             |costs| costs.fuel_for_elements(u64::from(len)),
             |this| {
-                let (instance, table, element) = this
+                let (instance, table, mut element) = this
                     .cache
-                    .get_table_and_element_segment(this.ctx, table, elem);
+                    .get_table_and_element_segment(this.ctx, table_idx, elem);
+                let empty_element_segment = ElementSegmentEntity::empty(element.ty());
+                if is_empty_segment {
+                    element = &empty_element_segment;
+                }
                 table.init(dst_index, element, src_index, len, |func_index| {
-                    instance
+                    let func_index = self
+                        .code_map
+                        .resolve_function_by_offset(func_index as usize)
+                        .map(|v| v.into_usize() as u32)
+                        .unwrap_or(func_index);
+                    let func = instance
                         .get_func(func_index)
-                        .unwrap_or_else(|| panic!("missing function at index {func_index}"))
+                        .unwrap_or_else(|| panic!("missing function at index {func_index}"));
+                    Some(func)
                 })?;
                 Ok(())
             },
         )?;
         self.try_next_instr_at(2)
-    }
-
-    #[inline(always)]
-    fn visit_element_store(&mut self, elem_index: ElementSegmentIdx) {
-        // get offset and value from stack
-        let v = self.sp.pop();
-        let segment = self.cache.get_element_segment(self.ctx, elem_index);
-        self.ctx
-            .resolve_element_segment_mut(&segment)
-            .add_item(ConstExpr::new_funcref(v.as_u32()));
-        self.next_instr()
     }
 
     #[inline(always)]
@@ -1554,11 +1539,17 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     }
 
     #[inline(always)]
-    fn visit_ref_func(&mut self, func_index: FuncIdx) {
-        // let func = self.cache.get_func(self.ctx, func_index);
-        // let funcref = FuncRef::new(func);
-        self.sp.push_as(func_index.to_u32());
+    fn visit_ref_func(&mut self, func_index: FuncIdx) -> Result<(), TrapCode> {
+        let func_index: FuncIdx = self
+            .code_map
+            .resolve_function_by_offset(func_index.to_u32() as usize)
+            .map(|v| v.to_u32().into())
+            .unwrap_or(func_index);
+        let func = self.cache.get_func(self.ctx, func_index);
+        let funcref = FuncRef::new(func);
+        self.sp.push_as(funcref);
         self.next_instr();
+        Ok(())
     }
 }
 
