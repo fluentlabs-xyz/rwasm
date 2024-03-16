@@ -1,6 +1,6 @@
 use crate::{core::ValueType, module::ImportName, FuncType};
-use hashbrown::{hash_map::DefaultHashBuilder, HashMap};
-use std::hash::Hash;
+use core::hash::Hash;
+use hashbrown::HashMap;
 
 #[derive(Debug, Clone, Hash)]
 pub struct ImportFunc {
