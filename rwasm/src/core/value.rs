@@ -9,7 +9,7 @@ use core::{f32, i32, i64, u32, u64};
 /// See [`Value`] for details.
 ///
 /// [`Value`]: enum.Value.html
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ValueType {
     /// 32-bit signed or unsigned integer.
     I32,

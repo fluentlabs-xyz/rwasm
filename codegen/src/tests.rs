@@ -1,5 +1,4 @@
 use crate::{BinaryFormat, RwasmModule};
-use alloc::string::ToString;
 use rwasm::{
     core::{ImportFunc, ImportLinker, ValueType},
     AsContextMut,
@@ -42,8 +41,8 @@ fn execute_binary_default(wat: &str) -> HostState {
     // create import linker
     let mut import_linker = ImportLinker::default();
     import_linker.insert_function(ImportFunc::new_env(
-        "env".to_string(),
-        "_sys_halt".to_string(),
+        "env",
+        "_sys_halt",
         SYS_HALT_CODE,
         &[ValueType::I32],
         &[],

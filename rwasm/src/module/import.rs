@@ -15,7 +15,7 @@ pub struct Import {
 }
 
 /// The name or namespace of an imported item.
-#[derive(Debug, Clone, PartialOrd, PartialEq, Ord, Eq)]
+#[derive(Debug, Clone, PartialOrd, PartialEq, Ord, Eq, Hash)]
 pub struct ImportName {
     /// The name of the [`Module`] that defines the imported item.
     ///

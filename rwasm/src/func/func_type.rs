@@ -7,7 +7,7 @@ use core::fmt;
 /// # Note
 ///
 /// Can be cloned cheaply.
-#[derive(Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct FuncType {
     /// The number of function parameters.
     len_params: usize,
