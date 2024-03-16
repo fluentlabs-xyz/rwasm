@@ -128,18 +128,12 @@ impl<'parser> RwasmTranslator<'parser> {
             return Err(RwasmBuilderError::NotSupportedImport);
         }
         let import_name = imports[fn_index as usize];
-        let import_linker = self
-            .res
-            .res
-            .engine()
-            .config()
+        let config = self.res.res.engine().config();
+        let (index, fuel_cost) = config
             .get_rwasm_config()
-            .and_then(|rwasm_config| rwasm_config.import_linker.as_ref());
-        let (index, fuel_cost) = import_linker
+            .and_then(|rwasm_config| rwasm_config.import_linker.as_ref())
             .ok_or(RwasmBuilderError::UnknownImport(import_name.clone()))?
-            .index_mapping()
-            .get(import_name)
-            .copied()
+            .resolve_by_import_name(import_name)
             .ok_or(RwasmBuilderError::UnknownImport(import_name.clone()))?;
         Ok((index, fuel_cost))
     }

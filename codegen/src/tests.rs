@@ -1,6 +1,7 @@
 use crate::{BinaryFormat, RwasmModule};
 use rwasm::{
-    core::{ImportFunc, ImportLinker, ValueType},
+    core::ImportLinker,
+    module::ImportName,
     AsContextMut,
     Caller,
     Engine,
@@ -40,14 +41,7 @@ fn execute_binary_default(wat: &str) -> HostState {
     let wasm_binary = wat::parse_str(wat).unwrap();
     // create import linker
     let mut import_linker = ImportLinker::default();
-    import_linker.insert_function(ImportFunc::new_env(
-        "env",
-        "_sys_halt",
-        SYS_HALT_CODE,
-        &[ValueType::I32],
-        &[],
-        1,
-    ));
+    import_linker.insert_function(ImportName::new("env", "_sys_halt"), SYS_HALT_CODE, 1);
     let config = RwasmModule::default_config(Some(import_linker));
     // compile rWASM module from WASM binary
     let rwasm_module = RwasmModule::compile_with_config(&wasm_binary, &config).unwrap();

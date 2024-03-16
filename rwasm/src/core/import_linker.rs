@@ -1,54 +1,6 @@
-use crate::{core::ValueType, module::ImportName, FuncType};
+use crate::module::ImportName;
 use core::hash::Hash;
 use hashbrown::HashMap;
-
-#[derive(Debug, Clone, Hash)]
-pub struct ImportFunc {
-    import_name: ImportName,
-    index: u32,
-    func_type: FuncType,
-    fuel_amount: u32,
-}
-
-impl ImportFunc {
-    pub fn new(import_name: ImportName, index: u32, func_type: FuncType, fuel_amount: u32) -> Self {
-        Self {
-            import_name,
-            index,
-            func_type,
-            fuel_amount,
-        }
-    }
-
-    pub fn new_env<'a>(
-        module_name: &str,
-        fn_name: &str,
-        index: u32,
-        input: &'a [ValueType],
-        output: &'a [ValueType],
-        fuel_amount: u32,
-    ) -> Self {
-        let func_type = FuncType::new_with_refs(input, output);
-        Self::new(
-            ImportName::new(module_name, fn_name),
-            index,
-            func_type,
-            fuel_amount,
-        )
-    }
-
-    pub fn import_name(&self) -> ImportName {
-        self.clone().import_name.into()
-    }
-
-    pub fn index(&self) -> u32 {
-        self.index
-    }
-
-    pub fn func_type(&self) -> &FuncType {
-        &self.func_type
-    }
-}
 
 #[derive(Debug, Default, Clone)]
 pub struct ImportLinker {
@@ -64,17 +16,19 @@ impl<const N: usize> From<[(ImportName, (u32, u32)); N]> for ImportLinker {
 }
 
 impl ImportLinker {
-    pub fn insert_function(&mut self, import_func: ImportFunc) {
-        if self.func_by_name.contains_key(&import_func.import_name()) {
-            return;
-        }
-        self.func_by_name.insert(
-            import_func.import_name(),
-            (import_func.index, import_func.fuel_amount),
-        );
+    pub fn insert_function<I: Into<u32>>(
+        &mut self,
+        import_name: ImportName,
+        sys_func_index: I,
+        fuel_cost: u32,
+    ) {
+        let last_value = self
+            .func_by_name
+            .insert(import_name, (sys_func_index.into(), fuel_cost));
+        assert!(last_value.is_none(), "import linker name collision");
     }
 
-    pub fn index_mapping(&self) -> &HashMap<ImportName, (u32, u32)> {
-        &self.func_by_name
+    pub fn resolve_by_import_name(&self, import_name: &ImportName) -> Option<(u32, u32)> {
+        self.func_by_name.get(import_name).copied()
     }
 }
