@@ -4,7 +4,7 @@ use rwasm::engine::{
     DropKeep,
 };
 
-pub(crate) fn translate_drop_keep(drop_keep: DropKeep) -> Vec<Instruction> {
+pub fn translate_drop_keep(drop_keep: DropKeep) -> Vec<Instruction> {
     let mut result = Vec::new();
     let (drop, keep) = (drop_keep.drop(), drop_keep.keep());
     if drop == 0 {

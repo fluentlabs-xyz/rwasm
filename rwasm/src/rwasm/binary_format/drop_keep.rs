@@ -1,5 +1,7 @@
-use crate::{BinaryFormat, BinaryFormatError, BinaryFormatReader, BinaryFormatWriter};
-use rwasm::engine::DropKeep;
+use crate::{
+    engine::DropKeep,
+    rwasm::{BinaryFormat, BinaryFormatError, BinaryFormatReader, BinaryFormatWriter},
+};
 
 impl<'a> BinaryFormat<'a> for DropKeep {
     type SelfType = DropKeep;

@@ -1,5 +1,4 @@
 use crate::module::ImportName;
-use core::hash::Hash;
 use hashbrown::HashMap;
 
 #[derive(Debug, Default, Clone)]

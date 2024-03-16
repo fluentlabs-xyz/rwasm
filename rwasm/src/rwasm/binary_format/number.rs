@@ -1,4 +1,4 @@
-use crate::binary_format::{
+use crate::rwasm::binary_format::{
     reader_writer::{BinaryFormatReader, BinaryFormatWriter},
     BinaryFormat,
     BinaryFormatError,

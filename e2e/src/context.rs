@@ -3,6 +3,7 @@ use anyhow::Result;
 use rwasm::{
     core::{ValueType, F32, F64},
     module::{FuncIdx, Imported},
+    rwasm::{BinaryFormat, RwasmModule},
     Config,
     Engine,
     Extern,
@@ -19,7 +20,6 @@ use rwasm::{
     TableType,
     Value,
 };
-use rwasm_codegen::{BinaryFormat, RwasmModule};
 use std::collections::HashMap;
 use wast::token::{Id, Span};
 

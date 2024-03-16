@@ -1,7 +1,6 @@
 [workspace]
 members = [
     #    "bin",
-    "codegen",
     "e2e",
     "rwasm",
 ]

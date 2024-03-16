@@ -1,9 +1,4 @@
-use crate::binary_format::{
-    reader_writer::{BinaryFormatReader, BinaryFormatWriter},
-    BinaryFormat,
-    BinaryFormatError,
-};
-use rwasm::{
+use crate::{
     core::UntypedValue,
     engine::{
         bytecode::{
@@ -21,6 +16,11 @@ use rwasm::{
         },
         const_pool::ConstRef,
         CompiledFunc,
+    },
+    rwasm::binary_format::{
+        reader_writer::{BinaryFormatReader, BinaryFormatWriter},
+        BinaryFormat,
+        BinaryFormatError,
     },
 };
 

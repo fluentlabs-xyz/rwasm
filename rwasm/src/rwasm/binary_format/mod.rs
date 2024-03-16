@@ -6,7 +6,7 @@ mod number;
 pub mod reader_writer;
 mod utils;
 
-pub use crate::binary_format::reader_writer::{BinaryFormatReader, BinaryFormatWriter};
+pub use crate::rwasm::binary_format::reader_writer::{BinaryFormatReader, BinaryFormatWriter};
 use alloc::vec::Vec;
 
 #[derive(Debug, Copy, Clone)]

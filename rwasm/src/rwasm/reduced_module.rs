@@ -1,16 +1,15 @@
 use crate::{
-    binary_format::BinaryFormat,
-    constants::N_MAX_MEMORY_PAGES,
-    instruction_set::InstructionSet,
-    BinaryFormatError,
-    N_MAX_RECURSION_DEPTH,
-    N_MAX_STACK_HEIGHT,
-};
-use alloc::{collections::BTreeMap, string::ToString, vec::Vec};
-use rwasm::{
     core::ImportLinker,
     engine::RwasmConfig,
     module::{FuncIdx, FuncTypeIdx, MemoryIdx, ModuleBuilder, ModuleError},
+    rwasm::{
+        BinaryFormat,
+        BinaryFormatError,
+        InstructionSet,
+        N_MAX_MEMORY_PAGES,
+        N_MAX_RECURSION_DEPTH,
+        N_MAX_STACK_HEIGHT,
+    },
     Config,
     Engine,
     Error,
@@ -19,13 +18,14 @@ use rwasm::{
     Module,
     StackLimits,
 };
+use alloc::{collections::BTreeMap, string::ToString, vec::Vec};
 
 #[derive(Debug, Default, PartialEq)]
 pub struct RwasmModule {
-    pub(crate) code_section: InstructionSet,
-    pub(crate) memory_section: Vec<u8>,
-    pub(crate) func_section: Vec<u32>,
-    pub(crate) element_section: Vec<u32>,
+    pub code_section: InstructionSet,
+    pub memory_section: Vec<u8>,
+    pub func_section: Vec<u32>,
+    pub element_section: Vec<u32>,
 }
 
 impl RwasmModule {

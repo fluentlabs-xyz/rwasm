@@ -1,5 +1,4 @@
-use alloc::vec::Vec;
-use rwasm::{
+use crate::{
     core::UntypedValue,
     engine::{
         bytecode::{
@@ -22,11 +21,12 @@ use rwasm::{
         DropKeep,
     },
 };
+use alloc::vec::Vec;
 
 #[derive(Default, Debug, PartialEq)]
 pub struct InstructionSet {
-    pub(crate) instr: Vec<Instruction>,
-    pub(crate) metas: Vec<InstrMeta>,
+    pub instr: Vec<Instruction>,
+    pub metas: Vec<InstrMeta>,
 }
 
 macro_rules! impl_opcode {
@@ -317,16 +317,16 @@ macro_rules! instruction_set_internal {
     // Nothing left to do
     ($code:ident, ) => {};
     ($code:ident, $x:ident [$v:expr] $($rest:tt)*) => {{
-        $code.push(rwasm::engine::bytecode::Instruction::$x($v.into()));
+        $code.push($crate::engine::bytecode::Instruction::$x($v.into()));
         $crate::instruction_set_internal!($code, $($rest)*);
     }};
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {{
-        $code.push(rwasm::engine::bytecode::Instruction::$x($v.into()));
+        $code.push($crate::engine::bytecode::Instruction::$x($v.into()));
         $crate::instruction_set_internal!($code, $($rest)*);
     }};
     // Default opcode without any inputs
     ($code:ident, $x:ident $($rest:tt)*) => {{
-        $code.push(rwasm::engine::bytecode::Instruction::$x);
+        $code.push($crate::engine::bytecode::Instruction::$x);
         $crate::instruction_set_internal!($code, $($rest)*);
     }};
     // Function calls
@@ -339,7 +339,7 @@ macro_rules! instruction_set_internal {
 #[macro_export]
 macro_rules! instruction_set {
     ($($args:tt)*) => {{
-        let mut code = $crate::InstructionSet::new();
+        let mut code = $crate::rwasm::InstructionSet::new();
         $crate::instruction_set_internal!(code, $($args)*);
         code
     }};

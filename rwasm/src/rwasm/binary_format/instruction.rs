@@ -1,9 +1,4 @@
-use crate::binary_format::{
-    reader_writer::{BinaryFormatReader, BinaryFormatWriter},
-    BinaryFormat,
-    BinaryFormatError,
-};
-use rwasm::{
+use crate::{
     arena::ArenaIndex,
     core::UntypedValue,
     engine::{
@@ -23,6 +18,11 @@ use rwasm::{
         },
         CompiledFunc,
         DropKeep,
+    },
+    rwasm::binary_format::{
+        reader_writer::{BinaryFormatReader, BinaryFormatWriter},
+        BinaryFormat,
+        BinaryFormatError,
     },
 };
 
@@ -587,14 +587,16 @@ impl InstructionExtra for Instruction {
 #[cfg(test)]
 mod tests {
     use crate::{
-        binary_format::{
-            instruction::INSTRUCTION_AUX_BYTES,
-            reader_writer::{BinaryFormatReader, BinaryFormatWriter},
-            BinaryFormat,
+        engine::bytecode::Instruction,
+        rwasm::{
+            binary_format::{
+                instruction::INSTRUCTION_AUX_BYTES,
+                reader_writer::{BinaryFormatReader, BinaryFormatWriter},
+                BinaryFormat,
+            },
+            instruction::InstructionExtra,
         },
-        instruction::InstructionExtra,
     };
-    use rwasm::engine::bytecode::Instruction;
     use strum::IntoEnumIterator;
 
     #[test]

@@ -603,25 +603,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "rwasm-codegen"
-version = "0.30.0"
-dependencies = [
- "byteorder",
- "hashbrown 0.14.3",
- "rwasm",
- "strum",
- "strum_macros",
- "wat",
-]
-
-[[package]]
 name = "rwasm-e2e"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "byteorder",
  "rwasm",
- "rwasm-codegen",
  "serial_test",
  "wast 62.0.1",
  "wat",

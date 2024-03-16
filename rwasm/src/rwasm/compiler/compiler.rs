@@ -20,7 +20,7 @@ use rwasm::{
 #[deprecated(note = "doesn't work, will be removed, use `RwasmModule` instead")]
 pub struct Compiler {
     // input params
-    pub(crate) config: CompilerConfig,
+    pub config: CompilerConfig,
     // parsed wasmi state
     engine: Engine,
     module: Module,

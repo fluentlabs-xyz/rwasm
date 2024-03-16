@@ -1,5 +1,7 @@
-use crate::{BinaryFormat, BinaryFormatError, BinaryFormatReader, BinaryFormatWriter, RwasmModule};
-use rwasm::engine::bytecode::Instruction;
+use crate::{
+    engine::bytecode::Instruction,
+    rwasm::{BinaryFormat, BinaryFormatError, BinaryFormatReader, BinaryFormatWriter, RwasmModule},
+};
 
 /// Rwasm binary version that is equal to 'R' symbol (0x52 in hex)
 const RWASM_VERSION: u8 = 0x52;
@@ -143,7 +145,10 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
 
 #[cfg(test)]
 mod tests {
-    use crate::{instruction_set, BinaryFormat, RwasmModule};
+    use crate::{
+        instruction_set,
+        rwasm::{BinaryFormat, RwasmModule},
+    };
 
     #[test]
     fn test_module_encoding() {

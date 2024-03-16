@@ -1,7 +1,7 @@
-use crate::{BinaryFormat, RwasmModule};
-use rwasm::{
+use crate::{
     core::ImportLinker,
     module::ImportName,
+    rwasm::{BinaryFormat, RwasmModule},
     AsContextMut,
     Caller,
     Engine,

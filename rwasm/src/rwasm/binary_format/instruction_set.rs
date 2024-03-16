@@ -1,13 +1,15 @@
 use crate::{
-    binary_format::{
-        reader_writer::{BinaryFormatReader, BinaryFormatWriter},
-        BinaryFormat,
-        BinaryFormatError,
+    engine::bytecode::Instruction,
+    rwasm::{
+        binary_format::{
+            reader_writer::{BinaryFormatReader, BinaryFormatWriter},
+            BinaryFormat,
+            BinaryFormatError,
+        },
+        instruction::INSTRUCTION_SIZE_BYTES,
+        instruction_set::InstructionSet,
     },
-    instruction::INSTRUCTION_SIZE_BYTES,
-    instruction_set::InstructionSet,
 };
-use rwasm::engine::bytecode::Instruction;
 
 impl<'a> BinaryFormat<'a> for InstructionSet {
     type SelfType = InstructionSet;

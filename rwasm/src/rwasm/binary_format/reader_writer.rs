@@ -1,4 +1,4 @@
-use crate::binary_format::BinaryFormatError;
+use crate::rwasm::binary_format::BinaryFormatError;
 use alloc::vec::Vec;
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 
