@@ -21,7 +21,7 @@ categories = ["wasm", "no-std", "virtualization"]
 
 [workspace.dependencies]
 byteorder = { version = "1.5.0", default-features = false }
-hashbrown = "0.14.3"
+hashbrown = { version = "0.14.3", default-features = false }
 
 [profile.release]
 panic = "abort"
