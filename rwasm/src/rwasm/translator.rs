@@ -127,20 +127,19 @@ impl<'parser> RwasmTranslator<'parser> {
         instr_builder.push_inst(state_router.opcode);
         // translate state router
         for (entrypoint_name, state_value) in state_router.states.iter() {
-            let export_index = self
-                .res
-                .res
-                .exports
+            let exports = &self.res.res.exports;
+            let export_index = exports
                 .get(entrypoint_name.as_str())
-                .ok_or(RwasmBuilderError::MissingEntrypoint)?
-                .into_func_idx()
-                .ok_or(RwasmBuilderError::MissingEntrypoint)?
-                .into_u32();
+                .and_then(|v| v.into_func_idx())
+                .map(|v| v.into_u32());
+            if export_index.is_none() {
+                continue;
+            }
             instr_builder.push_inst(Instruction::LocalGet(1.into()));
-            instr_builder.push_inst(Instruction::I32Const((*state_value as u32).into()));
+            instr_builder.push_inst(Instruction::I32Const((*state_value).into()));
             instr_builder.push_inst(Instruction::I32Eq);
             instr_builder.push_inst(Instruction::BrIfEqz(2.into()));
-            instr_builder.push_inst(Instruction::CallInternal(export_index.into()));
+            instr_builder.push_inst(Instruction::CallInternal(export_index.unwrap().into()));
         }
         // drop input state from the stack
         instr_builder.push_inst(Instruction::Drop);
