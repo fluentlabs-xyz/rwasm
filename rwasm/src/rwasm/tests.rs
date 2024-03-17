@@ -1,9 +1,11 @@
 use crate::{
     core::ImportLinker,
+    engine::{bytecode::Instruction, RwasmConfig, StateRouterConfig},
     module::ImportName,
     rwasm::{BinaryFormat, RwasmModule},
     AsContextMut,
     Caller,
+    Config,
     Engine,
     Func,
     Linker,
@@ -14,6 +16,7 @@ use crate::{
 #[derive(Default, Debug, Clone)]
 struct HostState {
     exit_code: i32,
+    state: i32,
 }
 
 #[cfg(feature = "std")]
@@ -36,13 +39,17 @@ pub fn trace_bytecode(module: &Module, engine: &Engine) {
 }
 
 const SYS_HALT_CODE: u32 = 1010;
+const SYS_STATE_CODE: u32 = 1011;
 
-fn execute_binary_default(wat: &str) -> HostState {
-    let wasm_binary = wat::parse_str(wat).unwrap();
-    // create import linker
+fn create_import_linker() -> ImportLinker {
     let mut import_linker = ImportLinker::default();
     import_linker.insert_function(ImportName::new("env", "_sys_halt"), SYS_HALT_CODE, 1);
-    let config = RwasmModule::default_config(Some(import_linker));
+    import_linker.insert_function(ImportName::new("env", "_sys_state"), SYS_STATE_CODE, 1);
+    import_linker
+}
+
+fn execute_binary(wat: &str, host_state: HostState, config: Config) -> HostState {
+    let wasm_binary = wat::parse_str(wat).unwrap();
     // compile rWASM module from WASM binary
     let rwasm_module = RwasmModule::compile_with_config(&wasm_binary, &config).unwrap();
     // lets encode/decode rWASM module
@@ -57,18 +64,23 @@ fn execute_binary_default(wat: &str) -> HostState {
     // trace bytecode for debug purposes
     trace_bytecode(&module, &engine);
     // execute translated rwasm
-    let mut store = Store::new(&engine, HostState::default());
+    let mut store = Store::new(&engine, host_state);
     store.add_fuel(1_000_000).unwrap();
     let mut linker = Linker::<HostState>::new(&engine);
-    // let module = reduced_module.to_module(&engine, &mut import_linker);
-    let func = Func::wrap(
+    let sys_halt_func = Func::wrap(
         store.as_context_mut(),
         |mut caller: Caller<'_, HostState>, exit_code: i32| {
             caller.data_mut().exit_code = exit_code;
         },
     );
-    engine.register_trampoline(SYS_HALT_CODE, func);
-    linker.define("env", "_sys_halt", func).unwrap();
+    let sys_state_func = Func::wrap(
+        store.as_context_mut(),
+        |mut caller: Caller<'_, HostState>| -> i32 { caller.data_mut().state },
+    );
+    engine.register_trampoline(SYS_HALT_CODE, sys_halt_func);
+    engine.register_trampoline(SYS_STATE_CODE, sys_state_func);
+    linker.define("env", "_sys_halt", sys_halt_func).unwrap();
+    linker.define("env", "_sys_state", sys_state_func).unwrap();
     // run start entrypoint
     let instance = linker
         .instantiate(&mut store, &module)
@@ -78,6 +90,11 @@ fn execute_binary_default(wat: &str) -> HostState {
     let main_func = instance.get_func(&mut store, "main").unwrap();
     main_func.call(&mut store, &[], &mut []).unwrap();
     store.data().clone()
+}
+
+fn execute_binary_default(wat: &str) -> HostState {
+    let config = RwasmModule::default_config(Some(create_import_linker()));
+    execute_binary(wat, HostState::default(), config)
 }
 
 #[test]
@@ -293,4 +310,52 @@ fn test_locals() {
         "#,
     );
     assert_eq!(host_state.exit_code, 0);
+}
+
+#[test]
+fn test_state_router() {
+    let wat = r#"
+    (module
+      (type (;0;) (func (param i32)))
+      (type (;1;) (func))
+      (type (;2;) (func (result i32)))
+      (import "env" "_sys_halt" (func (;0;) (type 0)))
+      (import "env" "_sys_state" (func (;1;) (type 2)))
+      (func (;2;) (type 1)
+        i32.const 100
+        call 0)
+      (func (;3;) (type 1)
+        i32.const 200
+        call 0)
+      (memory (;0;) 1)
+      (export "memory" (memory 0))
+      (export "main" (func 2))
+      (export "deploy" (func 3)))
+        "#;
+
+    const STATE_DEPLOY: i32 = 11;
+    const STATE_MAIN: i32 = 22;
+
+    let mut config = RwasmModule::default_config(None);
+    config.rwasm_config(RwasmConfig {
+        state_router: Some(StateRouterConfig {
+            states: Box::leak(Box::new([
+                ("deploy".to_string(), STATE_DEPLOY),
+                ("main".to_string(), STATE_MAIN),
+            ])),
+            opcode: Instruction::Call(SYS_STATE_CODE.into()),
+        }),
+        entrypoint_name: None,
+        import_linker: Some(create_import_linker()),
+        wrap_import_functions: true,
+    });
+    // run with deploy state (result is 200)
+    let mut host_state = HostState::default();
+    host_state.state = STATE_DEPLOY;
+    host_state = execute_binary(wat, host_state, config.clone());
+    assert_eq!(host_state.exit_code, 200);
+    // run with main state (result is 100)
+    host_state.state = STATE_MAIN;
+    host_state = execute_binary(wat, host_state, config);
+    assert_eq!(host_state.exit_code, 100);
 }

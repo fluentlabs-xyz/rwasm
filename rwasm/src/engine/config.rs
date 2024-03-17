@@ -1,5 +1,8 @@
 use super::{stack::StackLimits, DropKeep};
-use crate::core::{ImportLinker, UntypedValue};
+use crate::{
+    core::{ImportLinker, UntypedValue},
+    engine::bytecode::Instruction,
+};
 use alloc::string::{String, ToString};
 use core::{mem::size_of, num::NonZeroU64};
 use wasmparser::WasmFeatures;
@@ -8,7 +11,17 @@ use wasmparser::WasmFeatures;
 const DEFAULT_CACHED_STACKS: usize = 2;
 
 #[derive(Debug, Clone)]
+pub struct StateRouterConfig {
+    /// List of states to be router based on the state
+    pub states: &'static [(String, i32)],
+    /// Instruction that describes how we determine an input state
+    pub opcode: Instruction,
+}
+
+#[derive(Debug, Clone)]
 pub struct RwasmConfig {
+    /// State router is used to choose one of the function based on the index provided
+    pub state_router: Option<StateRouterConfig>,
     /// Entrypoint that stores bytecode for module init
     pub entrypoint_name: Option<String>,
     /// Import linker that stores mapping from function to special identifiers
@@ -21,6 +34,7 @@ pub struct RwasmConfig {
 impl Default for RwasmConfig {
     fn default() -> Self {
         Self {
+            state_router: None,
             entrypoint_name: Some("main".to_string()),
             import_linker: None,
             wrap_import_functions: false,

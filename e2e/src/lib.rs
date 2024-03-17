@@ -82,6 +82,7 @@ fn make_config(rwasm_mode: bool) -> Config {
         .wasm_extended_const(true);
     if rwasm_mode {
         config.rwasm_config(RwasmConfig {
+            state_router: None,
             entrypoint_name: None,
             import_linker: None,
             wrap_import_functions: false,

@@ -12,7 +12,7 @@ use crate::{
     module::{ConstExpr, DataSegmentKind, ElementSegmentKind, FuncIdx, ModuleResources},
     rwasm::RwasmBuilderError,
 };
-use alloc::{string::String, vec::Vec};
+use alloc::vec::Vec;
 use core::iter;
 
 pub struct RwasmTranslator<'parser> {
@@ -75,15 +75,10 @@ impl<'parser> RwasmTranslator<'parser> {
                 }
             }
         } else {
-            let entrypoint_name = self
-                .res
-                .engine()
-                .config()
-                .get_rwasm_config()
-                .and_then(|rwasm_config| rwasm_config.entrypoint_name.as_ref());
-            if let Some(entrypoint_name) = entrypoint_name {
-                self.translate_router(entrypoint_name.clone())?;
-            }
+            // if we have an entrypoint then translate it
+            self.translate_simple_router()?;
+            // if we have a state router then translate state router
+            self.translate_state_router()?;
         }
         // push unreachable in the end (indication of the entrypoint end)
         self.translator
@@ -93,7 +88,16 @@ impl<'parser> RwasmTranslator<'parser> {
         Ok(())
     }
 
-    fn translate_router(&mut self, entrypoint_name: String) -> Result<(), RwasmBuilderError> {
+    fn translate_simple_router(&mut self) -> Result<(), RwasmBuilderError> {
+        let config = self.res.engine().config();
+        // if we have an entrypoint then translate it
+        let entrypoint_name = config
+            .get_rwasm_config()
+            .and_then(|rwasm_config| rwasm_config.entrypoint_name.as_ref());
+        let entrypoint_name = match entrypoint_name {
+            Some(value) => value,
+            None => return Ok(()),
+        };
         let instr_builder = &mut self.translator.alloc.inst_builder;
         let export_index = self
             .res
@@ -105,6 +109,41 @@ impl<'parser> RwasmTranslator<'parser> {
             .ok_or(RwasmBuilderError::MissingEntrypoint)?
             .into_u32();
         instr_builder.push_inst(Instruction::CallInternal(export_index.into()));
+        Ok(())
+    }
+
+    fn translate_state_router(&mut self) -> Result<(), RwasmBuilderError> {
+        let config = self.res.engine().config();
+        // if we have a state router then translate state router
+        let state_router = config
+            .get_rwasm_config()
+            .and_then(|rwasm_config| rwasm_config.state_router.as_ref());
+        let state_router = match state_router {
+            Some(value) => value,
+            None => return Ok(()),
+        };
+        let instr_builder = &mut self.translator.alloc.inst_builder;
+        // push state on the stack
+        instr_builder.push_inst(state_router.opcode);
+        // translate state router
+        for (entrypoint_name, state_value) in state_router.states.iter() {
+            let export_index = self
+                .res
+                .res
+                .exports
+                .get(entrypoint_name.as_str())
+                .ok_or(RwasmBuilderError::MissingEntrypoint)?
+                .into_func_idx()
+                .ok_or(RwasmBuilderError::MissingEntrypoint)?
+                .into_u32();
+            instr_builder.push_inst(Instruction::LocalGet(1.into()));
+            instr_builder.push_inst(Instruction::I32Const((*state_value as u32).into()));
+            instr_builder.push_inst(Instruction::I32Eq);
+            instr_builder.push_inst(Instruction::BrIfEqz(2.into()));
+            instr_builder.push_inst(Instruction::CallInternal(export_index.into()));
+        }
+        // drop input state from the stack
+        instr_builder.push_inst(Instruction::Drop);
         Ok(())
     }
 
