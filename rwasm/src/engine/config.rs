@@ -13,7 +13,7 @@ const DEFAULT_CACHED_STACKS: usize = 2;
 #[derive(Debug, Clone)]
 pub struct StateRouterConfig {
     /// List of states to be router based on the state
-    pub states: &'static [(String, i32)],
+    pub states: Box<[(String, u32)]>,
     /// Instruction that describes how we determine an input state
     pub opcode: Instruction,
 }

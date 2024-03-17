@@ -16,7 +16,7 @@ use crate::{
 #[derive(Default, Debug, Clone)]
 struct HostState {
     exit_code: i32,
-    state: i32,
+    state: u32,
 }
 
 #[cfg(feature = "std")]
@@ -75,7 +75,7 @@ fn execute_binary(wat: &str, host_state: HostState, config: Config) -> HostState
     );
     let sys_state_func = Func::wrap(
         store.as_context_mut(),
-        |mut caller: Caller<'_, HostState>| -> i32 { caller.data_mut().state },
+        |mut caller: Caller<'_, HostState>| -> u32 { caller.data_mut().state },
     );
     engine.register_trampoline(SYS_HALT_CODE, sys_halt_func);
     engine.register_trampoline(SYS_STATE_CODE, sys_state_func);
@@ -333,16 +333,16 @@ fn test_state_router() {
       (export "deploy" (func 3)))
         "#;
 
-    const STATE_DEPLOY: i32 = 11;
-    const STATE_MAIN: i32 = 22;
+    const STATE_DEPLOY: u32 = 11;
+    const STATE_MAIN: u32 = 22;
 
     let mut config = RwasmModule::default_config(None);
     config.rwasm_config(RwasmConfig {
         state_router: Some(StateRouterConfig {
-            states: Box::leak(Box::new([
+            states: Box::new([
                 ("deploy".to_string(), STATE_DEPLOY),
                 ("main".to_string(), STATE_MAIN),
-            ])),
+            ]),
             opcode: Instruction::Call(SYS_STATE_CODE.into()),
         }),
         entrypoint_name: None,
