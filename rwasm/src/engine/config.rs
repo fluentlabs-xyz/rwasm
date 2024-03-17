@@ -3,7 +3,10 @@ use crate::{
     core::{ImportLinker, UntypedValue},
     engine::bytecode::Instruction,
 };
-use alloc::string::{String, ToString};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+};
 use core::{mem::size_of, num::NonZeroU64};
 use wasmparser::WasmFeatures;
 
