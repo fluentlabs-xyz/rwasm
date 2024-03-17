@@ -20,14 +20,19 @@ pub struct StateRouterConfig {
 
 #[derive(Debug, Clone)]
 pub struct RwasmConfig {
-    /// State router is used to choose one of the function based on the index provided
+    /// State router is used to choose one of the function based on the index provided.
+    /// P.S: this flag doesn't work if you have WASM's start entry point
     pub state_router: Option<StateRouterConfig>,
     /// Entrypoint that stores bytecode for module init
+    /// P.S: this flag doesn't work if you have WASM's start entry point
     pub entrypoint_name: Option<String>,
-    /// Import linker that stores mapping from function to special identifiers
+    /// Import linker that stores mapping from function to special identifiers that is used
+    /// to remember unique external calls ids. We need this to simplify proving process to forward
+    /// external calls to corresponding circuits.
     pub import_linker: Option<ImportLinker>,
     /// Do we need to wrap input functions to convert them from ExternRef to FuncRef (we need it to
-    /// simplify tables sometimes)?
+    /// simplify tables sometimes)? Its needed only for rWASM mode where we replace all external
+    /// calls with import linker mapping.
     pub wrap_import_functions: bool,
 }
 
