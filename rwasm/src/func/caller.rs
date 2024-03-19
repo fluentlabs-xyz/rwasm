@@ -1,5 +1,12 @@
 use super::super::{AsContext, AsContextMut, StoreContext, StoreContextMut};
-use crate::{store::FuelError, Engine, Extern, Instance, Memory};
+use crate::{
+    core::{Trap, TrapCode},
+    store::FuelError,
+    Engine,
+    Extern,
+    Instance,
+    Memory,
+};
 
 /// Represents the caller’s context when creating a host function via [`Func::wrap`].
 ///
@@ -50,32 +57,35 @@ impl<'a, T> Caller<'a, T> {
     }
 
     pub fn exported_memory(&self) -> Memory {
-        let memory = self
-            .get_export("memory")
-            .unwrap_or_else(|| unreachable!("there is no memory export inside"));
-        match memory {
-            Extern::Memory(memory) => memory,
-            _ => unreachable!("there is no memory export inside"),
-        }
+        self.get_export("memory")
+            .and_then(|memory| match memory {
+                Extern::Memory(memory) => Some(memory),
+                _ => None,
+            })
+            .unwrap_or_else(|| unreachable!("there is no memory export inside"))
     }
 
-    pub fn read_memory(&self, offset: u32, len: u32) -> &[u8] {
+    pub fn read_memory(&self, offset: u32, len: u32) -> Result<&[u8], Trap> {
         let buffer = self.exported_memory().data(self);
-        if buffer.len() > offset as usize {
-            &buffer[(offset as usize)..(offset as usize + len as usize)]
-        } else {
-            &[]
-        }
+        let buffer = buffer
+            .get((offset as usize)..(offset as usize + len as usize))
+            .ok_or::<Trap>(TrapCode::MemoryOutOfBounds.into())?;
+        Ok(buffer)
     }
 
-    pub fn write_memory(&mut self, address: u32, data: &[u8]) {
+    pub fn write_memory(&mut self, address: u32, data: &[u8]) -> Result<(), Trap> {
         let address = address as usize;
-        let memory = self.exported_memory().data_mut(self.as_context_mut());
-        memory[address..(address + data.len())].clone_from_slice(data);
+        let memory = self
+            .exported_memory()
+            .data_mut(self.as_context_mut())
+            .get_mut(address..(address + data.len()))
+            .ok_or::<Trap>(TrapCode::MemoryOutOfBounds.into())?;
+        memory.clone_from_slice(data);
         self.ctx
             .store
             .tracer_mut()
             .memory_change(address as u32, data.len() as u32, data);
+        Ok(())
     }
 
     /// Adds `delta` quantity of fuel to the remaining fuel.
