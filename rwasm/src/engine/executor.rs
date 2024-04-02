@@ -1596,6 +1596,12 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     }
 }
 
+impl<'ctx, 'engine> Executor<'ctx, 'engine> {
+    fn visit_crypto_poseidon(&mut self, offset: AddressOffset) -> Result<(), TrapCode> {
+        Ok(())
+    }
+}
+
 macro_rules! impl_visit_store {
     ( $( fn $visit_ident:ident($untyped_ident:ident, $type_size:literal); )* ) => {
         $(
