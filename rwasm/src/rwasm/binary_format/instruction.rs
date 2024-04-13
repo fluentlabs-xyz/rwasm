@@ -26,19 +26,19 @@ use crate::{
     },
 };
 
-pub const MAX_INSTRUCTION_SIZE_BYTES: usize = 1 + 8;
+pub const INSTRUCTION_OPCODE_BYTES: usize = 1;
+pub const INSTRUCTION_AUX_BYTES: usize = 8;
+pub const INSTRUCTION_SIZE_BYTES: usize = INSTRUCTION_OPCODE_BYTES + INSTRUCTION_AUX_BYTES;
 
 impl<'a> BinaryFormat<'a> for Instruction {
     type SelfType = Instruction;
 
     fn encoded_length(&self) -> usize {
-        let mut sink = [0u8; MAX_INSTRUCTION_SIZE_BYTES];
-        let mut binary_writer = BinaryFormatWriter::new(&mut sink);
-        self.write_binary(&mut binary_writer).unwrap()
+        INSTRUCTION_SIZE_BYTES
     }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
-        let n = match self {
+        let mut n = match self {
             // local Instruction family
             Instruction::LocalGet(index) => sink.write_u8(0x00)? + index.write_binary(sink)?,
             Instruction::LocalSet(index) => sink.write_u8(0x01)? + index.write_binary(sink)?,
@@ -279,10 +279,16 @@ impl<'a> BinaryFormat<'a> for Instruction {
             Instruction::I64TruncSatF64U => sink.write_u8(0xc5)?,
             _ => unreachable!("not supported opcode: {:?}", self),
         };
+        // we align all opcodes to 9 bytes
+        if n == 1 {
+            n += sink.write_u64_le(0)?;
+        }
+        debug_assert_eq!(n, INSTRUCTION_SIZE_BYTES,);
         Ok(n)
     }
 
     fn read_binary(sink: &mut BinaryFormatReader<'a>) -> Result<Instruction, BinaryFormatError> {
+        let current_pos = sink.pos();
         let byte = sink.read_u8()?;
         let instr = match byte {
             // local Instruction family
@@ -489,8 +495,13 @@ impl<'a> BinaryFormat<'a> for Instruction {
             0xc3 => Instruction::I64TruncSatF32U,
             0xc4 => Instruction::I64TruncSatF64S,
             0xc5 => Instruction::I64TruncSatF64U,
+
             _ => return Err(BinaryFormatError::IllegalOpcode(byte)),
         };
+        // we align all opcodes to 9 bytes
+        if sink.pos() - current_pos == 1 {
+            sink.read_u64_le()?;
+        }
         Ok(instr)
     }
 }
@@ -566,7 +577,7 @@ impl InstructionExtra for Instruction {
     }
 
     fn info(&self) -> (u8, usize) {
-        let mut sink = [0u8; MAX_INSTRUCTION_SIZE_BYTES];
+        let mut sink = [0u8; INSTRUCTION_SIZE_BYTES];
         let mut binary_writer = BinaryFormatWriter::new(&mut sink);
         let size = self.write_binary(&mut binary_writer).unwrap();
         (sink[0], size - 1)
@@ -579,6 +590,7 @@ mod tests {
         engine::bytecode::Instruction,
         rwasm::{
             binary_format::{
+                instruction::INSTRUCTION_AUX_BYTES,
                 reader_writer::{BinaryFormatReader, BinaryFormatWriter},
                 BinaryFormat,
             },
@@ -598,10 +610,16 @@ mod tests {
             if opcode.write_binary(&mut writer).unwrap() == 0 {
                 continue;
             }
-            let (first_byte, _aux_size) = opcode.info();
+            let (first_byte, aux_size) = opcode.info();
             assert_eq!(
                 first_byte, buf[0],
                 "first byte mismatch for opcode {:?}",
+                opcode
+            );
+            // make sure serialized bytes are always 9 bytes (1 for code and 8 for aux)
+            assert_eq!(
+                aux_size, INSTRUCTION_AUX_BYTES,
+                "opcode {:?} length is not 9 bytes",
                 opcode
             );
             let mut reader = BinaryFormatReader::new(buf.as_slice());

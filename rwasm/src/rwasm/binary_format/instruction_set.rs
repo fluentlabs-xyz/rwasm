@@ -6,6 +6,7 @@ use crate::{
             BinaryFormat,
             BinaryFormatError,
         },
+        instruction::INSTRUCTION_SIZE_BYTES,
         instruction_set::InstructionSet,
     },
 };
@@ -14,11 +15,7 @@ impl<'a> BinaryFormat<'a> for InstructionSet {
     type SelfType = InstructionSet;
 
     fn encoded_length(&self) -> usize {
-        let mut n = 0;
-        for opcode in self.instrs().iter() {
-            n += opcode.encoded_length();
-        }
-        n
+        self.len() * INSTRUCTION_SIZE_BYTES
     }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
