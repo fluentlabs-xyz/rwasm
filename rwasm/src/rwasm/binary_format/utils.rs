@@ -44,22 +44,19 @@ macro_rules! impl_default_idx {
     ($name:ident, $to_method:ident, $nested_type:ident) => {
         impl<'a> BinaryFormat<'a> for $name {
             type SelfType = $name;
-
             fn encoded_length(&self) -> usize {
                 core::mem::size_of::<$nested_type>()
             }
-
             fn write_binary(
                 &self,
                 sink: &mut BinaryFormatWriter<'a>,
             ) -> Result<usize, BinaryFormatError> {
-                ((*self).$to_method() as u64).write_binary(sink)
+                ((*self).$to_method() as $nested_type).write_binary(sink)
             }
-
             fn read_binary(
                 sink: &mut BinaryFormatReader<'a>,
             ) -> Result<Self::SelfType, BinaryFormatError> {
-                Ok($name::from(u64::read_binary(sink)? as $nested_type))
+                Ok($name::from($nested_type::read_binary(sink)?))
             }
         }
     };
