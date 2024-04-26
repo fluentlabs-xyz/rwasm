@@ -1281,7 +1281,8 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     .default_memory_bytes(this.ctx)
                     .get_mut(offset..)
                     .and_then(|memory| memory.get_mut(..n))
-                    .ok_or(TrapCode::MemoryOutOfBounds)?;
+                    .ok_or(TrapCode::MemoryOutOfBounds)
+                    .unwrap();
                 memory.fill(byte);
                 this.tracer.memory_change(offset as u32, n as u32, memory);
                 Ok(())
@@ -1304,10 +1305,12 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 // These accesses just perform the bounds checks required by the Wasm spec.
                 data.get(src_offset..)
                     .and_then(|memory| memory.get(..n))
-                    .ok_or(TrapCode::MemoryOutOfBounds)?;
+                    .ok_or(TrapCode::MemoryOutOfBounds)
+                    .unwrap();
                 data.get(dst_offset..)
                     .and_then(|memory| memory.get(..n))
-                    .ok_or(TrapCode::MemoryOutOfBounds)?;
+                    .ok_or(TrapCode::MemoryOutOfBounds)
+                    .unwrap();
                 data.copy_within(src_offset..src_offset.wrapping_add(n), dst_offset);
                 this.tracer.memory_change(
                     dst_offset as u32,
@@ -1351,11 +1354,13 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 let memory = memory
                     .get_mut(dst_offset..)
                     .and_then(|memory| memory.get_mut(..n))
-                    .ok_or(TrapCode::MemoryOutOfBounds)?;
+                    .ok_or(TrapCode::MemoryOutOfBounds)
+                    .unwrap();
                 let data = data
                     .get(src_offset..)
                     .and_then(|data| data.get(..n))
-                    .ok_or(TrapCode::MemoryOutOfBounds)?;
+                    .ok_or(TrapCode::MemoryOutOfBounds)
+                    .unwrap();
                 memory.copy_from_slice(data);
                 this.tracer
                     .global_memory(dst_offset as u32, n as u32, memory);

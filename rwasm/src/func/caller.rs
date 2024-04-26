@@ -69,7 +69,8 @@ impl<'a, T> Caller<'a, T> {
         let buffer = self.exported_memory().data(self);
         let buffer = buffer
             .get((offset as usize)..(offset as usize + len as usize))
-            .ok_or::<Trap>(TrapCode::MemoryOutOfBounds.into())?;
+            .ok_or::<Trap>(TrapCode::MemoryOutOfBounds.into())
+            .unwrap();
         Ok(buffer)
     }
 
@@ -79,7 +80,8 @@ impl<'a, T> Caller<'a, T> {
             .exported_memory()
             .data_mut(self.as_context_mut())
             .get_mut(address..(address + data.len()))
-            .ok_or::<Trap>(TrapCode::MemoryOutOfBounds.into())?;
+            .ok_or::<Trap>(TrapCode::MemoryOutOfBounds.into())
+            .unwrap();
         memory.clone_from_slice(data);
         self.ctx
             .store
