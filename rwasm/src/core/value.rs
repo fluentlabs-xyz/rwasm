@@ -115,8 +115,7 @@ impl<const N: usize> LoadInto for [u8; N] {
             .get(address..)
             .and_then(|slice| slice.get(..N))
             .and_then(|slice| slice.try_into().ok())
-            .ok_or(TrapCode::MemoryOutOfBounds)
-            .unwrap();
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
         *self = *slice;
         Ok(())
     }
@@ -139,8 +138,7 @@ impl<const N: usize> StoreFrom for [u8; N] {
             .get_mut(address..)
             .and_then(|slice| slice.get_mut(..N))
             .and_then(|slice| slice.try_into().ok())
-            .ok_or(TrapCode::MemoryOutOfBounds)
-            .unwrap();
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
         *slice = *self;
         Ok(())
     }

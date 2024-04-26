@@ -141,11 +141,10 @@ macro_rules! op {
 ///
 /// If the resulting effective address overflows.
 fn effective_address(address: u32, offset: u32) -> Result<usize, TrapCode> {
-    let res = offset
+    offset
         .checked_add(address)
         .map(|address| address as usize)
-        .ok_or(TrapCode::MemoryOutOfBounds);
-    Ok(res.unwrap())
+        .ok_or(TrapCode::MemoryOutOfBounds)
 }
 
 impl UntypedValue {
