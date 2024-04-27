@@ -126,6 +126,13 @@ impl FuncTypeRegistry {
             .unwrap_or_else(|| panic!("failed to resolve stored function type: {entity_index:?}"))
     }
 
+    pub(crate) fn find_func_type(&self, func_type: &FuncType) -> Option<DedupFuncType> {
+        self.func_types
+            .iter()
+            .find(|v| v.1 == func_type)
+            .map(|v| DedupFuncType::from_inner(Guarded::new(self.engine_idx, v.0)))
+    }
+
     pub(crate) fn resolve_func_signature(&self, func_type: &DedupFuncType) -> DedupFuncTypeIdx {
         self.unwrap_index(func_type.into_inner())
     }

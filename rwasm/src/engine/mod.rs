@@ -195,6 +195,10 @@ impl Engine {
         self.inner.resolve_func_type(func_type, f)
     }
 
+    pub fn find_func_type(&self, func_type: &FuncType) -> Option<DedupFuncType> {
+        self.inner.find_func_type(func_type)
+    }
+
     pub fn resolve_func_signature(&self, func_type: &DedupFuncType) -> DedupFuncTypeIdx {
         self.inner.resolve_func_signature(func_type)
     }
@@ -537,6 +541,10 @@ impl EngineInner {
         F: FnOnce(&FuncType) -> R,
     {
         f(self.res.read().func_types.resolve_func_type(func_type))
+    }
+
+    fn find_func_type(&self, func_type: &FuncType) -> Option<DedupFuncType> {
+        self.res.read().func_types.find_func_type(func_type)
     }
 
     fn resolve_func_signature(&self, func_type: &DedupFuncType) -> DedupFuncTypeIdx {
