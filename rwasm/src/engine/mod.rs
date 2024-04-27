@@ -786,8 +786,9 @@ impl<'engine> EngineExecutor<'engine> {
         self.stack.values.extend(call_params);
         match ctx.as_context().store.inner.resolve_func(func) {
             FuncEntity::Wasm(wasm_func) => {
+                let wasm_func = wasm_func.clone();
                 self.stack
-                    .prepare_wasm_call(wasm_func, &self.res.code_map)?;
+                    .prepare_wasm_call(&wasm_func, &self.res.code_map)?;
                 self.execute_wasm_func(ctx.as_context_mut())?;
             }
             FuncEntity::Host(host_func) => {
