@@ -14,11 +14,10 @@ use crate::{
     Engine,
     Error,
     FuelConsumptionMode,
-    FuncType,
     Module,
     StackLimits,
 };
-use alloc::{collections::BTreeMap, string::ToString, vec::Vec};
+use alloc::{string::ToString, vec::Vec};
 
 #[derive(Debug, Default, PartialEq)]
 pub struct RwasmModule {
@@ -118,21 +117,7 @@ impl RwasmModule {
     pub fn to_module_builder<'a>(&'a self, engine: &'a Engine) -> ModuleBuilder {
         let mut builder = ModuleBuilder::new(engine);
         // main function has empty inputs and outputs
-        let mut default_func_types = BTreeMap::new();
-        let mut get_func_type_or_create =
-            |func_type: FuncType, builder: &mut ModuleBuilder| -> FuncTypeIdx {
-                let func_type_idx = default_func_types.get(&func_type);
-                let func_type_idx = if let Some(idx) = func_type_idx {
-                    *idx
-                } else {
-                    let idx = default_func_types.len();
-                    default_func_types.insert(func_type.clone(), idx);
-                    builder.push_func_type(func_type).unwrap();
-                    idx
-                };
-                FuncTypeIdx::from(func_type_idx as u32)
-            };
-        let empty_func_type = get_func_type_or_create(FuncType::new([], []), &mut builder);
+        let empty_func_type = builder.ensure_empty_func_type_exists();
         // push functions and init engine's code map
         builder
             .push_funcs(
