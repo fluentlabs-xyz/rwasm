@@ -227,11 +227,11 @@ impl<'engine> ModuleBuilder<'engine> {
             return FuncTypeIdx::from(func_type.0 as u32);
         }
         // try to find inside engine
-        if let Some(dedup_func_type) = self.engine.find_func_type(&func_type) {
-            let type_index = self.func_types.len() as u32;
-            self.func_types.push(dedup_func_type);
-            return FuncTypeIdx::from(type_index);
-        }
+        // if let Some(dedup_func_type) = self.engine.find_func_type(&func_type) {
+        //     let type_index = self.func_types.len() as u32;
+        //     self.func_types.push(dedup_func_type);
+        //     return FuncTypeIdx::from(type_index);
+        // }
         // create new func type
         let empty_func_type = FuncType::new([], []);
         self.func_types

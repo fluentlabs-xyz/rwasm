@@ -57,11 +57,7 @@ pub(crate) use self::{
 use crate::{
     arena::{ArenaIndex, GuardedEntity},
     core::{Trap, TrapCode, UntypedValue},
-    engine::{
-        bytecode::{InstrMeta, SignatureIdx},
-        code_map::InstructionPtr,
-        func_types::DedupFuncTypeIdx,
-    },
+    engine::{bytecode::InstrMeta, code_map::InstructionPtr, func_types::DedupFuncTypeIdx},
     func::FuncEntity,
     AsContext,
     AsContextMut,
@@ -69,13 +65,10 @@ use crate::{
     FuncType,
     StoreContextMut,
 };
-use alloc::{rc::Rc, sync::Arc, vec::Vec};
-use core::{
-    cell::RefCell,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use alloc::{sync::Arc, vec::Vec};
+use core::sync::atomic::{AtomicU32, Ordering};
 use hashbrown::HashMap;
-use spin::Mutex;
+use spin::{Mutex, RwLock};
 
 /// A unique engine index.
 ///
@@ -384,7 +377,7 @@ pub struct EngineInner {
     /// The [`Config`] of the engine.
     config: Config,
     /// Engine resources shared across multiple engine executors.
-    res: Rc<RefCell<EngineResources>>,
+    res: RwLock<EngineResources>,
     /// Reusable engine stacks for Wasm execution.
     ///
     /// Concurrently executing Wasm executions each require their own stack to
@@ -437,7 +430,7 @@ impl EngineInner {
     fn new(config: &Config) -> Self {
         Self {
             config: config.clone(),
-            res: Rc::new(RefCell::new(EngineResources::new())),
+            res: RwLock::new(EngineResources::new()),
             stacks: Mutex::new(EngineStacks::new(config)),
         }
     }
@@ -449,15 +442,14 @@ impl EngineInner {
 
     fn register_trampoline(&self, sys_func_index: u32, func: Func) {
         self.res
-            .clone()
-            .borrow_mut()
+            .write()
             .trampoline_mapping
             .insert(sys_func_index, func);
     }
 
     fn resolve_trampoline(&self, sys_func_index: u32) -> Option<Func> {
         self.res
-            .borrow()
+            .read()
             .trampoline_mapping
             .get(&sys_func_index)
             .copied()
@@ -465,11 +457,7 @@ impl EngineInner {
 
     /// Allocates a new function type to the [`EngineInner`].
     fn alloc_func_type(&self, func_type: FuncType) -> DedupFuncType {
-        self.res
-            .clone()
-            .borrow_mut()
-            .func_types
-            .alloc_func_type(func_type)
+        self.res.write().func_types.alloc_func_type(func_type)
     }
 
     /// Allocates a new constant value to the [`EngineInner`].
@@ -478,18 +466,18 @@ impl EngineInner {
     ///
     /// If too many constant values have been allocated for the [`EngineInner`] this way.
     fn alloc_const(&self, value: UntypedValue) -> Result<ConstRef, TranslationError> {
-        self.res.clone().borrow_mut().const_pool.alloc(value)
+        self.res.write().const_pool.alloc(value)
     }
 
     fn resolve_const(&self, cref: ConstRef) -> Option<UntypedValue> {
-        self.res.borrow().const_pool.get(cref)
+        self.res.read().const_pool.get(cref)
     }
 
     /// Allocates a new uninitialized [`CompiledFunc`] to the [`EngineInner`].
     ///
     /// Returns a [`CompiledFunc`] reference to allow accessing the allocated [`CompiledFunc`].
     fn alloc_func(&self) -> CompiledFunc {
-        self.res.clone().borrow_mut().code_map.alloc_func()
+        self.res.write().code_map.alloc_func()
     }
 
     /// Initializes the uninitialized [`CompiledFunc`] for the [`EngineInner`].
@@ -509,13 +497,10 @@ impl EngineInner {
         I: IntoIterator<Item = Instruction>,
         M: IntoIterator<Item = InstrMeta>,
     {
-        self.res.clone().borrow_mut().code_map.init_func(
-            func,
-            len_locals,
-            local_stack_height,
-            instrs,
-            metas,
-        )
+        self.res
+            .write()
+            .code_map
+            .init_func(func, len_locals, local_stack_height, instrs, metas)
     }
 
     fn mark_func(
@@ -525,51 +510,46 @@ impl EngineInner {
         local_stack_height: usize,
         start: usize,
     ) {
-        self.res.clone().borrow_mut().code_map.mark_func(
-            func,
-            len_locals,
-            local_stack_height,
-            start,
-        )
+        self.res
+            .write()
+            .code_map
+            .mark_func(func, len_locals, local_stack_height, start)
     }
 
     fn resolve_func_type<F, R>(&self, func_type: &DedupFuncType, f: F) -> R
     where
         F: FnOnce(&FuncType) -> R,
     {
-        f(self.res.borrow().func_types.resolve_func_type(func_type))
+        f(self.res.read().func_types.resolve_func_type(func_type))
     }
 
     fn find_func_type(&self, func_type: &FuncType) -> Option<DedupFuncType> {
-        self.res.borrow().func_types.find_func_type(func_type)
+        self.res.read().func_types.find_func_type(func_type)
     }
 
     fn resolve_func_signature(&self, func_type: &DedupFuncType) -> DedupFuncTypeIdx {
-        self.res
-            .borrow()
-            .func_types
-            .resolve_func_signature(func_type)
+        self.res.read().func_types.resolve_func_signature(func_type)
     }
 
     #[cfg(test)]
     fn resolve_instr(&self, func_body: CompiledFunc, index: usize) -> Option<Instruction> {
         self.res
-            .borrow()
+            .read()
             .code_map
             .get_instr(func_body, index)
             .copied()
     }
 
     fn instr_ptr(&self, func_body: CompiledFunc) -> (InstructionPtr, InstructionPtr) {
-        self.res.borrow().code_map.instr_ptr_with_end(func_body)
+        self.res.read().code_map.instr_ptr_with_end(func_body)
     }
 
     fn instr_vec(&self, func_body: CompiledFunc) -> Vec<Instruction> {
-        self.res.borrow().code_map.instr_vec(func_body)
+        self.res.read().code_map.instr_vec(func_body)
     }
 
     fn num_locals(&self, func_body: CompiledFunc) -> u32 {
-        self.res.borrow().code_map.num_locals(func_body)
+        self.res.read().code_map.num_locals(func_body)
     }
 
     fn execute_func<T, Results>(
@@ -582,7 +562,7 @@ impl EngineInner {
     where
         Results: CallResults,
     {
-        let res = self.res.borrow();
+        let res = self.res.read();
         let mut stack = self.stacks.lock().reuse_or_new();
         let results = EngineExecutor::new(&res, &mut stack)
             .execute_func(ctx, func, params, results)
@@ -601,7 +581,7 @@ impl EngineInner {
     where
         Results: CallResults,
     {
-        let res = self.res.borrow();
+        let res = self.res.read();
         let mut stack = self.stacks.lock().reuse_or_new();
         let results = EngineExecutor::new(&res, &mut stack).execute_func(
             ctx.as_context_mut(),
@@ -641,7 +621,7 @@ impl EngineInner {
     where
         Results: CallResults,
     {
-        let res = self.res.borrow();
+        let res = self.res.read();
         let host_func = invocation.host_func();
         let results = EngineExecutor::new(&res, &mut invocation.stack)
             .resume_func(ctx, host_func, params, results);
