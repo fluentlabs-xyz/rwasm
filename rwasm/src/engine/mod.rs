@@ -70,10 +70,12 @@ use crate::{
     StoreContextMut,
 };
 use alloc::{rc::Rc, sync::Arc, vec::Vec};
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::{
+    cell::RefCell,
+    sync::atomic::{AtomicU32, Ordering},
+};
 use hashbrown::HashMap;
-use spin::{Mutex, RwLock};
-use std::cell::RefCell;
+use spin::Mutex;
 
 /// A unique engine index.
 ///
