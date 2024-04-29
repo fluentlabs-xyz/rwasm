@@ -449,6 +449,7 @@ impl EngineInner {
 
     fn register_trampoline(&self, sys_func_index: u32, func: Func) {
         self.res
+            .clone()
             .borrow_mut()
             .trampoline_mapping
             .insert(sys_func_index, func);
@@ -464,7 +465,11 @@ impl EngineInner {
 
     /// Allocates a new function type to the [`EngineInner`].
     fn alloc_func_type(&self, func_type: FuncType) -> DedupFuncType {
-        self.res.borrow_mut().func_types.alloc_func_type(func_type)
+        self.res
+            .clone()
+            .borrow_mut()
+            .func_types
+            .alloc_func_type(func_type)
     }
 
     /// Allocates a new constant value to the [`EngineInner`].
@@ -473,7 +478,7 @@ impl EngineInner {
     ///
     /// If too many constant values have been allocated for the [`EngineInner`] this way.
     fn alloc_const(&self, value: UntypedValue) -> Result<ConstRef, TranslationError> {
-        self.res.borrow_mut().const_pool.alloc(value)
+        self.res.clone().borrow_mut().const_pool.alloc(value)
     }
 
     fn resolve_const(&self, cref: ConstRef) -> Option<UntypedValue> {
@@ -484,7 +489,7 @@ impl EngineInner {
     ///
     /// Returns a [`CompiledFunc`] reference to allow accessing the allocated [`CompiledFunc`].
     fn alloc_func(&self) -> CompiledFunc {
-        self.res.borrow_mut().code_map.alloc_func()
+        self.res.clone().borrow_mut().code_map.alloc_func()
     }
 
     /// Initializes the uninitialized [`CompiledFunc`] for the [`EngineInner`].
@@ -504,7 +509,7 @@ impl EngineInner {
         I: IntoIterator<Item = Instruction>,
         M: IntoIterator<Item = InstrMeta>,
     {
-        self.res.borrow_mut().code_map.init_func(
+        self.res.clone().borrow_mut().code_map.init_func(
             func,
             len_locals,
             local_stack_height,
@@ -520,10 +525,12 @@ impl EngineInner {
         local_stack_height: usize,
         start: usize,
     ) {
-        self.res
-            .borrow_mut()
-            .code_map
-            .mark_func(func, len_locals, local_stack_height, start)
+        self.res.clone().borrow_mut().code_map.mark_func(
+            func,
+            len_locals,
+            local_stack_height,
+            start,
+        )
     }
 
     fn resolve_func_type<F, R>(&self, func_type: &DedupFuncType, f: F) -> R
