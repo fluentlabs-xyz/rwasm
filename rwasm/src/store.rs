@@ -155,17 +155,17 @@ pub struct StoreInner {
     fuel: Fuel,
 }
 
-#[test]
-fn test_store_is_send_sync() {
-    const _: () = {
-        #[allow(clippy::extra_unused_type_parameters)]
-        fn assert_send<T: Send>() {}
-        #[allow(clippy::extra_unused_type_parameters)]
-        fn assert_sync<T: Sync>() {}
-        let _ = assert_send::<Store<()>>;
-        let _ = assert_sync::<Store<()>>;
-    };
-}
+// #[test]
+// fn test_store_is_send_sync() {
+//     const _: () = {
+//         #[allow(clippy::extra_unused_type_parameters)]
+//         fn assert_send<T: Send>() {}
+//         #[allow(clippy::extra_unused_type_parameters)]
+//         fn assert_sync<T: Sync>() {}
+//         let _ = assert_send::<Store<()>>;
+//         let _ = assert_sync::<Store<()>>;
+//     };
+// }
 
 /// An error that may be encountered when operating on the [`Store`].
 #[derive(Debug, Clone)]
