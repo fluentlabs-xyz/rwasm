@@ -155,6 +155,12 @@ pub struct StoreInner {
     fuel: Fuel,
 }
 
+impl<T> Store<T> {
+    pub fn get_index(&self) -> u32 {
+        self.inner.store_idx.0
+    }
+}
+
 #[test]
 fn test_store_is_send_sync() {
     const _: () = {

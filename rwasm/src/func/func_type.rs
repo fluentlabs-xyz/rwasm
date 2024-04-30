@@ -127,6 +127,7 @@ impl FuncType {
         T: Ty,
     {
         if self.results().len() != results.len() {
+            let (a, b) = self.params_results();
             return Err(FuncError::MismatchingResultLen);
         }
         if check_type
