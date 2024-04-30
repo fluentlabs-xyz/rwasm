@@ -57,8 +57,13 @@ pub(crate) use self::{
 use crate::{
     arena::{ArenaIndex, GuardedEntity},
     core::{Trap, TrapCode, UntypedValue},
-    engine::{bytecode::InstrMeta, code_map::InstructionPtr, func_types::DedupFuncTypeIdx},
+    engine::{
+        bytecode::{FuncIdx, InstrMeta},
+        code_map::InstructionPtr,
+        func_types::DedupFuncTypeIdx,
+    },
     func::FuncEntity,
+    store::Stored,
     AsContext,
     AsContextMut,
     Func,
@@ -139,11 +144,11 @@ impl Engine {
         self.inner.config()
     }
 
-    pub fn register_trampoline(&self, sys_func_index: u32, func: Func) {
+    pub fn register_trampoline(&self, sys_func_index: Stored<FuncIdx>, func: Func) {
         self.inner.register_trampoline(sys_func_index, func)
     }
 
-    pub fn resolve_trampoline(&self, sys_func_index: u32) -> Option<Func> {
+    pub fn resolve_trampoline(&self, sys_func_index: Stored<FuncIdx>) -> Option<Func> {
         self.inner.resolve_trampoline(sys_func_index)
     }
 
@@ -440,14 +445,14 @@ impl EngineInner {
         &self.config
     }
 
-    fn register_trampoline(&self, sys_func_index: u32, func: Func) {
+    fn register_trampoline(&self, sys_func_index: Stored<FuncIdx>, func: Func) {
         self.res
             .write()
             .trampoline_mapping
             .insert(sys_func_index, func);
     }
 
-    fn resolve_trampoline(&self, sys_func_index: u32) -> Option<Func> {
+    fn resolve_trampoline(&self, sys_func_index: Stored<FuncIdx>) -> Option<Func> {
         self.res
             .read()
             .trampoline_mapping
@@ -667,7 +672,7 @@ pub struct EngineResources {
     func_types: FuncTypeRegistry,
     /// We store mapping from sys func index to the function index to map
     /// rWASM calls to WASM calls
-    trampoline_mapping: HashMap<u32, Func>,
+    trampoline_mapping: HashMap<Stored<FuncIdx>, Func>,
 }
 
 impl EngineResources {

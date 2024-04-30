@@ -42,7 +42,7 @@ use core::{
 /// # Note
 ///
 /// Used to protect against invalid entity indices.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct StoreIdx(u32);
 
 impl ArenaIndex for StoreIdx {
@@ -110,7 +110,7 @@ pub struct Store<T> {
     ///
     /// This is re-exported to the rest of the crate since
     /// it is used directly by the engine's executor.
-    pub(crate) inner: StoreInner,
+    pub inner: StoreInner,
     /// Stored host function trampolines.
     trampolines: Arena<TrampolineIdx, TrampolineEntity<T>>,
     /// User provided host data owned by the [`Store`].
@@ -305,7 +305,7 @@ impl StoreInner {
     ///
     /// [`Stored<Idx>`] associates an `Idx` type with the internal store index.
     /// This way wrapped indices cannot be misused with incorrect [`Store`] instances.
-    fn wrap_stored<Idx>(&self, entity_idx: Idx) -> Stored<Idx> {
+    pub fn wrap_stored<Idx>(&self, entity_idx: Idx) -> Stored<Idx> {
         Stored::new(self.store_idx, entity_idx)
     }
 

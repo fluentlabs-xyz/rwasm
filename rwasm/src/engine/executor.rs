@@ -1117,10 +1117,11 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     #[inline(always)]
     fn visit_call(&mut self, func_index: FuncIdx) -> Result<CallOutcome, TrapCode> {
         if self.ctx.engine().config().get_rwasm_wrap_import_funcs() {
+            let wrapped_func_index = self.ctx.wrap_stored(func_index);
             let func_entity = self
                 .ctx
                 .engine()
-                .resolve_trampoline(func_index.to_u32())
+                .resolve_trampoline(wrapped_func_index)
                 .ok_or(TrapCode::UnresolvedFunction)?;
             self.next_instr_at(1);
             self.sync_stack_ptr();
