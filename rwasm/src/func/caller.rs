@@ -22,7 +22,7 @@ pub struct Caller<'a, T> {
 
 impl<'a, T> Caller<'a, T> {
     /// Creates a new [`Caller`] from the given store context and [`Instance`] handle.
-    pub(crate) fn new<C>(ctx: &'a mut C, instance: Option<&Instance>) -> Self
+    pub fn new<C>(ctx: &'a mut C, instance: Option<&Instance>) -> Self
     where
         C: AsContextMut<UserState = T>,
     {
