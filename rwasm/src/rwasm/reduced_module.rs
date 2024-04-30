@@ -27,6 +27,18 @@ pub struct RwasmModule {
     pub element_section: Vec<u32>,
 }
 
+impl From<InstructionSet> for RwasmModule {
+    fn from(value: InstructionSet) -> Self {
+        let code_section_len = value.len() as u32;
+        Self {
+            code_section: value,
+            memory_section: vec![],
+            func_section: vec![code_section_len],
+            element_section: vec![],
+        }
+    }
+}
+
 impl RwasmModule {
     pub fn default_config(import_linker: Option<ImportLinker>) -> Config {
         let mut config = Config::default();
