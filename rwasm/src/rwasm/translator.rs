@@ -209,7 +209,7 @@ impl<'parser> RwasmTranslator<'parser> {
                 ib.push_inst(Instruction::GlobalSet(global_index.into()));
                 return Ok(());
             }
-            todo!("imported globals are not supported yet");
+            return Err(RwasmBuilderError::ImportedGlobalsAreDisabled);
         }
         let global_inits = &self.res.res.globals_init;
         assert!(global_index as usize - len_globals < global_inits.len());
@@ -233,7 +233,7 @@ impl<'parser> RwasmTranslator<'parser> {
         for (table_index, table) in self.res.res.tables.iter().enumerate() {
             // don't use ref_func here due to the entrypoint section
             if table_index < self.res.res.imports.len_tables() {
-                todo!("imported tables are not supported")
+                return Err(RwasmBuilderError::ImportedTablesAreDisabled);
             }
             instr_builder.push_inst(Instruction::I32Const(0.into()));
             instr_builder.push_inst(Instruction::I64Const(table.minimum().into()));
@@ -309,7 +309,7 @@ impl<'parser> RwasmTranslator<'parser> {
         );
         let is_imported_memory = self.res.res.imports.len_memories() > 0;
         if is_imported_memory {
-            todo!("imported memory is not supported")
+            return Err(RwasmBuilderError::ImportedMemoriesAreDisabled);
         }
         for memory in self.res.res.memories.iter() {
             rwasm_builder.add_memory_pages(instr_builder, memory.initial_pages().into_inner());

@@ -77,8 +77,11 @@ fn execute_binary(wat: &str, host_state: HostState, config: Config) -> HostState
         store.as_context_mut(),
         |mut caller: Caller<'_, HostState>| -> u32 { caller.data_mut().state },
     );
-    engine.register_trampoline(SYS_HALT_CODE, sys_halt_func);
-    engine.register_trampoline(SYS_STATE_CODE, sys_state_func);
+    engine.register_trampoline(store.inner.wrap_stored(SYS_HALT_CODE.into()), sys_halt_func);
+    engine.register_trampoline(
+        store.inner.wrap_stored(SYS_STATE_CODE.into()),
+        sys_state_func,
+    );
     linker.define("env", "_sys_halt", sys_halt_func).unwrap();
     linker.define("env", "_sys_state", sys_state_func).unwrap();
     // run start entrypoint
