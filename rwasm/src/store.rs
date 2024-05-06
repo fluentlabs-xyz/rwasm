@@ -776,12 +776,12 @@ impl<T> Store<T> {
         self.data
     }
 
-    pub fn tracer(&self) -> &Tracer {
-        self.tracer.as_ref().expect("there is no tracer")
+    pub fn tracer(&self) -> Option<&Tracer> {
+        self.tracer.as_ref()
     }
 
-    pub fn tracer_mut(&mut self) -> &mut Tracer {
-        self.tracer.as_mut().expect("there is no tracer")
+    pub fn tracer_mut(&mut self) -> Option<&mut Tracer> {
+        self.tracer.as_mut()
     }
 
     /// Installs a function into the [`Store`] that will be called with the user
@@ -1026,7 +1026,7 @@ impl<'a, T> StoreContextMut<'a, T> {
         self.store.engine()
     }
 
-    pub fn tracer_mut(&mut self) -> &mut Tracer {
+    pub fn tracer_mut(&mut self) -> Option<&mut Tracer> {
         self.store.tracer_mut()
     }
 

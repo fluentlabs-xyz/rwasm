@@ -81,10 +81,9 @@ impl<'a, T> Caller<'a, T> {
             .get_mut(address..(address + data.len()))
             .ok_or::<Trap>(TrapCode::MemoryOutOfBounds.into())?;
         memory.clone_from_slice(data);
-        self.ctx
-            .store
-            .tracer_mut()
-            .memory_change(address as u32, data.len() as u32, data);
+        if let Some(tracer) = self.ctx.store.tracer_mut() {
+            tracer.memory_change(address as u32, data.len() as u32, data);
+        }
         Ok(())
     }
 
