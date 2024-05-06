@@ -104,7 +104,7 @@ pub fn execute_wasm<'ctx, 'engine>(
     code_map: &'engine CodeMap,
     const_pool: ConstPoolView<'engine>,
     resource_limiter: &'ctx mut ResourceLimiterRef<'ctx>,
-    tracer: &'engine mut Tracer,
+    tracer: Option<&'engine mut Tracer>,
 ) -> Result<WasmOutcome, TrapCode> {
     Executor::new(
         ctx,
@@ -184,7 +184,7 @@ struct Executor<'ctx, 'engine> {
     /// A read-only view to a pool of constant values.
     const_pool: ConstPoolView<'engine>,
     /// A tracer that stores execution info
-    tracer: &'engine mut Tracer,
+    tracer: Option<&'engine mut Tracer>,
     /// Store an information about last signature used by IndirectCall
     last_signature: Option<SignatureIdx>,
 }
@@ -214,7 +214,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         call_stack: &'engine mut CallStack,
         code_map: &'engine CodeMap,
         const_pool: ConstPoolView<'engine>,
-        tracer: &'engine mut Tracer,
+        tracer: Option<&'engine mut Tracer>,
     ) -> Self {
         let frame = call_stack.pop().expect("must have frame on the call stack");
         let sp = value_stack.stack_ptr();
@@ -250,49 +250,51 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 return Err(TrapCode::StackOverflow.into());
             }
 
-            // #[cfg(feature = "std")]
-            // {
-            //     let stack = self.value_stack.dump_stack(self.sp);
-            //     println!(
-            //         "{}:\t {:?} \tstack({}):{:?}",
-            //         self.ip.pc(),
-            //         instr,
-            //         stack.len(),
-            //         stack
-            //             .iter()
-            //             .rev()
-            //             .take(10)
-            //             .map(|v| v.as_usize())
-            //             .collect::<Vec<_>>()
-            //     );
-            // }
+            #[cfg(feature = "print-trace")]
+            {
+                let stack = self.value_stack.dump_stack(self.sp);
+                println!(
+                    "{}:\t {:?} \tstack({}):{:?}",
+                    self.ip.pc(),
+                    instr,
+                    stack.len(),
+                    stack
+                        .iter()
+                        .rev()
+                        .take(10)
+                        .map(|v| v.as_usize())
+                        .collect::<Vec<_>>()
+                );
+            }
 
             // handle pre-instruction state
-            let has_default_memory = {
-                let instance = self.cache.instance();
-                self.ctx
-                    .resolve_instance(instance)
-                    .get_memory(DEFAULT_MEMORY_INDEX)
-                    .is_some()
-            };
-            let memory_size: u32 = if has_default_memory {
-                self.ctx
-                    .resolve_memory(self.cache.default_memory(self.ctx))
-                    .current_pages()
-                    .into()
-            } else {
-                0
-            };
-            let consumed_fuel = self.ctx.fuel().fuel_consumed();
-            let stack = self.value_stack.dump_stack(self.sp);
-            self.tracer.pre_opcode_state(
-                self.ip.pc(),
-                instr,
-                stack,
-                &meta,
-                memory_size,
-                consumed_fuel,
-            );
+            if let Some(tracer) = self.tracer.as_mut() {
+                let has_default_memory = {
+                    let instance = self.cache.instance();
+                    self.ctx
+                        .resolve_instance(instance)
+                        .get_memory(DEFAULT_MEMORY_INDEX)
+                        .is_some()
+                };
+                let memory_size: u32 = if has_default_memory {
+                    self.ctx
+                        .resolve_memory(self.cache.default_memory(self.ctx))
+                        .current_pages()
+                        .into()
+                } else {
+                    0
+                };
+                let consumed_fuel = self.ctx.fuel().fuel_consumed();
+                let stack = self.value_stack.dump_stack(self.sp);
+                tracer.pre_opcode_state(
+                    self.ip.pc(),
+                    instr,
+                    stack,
+                    &meta,
+                    memory_size,
+                    consumed_fuel,
+                );
+            }
 
             match instr {
                 Instr::LocalGet(local_depth) => self.visit_local_get(local_depth),
@@ -564,11 +566,13 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         self.ip.offset(0);
         let address = u32::from(address);
         let base_address = offset.into_inner() + address;
-        self.tracer.memory_change(
-            base_address,
-            len,
-            &memory[base_address as usize..(base_address + len) as usize],
-        );
+        if let Some(tracer) = self.tracer.as_mut() {
+            tracer.memory_change(
+                base_address,
+                len,
+                &memory[base_address as usize..(base_address + len) as usize],
+            );
+        }
         self.try_next_instr()
     }
 
@@ -708,12 +712,14 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         match self.ctx.resolve_func(func) {
             FuncEntity::Wasm(wasm_func) => {
                 let header = self.code_map.header(wasm_func.func_body());
-                self.tracer.function_call(
-                    func_index,
-                    header.max_stack_height(),
-                    header.len_locals(),
-                    String::new(),
-                );
+                if let Some(tracer) = self.tracer.as_mut() {
+                    tracer.function_call(
+                        func_index,
+                        header.max_stack_height(),
+                        header.len_locals(),
+                        String::new(),
+                    );
+                }
                 self.value_stack.prepare_wasm_call(header)?;
                 self.sp = self.value_stack.stack_ptr();
                 self.cache.update_instance(wasm_func.instance());
@@ -970,7 +976,9 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             Instruction::TableGet(table_idx) => *table_idx,
             _ => unreachable!("expected TableGet instruction word at this point"),
         };
-        self.tracer.remember_next_table(table_idx);
+        if let Some(tracer) = self.tracer.as_mut() {
+            tracer.remember_next_table(table_idx);
+        }
         table_idx
     }
 
@@ -1284,7 +1292,9 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     .and_then(|memory| memory.get_mut(..n))
                     .ok_or(TrapCode::MemoryOutOfBounds)?;
                 memory.fill(byte);
-                this.tracer.memory_change(offset as u32, n as u32, memory);
+                if let Some(tracer) = this.tracer.as_mut() {
+                    tracer.memory_change(offset as u32, n as u32, memory);
+                }
                 Ok(())
             },
         )?;
@@ -1310,11 +1320,13 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     .and_then(|memory| memory.get(..n))
                     .ok_or(TrapCode::MemoryOutOfBounds)?;
                 data.copy_within(src_offset..src_offset.wrapping_add(n), dst_offset);
-                this.tracer.memory_change(
-                    dst_offset as u32,
-                    n as u32,
-                    &data[dst_offset..(dst_offset + n)],
-                );
+                if let Some(tracer) = this.tracer.as_mut() {
+                    tracer.memory_change(
+                        dst_offset as u32,
+                        n as u32,
+                        &data[dst_offset..(dst_offset + n)],
+                    );
+                }
                 Ok(())
             },
         )?;
@@ -1358,8 +1370,9 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     .and_then(|data| data.get(..n))
                     .ok_or(TrapCode::MemoryOutOfBounds)?;
                 memory.copy_from_slice(data);
-                this.tracer
-                    .global_memory(dst_offset as u32, n as u32, memory);
+                if let Some(tracer) = this.tracer.as_mut() {
+                    tracer.global_memory(dst_offset as u32, n as u32, memory);
+                }
                 Ok(())
             },
         )?;
@@ -1406,8 +1419,9 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             Err(EntityGrowError::TrapCode(trap_code)) => return Err(trap_code),
         };
         self.sp.push_as(result);
-        self.tracer
-            .table_size_change(table_index.to_u32(), init.as_u32(), delta);
+        if let Some(tracer) = self.tracer.as_mut() {
+            tracer.table_size_change(table_index.to_u32(), init.as_u32(), delta);
+        }
         self.try_next_instr()
     }
 
@@ -1452,7 +1466,9 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             .resolve_table_mut(&table)
             .set_untyped(index, value)
             .map_err(|_| TrapCode::TableOutOfBounds)?;
-        self.tracer.table_change(table_index.to_u32(), index, value);
+        if let Some(tracer) = self.tracer.as_mut() {
+            tracer.table_change(table_index.to_u32(), index, value);
+        }
         self.try_next_instr()
     }
 

@@ -119,7 +119,7 @@ pub struct Store<T> {
     /// [`ResourceLimiter`](crate::ResourceLimiter).
     limiter: Option<ResourceLimiterQuery<T>>,
     /// Tracer
-    tracer: Tracer,
+    tracer: Option<Tracer>,
 }
 
 /// The inner store that owns all data not associated to the host state.
@@ -746,8 +746,14 @@ impl<T> Store<T> {
             trampolines: Arena::new(),
             data,
             limiter: None,
-            tracer: Tracer::default(),
+            tracer: None,
         }
+    }
+
+    /// Creates a new store.
+    pub fn with_tracer(mut self, tracer: Tracer) -> Self {
+        self.tracer = Some(tracer);
+        self
     }
 
     /// Returns the [`Engine`] that this store is associated with.
@@ -771,11 +777,11 @@ impl<T> Store<T> {
     }
 
     pub fn tracer(&self) -> &Tracer {
-        &self.tracer
+        self.tracer.as_ref().expect("there is no tracer")
     }
 
     pub fn tracer_mut(&mut self) -> &mut Tracer {
-        &mut self.tracer
+        self.tracer.as_mut().expect("there is no tracer")
     }
 
     /// Installs a function into the [`Store`] that will be called with the user
@@ -839,12 +845,12 @@ impl<T> Store<T> {
 
     pub(crate) fn store_inner_and_tracer_and_resource_limiter_ref(
         &mut self,
-    ) -> (&mut StoreInner, &mut Tracer, ResourceLimiterRef) {
+    ) -> (&mut StoreInner, Option<&mut Tracer>, ResourceLimiterRef) {
         let resource_limiter = ResourceLimiterRef(match &mut self.limiter {
             Some(q) => Some(q.0(&mut self.data)),
             None => None,
         });
-        (&mut self.inner, &mut self.tracer, resource_limiter)
+        (&mut self.inner, self.tracer.as_mut(), resource_limiter)
     }
 
     /// Returns `true` if fuel metering has been enabled.
