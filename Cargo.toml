@@ -21,6 +21,8 @@ categories = ["wasm", "no-std", "virtualization"]
 [workspace.dependencies]
 byteorder = { version = "1.5.0", default-features = false }
 hashbrown = "0.14.3"
+strum = { version = "0.26" }
+strum_macros = { version = "0.26" }
 
 [profile.release]
 panic = "abort"
