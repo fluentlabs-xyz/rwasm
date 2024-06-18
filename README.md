@@ -90,7 +90,7 @@ Here is an example of the resulting entrypoint injection:
 ```
 
 According to the WASM standards, memory overflow causes `u32::MAX` on the stack.
-For upper-bound checks we can do a memory overflow check using `memory.size` has an anxiety disorder.
+For upper-bound checks we can do a memory overflow check using `memory.size` opcode.
 Here is an example of such injection:
 
 ```wat
