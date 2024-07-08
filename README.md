@@ -1,73 +1,116 @@
 rWASM (reduced-WebAssembly)
 ===========================
 
-## rWASM
+# rWASM
 
-rWASM (reduced WebAssembly) is an EIP-3540 compatible binary IR (intermediary representation) of WASM (WebAssembly) that
-is used to simplify the execution process of WASM binaries by keeping 100% compatibility with original WASM features.
-It achieves ZK-friendliness by having more flattened binary structure and simplified instruction set.
-IMPORTANT: rWASM is a trusted execution runtime, don't run it w/o validation.
-It's safe to translate WASM to rWASM and
-execute since it injects all validations inside entrypoint.
+rWASM (reduced WebAssembly) is an EIP-3540 compatible binary intermediary representation (IR) of WASM (WebAssembly).
+It is designed
+to simplify the execution process of WASM binaries while maintaining 100% compatibility with original WASM features.
 
-## Technology
+## Key Features
 
-rWASM is based on WASMi's IR developed by [Parity Tech](https://github.com/wasmi-labs/wasmi) and now under Robin
-Freyler's ownership.
-We decided to choose the WASMi virtual machine because its IR is fully identical to the original WASM's has an anxiety
-disorder position.
-For rWASM, we follow the same principle.
-Additionally, we don't modify WASMi's IR; instead, we only modify the binary representation to achieve ZK-friendliness.
+- **ZK-Friendliness**: rWASM achieves Zero-Knowledge (ZK) friendliness by having a more flattened binary structure and a
+  simplified instruction set.
+- **Compatibility**: rWASM retains full compatibility with WASM, ensuring that all original WASM features are preserved.
 
-Here is a list of differences:
+## Important Notice
 
-1. Deterministic function order based on their position in the codebase
-2. Block/Loop are replaced with Br-family instructions
-3. Break instructions are redesigned to support PC offsets instead of depth-level
-4. Most of the sections are removed to simplify binary verification
-5. The new memory segment section that implements all WASM memory standards in one place
-6. Removed global variables section
-7. Type mapping is not required anymore since code is fully validated
-8. Special entrypoint function that in its all segments
+rWASM is a trusted execution runtime and should not be run without proper validation.
+It is safe to translate WASM to rWAS M and execute, as rWASM injects all necessary validations into the entrypoint.
 
-The new binary representation produces 100% valid WASMi's runtime module from binary.
-There are several features that are not supported anymore, but not required by rWASM runtime:
+# Motivation
 
-- module, global variables and memory imports
-- global variables exports
+WebAssembly (WASM) is an interpreted language and binary format favored by many Web2 developers.
+Our approach aims to seamlessly integrate these developers into the Web3 world,
+despite the challenges this integration presents.
+We prefer WASM over RISC-V or other binary formats due to its well-established and widely adopted standard,
+which developers appreciate and support.
+Moreover, WASM includes a self-described binary format (covering memory structure, type mapping, and more),
+unlike RISC-V/AMD/Intel binary formats,
+which require binary wrappers like EXE or ELF.
+
+However, WASM is not without its drawbacks,
+particularly its non-ZK friendly structures that complicate the proving process.
+This is where rWASM (Reduced WebAssembly) comes into play.
+
+## Introducing rWASM
+
+rWASM is a specially modified binary intermediary representation (IR) of WASM execution.
+It retains 99% compatibility with the original WASM bytecode and instruction set
+but features a modified binary structure that avoids the pitfalls of non-ZK friendly elements,
+without altering opcode behavior.
+
+The main issue with WASM is its use of relative offsets for type mappings, function mappings, and block/loop statements,
+which complicates the proving process.
+rWASM addresses this by adopting a more flattened binary structure without relative offsets
+and eliminating the need for a type mapping validator,
+allowing for straightforward execution.
+
+## Benefits of rWASM
+
+The flattened structure of rWASM simplifies the process of proving the correctness of each opcode execution
+and places several verification steps in the hands of the developer.
+This modification makes rWASM a more efficient and ZK-friendly option
+for integrating Web2 developers into the Web3 ecosystem.
+
+# Technology
+
+rWASM is built on WASMi's intermediate representation (IR),
+originally developed by [Parity Tech](https://github.com/wasmi-labs/wasmi) and now under Robin Freyler's ownership.
+We chose the WASMi virtual machine because its IR is fully consistent with the original WebAssembly (WASM),
+ensuring compatibility and stability.
+For rWASM, we adhere to the same principles,
+making no changes to WASMi's IR and only modifying the binary representation to enhance zero-knowledge
+(ZK) friendliness.
+
+### Key Differences:
+
+1. **Deterministic Function Order**: Functions are ordered based on their position in the codebase.
+2. **Block/Loop Replacement**: Blocks and loops are replaced with Br-family instructions.
+3. **Redesigned Break Instructions**: Break instructions now support program counter (PC) offsets instead of
+   depth-level.
+4. **Simplified Binary Verification**: Most sections are removed to streamline binary verification.
+5. **Unified Memory Segment Section**: Implements all WASM memory standards in one place.
+6. **Removed Global Variables Section**: Global variables section is eliminated.
+7. **Eliminated Type Mapping**: Type mapping is no longer necessary as the code is fully validated.
+8. **Special Entrypoint Function**: A unique entry point function encompasses all segments.
+
+The new binary representation ensures a 100% valid WASMi runtime module from the binary.
+Some features are no longer supported but are not required by the rWASM runtime:
+
+- Module imports, global variables, and memory imports
+- Global variables exports
 
 ## Structure
 
-rWASM binary format supports the following sections:
+The rWASM binary format supports the following sections:
 
-1. bytecode section (it replaces function/code/entrypoint sections)
-2. memory section (it replaces memory/data for all active/passive/declare section types)
-3. function section (temporary solution for a code section, will be removed)
-4. element section (it replaces table/elem sections, will be removed)
+1. **Bytecode Section**: Replaces the function/code/entrypoint sections.
+2. **Memory Section**: Replaces memory/data sections for all active/passive/declare section types.
+3. **Function Section**: A temporary solution for the code section, planned for removal.
+4. **Element Section**: Replaces the table/elem sections, also planned for removal.
 
-### Bytecode section
+### Bytecode Section
 
-This section replaces WASM's original function/code/start sections.
+This section consolidates WASM's original function, code, and start sections.
+It contains all instructions for the entire binary without any additional separators for functions.
+Functions are recovered from the bytecode by reading the function section, which contains function lengths.
+We inject the entrypoint function at the end, which is used to initialize all segments according to WASM constraints.
 
-Bytecode contains all instructions for the entire binary w/o any additional separators for functions.
-Functions can be recovered from a bytecode by reading function section that contains function lengths.
-We inject entrypoint function in the end.
-Entrypoint is used to initialize all segments according to WASM constraints.
+> **Note**: We plan to remove the function section and store the entrypoint at offset 0. To achieve this, we need to
+> eliminate stack calls and implement indirect breaks. Although we have an implementation for this, it is not yet
+> satisfactory, and we plan to migrate to a register-based IR before finalizing it.
 
-P.S: we're planning to remove the function section and store entrypoint at offset 0.
-To achieve this, we need to remove stack call and implement indirect breaks.
-We have implementation of this, but it's not good enough, and we're planning to migrate to register-based IR before
-implementing this.
+### Memory Section
 
-### Memory section
+In WASM, memory and data sections are handled separately.
+In rWASM, the Memory section defines memory bounds (lower and upper limits), and data sections,
+which can be either active or passive, specify data to be mapped inside the memory.
+Unlike WASM, rWASM eliminates the separate memory section,
+modifies the corresponding instruction logic, and merges all data sections.
 
-WASM has memory and data sections.
-The Memory section is used to define memory bounds (lower and upper limits).
-Data sections can be active/passive and are used to define data to be mapped inside data.
-Comparing to WASM, we remove a memory section, modify the corresponding instruction logic and merge all data sections.
-
-Here is an example of WAT file that initializes memory with min/max memory bounds (default allocated memory is one page
-and max possible allocated pages are 2):
+Here's an example of a WAT file that initializes memory with minimum and maximum memory bounds
+(default allocated memory is one page, and the maximum possible allocated pages are two):
 
 ```wat
 (module
@@ -75,8 +118,8 @@ and max possible allocated pages are 2):
 )
 ```
 
-To support this we inject `memory.grow` instruction into entrypoint that inits default memory and also inject special
-preamble into all `memory.grow` instruction to do upper bound checks.
+To support this, we inject the `memory.grow` instruction into the entrypoint to initialize the default memory.
+We also add a special preamble to all `memory.grow` instructions to perform upper bound checks.
 
 Here is an example of the resulting entrypoint injection:
 
@@ -89,9 +132,9 @@ Here is an example of the resulting entrypoint injection:
 )
 ```
 
-According to the WASM standards, memory overflow causes `u32::MAX` on the stack.
-For upper-bound checks we can do a memory overflow check using `memory.size` opcode.
-Here is an example of such injection:
+According to WASM standards, a memory overflow causes `u32::MAX` to be placed on the stack.
+For upper-bound checks, we can use the `memory.size` opcode.
+Here is an example of such an injection:
 
 ```wat
 (module
@@ -110,20 +153,20 @@ Here is an example of such injection:
 )
 ```
 
-These injections fully match WASM standards, and this is how we can support official WASM memory constraint checks for
-a memory section.
+These injections fully comply with WASM standards,
+allowing us to support official WASM memory constraint checks for the memory section.
 
-For data section, it's a bit more complicated because we have to support three different data section types:
+For the data section, the process is more complex because we need to support three different data section types:
 
-- `active` - has a pre-defined compile-time offset
-- `passive` - can be initialized dynamically in runtime
+- **Active**: Has a pre-defined compile-time offset.
+- **Passive**: Can be initialized dynamically at runtime.
 
-To solve this problem, we merge all sections.
-If memory active then we inits it inside entrypoint with
-re-mapped offsets otherwise remember offset in a special mapping (we need this to adjust passive segments when user
-call `memory.init` manually).
+To address this, we merge all sections.
+If the memory is active, we initialize it inside the entrypoint with re-mapped offsets.
+Otherwise,
+we remember the offset in a special mapping to adjust passive segments when the user calls `memory.init` manually.
 
-Here is an example of entrypoint injection for active data segment:
+Here is an example of an entrypoint injection for an active data segment:
 
 ```wat
 (module
@@ -137,14 +180,12 @@ Here is an example of entrypoint injection for active data segment:
 )
 ```
 
-We need to do a final trick with a data segment drop,
-because, according to WASM standards, once the segment is initialized, then
-it must be entirely removed from memory.
-To simulate the same behavior,
-we use zero segments as a default and store special data segments flags to know what segment
-is still alive.
+We need to drop the data segment finally.
+According to WASM standards, once the segment is initialized, it must be entirely removed from memory.
+To simulate this behavior,
+we use zero segments as a default and store special data segment flags to know which segments are still active.
 
-For passive data segments, the logic is almost the same, but we must recalculate data segment offsets on flight.
+For passive data segments, the logic is similar, but we must recalculate data segment offsets on the fly.
 
 ```wat
 (module
@@ -171,31 +212,29 @@ For passive data segments, the logic is almost the same, but we must recalculate
 )
 ```
 
-Provided injections upper are examples and can be different.
+The provided injections are examples and may vary based on specific requirements.
 
-### Function sections (temporary)
+### Function Sections (Temporary)
 
-This section is temporary and is used to store information about function length.
-We're planning to remove this section once we move the entrypoint function into the beginning of the module.
+The function section is a temporary measure used to store information about function lengths.
+This section will be removed once we move the entrypoint function to the beginning of the module.
 
-We can't do this right now, because removing functions requires a lot of refactoring and modifications inside out
-codebase:
+Currently, removing functions requires significant refactoring and modifications to our codebase, including:
 
-1. Replace all functions with breaks (like `br` instructions)
-2. Remove stack call and use indirect breaks or tables
+1. Replacing all functions with breaks (e.g., `br` instructions).
+2. Removing stack calls and using indirect breaks or tables.
 
-We're planning to migrate to the register-based VM.
+We plan to migrate to a register-based VM in the future.
 
-### Element section (temporary)
+### Element Section (Temporary)
 
-This section uses the same translation logic as memory/data sections.
-The only different is that it operates with tables and elements instead of memory and data.
+The element section uses the same translation logic as the memory/data sections
+but operates with tables and elements instead of memory and data.
 
-Element section is also temporary.
-We don't have to keep this section because we can replace it with memory operations.
-It can reduce the number of RW ops and size of our circuits.
-The biggest challenge is how to manage memory securely in this case and avoid mixing system and user memory spaces.
-We don't want to go with custom WASM compilation target and want to support original WASM binaries (now matter how they
-compiled).
+This section is also temporary and will eventually be replaced with memory operations.
+Doing so can reduce the number of read/write operations and the size of our circuits.
+The main challenge is managing memory securely to avoid mixing system and user memory spaces.
+We aim to support original WASM binaries, regardless of how they are compiled,
+without resorting to a custom WASM compilation target.
 
-This is still under research.
+This approach is still under research.
