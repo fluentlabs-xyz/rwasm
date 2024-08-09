@@ -204,6 +204,91 @@ macro_rules! forward_call {
     }};
 }
 
+//#[no_mangle]
+pub extern "C" fn asm_visit_global_set(mut exec: Executor<'static, 'static>,
+                        global_idx: u32) {
+        exec.visit_global_set(GlobalIdx::from(global_idx));
+        //exec.execute(rl)
+}
+
+/*
+
+//#[no_mangle]
+pub extern "C" fn asm_visit_global_get(mut exec: Executor<'static, 'static>,
+                        global_idx: u32) {
+        exec.visit_global_get(GlobalIdx::from(global_idx));
+        //exec.execute(rl)
+}
+
+//#[no_mangle]
+pub extern "C" fn asm_visit_call(mut exec: Executor<'static, 'static>,
+                        func: u32) {
+        exec.visit_call(crate::engine::bytecode::FuncIdx::from(func));
+        //exec.execute(rl)
+}
+
+//#[no_mangle]
+pub extern "C" fn asm_visit_call_internal(mut exec: Executor<'static, 'static>,
+                        func: u32) {
+        exec.visit_call_internal(crate::engine::CompiledFunc::from(func));
+        //exec.execute(rl)
+}
+
+//#[no_mangle]
+pub extern "C" fn asm_visit_return_drop_keep(mut exec: Executor<'static, 'static>,
+                        dk: DropKeep) -> bool {
+    if let ReturnOutcome::Host = exec.visit_ret(dk) {
+        return true;
+    }
+    false
+}
+
+//#[no_mangle]
+pub extern "C" fn asm_visit_signature_check(mut exec: Executor<'static, 'static>,
+                        ft: SignatureIdx) -> Result<(), TrapCode> {
+    exec.visit_signature_check(ft)
+}
+
+//#[no_mangle]
+pub extern "C" fn asm_visit_consume_fuel(mut exec: Executor<'static, 'static>,
+                        bf: BlockFuel) -> Result<(), TrapCode> {
+    exec.visit_consume_fuel(bf)
+}
+
+//#[no_mangle]
+pub extern "C" fn asm_visit_drop(mut exec: Executor<'static, 'static>) {
+    exec.visit_drop()
+}
+
+
+//#[no_mangle]
+pub extern "C" fn asm_visit_local_get(mut exec: Executor<'static, 'static>,
+                        local_d: u32) {
+        exec.visit_local_get(crate::engine::bytecode::LocalDepth::from(local_d));
+        //exec.execute(rl)
+}
+        
+
+//#[no_mangle]
+pub extern "C" fn asm_visit_i32_add(mut exec: Executor<'static, 'static>) {
+        exec.visit_i32_add()
+}
+
+//#[no_mangle]
+pub extern "C" fn asm_visit_i64_const(exec: &mut Executor<'static, 'static>, a: UntypedValue) {
+        exec.visit_i64_const(a)
+}
+*/
+
+
+//#[no_mangle]
+pub extern "C" fn asm_visit_call_indirect(mut exec: Executor<'static, 'static>,
+                        func: SignatureIdx) {
+        exec.visit_call_indirect(func);
+        //exec.execute(rl)
+}
+        
+
 impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     /// Creates a new [`Executor`] for executing a `wasmi` function frame.
     #[inline(always)]
