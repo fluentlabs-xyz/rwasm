@@ -1,20 +1,71 @@
 use crate::rwasm::binary_format::BinaryFormatError;
 use alloc::vec::Vec;
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
+        
+#[cfg(feature = "riscv_special_writer")]
+#[derive(Default,Clone,Copy)]
+pub enum MappedFlow {
+    #[default]
+    Usual,
+    CachedPos(usize),
+    PosChanged(usize),
+}
+
+#[cfg(feature = "riscv_special_writer")]
+#[derive(Default,Clone)]
+pub struct Mapped<T> {
+    mapped: T,
+    flow: MappedFlow,
+}
 
 pub struct BinaryFormatWriter<'a> {
     pub sink: &'a mut [u8],
+    #[cfg(feature = "riscv_special_writer")]
+    pub aligned: Vec<u8>,
+    #[cfg(feature = "riscv_special_writer")]
+    pub unaligned: Vec<Mapped<u8>>,
     pos: usize,
+    #[cfg(feature = "riscv_special_writer")]
+    pos_aligned: usize,
+    #[cfg(feature = "riscv_special_writer")]
+    pos_unaligned: usize,
 }
 
+macro_rules! append_aligned { ($self:ident, $bytes:literal, $Endian:ident :: $write:ident, $value:ident) => {
+    #[cfg(feature = "riscv_special_writer")]
+    {
+        let mut buf = [0u8; $bytes];
+        $Endian::$write(&mut buf, $value);
+        $self.aligned.append(&mut buf.to_vec());
+    }
+}}
+
 impl<'a> BinaryFormatWriter<'a> {
+
+    #[cfg(not(feature = "riscv_special_writer"))]
     pub fn new(sink: &'a mut [u8]) -> Self {
         Self { sink, pos: 0 }
+    }
+
+    #[cfg(feature = "riscv_special_writer")]
+    pub fn new(sink: &'a mut [u8]) -> Self {
+        Self {
+            sink,
+            aligned: vec![],
+            unaligned: vec![],
+            pos: 0,
+            pos_aligned: 0,
+            pos_unaligned: 0,
+        }
     }
 
     pub fn write_u8(&mut self, value: u8) -> Result<usize, BinaryFormatError> {
         let n = self.require(1)?;
         self.sink[self.pos] = value;
+        #[cfg(feature = "riscv_special_writer")]
+        {
+            self.unaligned.push(Mapped { mapped: value, flow: MappedFlow::CachedPos(self.pos) })
+        }
         self.skip(n)
     }
 
@@ -45,54 +96,65 @@ impl<'a> BinaryFormatWriter<'a> {
     pub fn write_u32_be(&mut self, value: u32) -> Result<usize, BinaryFormatError> {
         let n = self.require(4)?;
         BigEndian::write_u32(&mut self.sink[self.pos..], value);
+        append_aligned!(self, 4, BigEndian::write_u32, value);
         self.skip(n)
     }
 
     pub fn write_u32_le(&mut self, value: u32) -> Result<usize, BinaryFormatError> {
         let n = self.require(4)?;
         LittleEndian::write_u32(&mut self.sink[self.pos..], value);
+        append_aligned!(self, 4, LittleEndian::write_u32, value);
         self.skip(n)
     }
 
     pub fn write_i32_be(&mut self, value: i32) -> Result<usize, BinaryFormatError> {
         let n = self.require(4)?;
         BigEndian::write_i32(&mut self.sink[self.pos..], value);
+        append_aligned!(self, 4, BigEndian::write_i32, value);
         self.skip(n)
     }
 
     pub fn write_i32_le(&mut self, value: i32) -> Result<usize, BinaryFormatError> {
         let n = self.require(4)?;
         LittleEndian::write_i32(&mut self.sink[self.pos..], value);
+        append_aligned!(self, 4, LittleEndian::write_i32, value);
         self.skip(n)
     }
 
     pub fn write_u64_be(&mut self, value: u64) -> Result<usize, BinaryFormatError> {
         let n = self.require(8)?;
         BigEndian::write_u64(&mut self.sink[self.pos..], value);
+        append_aligned!(self, 8, BigEndian::write_u64, value);
         self.skip(n)
     }
 
     pub fn write_u64_le(&mut self, value: u64) -> Result<usize, BinaryFormatError> {
         let n = self.require(8)?;
         LittleEndian::write_u64(&mut self.sink[self.pos..], value);
+        append_aligned!(self, 8, LittleEndian::write_u64, value);
         self.skip(n)
     }
 
     pub fn write_i64_be(&mut self, value: i64) -> Result<usize, BinaryFormatError> {
         let n = self.require(8)?;
         BigEndian::write_i64(&mut self.sink[self.pos..], value);
+        append_aligned!(self, 8, BigEndian::write_i64, value);
         self.skip(n)
     }
 
     pub fn write_i64_le(&mut self, value: i64) -> Result<usize, BinaryFormatError> {
         let n = self.require(8)?;
         LittleEndian::write_i64(&mut self.sink[self.pos..], value);
+        append_aligned!(self, 8, LittleEndian::write_i64, value);
         self.skip(n)
     }
 
     pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<usize, BinaryFormatError> {
         let n = self.require(bytes.len())?;
         self.sink[self.pos..(self.pos + n)].copy_from_slice(bytes);
+        if n == 4 || n == 8 {
+            self.aligned.append(&mut bytes.clone().to_vec());
+        }
         self.skip(n)
     }
 
@@ -115,6 +177,14 @@ impl<'a> BinaryFormatWriter<'a> {
     fn skip(&mut self, n: usize) -> Result<usize, BinaryFormatError> {
         assert!(self.sink.len() >= self.pos + n);
         self.pos += n;
+        #[cfg(feature = "riscv_special_writer")]
+        if n == 4 || n == 8 {
+            self.pos_aligned += n;
+        }
+        #[cfg(feature = "riscv_special_writer")]
+        if n == 1 {
+            self.pos_unaligned += 1;
+        }
         Ok(n)
     }
 
