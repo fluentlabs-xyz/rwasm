@@ -28,6 +28,15 @@ pub trait BinaryFormat<'a> {
         self.write_binary(&mut sink)
     }
 
+    #[cfg(feature = "riscv_special_writer")]
+    fn write_binary_riscv_special(&self, buffer: &'a mut Vec<u8>) -> Result<usize, BinaryFormatError> {
+        buffer.resize(self.encoded_length(), 0u8);
+        let mut sink = BinaryFormatWriter::<'a>::new(buffer.as_mut_slice());
+        let size = self.write_binary(&mut sink)?;
+        println!("DEBUG {:#?}", &sink.unaligned);
+        Ok(size)
+    }
+
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError>;
 
     fn read_from_slice(sink: &'a [u8]) -> Result<Self::SelfType, BinaryFormatError> {

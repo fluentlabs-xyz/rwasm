@@ -3,19 +3,67 @@ use alloc::vec::Vec;
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
         
 #[cfg(feature = "riscv_special_writer")]
-#[derive(Default,Clone,Copy)]
-pub enum MappedFlow {
+#[derive(Debug,Default,Clone,Copy,PartialEq)]
+pub enum Kind {
     #[default]
-    Usual,
-    CachedPos(usize),
-    PosChanged(usize),
+    OneByte,
+    FiveBytes,
+    NineBytes,
+}
+        
+#[cfg(feature = "riscv_special_writer")]
+#[derive(Debug,Default,Clone,Copy)]
+pub enum Flow {
+    #[default]
+    Unknown,
+    CachedPos { pos: usize, kind: Option<Kind>, count: Option<usize> },
+    Reduced { kind: Kind, count: usize },
 }
 
 #[cfg(feature = "riscv_special_writer")]
-#[derive(Default,Clone)]
-pub struct Mapped<T> {
-    mapped: T,
-    flow: MappedFlow,
+#[derive(Debug,Default,Clone)]
+pub struct MappedFlow<T> {
+    mapped: Vec<T>,
+    flow: Vec<Flow>,
+}
+
+impl<T> MappedFlow<T> {
+
+    pub fn reduce_flow(&mut self) {
+        if let Some(last) = self.flow.pop() {
+            if let Some(lprev) = self.flow.pop() {
+                self.reduce_and_put_back(lprev, last);
+            } else {
+                self.flow.push(last);
+            }
+        }
+    }
+
+    pub fn reduce_and_put_back(&mut self, prev: Flow, cur: Flow) {
+        use Kind::*;
+        use Flow::*;
+        match (prev, cur) {
+            (CachedPos { pos: ppos, kind: pkind, count: pcount }, CachedPos { pos: cpos, kind: ckind, count: None }) => {
+                let ckind = match cpos as isize - ppos as isize {
+                    1 => Some(OneByte),
+                    5 => Some(FiveBytes),
+                    9 => Some(NineBytes),
+                    _ => ckind,
+                };
+                if pkind.is_some() && pkind == ckind {
+                    let count = match pcount {
+                        Some(cnt) => cnt + 1,
+                        None => 1,
+                    };
+                    self.flow.push(CachedPos { pos: cpos, kind: pkind, count: Some(count) });
+                    return;
+                }
+                self.flow.push(CachedPos { pos: ppos, kind: pkind, count: pcount });
+                self.flow.push(CachedPos { pos: cpos, kind: ckind, count: None });
+            }
+            _ => (),
+        }
+    }
 }
 
 pub struct BinaryFormatWriter<'a> {
@@ -23,7 +71,7 @@ pub struct BinaryFormatWriter<'a> {
     #[cfg(feature = "riscv_special_writer")]
     pub aligned: Vec<u8>,
     #[cfg(feature = "riscv_special_writer")]
-    pub unaligned: Vec<Mapped<u8>>,
+    pub unaligned: MappedFlow<u8>,
     pos: usize,
     #[cfg(feature = "riscv_special_writer")]
     pos_aligned: usize,
@@ -52,7 +100,7 @@ impl<'a> BinaryFormatWriter<'a> {
         Self {
             sink,
             aligned: vec![],
-            unaligned: vec![],
+            unaligned: MappedFlow::default(),
             pos: 0,
             pos_aligned: 0,
             pos_unaligned: 0,
@@ -64,7 +112,9 @@ impl<'a> BinaryFormatWriter<'a> {
         self.sink[self.pos] = value;
         #[cfg(feature = "riscv_special_writer")]
         {
-            self.unaligned.push(Mapped { mapped: value, flow: MappedFlow::CachedPos(self.pos) })
+            self.unaligned.mapped.push(value);
+            self.unaligned.flow.push(Flow::CachedPos { pos: self.pos, kind: None, count: None });
+            self.unaligned.reduce_flow();
         }
         self.skip(n)
     }
