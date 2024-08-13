@@ -64,10 +64,22 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         n += sink.write_u32_le(element_section_length)?;
         // section terminator
         n += sink.write_u8(SECTION_END)?;
+
         // write code/decl/element sections
+        #[cfg(feature = "riscv_special_writer")]
+        {
+            sink.unaligned_code_section_len = sink.pos_unaligned;
+            sink.aligned_code_section_len = sink.pos_aligned;
+        }
         for opcode in self.code_section.instrs().iter() {
             n += opcode.write_binary(sink)?;
         }
+        #[cfg(feature = "riscv_special_writer")]
+        {
+            sink.unaligned_code_section_len = sink.pos_unaligned - sink.unaligned_code_section_len;
+            sink.aligned_code_section_len = sink.pos_aligned - sink.aligned_code_section_len;
+        }
+
         n += sink.write_bytes(&self.memory_section)?;
         for x in self.func_section.iter() {
             n += x.write_binary(sink)?;

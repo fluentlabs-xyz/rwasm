@@ -23,8 +23,8 @@ pub enum Flow {
 #[cfg(feature = "riscv_special_writer")]
 #[derive(Debug,Default,Clone)]
 pub struct MappedFlow<T> {
-    mapped: Vec<T>,
-    flow: Vec<Flow>,
+    pub mapped: Vec<T>,
+    pub flow: Vec<Flow>,
 }
 
 impl<T> MappedFlow<T> {
@@ -74,9 +74,13 @@ pub struct BinaryFormatWriter<'a> {
     pub unaligned: MappedFlow<u8>,
     pos: usize,
     #[cfg(feature = "riscv_special_writer")]
-    pos_aligned: usize,
+    pub pos_aligned: usize,
     #[cfg(feature = "riscv_special_writer")]
-    pos_unaligned: usize,
+    pub pos_unaligned: usize,
+    #[cfg(feature = "riscv_special_writer")]
+    pub unaligned_code_section_len: usize,
+    #[cfg(feature = "riscv_special_writer")]
+    pub aligned_code_section_len: usize,
 }
 
 macro_rules! append_aligned { ($self:ident, $bytes:literal, $Endian:ident :: $write:ident, $value:ident) => {
@@ -104,6 +108,8 @@ impl<'a> BinaryFormatWriter<'a> {
             pos: 0,
             pos_aligned: 0,
             pos_unaligned: 0,
+            unaligned_code_section_len: 0,
+            aligned_code_section_len: 0,
         }
     }
 
