@@ -81,6 +81,8 @@ pub struct BinaryFormatWriter<'a> {
     pub unaligned_code_section_len: usize,
     #[cfg(feature = "riscv_special_writer")]
     pub aligned_code_section_len: usize,
+    #[cfg(feature = "riscv_special_writer")]
+    pub au_jump_table: Vec<(u32,u32)>,
 }
 
 macro_rules! append_aligned { ($self:ident, $bytes:literal, $Endian:ident :: $write:ident, $value:ident) => {
@@ -110,6 +112,7 @@ impl<'a> BinaryFormatWriter<'a> {
             pos_unaligned: 0,
             unaligned_code_section_len: 0,
             aligned_code_section_len: 0,
+            au_jump_table: vec![],
         }
     }
 

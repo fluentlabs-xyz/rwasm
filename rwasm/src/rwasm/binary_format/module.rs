@@ -67,11 +67,30 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
 
         // write code/decl/element sections
         #[cfg(feature = "riscv_special_writer")]
+        let mut fsect = vec![0];
+        #[cfg(feature = "riscv_special_writer")]
         {
+            fsect.append(&mut self.func_section.clone());
             sink.unaligned_code_section_len = sink.pos_unaligned;
             sink.aligned_code_section_len = sink.pos_aligned;
         }
         for opcode in self.code_section.instrs().iter() {
+            #[cfg(feature = "riscv_special_writer")]
+            if fsect.len() > 0 {
+                if fsect[0] == 0 {
+                    fsect.remove(0);
+                    let pos_aligned = sink.pos_aligned as u32;
+                    let pos_unaligned = sink.pos_unaligned as u32;
+                    sink.au_jump_table.push((pos_aligned, pos_unaligned));
+                }
+                if fsect.len() > 0 {
+                    if fsect[0] > 0 {
+                        fsect[0] -= 1;
+                    } else {
+                        panic!("invalue function sizes table");
+                    }
+                }
+            }
             n += opcode.write_binary(sink)?;
         }
         #[cfg(feature = "riscv_special_writer")]
