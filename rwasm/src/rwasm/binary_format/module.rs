@@ -69,6 +69,8 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         #[cfg(feature = "riscv_special_writer")]
         let mut fsect = vec![0];
         #[cfg(feature = "riscv_special_writer")]
+        let mut vexec_pos = 0;
+        #[cfg(feature = "riscv_special_writer")]
         {
             fsect.append(&mut self.func_section.clone());
             sink.unaligned_code_section_len = sink.pos_unaligned;
@@ -81,7 +83,7 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
                     fsect.remove(0);
                     let pos_aligned = sink.pos_aligned as u32;
                     let pos_unaligned = sink.pos_unaligned as u32;
-                    sink.au_jump_table.push((pos_aligned, pos_unaligned));
+                    sink.au_jump_table.push((pos_aligned, pos_unaligned, vexec_pos as u32));
                 }
                 if fsect.len() > 0 {
                     if fsect[0] > 0 {
@@ -92,6 +94,8 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
                 }
             }
             n += opcode.write_binary(sink)?;
+            #[cfg(feature = "riscv_special_writer")]
+            vexec_pos += 1;
         }
         #[cfg(feature = "riscv_special_writer")]
         {
