@@ -95,7 +95,7 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
             }
             n += opcode.write_binary(sink)?;
             #[cfg(feature = "riscv_special_writer")]
-            vexec_pos += 1;
+            vexec_pos += 4;
         }
         #[cfg(feature = "riscv_special_writer")]
         {
