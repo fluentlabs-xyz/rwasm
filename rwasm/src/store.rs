@@ -244,6 +244,10 @@ impl Fuel {
         self.total.wrapping_sub(self.remaining)
     }
 
+    pub fn fuel_remaining(&self) -> u64 {
+        self.remaining
+    }
+
     /// Returns `Ok` if enough fuel is remaining to satisfy `delta` fuel consumption.
     ///
     /// Returns a [`TrapCode::OutOfFuel`] error otherwise.
@@ -261,6 +265,14 @@ impl Fuel {
         self.remaining = self
             .remaining
             .checked_sub(delta)
+            .ok_or(TrapCode::OutOfFuel)?;
+        Ok(self.remaining)
+    }
+
+    pub fn refund_fuel(&mut self, delta: u64) -> Result<u64, TrapCode> {
+        self.remaining = self
+            .remaining
+            .checked_add(delta)
             .ok_or(TrapCode::OutOfFuel)?;
         Ok(self.remaining)
     }
@@ -891,6 +903,11 @@ impl<T> Store<T> {
         Some(self.inner.fuel.fuel_consumed())
     }
 
+    pub fn fuel_remaining(&self) -> Option<u64> {
+        self.check_fuel_metering_enabled().ok()?;
+        Some(self.inner.fuel.fuel_consumed())
+    }
+
     /// Synthetically consumes an amount of fuel for the [`Store`].
     ///
     /// Returns the remaining amount of fuel after this operation.
@@ -908,6 +925,14 @@ impl<T> Store<T> {
         self.inner
             .fuel
             .consume_fuel(delta)
+            .map_err(|_error| FuelError::out_of_fuel())
+    }
+
+    pub fn refund_fuel(&mut self, delta: u64) -> Result<u64, FuelError> {
+        self.check_fuel_metering_enabled()?;
+        self.inner
+            .fuel
+            .refund_fuel(delta)
             .map_err(|_error| FuelError::out_of_fuel())
     }
 

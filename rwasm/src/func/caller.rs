@@ -107,6 +107,10 @@ impl<'a, T> Caller<'a, T> {
         self.ctx.store.fuel_consumed()
     }
 
+    pub fn fuel_remaining(&self) -> Option<u64> {
+        self.ctx.store.fuel_remaining()
+    }
+
     /// Synthetically consumes an amount of fuel for the [`Store`](crate::Store).
     ///
     /// Returns the remaining amount of fuel after this operation.
@@ -121,6 +125,10 @@ impl<'a, T> Caller<'a, T> {
     /// - If more fuel is consumed than available.
     pub fn consume_fuel(&mut self, delta: u64) -> Result<u64, FuelError> {
         self.ctx.store.consume_fuel(delta)
+    }
+
+    pub fn refund_fuel(&mut self, delta: u64) -> Result<u64, FuelError> {
+        self.ctx.store.refund_fuel(delta)
     }
 }
 
