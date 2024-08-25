@@ -905,7 +905,7 @@ impl<T> Store<T> {
 
     pub fn fuel_remaining(&self) -> Option<u64> {
         self.check_fuel_metering_enabled().ok()?;
-        Some(self.inner.fuel.fuel_consumed())
+        Some(self.inner.fuel.fuel_remaining())
     }
 
     /// Synthetically consumes an amount of fuel for the [`Store`].
