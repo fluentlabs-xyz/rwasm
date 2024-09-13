@@ -192,7 +192,7 @@ impl TestContext<'_> {
                         let func_type =
                             original_engine.resolve_func_type(&func_type, |v| v.clone());
                         let new_func_type = self.engine.alloc_func_type(func_type);
-                        module_builder.funcs.insert(0, new_func_type);
+                        module_builder.funcs.insert(i, new_func_type);
                         module_builder.imports.funcs.push(import_name.clone());
                     }
                     Imported::Global(_) => continue,
@@ -208,7 +208,7 @@ impl TestContext<'_> {
                     }
                     let func_type = original_module.funcs[func_index as usize];
                     let func_type = original_engine.resolve_func_type(&func_type, |v| v.clone());
-                    // remap exported func type
+                    // remap exported a func type
                     let new_func_type = self.engine.alloc_func_type(func_type);
                     module_builder.funcs[func_index as usize] = new_func_type;
                 }
@@ -219,10 +219,6 @@ impl TestContext<'_> {
             let entrypoint_func_index = module.funcs.len() - 1;
             module.start = Some(FuncIdx::from(entrypoint_func_index as u32));
             module
-            // let mut module = Module::new(self.engine(), &wasm[..])?;
-            // let entrypoint_func_index = module.funcs.len() - 1;
-            // module.start = Some(FuncIdx::from(entrypoint_func_index as u32));
-            // module
         } else {
             Module::new(self.engine(), &wasm[..])?
         };
