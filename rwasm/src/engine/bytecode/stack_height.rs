@@ -2,14 +2,6 @@ use crate::engine::bytecode::Instruction;
 use alloc::vec::Vec;
 
 #[derive(Debug, Copy, Clone)]
-pub enum RwTableOp {
-    // ElemRead(u32, u32),
-    // ElemWrite(u32, u32),
-    // SizeRead(u32),
-    // SizeWrite(u32),
-}
-
-#[derive(Debug, Copy, Clone)]
 pub enum RwOp {
     StackWrite(u32),
     StackRead(u32),
