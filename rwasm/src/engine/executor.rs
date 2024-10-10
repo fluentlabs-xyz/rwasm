@@ -940,7 +940,11 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         // We do not have to check if fuel metering is enabled since
         // these `wasmi` instructions are only generated if fuel metering
         // is enabled to begin with.
-        self.ctx.fuel_mut().consume_fuel(block_fuel.to_u64())?;
+        if self.ctx.engine().config().get_consume_fuel() {
+            // We need to do the check for rWASM, because there is a mode where we don't have
+            // fuel even if application is compiled with fuel support
+            self.ctx.fuel_mut().consume_fuel(block_fuel.to_u64())?;
+        }
         self.try_next_instr()
     }
 

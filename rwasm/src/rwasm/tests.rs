@@ -352,12 +352,12 @@ fn test_state_router() {
         import_linker: Some(create_import_linker()),
         wrap_import_functions: true,
     });
-    // run with deploy state (result is 200)
+    // run with deployment state (a result is 200)
     let mut host_state = HostState::default();
     host_state.state = STATE_DEPLOY;
     host_state = execute_binary(wat, host_state, config.clone());
     assert_eq!(host_state.exit_code, 200);
-    // run with main state (result is 100)
+    // run with the main state (a result is 100)
     host_state.state = STATE_MAIN;
     host_state = execute_binary(wat, host_state, config);
     assert_eq!(host_state.exit_code, 100);
