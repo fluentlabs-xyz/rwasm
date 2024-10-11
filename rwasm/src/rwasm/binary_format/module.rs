@@ -4,7 +4,7 @@ use crate::{
 };
 
 /// Rwasm binary version that is equal to 'R' symbol (0x52 in hex)
-const RWASM_VERSION: u8 = 0x52;
+const RWASM_VERSION: u8 = 0x01;
 
 /// Sections that are presented in Rwasm binary:
 /// - code
@@ -41,7 +41,7 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
         // magic prefix (0xef 0x00)
         let mut n = sink.write_u8(0xef)?;
-        n += sink.write_u8(0x00)?;
+        n += sink.write_u8(0x52)?;
         // version (0x52 = R symbol)
         n += sink.write_u8(RWASM_VERSION)?;
         // code section header
