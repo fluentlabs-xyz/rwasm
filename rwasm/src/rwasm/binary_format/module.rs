@@ -80,8 +80,8 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
 
     fn read_binary(sink: &mut BinaryFormatReader<'a>) -> Result<Self::SelfType, BinaryFormatError> {
         let mut result = RwasmModule::default();
-        // magic prefix (0xef 0x00)
-        if sink.read_u8()? != 0xef || sink.read_u8()? != 0x00 {
+        // magic prefix (0xef 0x52)
+        if sink.read_u8()? != 0xef || sink.read_u8()? != 0x52 {
             return Err(BinaryFormatError::MalformedWasmModule);
         }
         // version check
