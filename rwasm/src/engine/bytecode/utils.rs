@@ -1,5 +1,7 @@
 use crate::engine::{func_builder::TranslationErrorInner, Instr, TranslationError};
 use core::fmt::{self, Display};
+#[cfg(feature = "std")]
+use serde::{Serialize,Deserialize};
 
 /// A 32-bit encoded `f64` value.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
@@ -26,6 +28,7 @@ impl F64Const32 {
 /// A function index.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 pub struct FuncIdx(u32);
 
 impl From<u16> for FuncIdx {
@@ -49,6 +52,7 @@ impl FuncIdx {
 /// A table index.
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 pub struct TableIdx(u32);
 
 impl From<u32> for TableIdx {
@@ -67,6 +71,7 @@ impl TableIdx {
 /// An index of a unique function signature.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 pub struct SignatureIdx(u32);
 
 impl From<u32> for SignatureIdx {
@@ -91,6 +96,7 @@ impl SignatureIdx {
 /// of the value stack at the time of access.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 pub struct LocalDepth(u32);
 
 impl From<u32> for LocalDepth {
@@ -106,6 +112,7 @@ impl LocalDepth {
     }
 }
 
+
 /// A global variable index.
 ///
 /// # Note
@@ -113,6 +120,7 @@ impl LocalDepth {
 /// Refers to a global variable of a [`Store`].
 ///
 /// [`Store`]: [`crate::Store`]
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct GlobalIdx(u32);
@@ -139,6 +147,7 @@ impl GlobalIdx {
 /// [`Store`]: [`crate::Store`]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 pub struct DataSegmentIdx(u32);
 
 impl From<u32> for DataSegmentIdx {
@@ -163,6 +172,7 @@ impl DataSegmentIdx {
 /// [`Store`]: [`crate::Store`]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 pub struct ElementSegmentIdx(u32);
 
 impl From<u32> for ElementSegmentIdx {
@@ -181,6 +191,7 @@ impl ElementSegmentIdx {
 /// The number of branches of an [`Instruction::BrTable`].
 ///
 /// [`Instruction::BrTable`]: [`super::Instruction::BrTable`]
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct BranchTableTargets(u32);
@@ -214,6 +225,7 @@ impl BranchTableTargets {
 /// The accumulated fuel to execute a block via [`Instruction::ConsumeFuel`].
 ///
 /// [`Instruction::ConsumeFuel`]: [`super::Instruction::ConsumeFuel`]
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct BlockFuel(u32);
@@ -266,6 +278,7 @@ impl BlockFuel {
 /// # Note
 ///
 /// Used to calculate the effective address of a linear memory access.
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct AddressOffset(u32);
@@ -287,6 +300,7 @@ impl AddressOffset {
 ///
 /// This defines how much the instruction pointer is offset
 /// upon taking the respective branch.
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
 pub struct BranchOffset(i32);
 
@@ -346,6 +360,7 @@ impl BranchOffset {
 }
 
 /// Defines how many stack values are going to be dropped and kept after branching.
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 #[derive(Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
 pub struct DropKeep {
     drop: u16,

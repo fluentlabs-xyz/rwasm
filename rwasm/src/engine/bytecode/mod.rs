@@ -29,7 +29,10 @@ use crate::core::{UntypedValue, F32};
 use core::{
     fmt,
     fmt::{Debug, Formatter},
+    
 };
+#[cfg(feature = "std")]
+use serde::{Serialize,Deserialize};
 
 /// The internal `wasmi` bytecode that is stored for Wasm functions.
 ///
@@ -41,6 +44,7 @@ use core::{
 /// each representing either the `BrTable` head or one of its branching targets.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "std", derive(strum_macros::EnumIter))]
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 pub enum Instruction {
     LocalGet(LocalDepth),
     LocalSet(LocalDepth),

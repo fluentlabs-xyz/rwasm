@@ -4,8 +4,11 @@ use alloc::{
     collections::{btree_map, BTreeMap},
     vec::Vec,
 };
+#[cfg(feature = "std")]
+use serde::{Serialize,Deserialize};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
+#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
 pub struct ConstRef(u32);
 
 impl TryFrom<usize> for ConstRef {
