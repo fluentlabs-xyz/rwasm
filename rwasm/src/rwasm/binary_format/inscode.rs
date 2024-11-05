@@ -2,7 +2,7 @@ use crate::engine::bytecode::Instruction;
 
 impl Instruction{
     #[inline]
-    fn to_opcode_and_aux(&self)->(u32,Option<u64>){
+   pub fn to_opcode_and_aux(&self)->(u32,Option<u64>){
         match self {
             Instruction::LocalGet(local_depth) => todo!(),
             Instruction::LocalSet(local_depth) => todo!(),
@@ -206,7 +206,7 @@ impl Instruction{
         }
     }
     #[inline]
-    fn to_op(&self)->u32{
+  pub fn to_op(&self)->u32{
         self.to_opcode_and_aux().0
     }
 }
