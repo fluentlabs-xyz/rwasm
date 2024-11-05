@@ -626,4 +626,11 @@ impl Instruction {
             _=>false,
         }
     }
+
+    pub fn is_ecall_instruction(&self)->bool{
+        match self{
+            
+            _=>false,
+        }   
+    }
 }
