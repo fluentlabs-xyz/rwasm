@@ -610,3 +610,20 @@ mod tests {
         }
     }
 }
+
+
+impl Instruction {
+    pub fn is_alu_instruction(&self)->bool{
+        match self{
+            Instruction::I32Add=>true,
+            _=>false,
+        }
+    }
+
+    pub fn is_memory_instruction(&self)->bool{
+        match self{
+            
+            _=>false,
+        }
+    }
+}
