@@ -5,7 +5,7 @@ mod module;
 mod number;
 pub mod reader_writer;
 mod utils;
-
+pub mod inscode;
 pub use crate::rwasm::binary_format::reader_writer::{BinaryFormatReader, BinaryFormatWriter};
 use alloc::vec::Vec;
 
