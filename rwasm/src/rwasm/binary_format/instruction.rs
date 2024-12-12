@@ -633,4 +633,27 @@ impl Instruction {
             _=>false,
         }   
     }
+
+    pub fn is_branch_instruction(self)->bool{
+        match self{
+            
+            _=>false,
+        }   
+    }
+
+    pub fn is_jump_instruction(self)->bool{
+        match self{
+            
+            _=>false,
+        }   
+    }
+
+    pub fn is_halt(self)->bool{
+        match self{
+            
+            _=>false,
+        }   
+    }
+    
+    
 }
