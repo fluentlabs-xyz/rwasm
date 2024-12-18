@@ -655,5 +655,11 @@ impl Instruction {
         }   
     }
     
+    pub fn is_binary_instruction(self)->bool{
+        match self{
+            Instruction::I32Add=>true,
+            _=>false,
+        }  
+    }
     
 }
