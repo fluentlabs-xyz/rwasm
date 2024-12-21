@@ -1,14 +1,14 @@
 mod drop_keep;
+pub mod inscode;
 pub mod instruction;
 mod instruction_set;
 mod module;
 mod number;
 pub mod reader_writer;
 mod utils;
-pub mod inscode;
 pub use crate::rwasm::binary_format::reader_writer::{BinaryFormatReader, BinaryFormatWriter};
-pub use instruction::InstructionExtra;
 use alloc::vec::Vec;
+pub use instruction::InstructionExtra;
 
 #[derive(Debug, Copy, Clone)]
 pub enum BinaryFormatError {

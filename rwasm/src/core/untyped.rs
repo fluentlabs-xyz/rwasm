@@ -19,14 +19,14 @@ use core::{
 };
 use paste::paste;
 #[cfg(feature = "std")]
-use serde::{Serialize,Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// An untyped value.
 ///
 /// Provides a dense and simple interface to all functional Wasm operations.
 #[derive(Debug, Copy, Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
-#[cfg_attr(feature = "std", derive(Serialize,Deserialize))]
+#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 pub struct UntypedValue {
     /// This inner value is required to have enough bits to represent
     /// all fundamental WebAssembly types `i32`, `i64`, `f32` and `f64`.

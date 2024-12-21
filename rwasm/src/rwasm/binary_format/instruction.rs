@@ -611,55 +611,77 @@ mod tests {
     }
 }
 
-
 impl Instruction {
-    pub fn is_alu_instruction(self)->bool{
-        match self{
-            Instruction::I32Add=>true,
-            _=>false,
+    pub fn is_alu_instruction(self) -> bool {
+        match self {
+            Instruction::I32Eq
+            | Instruction::I32Eqz
+            | Instruction::I32Ne
+            | Instruction::I32LtS
+            | Instruction::I32LtU
+            | Instruction::I32GtU
+            | Instruction::I32GtS
+            | Instruction::I32LeS
+            | Instruction::I32LeU
+            | Instruction::I32GeS
+            | Instruction::I32GeU
+            | Instruction::I32Clz
+            | Instruction::I32Ctz
+            | Instruction::I32Popcnt
+            | Instruction::I32Add
+            | Instruction::I32Sub
+            | Instruction::I32Mul
+            | Instruction::I32DivS
+            | Instruction::I32DivU
+            | Instruction::I32RemS
+            | Instruction::I32RemU
+            | Instruction::I32And
+            | Instruction::I32Or
+            | Instruction::I32Xor
+            | Instruction::I32Shl
+            | Instruction::I32ShrS
+            | Instruction::I32ShrU
+            | Instruction::I32Rotl
+            | Instruction::I32Rotr => true,
+
+            _ => false,
         }
     }
 
-    pub fn is_memory_instruction(self)->bool{
-        match self{
-            
-            _=>false,
+    pub fn is_memory_instruction(self) -> bool {
+        match self {
+            _ => false,
         }
     }
 
-    pub fn is_ecall_instruction(self)->bool{
-        match self{
-            
-            _=>false,
-        }   
+    pub fn is_ecall_instruction(self) -> bool {
+        match self {
+            _ => false,
+        }
     }
 
-    pub fn is_branch_instruction(self)->bool{
-        match self{
-            
-            _=>false,
-        }   
+    pub fn is_branch_instruction(self) -> bool {
+        match self {
+            _ => false,
+        }
     }
 
-    pub fn is_jump_instruction(self)->bool{
-        match self{
-            
-            _=>false,
-        }   
+    pub fn is_jump_instruction(self) -> bool {
+        match self {
+            _ => false,
+        }
     }
 
-    pub fn is_halt(self)->bool{
-        match self{
-            
-            _=>false,
-        }   
+    pub fn is_halt(self) -> bool {
+        match self {
+            _ => false,
+        }
     }
-    
-    pub fn is_binary_instruction(self)->bool{
-        match self{
-            Instruction::I32Add=>true,
-            _=>false,
-        }  
+
+    pub fn is_binary_instruction(self) -> bool {
+        match self {
+            Instruction::I32Add => true,
+            _ => false,
+        }
     }
-    
 }

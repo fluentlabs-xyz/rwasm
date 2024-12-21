@@ -1,8 +1,8 @@
 use crate::engine::bytecode::Instruction;
 
-impl Instruction{
+impl Instruction {
     #[inline]
-   pub fn to_opcode_and_aux(&self)->(u32,Option<u64>){
+    pub fn to_opcode_and_aux(&self) -> (u32, Option<u64>) {
         match self {
             Instruction::LocalGet(local_depth) => todo!(),
             Instruction::LocalSet(local_depth) => todo!(),
@@ -108,7 +108,7 @@ impl Instruction{
             Instruction::I32Clz => todo!(),
             Instruction::I32Ctz => todo!(),
             Instruction::I32Popcnt => todo!(),
-            Instruction::I32Add => (0x67,None),
+            Instruction::I32Add => (0x67, None),
             Instruction::I32Sub => todo!(),
             Instruction::I32Mul => todo!(),
             Instruction::I32DivS => todo!(),
@@ -206,7 +206,7 @@ impl Instruction{
         }
     }
     #[inline]
-  pub fn to_op(&self)->u32{
+    pub fn to_op(&self) -> u32 {
         self.to_opcode_and_aux().0
     }
 }
