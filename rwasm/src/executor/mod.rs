@@ -214,13 +214,13 @@ impl<'a, E: SyscallHandler> RwasmExecutor<'a, E> {
     #[inline(always)]
     fn execute_unary(&mut self, f: fn(UntypedValue) -> UntypedValue) {
         self.sp.eval_top(f);
-        self.next_instr()
+        self.ip.add(1);
     }
 
     #[inline(always)]
     fn execute_binary(&mut self, f: fn(UntypedValue, UntypedValue) -> UntypedValue) {
         self.sp.eval_top2(f);
-        self.next_instr()
+        self.ip.add(1);
     }
 }
 
