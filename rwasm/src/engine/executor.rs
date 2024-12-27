@@ -1114,7 +1114,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         let table = self.fetch_table_idx(2);
         let func_index: u32 = self.sp.pop_as();
         self.sp.drop_keep(drop_keep);
-        // for rWASM let's store func type on the stack
+        // for rWASM, let's store func type on the stack
         if self.ctx.engine().config().get_rwasm_config().is_some() {
             self.last_signature = Some(func_type);
         }

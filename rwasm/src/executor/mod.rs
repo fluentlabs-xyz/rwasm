@@ -1,9 +1,14 @@
+mod opcodes;
+mod utils;
+
 use crate::{
-    core::{Pages, TrapCode, UntypedValue},
+    core::{TrapCode, UntypedValue},
     engine::{
-        bytecode::Instruction,
-        code_map::{FuncHeader, InstructionPtr, InstructionsRef},
+        bytecode::{AddressOffset, GlobalIdx, Instruction, SignatureIdx, TableIdx},
+        code_map::InstructionPtr,
         stack::{ValueStack, ValueStackPtr},
+        DropKeep,
+        Tracer,
     },
     memory::MemoryEntity,
     rwasm::{BinaryFormatError, RwasmModule},
@@ -31,7 +36,7 @@ impl From<TrapCode> for RwasmError {
     }
 }
 
-pub trait ExternalCallHandler {
+pub trait SyscallHandler {
     fn call_function(
         &mut self,
         func_idx: u32,
@@ -41,9 +46,9 @@ pub trait ExternalCallHandler {
 }
 
 #[derive(Default)]
-pub struct DefaultExternalCallHandler;
+pub struct AlwaysFailingSyscallHandler;
 
-impl ExternalCallHandler for DefaultExternalCallHandler {
+impl SyscallHandler for AlwaysFailingSyscallHandler {
     fn call_function(
         &mut self,
         func_idx: u32,
@@ -54,216 +59,177 @@ impl ExternalCallHandler for DefaultExternalCallHandler {
     }
 }
 
-pub fn execute_rwasm_bytecode<E: ExternalCallHandler>(
-    rwasm_bytecode: &[u8],
-    external_call_handler: Option<&mut E>,
-) -> Result<i32, RwasmError> {
-    let rwasm_module = RwasmModule::new(rwasm_bytecode)?;
-    execute_rwasm_module(rwasm_module, external_call_handler)
+pub struct RwasmExecutor<'a, E: SyscallHandler> {
+    rwasm_module: RwasmModule,
+    syscall_handler: Option<&'a mut E>,
+    func_segments: Vec<u32>,
+    sp: ValueStackPtr,
+    value_stack: ValueStack,
+    ip: InstructionPtr,
+    resource_limiter_ref: ResourceLimiterRef<'a>,
+    global_memory: MemoryEntity,
+    global_variables: HashMap<GlobalIdx, UntypedValue>,
+    global_tables: HashMap<(TableIdx, u32), u32>,
+    call_stack: Vec<InstructionPtr>,
+    last_signature: Option<SignatureIdx>,
+    tracer: Option<&'a mut Tracer>,
 }
 
-pub fn execute_rwasm_module<E: ExternalCallHandler>(
-    rwasm_module: RwasmModule,
-    mut external_call_handler: Option<&mut E>,
-) -> Result<i32, RwasmError> {
-    let mut func_segments = vec![0u32];
-    let mut total_func_len = 0u32;
-    for func_len in rwasm_module
-        .func_section
-        .iter()
-        .take(rwasm_module.func_section.len() - 1)
-    {
-        total_func_len += *func_len;
-        func_segments.push(total_func_len);
+impl<'a, E: SyscallHandler> RwasmExecutor<'a, E> {
+    pub fn parse(
+        rwasm_bytecode: &[u8],
+        syscall_handler: Option<&'a mut E>,
+    ) -> Result<Self, RwasmError> {
+        let rwasm_module = RwasmModule::new(rwasm_bytecode)?;
+        Ok(Self::new(rwasm_module, syscall_handler))
     }
-    let source_pc = func_segments
-        .last()
-        .copied()
-        .expect("rwasm: empty function section");
 
-    let mut value_stack = ValueStack::default();
+    pub fn new(rwasm_module: RwasmModule, syscall_handler: Option<&'a mut E>) -> Self {
+        let mut func_segments = vec![0u32];
+        let mut total_func_len = 0u32;
+        for func_len in rwasm_module
+            .func_section
+            .iter()
+            .take(rwasm_module.func_section.len() - 1)
+        {
+            total_func_len += *func_len;
+            func_segments.push(total_func_len);
+        }
+        let source_pc = func_segments
+            .last()
+            .copied()
+            .expect("rwasm: empty function section");
 
-    let mut resource_limiter_ref = ResourceLimiterRef::default();
-    let mut global_memory = MemoryEntity::new(
-        MemoryType::new(0, Some(1024)).expect("rwasm: bad initial memory"),
-        &mut resource_limiter_ref,
-    )
-    .expect("rwasm: bad initial memory");
-    let mut global_variables = HashMap::new();
+        let mut value_stack = ValueStack::default();
 
-    let mut sp = value_stack.stack_ptr();
-    let mut ip = InstructionPtr::new(
-        rwasm_module.code_section.instr.as_ptr(),
-        rwasm_module.code_section.metas.as_ptr(),
-    );
-    ip.add(source_pc as usize);
-    let mut call_stack = Vec::new();
+        let mut resource_limiter_ref = ResourceLimiterRef::default();
+        let global_memory = MemoryEntity::new(
+            MemoryType::new(0, Some(1024)).expect("rwasm: bad initial memory"),
+            &mut resource_limiter_ref,
+        )
+        .expect("rwasm: bad initial memory");
 
-    loop {
-        let instr = *ip.get();
-        println!("{:02}: {:?}", ip.pc(), instr);
-        match instr {
-            Instruction::LocalGet(local_depth) => {
-                let value = sp.nth_back(local_depth.to_usize());
-                sp.push(value);
-                ip.add(1);
-            }
-            Instruction::LocalSet(local_depth) => {
-                let new_value = sp.pop();
-                sp.set_nth_back(local_depth.to_usize(), new_value);
-                ip.add(1);
-            }
-            Instruction::LocalTee(local_depth) => {
-                let new_value = sp.last();
-                sp.set_nth_back(local_depth.to_usize(), new_value);
-                ip.add(1);
-            }
-            Instruction::Br(offset) => ip.offset(offset.to_i32() as isize),
-            Instruction::BrIfEqz(offset) => {
-                let condition = sp.pop_as();
-                if condition {
-                    ip.add(1);
-                } else {
-                    ip.offset(offset.to_i32() as isize);
-                }
-            }
-            Instruction::BrIfNez(offset) => {
-                let condition = sp.pop_as();
-                if condition {
-                    ip.offset(offset.to_i32() as isize);
-                } else {
-                    ip.add(1);
-                }
-            }
-            Instruction::BrAdjust(offset) => {}
-            // TODO(dmitry123): "add more opcodes"
-            Instruction::MemoryGrow => {
-                let delta: u32 = sp.pop_as();
-                if delta > Pages::max().into_inner() {
-                    sp.push_as(u32::MAX);
-                    ip.add(1);
-                    continue;
-                }
-                let new_pages = global_memory
-                    .grow(Pages::new(delta).unwrap(), &mut resource_limiter_ref)
-                    .map(u32::from)
-                    .unwrap_or(u32::MAX);
-                sp.push_as(new_pages);
-                ip.add(1);
-            }
-            Instruction::MemoryInit(data_segment_idx) => {
-                // TODO(dmitry123): "add emptiness check"
-                assert_eq!(
-                    data_segment_idx.to_u32(),
-                    0,
-                    "rwasm: non-zero data segment index"
-                );
-                let (d, s, n) = sp.pop3();
-                let n = i32::from(n) as usize;
-                let src_offset = i32::from(s) as usize;
-                let dst_offset = i32::from(d) as usize;
-                let memory = global_memory
-                    .data_mut()
-                    .get_mut(dst_offset..)
-                    .and_then(|memory| memory.get_mut(..n))
-                    .ok_or(TrapCode::MemoryOutOfBounds)?;
-                let data = rwasm_module
-                    .memory_section
-                    .get(src_offset..)
-                    .and_then(|data| data.get(..n))
-                    .ok_or(TrapCode::MemoryOutOfBounds)?;
-                memory.copy_from_slice(data);
-                // if let Some(tracer) = this.tracer.as_mut() {
-                //     tracer.global_memory(dst_offset as u32, n as u32, memory);
-                // }
-                ip.add(1);
-            }
-            Instruction::DataDrop(_data_segment_idx) => ip.add(1),
-            Instruction::Drop => {
-                sp.drop();
-                ip.add(1);
-            }
-            Instruction::I32Const(value) => {
-                sp.push(value);
-                ip.add(1);
-            }
-            Instruction::I32Eq => {
-                sp.eval_top2(UntypedValue::i32_eq);
-                ip.add(1);
-            }
-            Instruction::I32Ne => {
-                sp.eval_top2(UntypedValue::i32_ne);
-                ip.add(1);
-            }
-            Instruction::I64Const(value) => {
-                sp.push(value);
-                ip.add(1);
-            }
-            Instruction::CallInternal(func_idx) => {
-                ip.add(1);
-                value_stack.sync_stack_ptr(sp);
-                // TODO(dmitry123): "add recursion limit check"
-                call_stack.push(ip);
-                let instr_ref = func_segments
-                    .get(func_idx.to_u32() as usize)
-                    .copied()
-                    .expect("rwasm: unknown internal function");
-                let header = FuncHeader::new(InstructionsRef::uninit(), 0, 0);
-                value_stack.prepare_wasm_call(&header)?;
-                sp = value_stack.stack_ptr();
-                ip = InstructionPtr::new(
-                    rwasm_module.code_section.instr.as_ptr(),
-                    rwasm_module.code_section.metas.as_ptr(),
-                );
-                ip.add(instr_ref as usize);
-            }
-            Instruction::Call(func_idx) => {
-                value_stack.sync_stack_ptr(sp);
-                let result = external_call_handler
-                    .as_mut()
-                    .ok_or(RwasmError::UnknownExternalFunction(func_idx.to_u32()))?
-                    .call_function(func_idx.to_u32(), &mut sp, &mut global_memory);
-                if let Err(err) = result {
-                    return match err {
-                        RwasmError::ExecutionHalted(exit_code) => Ok(exit_code),
-                        _ => Err(err),
-                    };
-                }
-                ip.add(1);
-            }
-            Instruction::SignatureCheck(_) => {
-                ip.add(1);
-            }
-            Instruction::Unreachable => {
-                return Err(RwasmError::TrapCode(TrapCode::UnreachableCodeReached));
-            }
-            Instruction::GlobalGet(global_idx) => {
-                let global_value = global_variables
-                    .get(&global_idx)
-                    .copied()
-                    .unwrap_or_default();
-                sp.push(global_value);
-                ip.add(1);
-            }
-            Instruction::GlobalSet(global_idx) => {
-                let new_value = sp.pop();
-                global_variables.insert(global_idx, new_value);
-                ip.add(1);
-            }
-            Instruction::Return(drop_keep) => {
-                sp.drop_keep(drop_keep);
-                value_stack.sync_stack_ptr(sp);
-                match call_stack.pop() {
-                    Some(caller) => {
-                        ip = caller;
-                    }
-                    None => return Ok(0),
-                }
-            }
-            Instruction::ConsumeFuel(_block_fuel) => ip.add(1),
-            _ => unreachable!("rwasm: unsupported instruction ({})", instr),
+        let sp = value_stack.stack_ptr();
+        let mut ip = InstructionPtr::new(
+            rwasm_module.code_section.instr.as_ptr(),
+            rwasm_module.code_section.metas.as_ptr(),
+        );
+        ip.add(source_pc as usize);
+
+        let last_signature: Option<SignatureIdx> = None;
+
+        Self {
+            rwasm_module,
+            syscall_handler,
+            func_segments,
+            sp,
+            value_stack,
+            ip,
+            resource_limiter_ref,
+            global_memory,
+            global_variables: HashMap::new(),
+            global_tables: HashMap::new(),
+            call_stack: Vec::new(),
+            last_signature,
+            tracer: None,
         }
     }
+
+    pub(crate) fn fetch_drop_keep(&self, offset: usize) -> DropKeep {
+        let mut addr: InstructionPtr = self.ip;
+        addr.add(offset);
+        match addr.get() {
+            Instruction::Return(drop_keep) => *drop_keep,
+            _ => unreachable!("rwasm: can't extract drop keep"),
+        }
+    }
+
+    pub(crate) fn fetch_table_index(&self, offset: usize) -> TableIdx {
+        let mut addr: InstructionPtr = self.ip;
+        addr.add(offset);
+        match addr.get() {
+            Instruction::TableGet(table_idx) => *table_idx,
+            _ => unreachable!("rwasm: can't extract table index"),
+        }
+    }
+
+    pub fn run(&mut self) -> Result<i32, RwasmError> {
+        match self.run_the_loop() {
+            Ok(exit_code) => Ok(exit_code),
+            Err(err) => match err {
+                RwasmError::ExecutionHalted(exit_code) => Ok(exit_code),
+                _ => Err(err),
+            },
+        }
+    }
+
+    #[inline(always)]
+    fn execute_load_extend(
+        &mut self,
+        offset: AddressOffset,
+        load_extend: fn(
+            memory: &[u8],
+            address: UntypedValue,
+            offset: u32,
+        ) -> Result<UntypedValue, TrapCode>,
+    ) -> Result<(), TrapCode> {
+        self.sp.try_eval_top(|address| {
+            let memory = self.global_memory.data();
+            let value = load_extend(memory, address, offset.into_inner())?;
+            Ok(value)
+        })?;
+        self.ip.add(1);
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn execute_store_wrap(
+        &mut self,
+        offset: AddressOffset,
+        store_wrap: fn(
+            memory: &mut [u8],
+            address: UntypedValue,
+            offset: u32,
+            value: UntypedValue,
+        ) -> Result<(), TrapCode>,
+        len: u32,
+    ) -> Result<(), TrapCode> {
+        let (address, value) = self.sp.pop2();
+        let memory = self.global_memory.data_mut();
+        store_wrap(memory, address, offset.into_inner(), value)?;
+        self.ip.offset(0);
+        let address = u32::from(address);
+        let base_address = offset.into_inner() + address;
+        if let Some(tracer) = self.tracer.as_mut() {
+            tracer.memory_change(
+                base_address,
+                len,
+                &memory[base_address as usize..(base_address + len) as usize],
+            );
+        }
+        self.ip.add(1);
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn execute_unary(&mut self, f: fn(UntypedValue) -> UntypedValue) {
+        self.sp.eval_top(f);
+        self.next_instr()
+    }
+
+    #[inline(always)]
+    fn execute_binary(&mut self, f: fn(UntypedValue, UntypedValue) -> UntypedValue) {
+        self.sp.eval_top2(f);
+        self.next_instr()
+    }
+}
+
+#[deprecated(since = "0.1.0", note = "use `RwasmExecutor::new` instead")]
+pub fn execute_rwasm_module<'a, E: SyscallHandler>(
+    rwasm_module: RwasmModule,
+    syscall_handler: Option<&'a mut E>,
+) -> Result<i32, RwasmError> {
+    RwasmExecutor::<'a, E>::new(rwasm_module, syscall_handler).run()
 }
 
 #[derive(Default)]
@@ -307,7 +273,7 @@ impl SimpleCallHandler {
     }
 }
 
-impl ExternalCallHandler for SimpleCallHandler {
+impl SyscallHandler for SimpleCallHandler {
     fn call_function(
         &mut self,
         func_idx: u32,
@@ -320,52 +286,5 @@ impl ExternalCallHandler for SimpleCallHandler {
             0x05 => self.fn_write_output(sp, global_memory),
             _ => unreachable!("rwasm: unknown function ({})", func_idx),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use core::str::from_utf8;
-
-    #[allow(unused)]
-    fn trace_rwasm(rwasm_bytecode: &[u8]) {
-        let rwasm_module = RwasmModule::new(rwasm_bytecode).unwrap();
-        let mut func_length = 0usize;
-        let mut expected_func_length = rwasm_module
-            .func_section
-            .first()
-            .copied()
-            .unwrap_or(u32::MAX) as usize;
-        let mut func_index = 0usize;
-        println!("\n -- function #{} -- ", func_index);
-        for (i, instr) in rwasm_module.code_section.instr.iter().enumerate() {
-            println!("{:02}: {:?}", i, instr);
-            func_length += 1;
-            if func_length == expected_func_length {
-                func_index += 1;
-                expected_func_length = rwasm_module
-                    .func_section
-                    .get(func_index)
-                    .copied()
-                    .unwrap_or(u32::MAX) as usize;
-                if expected_func_length != u32::MAX as usize {
-                    println!("\n -- function #{} -- ", func_index);
-                }
-                func_length = 0;
-            }
-        }
-        println!("\n")
-    }
-
-    #[test]
-    fn test_execute_rwasm_bytecode() {
-        let greeting_rwasm = include_bytes!("../../../tests/greeting.rwasm");
-        // trace_rwasm(greeting_rwasm);
-        let mut call_handler = SimpleCallHandler::default();
-        let exit_code = execute_rwasm_bytecode(greeting_rwasm, Some(&mut call_handler)).unwrap();
-        assert_eq!(exit_code, 0);
-        let utf8_output = from_utf8(&call_handler.output).unwrap();
-        assert_eq!(utf8_output, "Hello, World");
     }
 }
