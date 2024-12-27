@@ -91,6 +91,7 @@ pub mod arena;
 pub mod core;
 pub mod engine;
 pub mod error;
+pub mod executor;
 pub mod externref;
 pub mod func;
 pub mod global;

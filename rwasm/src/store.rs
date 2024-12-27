@@ -74,6 +74,7 @@ pub type Stored<Idx> = GuardedEntity<StoreIdx, Idx>;
 /// A wrapper around an optional `&mut dyn` [`ResourceLimiter`], that exists
 /// both to make types a little easier to read and to provide a `Debug` impl so
 /// that `#[derive(Debug)]` works on structs that contain it.
+#[derive(Default)]
 pub struct ResourceLimiterRef<'a>(Option<&'a mut (dyn ResourceLimiter)>);
 impl<'a> core::fmt::Debug for ResourceLimiterRef<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
