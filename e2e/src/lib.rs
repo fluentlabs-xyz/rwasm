@@ -86,6 +86,7 @@ fn make_config(rwasm_mode: bool) -> Config {
             entrypoint_name: None,
             import_linker: None,
             wrap_import_functions: false,
+            translate_drop_keep: false,
         });
     }
     config

@@ -45,7 +45,7 @@ use crate::{
         ModuleResources,
         DEFAULT_MEMORY_INDEX,
     },
-    rwasm::SegmentBuilder,
+    rwasm::{translate_drop_keep, SegmentBuilder},
     Engine,
     FuncType,
     GlobalType,
@@ -1052,9 +1052,21 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
 
     fn visit_br(&mut self, relative_depth: u32) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
+            let rwasm_drop_keep = builder
+                .engine()
+                .config()
+                .get_rwasm_config()
+                .map(|v| v.translate_drop_keep)
+                .unwrap_or_default();
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
                     builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+                    let drop_keep = if rwasm_drop_keep {
+                        translate_drop_keep(&mut builder.alloc.inst_builder, drop_keep);
+                        DropKeep::none()
+                    } else {
+                        drop_keep
+                    };
                     let offset = builder.branch_offset(end_label)?;
                     if drop_keep.is_noop() {
                         builder
@@ -1083,6 +1095,12 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
 
     fn visit_br_if(&mut self, relative_depth: u32) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
+            let rwasm_drop_keep = builder
+                .engine()
+                .config()
+                .get_rwasm_config()
+                .map(|v| v.translate_drop_keep)
+                .unwrap_or_default();
             builder.stack_height.pop1();
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
@@ -1097,17 +1115,55 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                         builder.bump_fuel_consumption(
                             builder.fuel_costs().fuel_for_drop_keep(drop_keep),
                         )?;
-                        builder
-                            .alloc
-                            .inst_builder
-                            .push_br_adjust_nez_instr(offset, drop_keep);
+                        if rwasm_drop_keep {
+                            builder
+                                .alloc
+                                .inst_builder
+                                .push_inst(Instruction::BrIfEqz(BranchOffset::uninit()));
+                            let drop_keep_length =
+                                translate_drop_keep(&mut builder.alloc.inst_builder, drop_keep);
+                            builder
+                                .alloc
+                                .inst_builder
+                                .last_nth_mut(drop_keep_length)
+                                .unwrap()
+                                .update_branch_offset(drop_keep_length as i32 + 1);
+                            builder
+                                .alloc
+                                .inst_builder
+                                .push_inst(Instruction::Br(offset));
+                        } else {
+                            builder
+                                .alloc
+                                .inst_builder
+                                .push_br_adjust_nez_instr(offset, drop_keep);
+                        }
                     }
                 }
                 AcquiredTarget::Return(drop_keep) => {
-                    builder
-                        .alloc
-                        .inst_builder
-                        .push_inst(Instruction::ReturnIfNez(drop_keep));
+                    if rwasm_drop_keep {
+                        builder
+                            .alloc
+                            .inst_builder
+                            .push_inst(Instruction::BrIfEqz(BranchOffset::uninit()));
+                        let drop_keep_length =
+                            translate_drop_keep(&mut builder.alloc.inst_builder, drop_keep);
+                        builder
+                            .alloc
+                            .inst_builder
+                            .last_nth_mut(drop_keep_length)
+                            .unwrap()
+                            .update_branch_offset(drop_keep_length as i32 + 1);
+                        builder
+                            .alloc
+                            .inst_builder
+                            .push_inst(Instruction::Return(DropKeep::none()));
+                    } else {
+                        builder
+                            .alloc
+                            .inst_builder
+                            .push_inst(Instruction::ReturnIfNez(drop_keep));
+                    }
                 }
             }
             Ok(())
@@ -1218,13 +1274,27 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
 
     fn visit_return(&mut self) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
+            let rwasm_drop_keep = builder
+                .engine()
+                .config()
+                .get_rwasm_config()
+                .map(|v| v.translate_drop_keep)
+                .unwrap_or_default();
             let drop_keep = builder.drop_keep_return()?;
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.bump_fuel_consumption(builder.fuel_costs().fuel_for_drop_keep(drop_keep))?;
-            builder
-                .alloc
-                .inst_builder
-                .push_inst(Instruction::Return(drop_keep));
+            if rwasm_drop_keep {
+                translate_drop_keep(&mut builder.alloc.inst_builder, drop_keep);
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::Return(DropKeep::none()));
+            } else {
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::Return(drop_keep));
+            }
             builder.reachable = false;
             Ok(())
         })
@@ -1594,8 +1664,9 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let ib = &mut builder.alloc.inst_builder;
-            // for rWASM we inject memory limit error check, if we exceed number of allowed pages
-            // then we push `u32::MAX` on the stack that is equal to memory grow overflow error
+            // for rWASM, we inject memory limit error check, if we exceed the number of allowed
+            // pages, then we push `u32::MAX` value on the stack that is equal to memory grow
+            // overflow error
             if is_rwasm {
                 assert!(!self.res.res.memories.is_empty(), "memory must be provided");
                 let max_pages = self.res.res.memories[0]
@@ -1681,9 +1752,9 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                     ib.push_inst(Instruction::I32Const((length as i32).into()));
                     ib.push_inst(Instruction::I32GtS);
                     ib.push_inst(Instruction::BrIfEqz(3.into()));
-                    // we can't manually emit "out of bounds table access" error that is required
+                    // we can't manually emit "out of bounds table access" error required
                     // by WebAssembly standards, so we put impossible number of tables to trigger
-                    // overflow by rewriting number of elements to be copied
+                    // overflow by rewriting the number of elements to be copied
                     ib.push_inst(Instruction::I32Const(u32::MAX.into()));
                     ib.push_inst(Instruction::LocalSet(1.into()));
                 }

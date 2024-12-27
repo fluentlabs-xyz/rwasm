@@ -57,7 +57,7 @@ impl InstructionsRef {
     }
 
     /// Creates a new uninitialized [`InstructionsRef`].
-    fn uninit() -> Self {
+    pub fn uninit() -> Self {
         Self { index: 0 }
     }
 

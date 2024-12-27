@@ -1,36 +1,45 @@
-use alloc::vec::Vec;
-use rwasm::engine::{
+use crate::engine::{
     bytecode::{Instruction, LocalDepth},
     DropKeep,
+    InstructionsBuilder,
 };
 
-pub fn translate_drop_keep(drop_keep: DropKeep) -> Vec<Instruction> {
-    let mut result = Vec::new();
+pub fn translate_drop_keep(instr_builder: &mut InstructionsBuilder, drop_keep: DropKeep) -> usize {
     let (drop, keep) = (drop_keep.drop(), drop_keep.keep());
     if drop == 0 {
-        return result;
+        return 0;
     }
+    let mut opcode_count = 0;
     if drop >= keep {
-        (0..keep).for_each(|_| result.push(Instruction::LocalSet(LocalDepth::from(drop as u32))));
-        (0..(drop - keep)).for_each(|_| result.push(Instruction::Drop));
+        (0..keep).for_each(|_| {
+            instr_builder.push_inst(Instruction::LocalSet(LocalDepth::from(drop as u32)));
+            opcode_count += 1;
+        });
+        (0..(drop - keep)).for_each(|_| {
+            instr_builder.push_inst(Instruction::Drop);
+            opcode_count += 1;
+        });
     } else {
         (0..keep).for_each(|i| {
-            result.push(Instruction::LocalGet(LocalDepth::from(
+            instr_builder.push_inst(Instruction::LocalGet(LocalDepth::from(
                 keep as u32 - i as u32,
             )));
-            result.push(Instruction::LocalSet(LocalDepth::from(
+            instr_builder.push_inst(Instruction::LocalSet(LocalDepth::from(
                 keep as u32 + drop as u32 - i as u32,
             )));
+            opcode_count += 2;
         });
-        (0..drop).for_each(|_| result.push(Instruction::Drop));
+        (0..drop).for_each(|_| {
+            instr_builder.push_inst(Instruction::Drop);
+            opcode_count += 1;
+        });
     }
-    result
+    opcode_count
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::compiler::drop_keep::translate_drop_keep;
-    use rwasm::engine::{bytecode::Instruction, DropKeep};
+    use super::*;
 
     #[test]
     fn test_drop_keep_translation() {
@@ -51,9 +60,11 @@ mod tests {
             (vec![1, 2, 3, 4, 5], vec![5], drop_keep!(4, 1)),
         ];
         for (input, output, drop_keep) in tests.iter() {
-            let opcodes = translate_drop_keep(*drop_keep);
+            let mut instr_builder = InstructionsBuilder::default();
+            translate_drop_keep(&mut instr_builder, *drop_keep);
+            let (opcodes, _) = instr_builder.finalize().unwrap();
             let mut stack = input.clone();
-            for opcode in opcodes.iter() {
+            for opcode in opcodes {
                 match opcode {
                     Instruction::LocalSet(index) => {
                         let last = stack.last().unwrap();
