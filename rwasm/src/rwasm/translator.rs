@@ -53,11 +53,11 @@ impl<'parser> RwasmTranslator<'parser> {
     }
 
     fn translate_entrypoint_internal(&mut self) -> Result<(), RwasmBuilderError> {
-        // first we must translate all sections, this is an entrypoint
+        // first, we must translate all sections; this is an entrypoint
         self.translate_sections()?;
-        // translate router for main index (only if entrypoint is enabled)
+        // translate router for the main index (only if entrypoint is enabled)
         if let Some(start) = self.res.res.start {
-            // for start section we must always invoke even if there is a main function,
+            // for the start section we must always invoke even if there is a main function,
             // otherwise it might be super misleading for devs why
             match self.res.get_compiled_func(start) {
                 Some(compiled_func) => {
@@ -75,9 +75,9 @@ impl<'parser> RwasmTranslator<'parser> {
                 }
             }
         } else {
-            // if we have an entrypoint then translate it
+            // if we have an entrypoint, then translate it
             self.translate_simple_router()?;
-            // if we have a state router then translate state router
+            // if we have a state router, then translate state router
             self.translate_state_router()?;
         }
         // push unreachable in the end (indication of the entrypoint end)
@@ -90,7 +90,7 @@ impl<'parser> RwasmTranslator<'parser> {
 
     fn translate_simple_router(&mut self) -> Result<(), RwasmBuilderError> {
         let config = self.res.engine().config();
-        // if we have an entrypoint then translate it
+        // if we have an entrypoint, then translate it
         let entrypoint_name = config
             .get_rwasm_config()
             .and_then(|rwasm_config| rwasm_config.entrypoint_name.as_ref());
@@ -114,7 +114,7 @@ impl<'parser> RwasmTranslator<'parser> {
 
     fn translate_state_router(&mut self) -> Result<(), RwasmBuilderError> {
         let config = self.res.engine().config();
-        // if we have a state router then translate state router
+        // if we have a state router, then translate state router
         let state_router = config
             .get_rwasm_config()
             .and_then(|rwasm_config| rwasm_config.state_router.as_ref());
@@ -177,12 +177,12 @@ impl<'parser> RwasmTranslator<'parser> {
     }
 
     pub fn translate_sections(&mut self) -> Result<(), RwasmBuilderError> {
-        // translate global section (replaces with set/get global opcodes)
+        // translate a global section (replaces with set/get global opcodes)
         self.translate_globals()?;
-        // translate table section (replace with grow/set table opcodes)
+        // translate a table section (replace with grow/set table opcodes)
         self.translate_tables()?;
         self.translate_elements()?;
-        // translate memory section (replace with grow/load memory opcodes)
+        // translate a memory section (replace with grow/load memory opcodes)
         self.translate_memory()?;
         Ok(())
     }

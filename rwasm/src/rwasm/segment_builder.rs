@@ -34,9 +34,9 @@ impl SegmentBuilder {
             code_section.push_inst(Instruction::MemoryGrow);
             code_section.push_inst(Instruction::Drop);
         }
-        // increase total number of pages allocated
+        // increase the total number of pages allocated
         self.total_allocated_pages += initial_pages;
-        return true;
+        true
     }
 
     pub fn add_active_memory(
@@ -46,7 +46,7 @@ impl SegmentBuilder {
         offset: u32,
         bytes: &[u8],
     ) {
-        // don't allow to grow default memory if there is no enough pages allocated
+        // don't allow growing default memory if there is no enough pages allocated
         let has_memory_overflow = || -> Option<bool> {
             let max_affected_page = offset
                 .checked_add(bytes.len() as u32)?
@@ -91,7 +91,7 @@ impl SegmentBuilder {
         table_idx: TableIdx,
         elements: T,
     ) {
-        // expand element section (remember offset and length)
+        // expand an element section (remember offset and length)
         let segment_offset = self.global_element_section.len();
         self.global_element_section.extend(elements);
         let segment_length = self.global_element_section.len() - segment_offset;
