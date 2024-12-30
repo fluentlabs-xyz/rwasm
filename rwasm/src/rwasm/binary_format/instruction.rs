@@ -684,11 +684,7 @@ impl Instruction {
             | Instruction::I32Ctz
             | Instruction::I32Popcnt
             | Instruction::I32Eqz
-            | Instruction::I32Shl
-            | Instruction::I32ShrS
-            | Instruction::I32ShrU
-            | Instruction::I32Rotl
-            | Instruction::I32Rotr => true,
+            => true,
             _ => false,
         }
     }
@@ -714,7 +710,12 @@ impl Instruction {
             | Instruction::I32RemU
             | Instruction::I32And
             | Instruction::I32Or
-            | Instruction::I32Xor => true,
+            | Instruction::I32Xor 
+            | Instruction::I32Shl
+            | Instruction::I32ShrS
+            | Instruction::I32ShrU
+            | Instruction::I32Rotl
+            | Instruction::I32Rotr => true,
             _ => false,
         }
     }
