@@ -235,6 +235,10 @@ impl InstructionsBuilder {
         self.insts.last()
     }
 
+    pub fn last_nth_mut(&mut self, n: usize) -> Option<&mut Instruction> {
+        self.insts.iter_mut().rev().nth(n)
+    }
+
     pub fn len(&self) -> usize {
         self.insts.len()
     }

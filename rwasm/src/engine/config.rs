@@ -30,13 +30,16 @@ pub struct RwasmConfig {
     /// P.S: this flag doesn't work if you have WASM's start entry point
     pub entrypoint_name: Option<String>,
     /// Import linker that stores mapping from function to special identifiers that is used
-    /// to remember unique external calls ids. We need this to simplify proving process to forward
-    /// external calls to corresponding circuits.
+    /// to remember unique external calls ids. We need this to simplify a proving process to
+    /// forward external calls to corresponding circuits.
     pub import_linker: Option<ImportLinker>,
     /// Do we need to wrap input functions to convert them from ExternRef to FuncRef (we need it to
     /// simplify tables sometimes)? Its needed only for rWASM mode where we replace all external
     /// calls with import linker mapping.
     pub wrap_import_functions: bool,
+    /// An option for translating a drop keeps into SetLocal/GetLocal opcodes,
+    /// right now under a flag because the function is unstable
+    pub translate_drop_keep: bool,
 }
 
 impl Default for RwasmConfig {
@@ -46,6 +49,7 @@ impl Default for RwasmConfig {
             entrypoint_name: Some("main".to_string()),
             import_linker: None,
             wrap_import_functions: false,
+            translate_drop_keep: false,
         }
     }
 }

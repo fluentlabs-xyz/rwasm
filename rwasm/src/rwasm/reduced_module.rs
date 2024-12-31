@@ -128,7 +128,7 @@ impl RwasmModule {
 
     pub fn to_module_builder<'a>(&'a self, engine: &'a Engine) -> ModuleBuilder {
         let mut builder = ModuleBuilder::new(engine);
-        // main function has empty inputs and outputs
+        // the main function has empty inputs and outputs
         let empty_func_type = builder.ensure_empty_func_type_exists();
         // push functions and init engine's code map
         builder

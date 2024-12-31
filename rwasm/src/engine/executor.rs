@@ -1114,7 +1114,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         let table = self.fetch_table_idx(2);
         let func_index: u32 = self.sp.pop_as();
         self.sp.drop_keep(drop_keep);
-        // for rWASM let's store func type on the stack
+        // for rWASM, let's store func type on the stack
         if self.ctx.engine().config().get_rwasm_config().is_some() {
             self.last_signature = Some(func_type);
         }
@@ -1154,7 +1154,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     fn visit_call_indirect(&mut self, func_type: SignatureIdx) -> Result<CallOutcome, TrapCode> {
         let table = self.fetch_table_idx(1);
         let func_index: u32 = self.sp.pop_as();
-        // for rWASM let's store func type on the stack
+        // for rWASM, let's store func type on the stack
         if self.ctx.engine().config().get_rwasm_config().is_some() {
             self.last_signature = Some(func_type);
         }
@@ -1341,7 +1341,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     fn visit_memory_init(&mut self, mut segment: DataSegmentIdx) -> Result<(), TrapCode> {
         // we use some tricky structure for rWASM to determine what data segments dropped
         let is_empty_segment = if self.ctx.engine().config().get_rwasm_config().is_some() {
-            // increase segment index, because first index is used for the global data section
+            // increase segment index, because the first index is used for the global data section
             let (_, data) = self
                 .cache
                 .get_default_memory_and_data_segment(self.ctx, segment);
