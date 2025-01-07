@@ -405,13 +405,9 @@ impl TableEntity {
         len: u32,
     ) -> Result<(), TrapCode> {
         let table_type = self.ty();
-        assert!(
-            table_type.element().is_ref(),
-            "table.init currently only works on reftypes"
-        );
         table_type
             .matches_element_type(element.ty())
-            .map_err(|_| TrapCode::BadSignature)?;
+            .expect("rwasm: element type must match table type");
         // Convert parameters to indices.
         let dst_index = dst_index as usize;
         let src_index = src_index as usize;
@@ -434,25 +430,11 @@ impl TableEntity {
             return Ok(());
         }
         // Perform the actual table initialization.
-        match table_type.element() {
-            ValueType::FuncRef => {
-                // Initialize element interpreted as Wasm `funrefs`.
-                dst_items.iter_mut().zip(src_items).for_each(|(dst, src)| {
-                    let func_or_null = src
-                        .funcref()
-                        .expect("rwasm: only funcref elements can be initialized")
-                        .into_u32();
-                    *dst = func_or_null.into();
-                });
-            }
-            ValueType::ExternRef => {
-                // Initialize an element interpreted as Wasm `externrefs`.
-                dst_items.iter_mut().zip(src_items).for_each(|(dst, src)| {
-                    *dst = src.eval_const().expect("must evaluate to some value");
-                });
-            }
-            _ => panic!("table.init currently only works on reftypes"),
-        };
+        dst_items.iter_mut().zip(src_items).for_each(|(dst, src)| {
+            *dst = src
+                .eval_const()
+                .expect("rwasm: must evaluate to some value");
+        });
         Ok(())
     }
 
