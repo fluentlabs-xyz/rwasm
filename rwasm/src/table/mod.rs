@@ -397,6 +397,62 @@ impl TableEntity {
         Ok(())
     }
 
+    pub fn init_untyped(
+        &mut self,
+        dst_index: u32,
+        element: &ElementSegmentEntity,
+        src_index: u32,
+        len: u32,
+    ) -> Result<(), TrapCode> {
+        let table_type = self.ty();
+        assert!(
+            table_type.element().is_ref(),
+            "table.init currently only works on reftypes"
+        );
+        table_type
+            .matches_element_type(element.ty())
+            .map_err(|_| TrapCode::BadSignature)?;
+        // Convert parameters to indices.
+        let dst_index = dst_index as usize;
+        let src_index = src_index as usize;
+        let len = len as usize;
+        // Perform bound check before anything else.
+        let dst_items = self
+            .elements
+            .get_mut(dst_index..)
+            .and_then(|items| items.get_mut(..len))
+            .ok_or(TrapCode::TableOutOfBounds)?;
+        let src_items = element
+            .items()
+            .get(src_index..)
+            .and_then(|items| items.get(..len))
+            .ok_or(TrapCode::TableOutOfBounds)?;
+        if len == 0 {
+            // Bail out early if nothing needs to be initialized.
+            // The Wasm spec demands to still perform the bound check
+            // so we cannot bail out earlier.
+            return Ok(());
+        }
+        // Perform the actual table initialization.
+        match table_type.element() {
+            ValueType::FuncRef => {
+                // Initialize element interpreted as Wasm `funrefs`.
+                dst_items.iter_mut().zip(src_items).for_each(|(dst, src)| {
+                    let func_or_null = src.funcref().map(FuncIdx::into_u32);
+                    *dst = func_or_null.into();
+                });
+            }
+            ValueType::ExternRef => {
+                // Initialize an element interpreted as Wasm `externrefs`.
+                dst_items.iter_mut().zip(src_items).for_each(|(dst, src)| {
+                    *dst = src.eval_const().expect("must evaluate to some value");
+                });
+            }
+            _ => panic!("table.init currently only works on reftypes"),
+        };
+        Ok(())
+    }
+
     /// Copy `len` elements from `src_table[src_index..]` into
     /// `dst_table[dst_index..]`.
     ///
