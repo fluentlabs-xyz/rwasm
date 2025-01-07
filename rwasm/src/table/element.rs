@@ -113,6 +113,14 @@ impl ElementSegmentEntity {
         Self { ty, items: None }
     }
 
+    /// Performs an emptiness check.
+    /// This function returns `true` only if the segment contains no items and not just an empty
+    /// array.
+    /// This check is crucial to determine if a segment has been dropped.
+    pub fn is_empty(&self) -> bool {
+        self.items.is_none()
+    }
+
     /// Returns the [`ValueType`] of elements in the [`ElementSegmentEntity`].
     pub fn ty(&self) -> ValueType {
         self.ty
