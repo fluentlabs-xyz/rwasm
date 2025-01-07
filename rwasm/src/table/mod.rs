@@ -438,7 +438,10 @@ impl TableEntity {
             ValueType::FuncRef => {
                 // Initialize element interpreted as Wasm `funrefs`.
                 dst_items.iter_mut().zip(src_items).for_each(|(dst, src)| {
-                    let func_or_null = src.funcref().map(FuncIdx::into_u32);
+                    let func_or_null = src
+                        .funcref()
+                        .expect("rwasm: only funcref elements can be initialized")
+                        .into_u32();
                     *dst = func_or_null.into();
                 });
             }
