@@ -20,7 +20,7 @@ use crate::{
 };
 use alloc::{string::ToString, vec::Vec};
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct RwasmModule {
     pub code_section: InstructionSet,
     pub memory_section: Vec<u8>,
