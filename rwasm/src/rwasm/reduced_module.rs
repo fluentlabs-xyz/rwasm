@@ -1,6 +1,7 @@
 use crate::{
     core::ImportLinker,
-    engine::RwasmConfig,
+    engine::{DropKeep, RwasmConfig},
+    instruction_set,
     module::{FuncIdx, FuncTypeIdx, MemoryIdx, ModuleBuilder, ModuleError},
     rwasm::{
         BinaryFormat,
@@ -77,6 +78,20 @@ impl RwasmModule {
 
     pub fn new(module: &[u8]) -> Result<Self, BinaryFormatError> {
         Self::read_from_slice(module)
+    }
+
+    pub fn new_or_empty(module: &[u8]) -> Result<Self, BinaryFormatError> {
+        if module.is_empty() {
+            return Ok(Self::empty());
+        }
+        Self::read_from_slice(module)
+    }
+
+    pub fn empty() -> Self {
+        let instruction_set = instruction_set! {
+            Return(DropKeep::none())
+        };
+        Self::from(instruction_set)
     }
 
     pub fn from_module(module: &Module) -> Self {
