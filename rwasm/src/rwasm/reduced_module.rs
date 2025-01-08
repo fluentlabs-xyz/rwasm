@@ -21,6 +21,13 @@ use crate::{
 use alloc::{string::ToString, vec::Vec};
 
 #[derive(Debug, Default, PartialEq, Clone)]
+pub struct RwasmModuleInstance {
+    pub module: RwasmModule,
+    pub func_segments: Vec<u32>,
+    pub start: usize,
+}
+
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct RwasmModule {
     pub code_section: InstructionSet,
     pub memory_section: Vec<u8>,
@@ -84,7 +91,7 @@ impl RwasmModule {
         if module.is_empty() {
             return Ok(Self::empty());
         }
-        Self::read_from_slice(module)
+        Self::new(module)
     }
 
     pub fn empty() -> Self {
@@ -92,6 +99,24 @@ impl RwasmModule {
             Return(DropKeep::none())
         };
         Self::from(instruction_set)
+    }
+
+    pub fn instantiate(self) -> RwasmModuleInstance {
+        let mut func_segments = vec![0u32];
+        let mut total_func_len = 0u32;
+        for func_len in self.func_section.iter().take(self.func_section.len() - 1) {
+            total_func_len += *func_len;
+            func_segments.push(total_func_len);
+        }
+        let source_pc = func_segments
+            .last()
+            .copied()
+            .expect("rwasm: empty function section");
+        RwasmModuleInstance {
+            module: self,
+            start: source_pc as usize,
+            func_segments,
+        }
     }
 
     pub fn from_module(module: &Module) -> Self {
