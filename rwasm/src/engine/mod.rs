@@ -20,7 +20,7 @@ mod tracer;
 pub use self::{
     bytecode::DropKeep,
     code_map::CompiledFunc,
-    config::{Config, FuelConsumptionMode, RwasmConfig, StateRouterConfig},
+    config::{Config, FuelConsumptionMode, FuelCosts, RwasmConfig, StateRouterConfig},
     func_builder::{
         FuncBuilder,
         FuncTranslatorAllocations,
