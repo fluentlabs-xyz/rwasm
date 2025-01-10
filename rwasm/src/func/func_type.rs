@@ -39,7 +39,10 @@ impl FuncType {
         P: IntoIterator<Item = ValueType>,
         R: IntoIterator<Item = ValueType>,
     {
-        let mut params_results = params.into_iter().collect::<Vec<_>>();
+        let mut params_results = params.into_iter().flat_map(|v| match v {
+            ValueType::I64 => vec![ValueType::I32, ValueType::I32],
+            v => vec![v],
+        }).collect::<Vec<_>>();
         let len_params = params_results.len();
         params_results.extend(results);
         Self {
@@ -52,8 +55,16 @@ impl FuncType {
     pub fn new_with_refs<'a>(params: &'a [ValueType], results: &'a [ValueType]) -> Self {
         let mut params_results = Vec::new();
         params_results.extend_from_slice(params);
+        params_results = params_results.into_iter().flat_map(|v| match v {
+            ValueType::I64 => vec![ValueType::I32, ValueType::I32],
+            v => vec![v],
+        }).collect();
         let len_params = params_results.len();
         params_results.extend_from_slice(results);
+        params_results = params_results.into_iter().flat_map(|v| match v {
+            ValueType::I64 => vec![ValueType::I32, ValueType::I32],
+            v => vec![v],
+        }).collect();
         Self {
             params_results: params_results.into(),
             len_params,

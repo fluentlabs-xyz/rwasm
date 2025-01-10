@@ -53,6 +53,7 @@ use crate::{
 };
 use alloc::vec::Vec;
 use wasmparser::VisitOperator;
+use crate::engine::bytecode::LocalDepth;
 
 /// Reusable allocations of a [`FuncTranslator`].
 #[derive(Debug, Default)]
@@ -1473,10 +1474,28 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         })
     }
 
+    // fn visit_local_get(&mut self, local_idx: u32) -> Result<(), TranslationError> {
+    //     self.translate_if_reachable(|builder| {
+    //         builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+    //         let local_depth = builder.relative_local_depth(local_idx);
+    //         builder
+    //             .alloc
+    //             .inst_builder
+    //             .push_inst(Instruction::local_get(local_depth)?);
+    //         builder.stack_height.push();
+    //         Ok(())
+    //     })
+    // }
+
     fn visit_local_get(&mut self, local_idx: u32) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            let local_depth = builder.relative_local_depth(local_idx);
+            let mut local_depth = builder.relative_local_depth(local_idx);
+
+            builder
+                .alloc
+                .inst_builder
+                .push_inst(Instruction::local_get(local_depth)?);
             builder
                 .alloc
                 .inst_builder
@@ -2026,6 +2045,25 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         })
     }
 
+    // fn visit_i64_const(&mut self, value: i64) -> Result<(), TranslationError> {
+    //     self.translate_if_reachable(|builder| {
+    //         builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+    //         builder.stack_height.push();
+    //
+    //         let (lower, upper) = split_i64_to_i32(value);
+    //         println!("LOWER: {}, UPPER: {}, VALUE: {}", lower, upper, value);
+    //         builder
+    //             .alloc
+    //             .inst_builder
+    //             .push_inst(Instruction::I32Const(UntypedValue::from(upper)));
+    //         builder
+    //             .alloc
+    //             .inst_builder
+    //             .push_inst(Instruction::I32Const(UntypedValue::from(lower)));
+    //         Ok(())
+    //     })
+    // }
+
     fn visit_f32_const(&mut self, value: wasmparser::Ieee32) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
@@ -2307,7 +2345,22 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     }
 
     fn visit_i64_xor(&mut self) -> Result<(), TranslationError> {
-        self.translate_binary_operation(ValueType::I64, Instruction::I64Xor)
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            // builder.stack_height.pop2();
+            // builder.stack_height.pop2();
+            // builder.stack_height.push();
+            // builder.stack_height.push();
+
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Xor);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Xor);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(1)));
+            Ok(())
+        })
     }
 
     fn visit_i64_shl(&mut self) -> Result<(), TranslationError> {

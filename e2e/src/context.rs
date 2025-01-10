@@ -22,6 +22,7 @@ use rwasm::{
 };
 use std::collections::HashMap;
 use wast::token::{Id, Span};
+use rwasm::value::split_i64_to_i32;
 
 /// The context of a single Wasm test spec suite run.
 #[derive(Debug)]
@@ -315,6 +316,14 @@ impl TestContext<'_> {
         let len_results = func.ty(&self.store).results().len();
         self.results.clear();
         self.results.resize(len_results, Value::I32(0));
+
+        let args: Vec<Value> = args.iter().cloned().flat_map(|v| match v {
+            Value::I64(v) => split_i64_to_i32(v).into_iter().map(|v| Value::I32(v)).collect(),
+            Value::F64(_) => vec![v],
+            v => vec![v],
+        }).collect();
+        let args = args.as_slice();
+
         func.call(&mut self.store, args, &mut self.results)?;
         Ok(&self.results)
     }
