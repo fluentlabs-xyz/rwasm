@@ -100,7 +100,7 @@ wasmi_cli <WASM_FILE> <FUNC_NAME> [<FUNC_ARGS>]*
 ### As Rust Library
 
 Any Rust crate can depend on the [`wasmi` crate](https://crates.io/crates/wasmi)
-in order to integrate a WebAssembly intepreter into their stack.
+in order to integrate a WebAssembly interpreter into their stack.
 
 Refer to the [`wasmi` crate docs](https://docs.rs/wasmi) to learn how to use the `wasmi` crate as library.
 
