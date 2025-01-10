@@ -74,12 +74,11 @@ impl<'parser> RwasmTranslator<'parser> {
                         .push_inst(Instruction::Call(func_idx));
                 }
             }
-        } else {
-            // if we have an entrypoint, then translate it
-            self.translate_simple_router()?;
-            // if we have a state router, then translate state router
-            self.translate_state_router()?;
         }
+        // if we have an entrypoint, then translate it
+        self.translate_simple_router()?;
+        // if we have a state router, then translate state router
+        self.translate_state_router()?;
         // push unreachable in the end (indication of the entrypoint end)
         self.translator
             .alloc
