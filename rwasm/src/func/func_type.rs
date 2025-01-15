@@ -44,6 +44,10 @@ impl FuncType {
             v => vec![v],
         }).collect::<Vec<_>>();
         let len_params = params_results.len();
+        let results: Vec<ValueType> = results.into_iter().flat_map(|v| match v {
+            ValueType::I64 => vec![ValueType::I32, ValueType::I32],
+            v => vec![v],
+        }).collect();
         params_results.extend(results);
         Self {
             params_results: params_results.into(),
@@ -60,11 +64,12 @@ impl FuncType {
             v => vec![v],
         }).collect();
         let len_params = params_results.len();
-        params_results.extend_from_slice(results);
-        params_results = params_results.into_iter().flat_map(|v| match v {
+        let results: Vec<ValueType> = results.into_iter().flat_map(|v| match v {
             ValueType::I64 => vec![ValueType::I32, ValueType::I32],
-            v => vec![v],
+            v => vec![*v],
         }).collect();
+        params_results.extend_from_slice(results.as_slice());
+
         Self {
             params_results: params_results.into(),
             len_params,
