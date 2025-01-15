@@ -110,7 +110,7 @@ impl<'engine> ModuleParser<'engine> {
                     func_bodies.push(func_body);
                 }
                 Payload::End(offset) => {
-                    // before processing code entries we must process an entrypoint
+                    // before processing code entries, we must process an entrypoint
                     let instr_builder =
                         if self.builder.engine().config().get_rwasm_config().is_some() {
                             Some(self.process_rwasm_entrypoint()?)

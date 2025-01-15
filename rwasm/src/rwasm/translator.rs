@@ -137,8 +137,10 @@ impl<'parser> RwasmTranslator<'parser> {
             instr_builder.push_inst(Instruction::LocalGet(1.into()));
             instr_builder.push_inst(Instruction::I32Const((*state_value).into()));
             instr_builder.push_inst(Instruction::I32Eq);
-            instr_builder.push_inst(Instruction::BrIfEqz(2.into()));
+            instr_builder.push_inst(Instruction::BrIfEqz(4.into()));
             instr_builder.push_inst(Instruction::CallInternal(export_index.unwrap().into()));
+            instr_builder.push_inst(Instruction::Drop);
+            instr_builder.push_inst(Instruction::Return(DropKeep::none()));
         }
         // drop input state from the stack
         instr_builder.push_inst(Instruction::Drop);
