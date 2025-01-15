@@ -657,7 +657,7 @@ impl Instruction {
             Instruction::I32Load(_)|
             Instruction::I32Store8(_)|
             Instruction::I32Store16(_)|
-            Instruction::I32Store(_)|
+            Instruction::I32Store(_) =>true,
             _ => false,
         }
     }
