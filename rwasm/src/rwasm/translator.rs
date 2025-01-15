@@ -139,7 +139,7 @@ impl<'parser> RwasmTranslator<'parser> {
             instr_builder.push_inst(Instruction::I32Eq);
             instr_builder.push_inst(Instruction::BrIfEqz(4.into()));
             // it's super important to drop the original state from the stack
-            // because input params might be passes though the stack
+            // because input params might be passed though the stack
             instr_builder.push_inst(Instruction::Drop);
             instr_builder.push_inst(Instruction::CallInternal(export_index.unwrap().into()));
             instr_builder.push_inst(Instruction::Return(DropKeep::none()));
