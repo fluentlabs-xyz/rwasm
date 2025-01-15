@@ -670,6 +670,9 @@ impl Instruction {
 
     pub fn is_branch_instruction(self) -> bool {
         match self {
+            Instruction::Br(_)|
+            Instruction::BrIfEqz(_)|
+            Instruction::BrIfNez(_)|
             _ => false,
         }
     }
