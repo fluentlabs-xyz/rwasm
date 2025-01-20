@@ -470,7 +470,7 @@ pub fn find_wasm_size(stream: &[u8]) -> Result<usize, Error> {
     let parser = wasmparser::Parser::new(0);
     let payloads = parser.parse_all(stream).collect::<Vec<_>>();
     for payload in payloads {
-    let payload = payload.map_err(|err| Error::from(ModuleError::from(err)))?;
+        let payload = payload.map_err(|err| Error::from(ModuleError::from(err)))?;
         match payload {
             wasmparser::Payload::End(offset) => return Ok(offset),
             _ => continue,
