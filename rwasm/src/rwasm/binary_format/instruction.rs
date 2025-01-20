@@ -731,17 +731,12 @@ impl Instruction {
         }
     }
 
-    fn is_with_aux(self)->bool{
-        match self {
-            Instruction::I32Load8S(_)|
-            Instruction::I32Load8U(_)|
-            Instruction::I32Load16S(_)|
-            Instruction::I32Load16U(_)|
-            Instruction::I32Load(_)|
-            Instruction::I32Store8(_)|
-            Instruction::I32Store16(_)|
-            Instruction::I32Store(_)|
-            _ => false,
-        }
+    fn is_nullary(&self)->bool{
+       match self{
+        Instruction::Br(_)=>true,
+        _=>false,
+       } 
     }
+      
+    
 }
