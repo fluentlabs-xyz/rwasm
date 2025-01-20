@@ -35,6 +35,7 @@ use self::{
 };
 use crate::{
     engine::{CompiledFunc, DedupFuncType},
+    module::parser::parse_with_end_offset,
     Engine,
     Error,
     ExternType,
@@ -62,7 +63,6 @@ pub struct Module {
     pub compiled_funcs: Box<[CompiledFunc]>,
     pub element_segments: Box<[ElementSegment]>,
     pub data_segments: Box<[DataSegment]>,
-    pub binary_length: usize,
 }
 
 /// The index of the default Wasm linear memory.
@@ -145,6 +145,10 @@ impl Module {
         parse(engine, stream).map_err(Into::into)
     }
 
+    pub fn parse_with_end_offset(engine: &Engine, stream: &[u8]) -> Result<(Self, usize), Error> {
+        parse_with_end_offset(engine, stream).map_err(Into::into)
+    }
+
     /// Returns the [`Engine`] used during creation of the [`Module`].
     pub fn engine(&self) -> &Engine {
         &self.engine
@@ -166,7 +170,6 @@ impl Module {
             compiled_funcs: builder.compiled_funcs.into(),
             element_segments: builder.element_segments.into(),
             data_segments: builder.data_segments.into(),
-            binary_length: builder.binary_length,
         }
     }
 
@@ -464,17 +467,4 @@ impl<'a> ExactSizeIterator for InternalGlobalsIter<'a> {
     fn len(&self) -> usize {
         ExactSizeIterator::len(&self.iter)
     }
-}
-
-pub fn find_wasm_size(stream: &[u8]) -> Result<usize, Error> {
-    let parser = wasmparser::Parser::new(0);
-    let payloads = parser.parse_all(stream).collect::<Vec<_>>();
-    for payload in payloads {
-        let payload = payload.map_err(|err| Error::from(ModuleError::from(err)))?;
-        match payload {
-            wasmparser::Payload::End(offset) => return Ok(offset),
-            _ => continue,
-        }
-    }
-    Ok(0)
 }

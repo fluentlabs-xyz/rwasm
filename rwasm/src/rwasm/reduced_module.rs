@@ -33,7 +33,6 @@ pub struct RwasmModule {
     pub memory_section: Vec<u8>,
     pub func_section: Vec<u32>,
     pub element_section: Vec<u32>,
-    pub binary_length: usize,
 }
 
 impl From<InstructionSet> for RwasmModule {
@@ -44,7 +43,6 @@ impl From<InstructionSet> for RwasmModule {
             memory_section: vec![],
             func_section: vec![code_section_len],
             element_section: vec![],
-            binary_length: 0,
         }
     }
 }
@@ -73,6 +71,19 @@ impl RwasmModule {
     pub fn compile(wasm_binary: &[u8], import_linker: Option<ImportLinker>) -> Result<Self, Error> {
         let default_config = Self::default_config(import_linker);
         Self::compile_with_config(wasm_binary, &default_config)
+    }
+
+    pub fn compile_with_end_offset(
+        wasm_binary: &[u8],
+        config: &Config,
+    ) -> Result<(Self, usize), Error> {
+        assert!(
+            config.get_rwasm_config().is_some(),
+            "rWASM mode must be enabled in config"
+        );
+        let engine = Engine::new(&config);
+        let (module, end_offset) = Module::parse_with_end_offset(&engine, &wasm_binary)?;
+        Ok((Self::from_module(&module), end_offset))
     }
 
     pub fn compile_with_config(wasm_binary: &[u8], config: &Config) -> Result<Self, Error> {
@@ -151,13 +162,11 @@ impl RwasmModule {
             .collect::<Vec<_>>();
         // build memory section
         let memory_section = Vec::from(&*module.data_segments[0].bytes);
-        let binary_length = module.binary_length;
         Self {
             code_section,
             memory_section,
             func_section,
             element_section,
-            binary_length,
         }
     }
 

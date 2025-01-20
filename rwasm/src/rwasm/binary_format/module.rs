@@ -164,7 +164,6 @@ mod tests {
             memory_section: Default::default(),
             func_section: vec![1, 2, 3],
             element_section: vec![5, 6, 7, 8, 9],
-            binary_length: 0,
         };
         let mut encoded_data = Vec::new();
         module.write_binary_to_vec(&mut encoded_data).unwrap();

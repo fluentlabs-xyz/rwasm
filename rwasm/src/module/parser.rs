@@ -52,7 +52,19 @@ use wasmparser::{
 ///
 /// If the Wasm bytecode stream fails to validate.
 pub fn parse(engine: &Engine, stream: &[u8]) -> Result<Module, ModuleError> {
-    ModuleParser::new(engine).parse(stream)
+    let (module, _) = parse_with_end_offset(engine, stream)?;
+    Ok(module)
+}
+
+pub fn parse_with_end_offset(
+    engine: &Engine,
+    stream: &[u8],
+) -> Result<(Module, usize), ModuleError> {
+    let mut parser = ModuleParser::new(engine);
+    parser.parse(stream)?;
+    let end_offset = parser.end_offset;
+    let module = parser.builder.finish();
+    Ok((module, end_offset))
 }
 
 /// Context used to construct a WebAssembly module from a stream of bytes.
@@ -65,6 +77,8 @@ pub struct ModuleParser<'engine> {
     compiled_funcs: u32,
     /// Reusable allocations for validating and translation functions.
     allocations: ReusableAllocations,
+    /// Offset in the input byte stream where the Payload::End was reached
+    end_offset: usize,
 }
 
 /// Reusable heap allocations for function validation and translation.
@@ -84,6 +98,7 @@ impl<'engine> ModuleParser<'engine> {
             validator,
             compiled_funcs: 0,
             allocations: ReusableAllocations::default(),
+            end_offset: 0,
         }
     }
 
@@ -99,7 +114,7 @@ impl<'engine> ModuleParser<'engine> {
     /// # Errors
     ///
     /// If the Wasm bytecode stream fails to validate.
-    pub fn parse(mut self, stream: &'engine [u8]) -> Result<Module, ModuleError> {
+    pub fn parse(&mut self, stream: &'engine [u8]) -> Result<(), ModuleError> {
         let mut func_bodies: Vec<FunctionBody> = Vec::new();
         let parser = WasmParser::new(0);
         let payloads = parser.parse_all(stream).collect::<Vec<_>>();
@@ -110,8 +125,8 @@ impl<'engine> ModuleParser<'engine> {
                     func_bodies.push(func_body);
                 }
                 Payload::End(offset) => {
-                    self.builder.binary_length = offset;
                     // before processing code entries, we must process an entrypoint
+                    self.end_offset = offset;
                     let instr_builder =
                         if self.builder.engine().config().get_rwasm_config().is_some() {
                             Some(self.process_rwasm_entrypoint()?)
@@ -134,7 +149,7 @@ impl<'engine> ModuleParser<'engine> {
                 }
             }
         }
-        Ok(self.builder.finish())
+        Ok(())
     }
 
     /// Processes the `wasmparser` payload.
