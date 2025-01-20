@@ -51,7 +51,8 @@ fn create_import_linker() -> ImportLinker {
 fn execute_binary(wat: &str, host_state: HostState, config: Config) -> HostState {
     let wasm_binary = wat::parse_str(wat).unwrap();
     // compile rWASM module from WASM binary
-    let rwasm_module = RwasmModule::compile_with_config(&wasm_binary, &config).unwrap();
+    let (rwasm_module, end_offset) = RwasmModule::compile_with_end_offset(&wasm_binary, &config).unwrap();
+    assert_eq!(wasm_binary.len(), end_offset);
     // lets encode/decode rWASM module
     let mut encoded_rwasm_module = Vec::new();
     rwasm_module
