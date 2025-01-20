@@ -672,7 +672,7 @@ impl Instruction {
         match self {
             Instruction::Br(_)|
             Instruction::BrIfEqz(_)|
-            Instruction::BrIfNez(_)|
+            Instruction::BrIfNez(_)=>true,
             _ => false,
         }
     }
