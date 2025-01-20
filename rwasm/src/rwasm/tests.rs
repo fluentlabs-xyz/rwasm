@@ -51,7 +51,8 @@ fn create_import_linker() -> ImportLinker {
 fn execute_binary(wat: &str, host_state: HostState, config: Config) -> HostState {
     let wasm_binary = wat::parse_str(wat).unwrap();
     // compile rWASM module from WASM binary
-    let (rwasm_module, end_offset) = RwasmModule::compile_with_end_offset(&wasm_binary, &config).unwrap();
+    let (rwasm_module, end_offset) =
+        RwasmModule::compile_with_end_offset(&wasm_binary, &config).unwrap();
     assert_eq!(wasm_binary.len(), end_offset);
     // lets encode/decode rWASM module
     let mut encoded_rwasm_module = Vec::new();
@@ -363,4 +364,29 @@ fn test_state_router() {
     host_state.state = STATE_MAIN;
     host_state = execute_binary(wat, host_state, config);
     assert_eq!(host_state.exit_code, 100);
+}
+
+#[test]
+fn test_compile_with_extra_byte() {
+    let wat = r#"
+    (module
+      (type (;0;) (func))
+      (func (;0;) (type 0)
+        (local i32)
+        return)
+      (memory (;0;) 1)
+      (export "memory" (memory 0))
+      (export "main" (func 0)))
+        "#;
+    let config = RwasmModule::default_config(Some(create_import_linker()));
+    let wasm_binary = wat::parse_str(wat).unwrap();
+    let wasm_binary_len = wasm_binary.len();
+    let mut input: Vec<u8> = Vec::new();
+    println!("{:?}", wasm_binary_len);
+    input.extend(wasm_binary);
+    input.push(255);
+    assert_eq!(input.len(), wasm_binary_len + 1);
+    let (_rwasm_module, end_offset) =
+        RwasmModule::compile_with_end_offset(&input, &config).unwrap();
+    assert_eq!(end_offset, wasm_binary_len);
 }

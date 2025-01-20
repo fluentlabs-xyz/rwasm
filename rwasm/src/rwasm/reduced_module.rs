@@ -87,13 +87,8 @@ impl RwasmModule {
     }
 
     pub fn compile_with_config(wasm_binary: &[u8], config: &Config) -> Result<Self, Error> {
-        assert!(
-            config.get_rwasm_config().is_some(),
-            "rWASM mode must be enabled in config"
-        );
-        let engine = Engine::new(&config);
-        let module = Module::new(&engine, wasm_binary)?;
-        Ok(Self::from_module(&module))
+        let (module, _) = Self::compile_with_end_offset(wasm_binary, config)?;
+        Ok(module)
     }
 
     pub fn new(module: &[u8]) -> Result<Self, BinaryFormatError> {
