@@ -1406,12 +1406,17 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         table_index: TableIdx,
         resource_limiter: &mut ResourceLimiterRef<'ctx>,
     ) -> Result<(), TrapCode> {
-        let (init, delta) = self.sp.pop2();
+        let (mut init, delta) = self.sp.pop2();
         let delta: u32 = delta.into();
         let result = self.consume_fuel_with(
             |costs| costs.fuel_for_elements(u64::from(delta)),
             |this| {
                 let table = this.cache.get_table(this.ctx, table_index);
+                // a special case for rwasm just for backward compatability with the new runtime
+                // where there is no difference between FuncRef's null and i32 zero
+                if init.as_u64() == u32::MAX as u64 {
+                    init = UntypedValue::from(0);
+                }
                 this.ctx
                     .resolve_table_mut(&table)
                     .grow_untyped(delta, init, resource_limiter)

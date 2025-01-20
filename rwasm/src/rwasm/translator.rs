@@ -238,7 +238,7 @@ impl<'parser> RwasmTranslator<'parser> {
             if table_index < self.res.res.imports.len_tables() {
                 return Err(RwasmBuilderError::ImportedTablesAreDisabled);
             }
-            instr_builder.push_inst(Instruction::I32Const(0.into()));
+            instr_builder.push_inst(Instruction::I32Const(u32::MAX.into()));
             instr_builder.push_inst(Instruction::I64Const(table.minimum().into()));
             instr_builder.push_inst(Instruction::TableGrow((table_index as u32).into()));
             instr_builder.push_inst(Instruction::Drop);
