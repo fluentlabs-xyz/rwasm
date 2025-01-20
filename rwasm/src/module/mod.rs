@@ -62,6 +62,7 @@ pub struct Module {
     pub compiled_funcs: Box<[CompiledFunc]>,
     pub element_segments: Box<[ElementSegment]>,
     pub data_segments: Box<[DataSegment]>,
+    pub binary_length: usize,
 }
 
 /// The index of the default Wasm linear memory.
@@ -165,6 +166,7 @@ impl Module {
             compiled_funcs: builder.compiled_funcs.into(),
             element_segments: builder.element_segments.into(),
             data_segments: builder.data_segments.into(),
+            binary_length: builder.binary_length,
         }
     }
 

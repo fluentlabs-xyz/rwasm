@@ -53,6 +53,7 @@ pub struct ModuleBuilder<'engine> {
     pub element_segments: Vec<ElementSegment>,
     pub data_segments: Vec<DataSegment>,
     pub import_mapping: BTreeMap<u32, FuncIdx>,
+    pub binary_length: usize,
 }
 
 /// The import names of the [`Module`] imports.
@@ -178,6 +179,7 @@ impl<'engine> ModuleBuilder<'engine> {
             element_segments: Vec::new(),
             data_segments: Vec::new(),
             import_mapping: BTreeMap::new(),
+            binary_length: 0,
         }
     }
 

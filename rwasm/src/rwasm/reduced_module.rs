@@ -33,6 +33,7 @@ pub struct RwasmModule {
     pub memory_section: Vec<u8>,
     pub func_section: Vec<u32>,
     pub element_section: Vec<u32>,
+    pub binary_length: usize,
 }
 
 impl From<InstructionSet> for RwasmModule {
@@ -43,6 +44,7 @@ impl From<InstructionSet> for RwasmModule {
             memory_section: vec![],
             func_section: vec![code_section_len],
             element_section: vec![],
+            binary_length: 0,
         }
     }
 }
@@ -149,11 +151,13 @@ impl RwasmModule {
             .collect::<Vec<_>>();
         // build memory section
         let memory_section = Vec::from(&*module.data_segments[0].bytes);
+        let binary_length = module.binary_length;
         Self {
             code_section,
             memory_section,
             func_section,
             element_section,
+            binary_length,
         }
     }
 
