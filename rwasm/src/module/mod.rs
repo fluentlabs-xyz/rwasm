@@ -31,11 +31,11 @@ use self::{
     global::Global,
     import::{ExternTypeIdx, Import},
     parser::parse,
+    parser::parse_with_end_offset,
     read::ReadError,
 };
 use crate::{
     engine::{CompiledFunc, DedupFuncType},
-    module::parser::parse_with_end_offset,
     Engine,
     Error,
     ExternType,
