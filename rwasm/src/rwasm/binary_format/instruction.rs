@@ -731,7 +731,7 @@ impl Instruction {
         }
     }
 
-    fn is_nullary(&self)->bool{
+    pub fn is_nullary(&self)->bool{
        match self{
         Instruction::Br(_)=>true,
         _=>false,
