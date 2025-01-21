@@ -1,5 +1,6 @@
 mod builder;
 mod compile;
+mod custom_section;
 mod data;
 mod element;
 mod error;
@@ -11,14 +12,13 @@ mod instantiate;
 mod parser;
 mod read;
 mod utils;
-mod custom_section;
 
 pub use self::{
     builder::{ModuleBuilder, ModuleResources},
     compile::BlockType,
+    custom_section::{CustomSection, CustomSections, CustomSectionsBuilder, CustomSectionsIter},
     data::{DataSegment, DataSegmentKind},
     element::{ElementSegment, ElementSegmentItems, ElementSegmentKind},
-    custom_section::{CustomSections, CustomSectionsBuilder, CustomSection, CustomSectionsIter},
     error::ModuleError,
     export::{ExportType, FuncIdx, MemoryIdx, ModuleExportsIter, TableIdx},
     global::GlobalIdx,

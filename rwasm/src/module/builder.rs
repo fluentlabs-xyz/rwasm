@@ -2,6 +2,7 @@ use super::{
     export::ExternIdx,
     import::FuncTypeIdx,
     ConstExpr,
+    CustomSectionsBuilder,
     DataSegment,
     DataSegmentKind,
     ElementSegment,
@@ -14,7 +15,6 @@ use super::{
     Import,
     ImportName,
     Module,
-    CustomSectionsBuilder,
 };
 use crate::{
     core::{

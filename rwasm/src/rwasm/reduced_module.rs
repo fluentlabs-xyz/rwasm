@@ -77,14 +77,18 @@ impl RwasmModule {
         Ok(result)
     }
 
-    pub fn compile_and_retrieve_input(wasm_binary: &[u8], config: &Config) -> Result<(Self, Vec<u8>), Error> {
+    pub fn compile_and_retrieve_input(
+        wasm_binary: &[u8],
+        config: &Config,
+    ) -> Result<(Self, Vec<u8>), Error> {
         assert!(
             config.get_rwasm_config().is_some(),
             "rWASM mode must be enabled in config"
         );
         let engine = Engine::new(&config);
         let module = Module::new(&engine, wasm_binary)?;
-        let input_section = module.custom_sections
+        let input_section = module
+            .custom_sections
             .iter()
             .find(|c| c.name() == "input")
             .map(|c| c.data().to_vec())
