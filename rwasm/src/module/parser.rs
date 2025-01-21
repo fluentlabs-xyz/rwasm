@@ -128,6 +128,9 @@ impl<'engine> ModuleParser<'engine> {
                     }
                     self.process_end(offset)?;
                 }
+                Payload::CustomSection(reader) => {
+                    self.builder.custom_sections.push(reader.name(), reader.data());
+                }
                 _ => {
                     self.process_payload(payload)?;
                 }
