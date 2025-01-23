@@ -548,6 +548,26 @@ impl<'parser> FuncTranslator<'parser> {
         })
     }
 
+    fn translate_expressed_load(
+        &mut self,
+        memarg: wasmparser::MemArg,
+        _loaded_type: ValueType,
+        make_inst: fn(AddressOffset) -> Instruction,
+        additional_inst: Instruction
+    ) -> Result<(), TranslationError> {
+        self.translate_if_reachable(|builder| {
+            let (memory_idx, offset) = Self::decompose_memarg(memarg);
+            debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
+            builder.bump_fuel_consumption(builder.fuel_costs().load)?;
+            builder.stack_height.pop1();
+            builder.stack_height.push();
+            let offset = AddressOffset::from(offset);
+            builder.alloc.inst_builder.push_inst(make_inst(offset));
+            builder.alloc.inst_builder.push_inst(additional_inst);
+            Ok(())
+        })
+    }
+
     /// Translate a Wasm `<ty>.store` instruction.
     ///
     /// # Note
@@ -1005,6 +1025,8 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         let block_type = BlockType::new(block_type, self.res);
         if self.is_reachable() {
             self.stack_height.pop1();
+            self.stack_types.pop();
+
             let stack_height = self.frame_stack_height(block_type);
             let else_label = self.alloc.inst_builder.new_label();
             let end_label = self.alloc.inst_builder.new_label();
@@ -1079,10 +1101,22 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                 .push_inst(self.make_consume_fuel_base());
             if_frame.update_consume_fuel_instr(consume_fuel);
         });
+
+        let mut old_stack_height = self.stack_height.height();
         // We need to reset the value stack to exactly how it has been
         // when entering the `if` in the first place so that the `else`
         // block has the same parameters on top of the stack.
         self.stack_height.shrink_to(if_frame.stack_height());
+
+        while old_stack_height > self.stack_height.height() {
+            match self.stack_types.pop() {
+                Some(ValueType::I64) => {old_stack_height -= 2;}
+                Some(_) => {old_stack_height -= 1;}
+                None => {}
+            }
+        }
+
+
         if_frame
             .block_type()
             .foreach_param(self.res.engine(), |_param| {
@@ -1129,7 +1163,12 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         let frame = self.alloc.control_frames.pop_frame();
         frame
             .block_type()
-            .foreach_result(self.res.engine(), |_result| self.stack_height.push());
+            .foreach_result(self.res.engine(), |result| {
+                self.stack_height.push();
+                if result == ValueType::I64 {
+                    self.stack_height.push();
+                }
+            });
         Ok(())
     }
 
@@ -1185,6 +1224,8 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                 .map(|v| v.translate_drop_keep)
                 .unwrap_or_default();
             builder.stack_height.pop1();
+            builder.stack_types.pop();
+
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
                     builder.bump_fuel_consumption(builder.fuel_costs().base)?;
@@ -1572,18 +1613,28 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     fn visit_local_get(&mut self, local_idx: u32) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            let local_depth = builder.relative_local_depth(local_idx * 2);
+            let local_depth = builder.relative_local_depth(local_idx);
+            println!("visit_local_get Local depth {}, local idx: {}, stack_types {:?}, stack heigth: {:?}", local_depth, local_idx, builder.stack_types, builder.stack_height);
+            let value = builder.stack_types[builder.stack_types.len() - local_depth as usize];
+
+            let expressed_depth = builder.get_expressed_depth(local_depth);
 
             builder
                 .alloc
                 .inst_builder
-                .push_inst(Instruction::local_get(local_depth)?);
-            builder
-                .alloc
-                .inst_builder
-                .push_inst(Instruction::local_get(local_depth)?);
+                .push_inst(Instruction::local_get(expressed_depth)?);
             builder.stack_height.push();
-            builder.stack_height.push();
+
+            if ValueType::I64 == value {
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::local_get(expressed_depth)?);
+                builder.stack_height.push();
+
+            }
+            builder.stack_types.push(value);
+
             Ok(())
         })
     }
@@ -1592,11 +1643,25 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.stack_height.pop1();
+            let value_type = builder.stack_types.pop().unwrap();
+
             let local_depth = builder.relative_local_depth(local_idx);
+            let expressed_depth = builder.get_expressed_depth(local_depth);
+
             builder
                 .alloc
                 .inst_builder
-                .push_inst(Instruction::local_set(local_depth)?);
+                .push_inst(Instruction::local_set(expressed_depth)?);
+
+            if ValueType::I64 == value_type {
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::local_set(expressed_depth)?);
+                builder.stack_height.pop1();
+
+            }
+
             Ok(())
         })
     }
@@ -1605,10 +1670,25 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             let local_depth = builder.relative_local_depth(local_idx);
+            let expressed_depth = builder.get_expressed_depth(local_depth);
+            let value_type = builder.stack_types.last().unwrap();
+
             builder
                 .alloc
                 .inst_builder
-                .push_inst(Instruction::local_tee(local_depth)?);
+                .push_inst(Instruction::local_tee(expressed_depth)?);
+
+            if ValueType::I64 == *value_type {
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::local_get(2)?);
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::local_set(expressed_depth-1)?);
+
+            }
             Ok(())
         })
     }
@@ -2108,6 +2188,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.stack_height.push();
+            builder.stack_types.push(ValueType::I32);
             builder
                 .alloc
                 .inst_builder
@@ -2120,10 +2201,18 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.stack_height.push();
+            builder.stack_height.push();
+            builder.stack_types.push(ValueType::I64);
+
+            let [expected_low, expected_high] = split_i64_to_i32(value);
             builder
                 .alloc
                 .inst_builder
-                .push_inst(Instruction::I64Const(UntypedValue::from(value)));
+                .push_inst(Instruction::I32Const(UntypedValue::from(expected_low)));
+            builder
+                .alloc
+                .inst_builder
+                .push_inst(Instruction::I32Const(UntypedValue::from(expected_high)));
             Ok(())
         })
     }
@@ -2151,6 +2240,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.stack_height.push();
+            builder.stack_types.push(ValueType::F32);
             builder
                 .alloc
                 .inst_builder
@@ -2163,6 +2253,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.stack_height.push();
+            builder.stack_types.push(ValueType::F64);
             builder
                 .alloc
                 .inst_builder
