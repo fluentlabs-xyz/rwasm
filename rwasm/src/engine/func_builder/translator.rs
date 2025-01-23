@@ -52,8 +52,10 @@ use crate::{
     Mutability,
 };
 use alloc::vec::Vec;
+use num_traits::CheckedSub;
 use wasmparser::VisitOperator;
 use crate::engine::bytecode::LocalDepth;
+use crate::value::split_i64_to_i32;
 
 /// Reusable allocations of a [`FuncTranslator`].
 #[derive(Debug, Default)]
@@ -110,6 +112,8 @@ pub struct FuncTranslator<'parser> {
     locals: LocalsRegistry,
     /// The reusable data structures of the [`FuncTranslator`].
     pub(crate) alloc: FuncTranslatorAllocations,
+
+    pub(crate) stack_types: Vec<ValueType>,
 }
 
 impl<'parser> FuncTranslator<'parser> {
@@ -128,6 +132,7 @@ impl<'parser> FuncTranslator<'parser> {
             stack_height: ValueStackHeight::default(),
             locals: LocalsRegistry::default(),
             alloc,
+            stack_types: vec![]
         }
         .init()
     }
@@ -142,6 +147,7 @@ impl<'parser> FuncTranslator<'parser> {
         self.alloc.reset();
         self.init_func_body_block();
         self.init_func_params();
+        self.init_stack_types();
         self
     }
 
@@ -161,9 +167,33 @@ impl<'parser> FuncTranslator<'parser> {
 
     /// Registers the function parameters in the emulated value stack.
     fn init_func_params(&mut self) {
-        for _param_type in self.func_type().params() {
-            self.locals.register_locals(1);
+        for param_type in self.func_type().origin_params() {
+            match param_type {
+                ValueType::I64 => {
+                    self.locals.register_locals(2);
+                }
+                _ => {
+                    self.locals.register_locals(1);
+                }
+            }
+            self.locals.register_types(1);
+
         }
+    }
+
+    fn init_stack_types(&mut self) {
+        let func_type = self.func_type();
+        self.stack_types = func_type.origin_params().iter().cloned().collect();
+    }
+
+    fn get_expressed_depth(&self, local_depth: u32) -> u32 {
+        self.stack_types.iter().rev().take(local_depth as usize).map(|t| {
+            if t == &ValueType::I64 {
+                2
+            } else {
+                1
+            }
+        }).sum()
     }
 
     /// Registers an `amount` of local variables.
@@ -282,7 +312,10 @@ impl<'parser> FuncTranslator<'parser> {
     /// Returns the number of local variables of the function under construction.
     fn len_locals(&self) -> usize {
         let len_params_locals = self.locals.len_registered() as usize;
-        let len_params = self.func_type().params().len();
+        let len_params = self.func_type().origin_params().len();
+        if len_params_locals < len_params {
+            println!("This");
+        }
         debug_assert!(len_params_locals >= len_params);
         len_params_locals - len_params
     }
@@ -386,12 +419,11 @@ impl<'parser> FuncTranslator<'parser> {
     /// Returns the relative depth on the stack of the local variable.
     fn relative_local_depth(&self, local_idx: u32) -> u32 {
         debug_assert!(self.is_reachable());
-        let stack_height = self.stack_height.height();
-        let len_params_locals = self.locals.len_registered();
-        stack_height
-            .checked_add(len_params_locals)
-            .and_then(|x| x.checked_sub(local_idx))
-            .unwrap_or_else(|| panic!("cannot convert local index into local depth: {local_idx}"))
+        let stack_height = self.stack_types.len() as u32;
+        stack_height.checked_sub(local_idx)
+            .unwrap_or_else(|| {
+                panic!("cannot convert local index into local depth: {local_idx}")
+            })
     }
 
     /// Creates the [`BranchOffset`] to the `target` instruction for the current instruction.

@@ -72,9 +72,11 @@ impl BlockType {
     pub fn len_results(&self, engine: &Engine) -> u32 {
         match &self.inner {
             BlockTypeInner::Empty => 0,
+            BlockTypeInner::Returns(t) if t == &ValueType::I64 => 2,
             BlockTypeInner::Returns(_) => 1,
             BlockTypeInner::FuncType(func_type) => {
-                engine.resolve_func_type(func_type, |func_type| func_type.results().len() as u32)
+                engine.resolve_func_type(func_type, |func_type|
+                    func_type.results().len() as u32)
             }
         }
     }

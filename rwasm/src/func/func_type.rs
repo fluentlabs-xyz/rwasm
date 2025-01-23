@@ -11,6 +11,9 @@ use core::fmt;
 pub struct FuncType {
     /// The number of function parameters.
     len_params: usize,
+
+    params: Vec<ValueType>,
+    origin_params: Vec<ValueType>,
     /// The ordered and merged parameter and result types of the function type.
     ///
     /// # Note
@@ -36,10 +39,10 @@ impl FuncType {
     /// Creates a new [`FuncType`].
     pub fn new<P, R>(params: P, results: R) -> Self
     where
-        P: IntoIterator<Item = ValueType>,
+        P: IntoIterator<Item = ValueType> + Clone,
         R: IntoIterator<Item = ValueType>,
     {
-        let mut params_results = params.into_iter().flat_map(|v| match v {
+        let mut params_results = params.clone().into_iter().flat_map(|v| match v {
             ValueType::I64 => vec![ValueType::I32, ValueType::I32],
             v => vec![v],
         }).collect::<Vec<_>>();
@@ -50,7 +53,9 @@ impl FuncType {
         }).collect();
         params_results.extend(results);
         Self {
+            origin_params: params.clone().into_iter().collect(),
             params_results: params_results.into(),
+            params: params.into_iter().collect(),
             len_params,
         }
     }
@@ -71,7 +76,9 @@ impl FuncType {
         params_results.extend_from_slice(results.as_slice());
 
         Self {
+            origin_params: params.into_iter().cloned().collect(),
             params_results: params_results.into(),
+            params: params.into_iter().cloned().collect(),
             len_params,
         }
     }
@@ -88,6 +95,10 @@ impl FuncType {
     /// Returns the parameter types of the function type.
     pub fn params(&self) -> &[ValueType] {
         &self.params_results[..self.len_params]
+    }
+
+    pub fn origin_params(&self) -> &[ValueType] {
+        &self.origin_params
     }
 
     /// Returns the result types of the function type.
