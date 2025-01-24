@@ -23,7 +23,7 @@ use crate::{
 };
 use alloc::vec::Vec;
 
-#[derive(Default, Debug, PartialEq, Clone, Eq)]
+#[derive(Default, Debug, PartialEq, Clone, Eq, Hash)]
 pub struct InstructionSet {
     pub instr: Vec<Instruction>,
     pub metas: Vec<InstrMeta>,

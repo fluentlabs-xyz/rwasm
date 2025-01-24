@@ -20,14 +20,14 @@ use crate::{
 };
 use alloc::{string::ToString, vec::Vec};
 
-#[derive(Debug, Default, PartialEq, Clone, Eq)]
+#[derive(Debug, Default, PartialEq, Clone, Eq, Hash)]
 pub struct RwasmModuleInstance {
     pub module: RwasmModule,
     pub func_segments: Vec<u32>,
     pub start: usize,
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Eq)]
+#[derive(Debug, Default, PartialEq, Clone, Eq, Hash)]
 pub struct RwasmModule {
     pub code_section: InstructionSet,
     pub memory_section: Vec<u8>,
