@@ -1718,7 +1718,24 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     }
 
     fn visit_i64_load(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
-        self.translate_load(memarg, ValueType::I64, Instruction::I64Load)
+        self.translate_if_reachable(|builder| {
+            let (memory_idx, offset) = Self::decompose_memarg(memarg);
+            debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
+            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
+            builder.stack_height.push();
+            builder.stack_types.pop();
+            builder.stack_types.push(ValueType::I64);
+
+            let offset = AddressOffset::from(offset);
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(1)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Load(AddressOffset::from(offset.into_inner())));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Load(AddressOffset::from(offset.into_inner()+4)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(2)));
+
+            Ok(())
+        })
     }
 
     fn visit_f32_load(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
@@ -1746,27 +1763,127 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     }
 
     fn visit_i64_load8_s(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
-        self.translate_load(memarg, ValueType::I64, Instruction::I64Load8S)
+        self.translate_if_reachable(|builder| {
+            let (memory_idx, offset) = Self::decompose_memarg(memarg);
+            debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
+            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
+            builder.stack_height.push();
+            builder.stack_types.pop();
+            builder.stack_types.push(ValueType::I64);
+
+            let offset = AddressOffset::from(offset);
+
+            builder.alloc.inst_builder.push_inst(Instruction::I32Load8S(AddressOffset::from(offset.into_inner())));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(1)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Clz);
+            builder.alloc.inst_builder.push_inst(Instruction::BrIfEqz(BranchOffset::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(0)));
+            builder.alloc.inst_builder.push_inst(Instruction::Br(BranchOffset::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(-1)));
+
+            Ok(())
+        })
     }
 
     fn visit_i64_load8_u(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
-        self.translate_load(memarg, ValueType::I64, Instruction::I64Load8U)
+        self.translate_if_reachable(|builder| {
+            let (memory_idx, offset) = Self::decompose_memarg(memarg);
+            debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
+            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
+            builder.stack_height.push();
+            builder.stack_types.pop();
+            builder.stack_types.push(ValueType::I64);
+
+            let offset = AddressOffset::from(offset);
+
+            builder.alloc.inst_builder.push_inst(Instruction::I32Load8U(AddressOffset::from(offset.into_inner())));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(0)));
+
+            Ok(())
+        })
     }
 
     fn visit_i64_load16_s(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
-        self.translate_load(memarg, ValueType::I64, Instruction::I64Load16S)
+        self.translate_if_reachable(|builder| {
+            let (memory_idx, offset) = Self::decompose_memarg(memarg);
+            debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
+            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
+            builder.stack_height.push();
+            builder.stack_types.pop();
+            builder.stack_types.push(ValueType::I64);
+
+            let offset = AddressOffset::from(offset);
+
+            builder.alloc.inst_builder.push_inst(Instruction::I32Load16S(AddressOffset::from(offset.into_inner())));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(1)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Clz);
+            builder.alloc.inst_builder.push_inst(Instruction::BrIfEqz(BranchOffset::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(0)));
+            builder.alloc.inst_builder.push_inst(Instruction::Br(BranchOffset::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(-1)));
+
+            Ok(())
+        })
     }
 
     fn visit_i64_load16_u(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
-        self.translate_load(memarg, ValueType::I64, Instruction::I64Load16U)
+        self.translate_if_reachable(|builder| {
+            let (memory_idx, offset) = Self::decompose_memarg(memarg);
+            debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
+            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
+            builder.stack_height.push();
+            builder.stack_types.pop();
+            builder.stack_types.push(ValueType::I64);
+
+            let offset = AddressOffset::from(offset);
+
+            builder.alloc.inst_builder.push_inst(Instruction::I32Load16U(AddressOffset::from(offset.into_inner())));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(0)));
+
+
+            Ok(())
+        })
     }
 
     fn visit_i64_load32_s(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
-        self.translate_load(memarg, ValueType::I64, Instruction::I64Load32S)
+        self.translate_if_reachable(|builder| {
+            let (memory_idx, offset) = Self::decompose_memarg(memarg);
+            debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
+            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
+            builder.stack_height.push();
+            builder.stack_types.pop();
+            builder.stack_types.push(ValueType::I64);
+
+            let offset = AddressOffset::from(offset);
+
+            builder.alloc.inst_builder.push_inst(Instruction::I32Load(AddressOffset::from(offset.into_inner())));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(1)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Clz);
+            builder.alloc.inst_builder.push_inst(Instruction::BrIfEqz(BranchOffset::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(0)));
+            builder.alloc.inst_builder.push_inst(Instruction::Br(BranchOffset::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(-1)));
+
+            Ok(())
+        })
     }
 
     fn visit_i64_load32_u(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
-        self.translate_load(memarg, ValueType::I64, Instruction::I64Load32U)
+        self.translate_if_reachable(|builder| {
+            let (memory_idx, offset) = Self::decompose_memarg(memarg);
+            debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
+            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
+            builder.stack_height.push();
+            builder.stack_types.pop();
+            builder.stack_types.push(ValueType::I64);
+
+            let offset = AddressOffset::from(offset);
+
+            builder.alloc.inst_builder.push_inst(Instruction::I32Load(AddressOffset::from(offset.into_inner())));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(0)));
+
+            Ok(())
+        })
     }
 
     fn visit_i32_store(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
@@ -1774,7 +1891,25 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     }
 
     fn visit_i64_store(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
-        self.translate_store(memarg, ValueType::I64, Instruction::I64Store)
+        self.translate_if_reachable(|builder| {
+            let (memory_idx, offset) = Self::decompose_memarg(memarg);
+            debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
+            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
+            builder.stack_height.pop3();
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+
+            let offset = AddressOffset::from(offset);
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Store(offset));
+            builder.alloc.inst_builder.push_inst(Instruction::Drop);
+            builder.alloc.inst_builder.push_inst(Instruction::I32Store(AddressOffset::from(offset.into_inner()+4)));
+
+            Ok(())
+        })
+
     }
 
     fn visit_f32_store(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
@@ -1795,14 +1930,57 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
 
     fn visit_i64_store8(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
         self.translate_store(memarg, ValueType::I64, Instruction::I64Store8)
+        self.translate_if_reachable(|builder| {
+            let (memory_idx, offset) = Self::decompose_memarg(memarg);
+            debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
+            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
+            builder.stack_height.pop3();
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+
+            let offset = AddressOffset::from(offset);
+
+            builder.alloc.inst_builder.push_inst(Instruction::Drop);
+            builder.alloc.inst_builder.push_inst(Instruction::I32Store8(AddressOffset::from(offset.into_inner())));
+
+            Ok(())
+        })
     }
 
     fn visit_i64_store16(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
-        self.translate_store(memarg, ValueType::I64, Instruction::I64Store16)
+        self.translate_if_reachable(|builder| {
+            let (memory_idx, offset) = Self::decompose_memarg(memarg);
+            debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
+            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
+            builder.stack_height.pop3();
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+
+            let offset = AddressOffset::from(offset);
+
+            builder.alloc.inst_builder.push_inst(Instruction::Drop);
+            builder.alloc.inst_builder.push_inst(Instruction::I32Store16(AddressOffset::from(offset.into_inner())));
+
+            Ok(())
+        })
     }
 
     fn visit_i64_store32(&mut self, memarg: wasmparser::MemArg) -> Result<(), TranslationError> {
-        self.translate_store(memarg, ValueType::I64, Instruction::I64Store32)
+        self.translate_if_reachable(|builder| {
+            let (memory_idx, offset) = Self::decompose_memarg(memarg);
+            debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
+            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
+            builder.stack_height.pop3();
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+
+            let offset = AddressOffset::from(offset);
+
+            builder.alloc.inst_builder.push_inst(Instruction::Drop);
+            builder.alloc.inst_builder.push_inst(Instruction::I32Store(AddressOffset::from(offset.into_inner())));
+
+            Ok(())
+        })
     }
 
     fn visit_memory_size(
