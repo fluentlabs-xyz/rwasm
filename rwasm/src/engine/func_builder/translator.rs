@@ -1112,7 +1112,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             match self.stack_types.pop() {
                 Some(ValueType::I64) => {old_stack_height -= 2;}
                 Some(_) => {old_stack_height -= 1;}
-                None => {}
+                None => {panic!("Stack corrupted in else block")}
             }
         }
 
@@ -1158,13 +1158,25 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             self.reachable = frame_reachable;
         }
         if let Some(frame_stack_height) = frame_stack_height {
+            let mut old_stack_height = self.stack_height.height();
+
             self.stack_height.shrink_to(frame_stack_height);
+
+            while old_stack_height > self.stack_height.height() {
+                println!("stack: {} {} {:?}", old_stack_height, self.stack_height.height(), self.stack_types);
+                match self.stack_types.pop() {
+                    Some(ValueType::I64) => {old_stack_height -= 2;}
+                    Some(_) => {old_stack_height -= 1;}
+                    None => {panic!("Type stack corrupted")}
+                }
+            }
         }
         let frame = self.alloc.control_frames.pop_frame();
         frame
             .block_type()
             .foreach_result(self.res.engine(), |result| {
                 self.stack_height.push();
+                self.stack_types.push(result);
                 if result == ValueType::I64 {
                     self.stack_height.push();
                 }
@@ -1549,7 +1561,14 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.stack_height.pop1();
+            let item_type = builder.stack_types.pop();
             builder.alloc.inst_builder.push_inst(Instruction::Drop);
+
+            if item_type == Some(ValueType::I64) {
+                builder.stack_height.pop1();
+                builder.alloc.inst_builder.push_inst(Instruction::Drop);
+            }
+
             Ok(())
         })
     }
