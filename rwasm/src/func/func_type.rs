@@ -14,6 +14,7 @@ pub struct FuncType {
 
     params: Vec<ValueType>,
     origin_params: Vec<ValueType>,
+    origin_results: Vec<ValueType>,
     /// The ordered and merged parameter and result types of the function type.
     ///
     /// # Note
@@ -40,20 +41,21 @@ impl FuncType {
     pub fn new<P, R>(params: P, results: R) -> Self
     where
         P: IntoIterator<Item = ValueType> + Clone,
-        R: IntoIterator<Item = ValueType>,
+        R: IntoIterator<Item = ValueType> + Clone,
     {
         let mut params_results = params.clone().into_iter().flat_map(|v| match v {
             ValueType::I64 => vec![ValueType::I32, ValueType::I32],
             v => vec![v],
         }).collect::<Vec<_>>();
         let len_params = params_results.len();
-        let results: Vec<ValueType> = results.into_iter().flat_map(|v| match v {
+        let flat_results: Vec<ValueType> = results.clone().into_iter().flat_map(|v| match v {
             ValueType::I64 => vec![ValueType::I32, ValueType::I32],
             v => vec![v],
         }).collect();
-        params_results.extend(results);
+        params_results.extend(flat_results);
         Self {
             origin_params: params.clone().into_iter().collect(),
+            origin_results: results.into_iter().collect(),
             params_results: params_results.into(),
             params: params.into_iter().collect(),
             len_params,
@@ -69,14 +71,15 @@ impl FuncType {
             v => vec![v],
         }).collect();
         let len_params = params_results.len();
-        let results: Vec<ValueType> = results.into_iter().flat_map(|v| match v {
+        let flat_results: Vec<ValueType> = results.clone().into_iter().flat_map(|v| match v {
             ValueType::I64 => vec![ValueType::I32, ValueType::I32],
             v => vec![*v],
         }).collect();
-        params_results.extend_from_slice(results.as_slice());
+        params_results.extend_from_slice(flat_results.as_slice());
 
         Self {
             origin_params: params.into_iter().cloned().collect(),
+            origin_results: results.into_iter().cloned().collect(),
             params_results: params_results.into(),
             params: params.into_iter().cloned().collect(),
             len_params,
@@ -99,6 +102,9 @@ impl FuncType {
 
     pub fn origin_params(&self) -> &[ValueType] {
         &self.origin_params
+    }
+    pub fn origin_results(&self) -> &[ValueType] {
+        &self.origin_results
     }
 
     /// Returns the result types of the function type.

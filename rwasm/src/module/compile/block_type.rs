@@ -110,7 +110,7 @@ impl BlockType {
             }
             BlockTypeInner::FuncType(func_type) => {
                 engine.resolve_func_type(func_type, |func_type| {
-                    for result in func_type.results() {
+                    for result in func_type.origin_results() {
                         f(*result);
                     }
                 })

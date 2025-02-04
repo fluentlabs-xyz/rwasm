@@ -98,8 +98,8 @@ impl<'parser> FuncBuilder<'parser> {
                 if value_type == ValType::I64 {
                     self.translator.alloc.inst_builder.push_inst(instr);
                 }
+                self.translator.stack_types.push(ValueType::from(value_type));
              });
-            self.translator.stack_types.push(ValueType::from(value_type));
             self.translator.stack_height.push_n(amount);
             if value_type == ValType::I64 {
                 self.translator.stack_height.push_n(amount);
