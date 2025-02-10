@@ -99,16 +99,16 @@ define_spec_tests! {
     let runner = run::run_wasm_spec_test;
 
     fn wasm_address("address");
-    fn wasm_align("align");
+    fn wasm_align("align"); //br_table
     fn wasm_binary_leb128("binary-leb128");
     fn wasm_binary("binary");
     fn wasm_block("block");
     fn wasm_br("br");
     fn wasm_br_if("br_if");
-    fn wasm_br_table("br_table");
+    fn wasm_br_table("br_table"); // br_table
     fn wasm_bulk("bulk");
     fn wasm_call("call");
-    fn wasm_call_indirect("call_indirect");
+    fn wasm_call_indirect("call_indirect"); //call stack exhausted
     // fn wasm_extended_const_data("proposals/extended-const/data"); // NOT WORKING (imported memory)
     // fn wasm_extended_const_elem("proposals/extended-const/elem"); // NOT WORKING (imported memory)
     // fn wasm_extended_const_global("proposals/extended-const/global"); // NOT WORKING (imported memory)
@@ -120,7 +120,7 @@ define_spec_tests! {
     fn wasm_custom("custom");
     fn wasm_data("data");
     fn wasm_elem("elem");
-    fn wasm_endianness("endianness");
+    fn wasm_endianness("endianness"); // i64 shl shr_s
     fn wasm_exports("exports");
     fn wasm_f32("f32");
     fn wasm_f32_bitwise("f32_bitwise");
@@ -128,7 +128,7 @@ define_spec_tests! {
     fn wasm_f64("f64");
     fn wasm_f64_bitwise("f64_bitwise");
     fn wasm_f64_cmp("f64_cmp");
-    fn wasm_fac("fac");
+    fn wasm_fac("fac"); //wrong branch
     fn wasm_float_exprs("float_exprs");
     fn wasm_float_literals("float_literals");
     fn wasm_float_memory("float_memory");
@@ -136,7 +136,7 @@ define_spec_tests! {
     fn wasm_forward("forward");
     fn wasm_func("func");
     fn wasm_func_ptrs("func_ptrs");
-    fn wasm_global("global");
+    fn wasm_global("global"); // visit global
     fn wasm_i32("i32");
     fn wasm_i64("i64");
     fn wasm_if("if");
