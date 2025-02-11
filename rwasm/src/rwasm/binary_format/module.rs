@@ -3,6 +3,10 @@ use crate::{
     rwasm::{BinaryFormat, BinaryFormatError, BinaryFormatReader, BinaryFormatWriter, RwasmModule},
 };
 
+/// Rwasm magic bytes 0xef52
+pub const RWASM_MAGIC_BYTE_0: u8 = 0xef;
+pub const RWASM_MAGIC_BYTE_1: u8 = 0x52;
+
 /// Rwasm binary version that is equal to 'R' symbol (0x52 in hex)
 pub const RWASM_VERSION_V1: u8 = 0x01;
 
@@ -40,8 +44,8 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
         // magic prefix (0xef 0x00)
-        let mut n = sink.write_u8(0xef)?;
-        n += sink.write_u8(0x52)?;
+        let mut n = sink.write_u8(RWASM_MAGIC_BYTE_0)?;
+        n += sink.write_u8(RWASM_MAGIC_BYTE_1)?;
         // version (0x52 = R symbol)
         n += sink.write_u8(RWASM_VERSION_V1)?;
         // code section header
@@ -81,7 +85,7 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
     fn read_binary(sink: &mut BinaryFormatReader<'a>) -> Result<Self::SelfType, BinaryFormatError> {
         let mut result = RwasmModule::default();
         // magic prefix (0xef 0x52)
-        if sink.read_u8()? != 0xef || sink.read_u8()? != 0x52 {
+        if sink.read_u8()? != RWASM_MAGIC_BYTE_0 || sink.read_u8()? != RWASM_MAGIC_BYTE_1 {
             return Err(BinaryFormatError::MalformedWasmModule);
         }
         // version check
