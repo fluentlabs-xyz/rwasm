@@ -733,7 +733,8 @@ impl Instruction {
 
     pub fn is_nullary(&self)->bool{
        match self{
-        Instruction::Br(_)=>true,
+        Instruction::Br(_)|
+        Instruction::I32Const(_)=>true,
         _=>false,
        } 
     }
