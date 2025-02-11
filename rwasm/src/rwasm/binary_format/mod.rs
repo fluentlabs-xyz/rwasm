@@ -8,6 +8,8 @@ mod utils;
 
 pub use self::{
     module::{
+        RWASM_MAGIC_BYTE_0,
+        RWASM_MAGIC_BYTE_1,
         RWASM_SECTION_CODE,
         RWASM_SECTION_ELEMENT,
         RWASM_SECTION_END,
