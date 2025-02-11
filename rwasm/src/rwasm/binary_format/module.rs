@@ -4,18 +4,18 @@ use crate::{
 };
 
 /// Rwasm binary version that is equal to 'R' symbol (0x52 in hex)
-const RWASM_VERSION: u8 = 0x01;
+pub const RWASM_VERSION_V1: u8 = 0x01;
 
 /// Sections that are presented in Rwasm binary:
 /// - code
 /// - memory
 /// - decl
 /// - element
-const SECTION_CODE: u8 = 0x01;
-const SECTION_MEMORY: u8 = 0x02;
-const SECTION_FUNC: u8 = 0x03;
-const SECTION_ELEMENT: u8 = 0x04;
-const SECTION_END: u8 = 0x00;
+pub const RWASM_SECTION_CODE: u8 = 0x01;
+pub const RWASM_SECTION_MEMORY: u8 = 0x02;
+pub const RWASM_SECTION_FUNC: u8 = 0x03;
+pub const RWASM_SECTION_ELEMENT: u8 = 0x04;
+pub const RWASM_SECTION_END: u8 = 0x00;
 
 /// Rwasm module encoding follows EIP-3540 standard but stores rWASM opcodes
 /// instead of EVM.
@@ -43,27 +43,27 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         let mut n = sink.write_u8(0xef)?;
         n += sink.write_u8(0x52)?;
         // version (0x52 = R symbol)
-        n += sink.write_u8(RWASM_VERSION)?;
+        n += sink.write_u8(RWASM_VERSION_V1)?;
         // code section header
         let code_section_length = self.code_section.encoded_length() as u32;
-        n += sink.write_u8(SECTION_CODE)?;
+        n += sink.write_u8(RWASM_SECTION_CODE)?;
         n += sink.write_u32_le(code_section_length)?;
         // memory section header
         let memory_section_length = self.memory_section.len() as u32;
-        n += sink.write_u8(SECTION_MEMORY)?;
+        n += sink.write_u8(RWASM_SECTION_MEMORY)?;
         n += sink.write_u32_le(memory_section_length)?;
         // decl section header
         let decl_section_length =
             self.func_section.len() as u32 * (core::mem::size_of::<u32>() as u32);
-        n += sink.write_u8(SECTION_FUNC)?;
+        n += sink.write_u8(RWASM_SECTION_FUNC)?;
         n += sink.write_u32_le(decl_section_length)?;
         // element section header
         let element_section_length =
             self.element_section.len() as u32 * (core::mem::size_of::<u32>() as u32);
-        n += sink.write_u8(SECTION_ELEMENT)?;
+        n += sink.write_u8(RWASM_SECTION_ELEMENT)?;
         n += sink.write_u32_le(element_section_length)?;
         // section terminator
-        n += sink.write_u8(SECTION_END)?;
+        n += sink.write_u8(RWASM_SECTION_END)?;
         // write code/decl/element sections
         for opcode in self.code_section.instrs().iter() {
             n += opcode.write_binary(sink)?;
@@ -86,23 +86,23 @@ impl<'a> BinaryFormat<'a> for RwasmModule {
         }
         // version check
         let version = sink.read_u8()?;
-        if version != RWASM_VERSION {
+        if version != RWASM_VERSION_V1 {
             return Err(BinaryFormatError::MalformedWasmModule);
         }
         // code section header
-        sink.assert_u8(SECTION_CODE)?;
+        sink.assert_u8(RWASM_SECTION_CODE)?;
         let code_section_length = sink.read_u32_le()?;
         // memory section header
-        sink.assert_u8(SECTION_MEMORY)?;
+        sink.assert_u8(RWASM_SECTION_MEMORY)?;
         let memory_section_length = sink.read_u32_le()?;
         // decl section header
-        sink.assert_u8(SECTION_FUNC)?;
+        sink.assert_u8(RWASM_SECTION_FUNC)?;
         let decl_section_length = sink.read_u32_le()?;
         // element section header
-        sink.assert_u8(SECTION_ELEMENT)?;
+        sink.assert_u8(RWASM_SECTION_ELEMENT)?;
         let element_section_length = sink.read_u32_le()?;
         // section terminator
-        sink.assert_u8(SECTION_END)?;
+        sink.assert_u8(RWASM_SECTION_END)?;
         // read code section
         let mut code_section_sink = sink.limit_with(code_section_length as usize);
         while !code_section_sink.is_empty() {
