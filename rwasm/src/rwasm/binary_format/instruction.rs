@@ -32,13 +32,11 @@ impl<'a> BinaryFormat<'a> for Instruction {
     type SelfType = Instruction;
 
     fn encoded_length(&self) -> usize {
-        let mut sink = [0u8; MAX_INSTRUCTION_SIZE_BYTES];
-        let mut binary_writer = BinaryFormatWriter::new(&mut sink);
-        self.write_binary(&mut binary_writer).unwrap()
+        MAX_INSTRUCTION_SIZE_BYTES
     }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
-        let n = match self {
+        let mut n = match self {
             // local Instruction family
             Instruction::LocalGet(index) => sink.write_u8(0x00)? + index.write_binary(sink)?,
             Instruction::LocalSet(index) => sink.write_u8(0x01)? + index.write_binary(sink)?,
@@ -279,10 +277,17 @@ impl<'a> BinaryFormat<'a> for Instruction {
             Instruction::I64TruncSatF64U => sink.write_u8(0xc5)?,
             _ => unreachable!("not supported opcode: {:?}", self),
         };
+        // we align all opcodes to 9 bytes
+        while n < MAX_INSTRUCTION_SIZE_BYTES {
+            sink.write_u8(0)?;
+            n += 1;
+        }
+        debug_assert_eq!(n, MAX_INSTRUCTION_SIZE_BYTES);
         Ok(n)
     }
 
     fn read_binary(sink: &mut BinaryFormatReader<'a>) -> Result<Instruction, BinaryFormatError> {
+        let current_pos = sink.pos();
         let byte = sink.read_u8()?;
         let instr = match byte {
             // local Instruction family
@@ -491,6 +496,11 @@ impl<'a> BinaryFormat<'a> for Instruction {
             0xc5 => Instruction::I64TruncSatF64U,
             _ => return Err(BinaryFormatError::IllegalOpcode(byte)),
         };
+        // we align all opcodes to 9 bytes
+        let len = sink.pos() - current_pos;
+        for _ in 0..(MAX_INSTRUCTION_SIZE_BYTES - len) {
+            sink.read_u8()?;
+        }
         Ok(instr)
     }
 }
