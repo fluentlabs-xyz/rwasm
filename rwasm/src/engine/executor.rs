@@ -1,7 +1,7 @@
 use super::{bytecode::BranchOffset, const_pool::ConstRef, CompiledFunc, ConstPoolView};
 use crate::{
     arena::ArenaIndex,
-    core::{Pages, TrapCode, UntypedValue},
+    core::{Pages, TrapCode, UntypedValue, F32},
     engine::{
         bytecode::{
             AddressOffset,
@@ -376,9 +376,9 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 Instr::ElemDrop(segment) => self.visit_element_drop(segment),
                 Instr::RefFunc(func_index) => self.visit_ref_func(func_index)?,
                 Instr::I32Const(value) => self.visit_i32_const(value),
-                Instr::I64Const(value) => self.visit_i64_const(value),
+                Instr::I64Const32(value) => self.visit_i64_const32(value),
                 Instr::F32Const(value) => self.visit_f32_const(value),
-                Instr::F64Const(value) => self.visit_f64_const(value),
+                Instr::F64Const32(value) => self.visit_f64_const32(value),
                 Instr::ConstRef(cref) => self.visit_const(cref),
                 Instr::I32Eqz => self.visit_i32_eqz(),
                 Instr::I32Eq => self.visit_i32_eq(),
@@ -1177,26 +1177,32 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     }
 
     #[inline(always)]
-    fn visit_i32_const(&mut self, value: UntypedValue) {
-        self.sp.push(value);
+    fn visit_i32_const(&mut self, value: i32) {
+        self.sp.push(UntypedValue::from(value));
         self.next_instr()
     }
 
     #[inline(always)]
-    fn visit_i64_const(&mut self, value: UntypedValue) {
-        self.sp.push(value);
+    fn visit_i64_const32(&mut self, value: i32) {
+        self.sp.eval_top(|v| {
+            let bits = v.to_bits() | (value as u64) << 32;
+            UntypedValue::from_bits(bits)
+        });
         self.next_instr()
     }
 
     #[inline(always)]
-    fn visit_f32_const(&mut self, value: UntypedValue) {
-        self.sp.push(value);
+    fn visit_f32_const(&mut self, value: F32) {
+        self.sp.push(UntypedValue::from(value));
         self.next_instr()
     }
 
     #[inline(always)]
-    fn visit_f64_const(&mut self, value: UntypedValue) {
-        self.sp.push(value);
+    fn visit_f64_const32(&mut self, value: F32) {
+        self.sp.eval_top(|v| {
+            let bits = v.to_bits() | (value.to_bits() as u64) << 32;
+            UntypedValue::from_bits(bits)
+        });
         self.next_instr()
     }
 

@@ -1,6 +1,6 @@
 use crate::{
     arena::ArenaIndex,
-    core::UntypedValue,
+    core::{UntypedValue, F32},
     engine::{
         bytecode::{
             AddressOffset,
@@ -131,18 +131,10 @@ impl<'a> BinaryFormat<'a> for Instruction {
             Instruction::ElemDrop(idx) => sink.write_u8(0x3c)? + idx.write_binary(sink)?,
             Instruction::RefFunc(idx) => sink.write_u8(0x3d)? + idx.write_binary(sink)?,
             // i32/i64 Instruction family
-            Instruction::I32Const(const_ref) => {
-                sink.write_u8(0x3e)? + const_ref.write_binary(sink)?
-            }
-            Instruction::I64Const(const_ref) => {
-                sink.write_u8(0x3f)? + const_ref.write_binary(sink)?
-            }
-            Instruction::F32Const(const_ref) => {
-                sink.write_u8(0x40)? + const_ref.write_binary(sink)?
-            }
-            Instruction::F64Const(const_ref) => {
-                sink.write_u8(0x41)? + const_ref.write_binary(sink)?
-            }
+            Instruction::I32Const(value) => sink.write_u8(0x3e)? + value.write_binary(sink)?,
+            Instruction::I64Const32(value) => sink.write_u8(0x3f)? + value.write_binary(sink)?,
+            Instruction::F32Const(value) => sink.write_u8(0x40)? + value.write_binary(sink)?,
+            Instruction::F64Const32(value) => sink.write_u8(0x41)? + value.write_binary(sink)?,
             Instruction::I32Eqz => sink.write_u8(0x42)?,
             Instruction::I32Eq => sink.write_u8(0x43)?,
             Instruction::I32Ne => sink.write_u8(0x44)?,
@@ -358,10 +350,10 @@ impl<'a> BinaryFormat<'a> for Instruction {
             0x3c => Instruction::ElemDrop(ElementSegmentIdx::read_binary(sink)?),
             0x3d => Instruction::RefFunc(FuncIdx::read_binary(sink)?),
             // i32/i64 Instruction family
-            0x3e => Instruction::I32Const(UntypedValue::read_binary(sink)?),
-            0x3f => Instruction::I64Const(UntypedValue::read_binary(sink)?),
-            0x40 => Instruction::F32Const(UntypedValue::read_binary(sink)?),
-            0x41 => Instruction::F64Const(UntypedValue::read_binary(sink)?),
+            0x3e => Instruction::I32Const(i32::read_binary(sink)?),
+            0x3f => Instruction::I64Const32(i32::read_binary(sink)?),
+            0x40 => Instruction::F32Const(F32::read_binary(sink)?),
+            0x41 => Instruction::F64Const32(F32::read_binary(sink)?),
             0x42 => Instruction::I32Eqz,
             0x43 => Instruction::I32Eq,
             0x44 => Instruction::I32Ne,
@@ -618,5 +610,27 @@ mod tests {
             let opcode2 = Instruction::read_binary(&mut reader).unwrap();
             assert_eq!(opcode, opcode2);
         }
+    }
+
+    #[test]
+    fn test_i32_const_encoding() {
+        let mut buf = vec![0; 100];
+        let mut writer = BinaryFormatWriter::new(buf.as_mut_slice());
+        let opcode = Instruction::I32Const(0x7fffffff);
+        opcode.write_binary(&mut writer).unwrap();
+        let mut reader = BinaryFormatReader::new(buf.as_slice());
+        let opcode2 = Instruction::read_binary(&mut reader).unwrap();
+        assert_eq!(opcode, opcode2);
+    }
+
+    #[test]
+    fn test_i64_const_encoding() {
+        let mut buf = vec![0; 100];
+        let mut writer = BinaryFormatWriter::new(buf.as_mut_slice());
+        let opcode = Instruction::I64Const32(123);
+        opcode.write_binary(&mut writer).unwrap();
+        let mut reader = BinaryFormatReader::new(buf.as_slice());
+        let opcode2 = Instruction::read_binary(&mut reader).unwrap();
+        assert_eq!(opcode, opcode2);
     }
 }

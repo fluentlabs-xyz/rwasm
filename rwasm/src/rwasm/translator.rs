@@ -135,7 +135,7 @@ impl<'parser> RwasmTranslator<'parser> {
                 continue;
             }
             instr_builder.push_inst(Instruction::LocalGet(1.into()));
-            instr_builder.push_inst(Instruction::I32Const((*state_value).into()));
+            instr_builder.push_inst(Instruction::I32Const(*state_value as i32));
             instr_builder.push_inst(Instruction::I32Eq);
             instr_builder.push_inst(Instruction::BrIfEqz(4.into()));
             // it's super important to drop the original state from the stack
@@ -208,7 +208,7 @@ impl<'parser> RwasmTranslator<'parser> {
             // so let's put this hardcoded condition here only for e2e tests, otherwise we need to
             // patch a lot of spec tests
             if cfg!(feature = "e2e") {
-                ib.push_inst(Instruction::I64Const(666.into()));
+                ib.push_inst(Instruction::I32Const(666.into()));
                 ib.push_inst(Instruction::GlobalSet(global_index.into()));
                 return Ok(());
             }
@@ -218,14 +218,23 @@ impl<'parser> RwasmTranslator<'parser> {
         assert!(global_index as usize - len_globals < global_inits.len());
         let global_expr = &global_inits[global_index as usize - len_globals];
         if let Some(value) = global_expr.eval_const() {
-            ib.push_inst(Instruction::I64Const(value));
+            match u32::try_from(value.as_u64()) {
+                Ok(value) => {
+                    ib.push_inst(Instruction::I32Const(value as i32));
+                }
+                Err(_) => {
+                    ib.push_inst(Instruction::I32Const((value.to_bits() & 0xffffffff) as i32));
+                    ib.push_inst(Instruction::I64Const32((value.to_bits() >> 32) as i32));
+                }
+            }
         } else if let Some(value) = global_expr.funcref() {
             ib.push_inst(Instruction::RefFunc(value.into_u32().into()));
         } else if let Some(index) = global_expr.global() {
             ib.push_inst(Instruction::GlobalGet(index.into()));
         } else {
             let value = Self::translate_const_expr(global_expr)?;
-            ib.push_inst(Instruction::I64Const(value));
+            ib.push_inst(Instruction::I32Const((value.to_bits() & 0xffffffff) as i32));
+            ib.push_inst(Instruction::I64Const32((value.to_bits() >> 32) as i32));
         }
         ib.push_inst(Instruction::GlobalSet(global_index.into()));
         Ok(())
@@ -239,7 +248,7 @@ impl<'parser> RwasmTranslator<'parser> {
                 return Err(RwasmBuilderError::ImportedTablesAreDisabled);
             }
             instr_builder.push_inst(Instruction::I32Const(0.into()));
-            instr_builder.push_inst(Instruction::I64Const(table.minimum().into()));
+            instr_builder.push_inst(Instruction::I32Const(table.minimum() as i32));
             instr_builder.push_inst(Instruction::TableGrow((table_index as u32).into()));
             instr_builder.push_inst(Instruction::Drop);
         }

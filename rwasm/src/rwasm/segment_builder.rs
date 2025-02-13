@@ -30,7 +30,7 @@ impl SegmentBuilder {
         }
         // it makes no sense to grow memory with 0 pages
         if initial_pages > 0 {
-            code_section.push_inst(Instruction::I32Const(initial_pages.into()));
+            code_section.push_inst(Instruction::I32Const(initial_pages as i32));
             code_section.push_inst(Instruction::MemoryGrow);
             code_section.push_inst(Instruction::Drop);
         }
@@ -59,12 +59,12 @@ impl SegmentBuilder {
         let data_length = bytes.len();
         self.global_memory_section.extend(bytes);
         // default memory is just a passive section with force memory init
-        code_section.push_inst(Instruction::I32Const(offset.into()));
-        code_section.push_inst(Instruction::I64Const(data_offset.into()));
+        code_section.push_inst(Instruction::I32Const(offset as i32));
+        code_section.push_inst(Instruction::I32Const(data_offset as i32));
         if has_memory_overflow().unwrap_or_default() {
-            code_section.push_inst(Instruction::I64Const(u32::MAX.into()));
+            code_section.push_inst(Instruction::I32Const(u32::MAX as i32));
         } else {
-            code_section.push_inst(Instruction::I64Const(data_length.into()));
+            code_section.push_inst(Instruction::I32Const(data_length as i32));
         }
         code_section.push_inst(Instruction::MemoryInit(DEFAULT_MEMORY_INDEX.into()));
         code_section.push_inst(Instruction::DataDrop((segment_idx.to_u32() + 1).into()));
@@ -96,9 +96,9 @@ impl SegmentBuilder {
         self.global_element_section.extend(elements);
         let segment_length = self.global_element_section.len() - segment_offset;
         // init table with these elements
-        code_section.push_inst(Instruction::I32Const(offset.into()));
-        code_section.push_inst(Instruction::I64Const(segment_offset.into()));
-        code_section.push_inst(Instruction::I64Const(segment_length.into()));
+        code_section.push_inst(Instruction::I32Const(offset as i32));
+        code_section.push_inst(Instruction::I32Const(segment_offset as i32));
+        code_section.push_inst(Instruction::I32Const(segment_length as i32));
         code_section.push_inst(Instruction::TableInit((segment_idx.to_u32() + 1).into()));
         code_section.push_inst(Instruction::TableGet(table_idx.into()));
         code_section.push_inst(Instruction::ElemDrop((segment_idx.to_u32() + 1).into()));

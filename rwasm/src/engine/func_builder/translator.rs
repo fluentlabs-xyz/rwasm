@@ -454,7 +454,7 @@ impl<'parser> FuncTranslator<'parser> {
                     return Ok(Some(Instruction::f32_const(F32::from(value))));
                 }
                 if global_type.content() == ValueType::I64 {
-                    return Ok(Some(Instruction::I64Const(value)));
+                    return Ok(None);
                 }
                 // No optimized case was applicable, so we have to allocate
                 // a constant value in the const pool and reference it.
@@ -1676,11 +1676,11 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                 ib.push_inst(Instruction::LocalGet(1.into()));
                 ib.push_inst(Instruction::MemorySize);
                 ib.push_inst(Instruction::I32Add);
-                ib.push_inst(Instruction::I32Const(max_pages.into()));
+                ib.push_inst(Instruction::I32Const(max_pages as i32));
                 ib.push_inst(Instruction::I32GtS);
                 ib.push_inst(Instruction::BrIfEqz(4.into()));
                 ib.push_inst(Instruction::Drop);
-                ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+                ib.push_inst(Instruction::I32Const(u32::MAX as i32));
                 ib.push_inst(Instruction::Br(2.into()));
                 ib.push_inst(Instruction::MemoryGrow);
             } else {
@@ -1755,17 +1755,17 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                     // we can't manually emit "out of bounds table access" error required
                     // by WebAssembly standards, so we put impossible number of tables to trigger
                     // overflow by rewriting the number of elements to be copied
-                    ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+                    ib.push_inst(Instruction::I32Const(u32::MAX as i32));
                     ib.push_inst(Instruction::LocalSet(1.into()));
                 }
                 // we need to replace offset on the stack with the new value
                 if offset > 0 {
-                    ib.push_inst(Instruction::I32Const((offset as i32).into()));
+                    ib.push_inst(Instruction::I32Const(offset as i32));
                     ib.push_inst(Instruction::LocalGet(3.into()));
                     ib.push_inst(Instruction::I32Add);
                     ib.push_inst(Instruction::LocalSet(2.into()));
                 }
-                // since we store all data sections in the one segment then index is always 0
+                // since we store all data sections in the one segment, then index is always 0
                 ib.push_inst(Instruction::MemoryInit(DataSegmentIdx::from(
                     segment_index + 1,
                 )));
@@ -1856,12 +1856,12 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                 ib.push_inst(Instruction::LocalGet(1.into()));
                 ib.push_inst(Instruction::TableSize(table));
                 ib.push_inst(Instruction::I32Add);
-                ib.push_inst(Instruction::I32Const(max_table_elements.into()));
+                ib.push_inst(Instruction::I32Const(max_table_elements as i32));
                 ib.push_inst(Instruction::I32GtS);
                 ib.push_inst(Instruction::BrIfEqz(5.into()));
                 ib.push_inst(Instruction::Drop);
                 ib.push_inst(Instruction::Drop);
-                ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+                ib.push_inst(Instruction::I32Const(u32::MAX as i32));
                 ib.push_inst(Instruction::Br(2.into()));
                 ib.push_inst(Instruction::TableGrow(table));
             } else {
@@ -1957,7 +1957,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                 // we can't manually emit "out of bounds table access" error that is required
                 // by WebAssembly standards, so we put impossible number of tables to trigger
                 // overflow by rewriting number of elements to be copied
-                ib.push_inst(Instruction::I32Const(u32::MAX.into()));
+                ib.push_inst(Instruction::I32Const(u32::MAX as i32));
                 ib.push_inst(Instruction::LocalSet(1.into()));
                 // we need to replace offset on the stack with the new value
                 if offset > 0 {
@@ -2018,10 +2018,15 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.stack_height.push();
+            let value = value as u64;
             builder
                 .alloc
                 .inst_builder
-                .push_inst(Instruction::I64Const(UntypedValue::from(value)));
+                .push_inst(Instruction::I32Const((value & 0xffffffff) as i32));
+            builder
+                .alloc
+                .inst_builder
+                .push_inst(Instruction::I64Const32((value >> 32) as i32));
             Ok(())
         })
     }
@@ -2042,10 +2047,15 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.stack_height.push();
+            let value = value.bits();
             builder
                 .alloc
                 .inst_builder
-                .push_inst(Instruction::F64Const(UntypedValue::from_bits(value.bits())));
+                .push_inst(Instruction::I32Const((value & 0xffffffff) as i32));
+            builder
+                .alloc
+                .inst_builder
+                .push_inst(Instruction::I64Const32((value >> 32) as i32));
             Ok(())
         })
     }

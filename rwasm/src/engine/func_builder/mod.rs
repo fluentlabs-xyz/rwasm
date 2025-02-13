@@ -85,10 +85,8 @@ impl<'parser> FuncBuilder<'parser> {
         // for rWASM we fill locals with zero values
         if self.is_rwasm {
             let instr = match value_type {
-                ValType::I32 => Instruction::I32Const(0i32.into()),
-                ValType::I64 => Instruction::I64Const(0i64.into()),
-                ValType::F32 => Instruction::F32Const(0f32.into()),
-                ValType::F64 => Instruction::F64Const(0f64.into()),
+                ValType::I32 | ValType::I64 => Instruction::I32Const(0i32.into()),
+                ValType::F32 | ValType::F64 => Instruction::F32Const(0f32.into()),
                 ValType::FuncRef => Instruction::RefFunc(0u32.into()),
                 _ => unreachable!("not supported local type ({:?})", value_type),
             };

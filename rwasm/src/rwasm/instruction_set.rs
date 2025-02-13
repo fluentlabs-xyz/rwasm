@@ -175,8 +175,12 @@ impl InstructionSet {
     }
     impl_opcode!(op_elem_drop, ElemDrop(ElementSegmentIdx));
     impl_opcode!(op_ref_func, RefFunc(FuncIdx));
-    impl_opcode!(op_i32_const, I32Const(UntypedValue));
-    impl_opcode!(op_i64_const, I64Const(UntypedValue));
+    impl_opcode!(op_i32_const, I32Const(i32));
+    pub fn op_i64_const<T, E>(&mut self, value: UntypedValue) {
+        self.push(Instruction::I32Const((value.to_bits() & 0xffffffff) as i32));
+        self.push(Instruction::I64Const32((value.to_bits() >> 32) as i32));
+    }
+    impl_opcode!(op_i64_const_32, I64Const32(i32));
     impl_opcode!(op_const_ref, ConstRef(ConstRef));
     impl_opcode!(op_i32_eqz, I32Eqz);
     impl_opcode!(op_i32_eq, I32Eq);

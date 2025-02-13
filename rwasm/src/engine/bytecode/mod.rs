@@ -24,7 +24,7 @@ pub use self::utils::{
     TableIdx,
 };
 use super::{const_pool::ConstRef, CompiledFunc, TranslationError};
-use crate::core::{UntypedValue, F32};
+use crate::core::F32;
 #[cfg(feature = "std")]
 use core::{
     fmt,
@@ -213,8 +213,8 @@ pub enum Instruction {
     ElemDrop(ElementSegmentIdx),
     RefFunc(FuncIdx),
     /// A 32/64-bit constant value.
-    I32Const(UntypedValue),
-    I64Const(UntypedValue),
+    I32Const(i32),
+    I64Const32(i32),
     /// A 64-bit float value losslessly encoded as 32-bit float.
     ///
     /// Upon execution the 32-bit float is promoted to the 64-bit float.
@@ -223,8 +223,8 @@ pub enum Instruction {
     ///
     /// This is a space-optimized variant of [`Instruction::ConstRef`] but can
     /// only used for certain float values that fit into a 32-bit float value.
-    F32Const(UntypedValue),
-    F64Const(UntypedValue),
+    F32Const(F32),
+    F64Const32(F32),
     /// Pushes a constant value onto the stack.
     ///
     /// The constant value is referred to indirectly by the [`ConstRef`].
@@ -375,12 +375,12 @@ impl fmt::Display for Instruction {
 impl Instruction {
     /// Creates an [`Instruction::Const32`] from the given `i32` constant value.
     pub fn i32_const(value: i32) -> Self {
-        Self::I32Const(UntypedValue::from(i64::from(value)))
+        Self::I32Const(value)
     }
 
     /// Creates an [`Instruction::Const32`] from the given `f32` constant value.
     pub fn f32_const(value: F32) -> Self {
-        Self::F32Const(UntypedValue::from(value))
+        Self::F32Const(value)
     }
 
     /// Creates a new `local.get` instruction from the given local depth.
@@ -472,7 +472,7 @@ impl Instruction {
             | Instruction::ElemDrop(_)
             | Instruction::RefFunc(_)
             | Instruction::I32Const(_)
-            | Instruction::I64Const(_)
+            | Instruction::I64Const32(_)
             | Instruction::I32Eqz
             | Instruction::I32Eq
             | Instruction::I32Ne

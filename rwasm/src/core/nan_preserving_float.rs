@@ -1,3 +1,8 @@
+use std::{
+    cmp::Ordering,
+    hash::{Hash, Hasher},
+};
+
 macro_rules! impl_binop {
     ($for:ty, $is:ty, $op:ident, $func_name:ident) => {
         impl<T: Into<$for>> ::core::ops::$op<T> for $for {
@@ -34,6 +39,23 @@ macro_rules! float {
         $(#[$docs])*
         #[derive(Copy, Clone)]
         pub struct $for($rep);
+
+        impl Eq for $for {}
+        impl Hash for $for {
+            fn hash<H: Hasher>(&self, state: &mut H) {
+                self.0.hash(state);
+            }
+        }
+        impl Ord for $for {
+            fn cmp(&self, other: &Self) -> Ordering {
+                self.0.cmp(&other.0)
+            }
+        }
+        impl Default for $for {
+            fn default() -> Self {
+                Self(0)
+            }
+        }
 
         impl_binop!($for, $is, Add, add);
         impl_binop!($for, $is, Sub, sub);
@@ -205,9 +227,7 @@ mod tests {
     extern crate rand;
 
     use self::rand::Rng;
-
     use super::{F32, F64};
-
     use core::{
         fmt::Debug,
         iter,

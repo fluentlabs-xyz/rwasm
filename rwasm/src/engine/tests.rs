@@ -30,7 +30,7 @@ fn create_module(config: &Config, bytes: &[u8]) -> Module {
 /// Contains some utility methods to construct instructions simpler.
 mod instr {
     use super::Instruction;
-    use crate::{core::UntypedValue, engine::bytecode::BlockFuel};
+    use crate::engine::bytecode::BlockFuel;
 
     /// Creates a new [`Instruction::LocalGet`] with the `local_depth`.
     ///
@@ -65,7 +65,7 @@ mod instr {
     ///
     /// If the `value` cannot be encoded into a 24-bit value.
     pub fn i32_const(value: i32) -> Instruction {
-        Instruction::I32Const(UntypedValue::from(value))
+        Instruction::I32Const(value)
     }
 }
 
