@@ -58,6 +58,7 @@ impl RwasmModule {
             )
             .unwrap(),
         );
+        config.floats(false);
         config.consume_fuel(true);
         config.fuel_consumption_mode(FuelConsumptionMode::Eager);
         config.rwasm_config(RwasmConfig {
@@ -67,6 +68,7 @@ impl RwasmModule {
         });
         config
     }
+
     pub fn compile(wasm_binary: &[u8], import_linker: Option<ImportLinker>) -> Result<Self, Error> {
         let default_config = Self::default_config(import_linker);
         Self::compile_with_config(wasm_binary, &default_config)
