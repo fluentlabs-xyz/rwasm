@@ -539,7 +539,7 @@ impl<'parser> FuncTranslator<'parser> {
     fn translate_load(
         &mut self,
         memarg: wasmparser::MemArg,
-        _loaded_type: ValueType,
+        loaded_type: ValueType,
         make_inst: fn(AddressOffset) -> Instruction,
     ) -> Result<(), TranslationError> {
         self.translate_if_reachable(|builder| {
@@ -548,28 +548,10 @@ impl<'parser> FuncTranslator<'parser> {
             builder.bump_fuel_consumption(builder.fuel_costs().load)?;
             builder.stack_height.pop1();
             builder.stack_height.push();
+            builder.stack_types.pop();
+            builder.stack_types.push(loaded_type);
             let offset = AddressOffset::from(offset);
             builder.alloc.inst_builder.push_inst(make_inst(offset));
-            Ok(())
-        })
-    }
-
-    fn translate_expressed_load(
-        &mut self,
-        memarg: wasmparser::MemArg,
-        _loaded_type: ValueType,
-        make_inst: fn(AddressOffset) -> Instruction,
-        additional_inst: Instruction
-    ) -> Result<(), TranslationError> {
-        self.translate_if_reachable(|builder| {
-            let (memory_idx, offset) = Self::decompose_memarg(memarg);
-            debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().load)?;
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            let offset = AddressOffset::from(offset);
-            builder.alloc.inst_builder.push_inst(make_inst(offset));
-            builder.alloc.inst_builder.push_inst(additional_inst);
             Ok(())
         })
     }
@@ -627,6 +609,7 @@ impl<'parser> FuncTranslator<'parser> {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             let value = value.into();
             builder.stack_height.push();
+            //TODO: Add stack type
             let cref = builder.engine().alloc_const(value)?;
             builder
                 .alloc
@@ -1132,11 +1115,14 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             }
         }
 
-
         if_frame
             .block_type()
-            .foreach_param(self.res.engine(), |_param| {
+            .foreach_param(self.res.engine(), |param| {
                 self.stack_height.push();
+                self.stack_types.push(param);
+                if param == ValueType::I64 {
+                    self.stack_height.push();
+                }
             });
         self.alloc.control_frames.push_frame(if_frame);
         // We can reset reachability now since the parent `if` block was reachable.
@@ -1496,6 +1482,8 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             let func_type = builder.func_type_at(signature);
             let table = TableIdx::from(table_index);
             builder.stack_height.pop1();
+            builder.stack_types.pop();
+
             let drop_keep = builder.drop_keep_return_call(&func_type)?;
             builder.bump_fuel_consumption(builder.fuel_costs().call)?;
             builder.bump_fuel_consumption(builder.fuel_costs().fuel_for_drop_keep(drop_keep))?;
@@ -1558,6 +1546,8 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             let func_type = SignatureIdx::from(func_type_index);
             let table = TableIdx::from(table_index);
             builder.stack_height.pop1();
+            builder.stack_types.pop();
+
             builder.adjust_value_stack_for_call(&builder.func_type_at(func_type));
             builder
                 .alloc
@@ -1594,6 +1584,12 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.stack_height.pop3();
             builder.stack_height.push();
+
+            let item = builder.stack_types.pop().unwrap();
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+            builder.stack_types.push(item);
+
             builder.alloc.inst_builder.push_inst(Instruction::Select);
             Ok(())
         })
@@ -1628,6 +1624,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                 .inst_builder
                 .push_inst(Instruction::RefFunc(func_index));
             builder.stack_height.push();
+            builder.stack_types.push(ValueType::FuncRef);
             Ok(())
         })
     }
@@ -1695,12 +1692,11 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             let expressed_depth = builder.get_expressed_depth(local_depth);
             let value_type = builder.stack_types.last().unwrap();
 
-            builder
-                .alloc
-                .inst_builder
-                .push_inst(Instruction::local_tee(expressed_depth)?);
-
             if ValueType::I64 == *value_type {
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::local_tee(expressed_depth-1)?);
                 builder
                     .alloc
                     .inst_builder
@@ -1708,8 +1704,12 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                 builder
                     .alloc
                     .inst_builder
-                    .push_inst(Instruction::local_set(expressed_depth-1)?);
-
+                    .push_inst(Instruction::local_set(expressed_depth)?);
+            } else {
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::local_tee(expressed_depth)?);
             }
             Ok(())
         })
@@ -1720,6 +1720,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let global_idx = GlobalIdx::from(global_idx);
             builder.stack_height.push();
+            //TODO: Stack types
             let (global_type, init_value) = builder.res.get_global(global_idx);
             let global_idx = bytecode::GlobalIdx::from(global_idx.into_u32());
             let engine = builder.engine();
@@ -1739,6 +1740,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             let global_type = builder.res.get_type_of_global(global_idx);
             debug_assert_eq!(global_type.mutability(), Mutability::Var);
             builder.stack_height.pop1();
+            //TODO: Stack types
             let global_idx = bytecode::GlobalIdx::from(global_idx.into_u32());
             builder
                 .alloc
@@ -2028,6 +2030,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             let memory_idx = MemoryIdx::from(memory_idx);
             debug_assert_eq!(memory_idx.into_u32(), DEFAULT_MEMORY_INDEX);
             builder.stack_height.push();
+            builder.stack_types.push(ValueType::I32);
             builder
                 .alloc
                 .inst_builder
@@ -2115,6 +2118,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             builder.stack_height.pop3();
+            //TODO: Stack types
             if is_rwasm {
                 let (ib, rb) = (
                     &mut builder.alloc.inst_builder,
@@ -2166,6 +2170,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             builder.stack_height.pop3();
+            //TODO: Stack types
             builder
                 .alloc
                 .inst_builder
@@ -2180,6 +2185,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             debug_assert_eq!(src_mem, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             builder.stack_height.pop3();
+            //TODO: Stack types
             builder
                 .alloc
                 .inst_builder
@@ -2209,6 +2215,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let table = TableIdx::from(table_index);
             builder.stack_height.push();
+            //TODO: Stack types
             builder
                 .alloc
                 .inst_builder
@@ -2223,6 +2230,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let table = TableIdx::from(table_index);
             builder.stack_height.pop1();
+            //TODO: Stack types
             let ib = &mut builder.alloc.inst_builder;
             // for rWASM we inject table limit error check, if we exceed number of allowed elements
             // then we push `u32::MAX` on the stack that is equal to table grow overflow error
@@ -2259,6 +2267,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             let dst = TableIdx::from(dst_table);
             let src = TableIdx::from(src_table);
             builder.stack_height.pop3();
+            //TODO: Stack types
             builder
                 .alloc
                 .inst_builder
@@ -2276,6 +2285,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let table = TableIdx::from(table_index);
             builder.stack_height.pop3();
+            //TODO: Stack types
             builder
                 .alloc
                 .inst_builder
@@ -2301,6 +2311,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let table = TableIdx::from(table_index);
             builder.stack_height.pop2();
+            //TODO: Stack types
             builder
                 .alloc
                 .inst_builder
@@ -2318,6 +2329,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             let is_rwasm = builder.engine().config().get_rwasm_config().is_some();
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             builder.stack_height.pop3();
+            //TODO: Stack types
             if is_rwasm {
                 let (ib, rb) = (
                     &mut builder.alloc.inst_builder,
@@ -2508,6 +2520,11 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         self.translate_expressed_binary_operation(Instruction::I32Eq, |builder|{
             builder.alloc.inst_builder.push_inst(Instruction::I32And);
             builder.stack_height.pop1();
+
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+            builder.stack_types.push(ValueType::I32);
+
             Ok(())
         })
     }
@@ -2516,6 +2533,10 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         self.translate_expressed_binary_operation(Instruction::I32Ne, |builder|{
             builder.alloc.inst_builder.push_inst(Instruction::I32Or);
             builder.stack_height.pop1();
+
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+            builder.stack_types.push(ValueType::I32);
             Ok(())
         })
     }
@@ -3200,15 +3221,24 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     }
 
     fn visit_i64_and(&mut self) -> Result<(), TranslationError> {
-        self.translate_expressed_binary_operation(Instruction::I32And, |_|{Ok(())})
+        self.translate_expressed_binary_operation(Instruction::I32And, |builder|{
+            builder.stack_types.pop();
+            Ok(())
+        })
     }
 
     fn visit_i64_or(&mut self) -> Result<(), TranslationError> {
-        self.translate_expressed_binary_operation(Instruction::I32Or, |_|{Ok(())})
+        self.translate_expressed_binary_operation(Instruction::I32Or, |builder|{
+            builder.stack_types.pop();
+            Ok(())
+        })
     }
 
     fn visit_i64_xor(&mut self) -> Result<(), TranslationError> {
-        self.translate_expressed_binary_operation(Instruction::I32Xor, |_|{Ok(())})
+        self.translate_expressed_binary_operation(Instruction::I32Xor, |builder|{
+            builder.stack_types.pop();
+            Ok(())
+        })
     }
 
     fn visit_i64_shl(&mut self) -> Result<(), TranslationError> {
@@ -3218,7 +3248,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.stack_height.pop2();
             builder.stack_height.push();
             builder.stack_height.push();
-
+            //TODO: Stack types
             builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(4)));
             builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
             builder.alloc.inst_builder.push_inst(Instruction::I32Shl);
