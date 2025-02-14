@@ -320,24 +320,24 @@ impl InstructionSet {
 macro_rules! instruction_set_internal {
     // Nothing left to do
     ($code:ident, ) => {};
-    ($code:ident, $x:ident [$v:expr] $($rest:tt)*) => {{
+    ($code:ident, $x:ident [$v:expr] $($rest:tt)*) => {
         $code.push($crate::engine::bytecode::Instruction::$x($v.into()));
         $crate::instruction_set_internal!($code, $($rest)*);
-    }};
-    ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {{
+    };
+    ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {
         $code.push($crate::engine::bytecode::Instruction::$x($v.into()));
         $crate::instruction_set_internal!($code, $($rest)*);
-    }};
+    };
     // Default opcode without any inputs
-    ($code:ident, $x:ident $($rest:tt)*) => {{
+    ($code:ident, $x:ident $($rest:tt)*) => {
         $code.push($crate::engine::bytecode::Instruction::$x);
         $crate::instruction_set_internal!($code, $($rest)*);
-    }};
+    };
     // Function calls
-    ($code:ident, .$function:ident ($($args:expr),* $(,)?) $($rest:tt)*) => {{
+    ($code:ident, .$function:ident ($($args:expr),* $(,)?) $($rest:tt)*) => {
         $code.$function($($args,)*);
         $crate::instruction_set_internal!($code, $($rest)*);
-    }};
+    };
 }
 
 #[macro_export]
