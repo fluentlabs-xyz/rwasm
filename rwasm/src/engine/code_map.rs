@@ -71,7 +71,7 @@ impl InstructionsRef {
     }
 
     /// Returns the `usize` value of the underlying index.
-    fn to_usize(self) -> usize {
+    pub fn to_usize(self) -> usize {
         self.index
     }
 }
