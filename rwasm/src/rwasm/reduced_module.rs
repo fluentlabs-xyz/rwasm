@@ -58,7 +58,6 @@ impl RwasmModule {
             )
             .unwrap(),
         );
-        config.floats(false);
         config.consume_fuel(true);
         config.fuel_consumption_mode(FuelConsumptionMode::Eager);
         config.rwasm_config(RwasmConfig {
