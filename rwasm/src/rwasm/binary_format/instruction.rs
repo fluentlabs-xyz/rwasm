@@ -738,6 +738,18 @@ impl Instruction {
         _=>false,
        } 
     }
+
+    pub fn is_call_instruction(self)->bool {
+        match self {
+            Instruction::Call(_)|
+            Instruction::CallIndirect(_)|
+            Instruction::CallInternal(_)|
+            Instruction::ReturnCallIndirect(_)|
+            Instruction::ReturnCallInternal(_)|
+            Instruction::Return(_)=>true,
+            _=>false,
+        }
+    }
       
     
 }
