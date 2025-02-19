@@ -953,7 +953,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     /// # Note
     ///
     /// - This is done by encoding an [`Instruction::Return`] instruction word following the actual
-    ///   instruction where the [`DropKeep`] paremeter belongs to.
+    ///   instruction where the [`DropKeep`] parameter belongs to.
     /// - This is required for some instructions that do not fit into a single instruction word and
     ///   store a [`DropKeep`] value in another instruction word.
     fn fetch_drop_keep(&self, offset: usize) -> DropKeep {
@@ -970,7 +970,7 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
     /// # Note
     ///
     /// - This is done by encoding an [`Instruction::TableGet`] instruction word following the
-    ///   actual instruction where the [`TableIdx`] paremeter belongs to.
+    ///   actual instruction where the [`TableIdx`] parameter belongs to.
     /// - This is required for some instructions that do not fit into a single instruction word and
     ///   store a [`TableIdx`] value in another instruction word.
     fn fetch_table_idx(&mut self, offset: usize) -> TableIdx {
