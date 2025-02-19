@@ -37,28 +37,28 @@ impl<'a> BinaryFormat<'a> for Instruction {
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
         let mut n = match self {
+            Instruction::Unreachable => sink.write_u8(0x00)?,
             // local Instruction family
-            Instruction::LocalGet(index) => sink.write_u8(0x00)? + index.write_binary(sink)?,
-            Instruction::LocalSet(index) => sink.write_u8(0x01)? + index.write_binary(sink)?,
-            Instruction::LocalTee(index) => sink.write_u8(0x02)? + index.write_binary(sink)?,
+            Instruction::LocalGet(index) => sink.write_u8(0x01)? + index.write_binary(sink)?,
+            Instruction::LocalSet(index) => sink.write_u8(0x02)? + index.write_binary(sink)?,
+            Instruction::LocalTee(index) => sink.write_u8(0x03)? + index.write_binary(sink)?,
             // control flow Instruction family
             Instruction::Br(branch_params) => {
-                sink.write_u8(0x03)? + branch_params.write_binary(sink)?
-            }
-            Instruction::BrIfEqz(branch_params) => {
                 sink.write_u8(0x04)? + branch_params.write_binary(sink)?
             }
-            Instruction::BrIfNez(branch_params) => {
+            Instruction::BrIfEqz(branch_params) => {
                 sink.write_u8(0x05)? + branch_params.write_binary(sink)?
             }
-            Instruction::BrAdjust(branch_params) => {
+            Instruction::BrIfNez(branch_params) => {
                 sink.write_u8(0x06)? + branch_params.write_binary(sink)?
             }
-            Instruction::BrAdjustIfNez(branch_params) => {
+            Instruction::BrAdjust(branch_params) => {
                 sink.write_u8(0x07)? + branch_params.write_binary(sink)?
             }
-            Instruction::BrTable(targets) => sink.write_u8(0x08)? + targets.write_binary(sink)?,
-            Instruction::Unreachable => sink.write_u8(0x09)?,
+            Instruction::BrAdjustIfNez(branch_params) => {
+                sink.write_u8(0x08)? + branch_params.write_binary(sink)?
+            }
+            Instruction::BrTable(targets) => sink.write_u8(0x09)? + targets.write_binary(sink)?,
             Instruction::ConsumeFuel(u) => sink.write_u8(0x0a)? + u.write_binary(sink)?,
             Instruction::Return(drop_keep) => {
                 sink.write_u8(0x0b)? + drop_keep.write_binary(sink)?
@@ -290,18 +290,18 @@ impl<'a> BinaryFormat<'a> for Instruction {
         let current_pos = sink.pos();
         let byte = sink.read_u8()?;
         let instr = match byte {
+            0x00 => Instruction::Unreachable,
             // local Instruction family
-            0x00 => Instruction::LocalGet(LocalDepth::read_binary(sink)?),
-            0x01 => Instruction::LocalSet(LocalDepth::read_binary(sink)?),
-            0x02 => Instruction::LocalTee(LocalDepth::read_binary(sink)?),
+            0x01 => Instruction::LocalGet(LocalDepth::read_binary(sink)?),
+            0x02 => Instruction::LocalSet(LocalDepth::read_binary(sink)?),
+            0x03 => Instruction::LocalTee(LocalDepth::read_binary(sink)?),
             // control flow Instruction family
-            0x03 => Instruction::Br(BranchOffset::read_binary(sink)?),
-            0x04 => Instruction::BrIfEqz(BranchOffset::read_binary(sink)?),
-            0x05 => Instruction::BrIfNez(BranchOffset::read_binary(sink)?),
-            0x06 => Instruction::BrAdjust(BranchOffset::read_binary(sink)?),
-            0x07 => Instruction::BrAdjustIfNez(BranchOffset::read_binary(sink)?),
-            0x08 => Instruction::BrTable(BranchTableTargets::read_binary(sink)?),
-            0x09 => Instruction::Unreachable,
+            0x04 => Instruction::Br(BranchOffset::read_binary(sink)?),
+            0x05 => Instruction::BrIfEqz(BranchOffset::read_binary(sink)?),
+            0x06 => Instruction::BrIfNez(BranchOffset::read_binary(sink)?),
+            0x07 => Instruction::BrAdjust(BranchOffset::read_binary(sink)?),
+            0x08 => Instruction::BrAdjustIfNez(BranchOffset::read_binary(sink)?),
+            0x09 => Instruction::BrTable(BranchTableTargets::read_binary(sink)?),
             0x0a => Instruction::ConsumeFuel(BlockFuel::read_binary(sink)?),
             0x0b => Instruction::Return(DropKeep::read_binary(sink)?),
             0x0c => Instruction::ReturnIfNez(DropKeep::read_binary(sink)?),
