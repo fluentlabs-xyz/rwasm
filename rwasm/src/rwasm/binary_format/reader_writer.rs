@@ -4,7 +4,7 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian};
 
 pub struct BinaryFormatWriter<'a> {
     pub sink: &'a mut [u8],
-    pos: usize,
+    pub pos: usize,
 }
 
 impl<'a> BinaryFormatWriter<'a> {

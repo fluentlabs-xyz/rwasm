@@ -26,13 +26,19 @@ use crate::{
     },
 };
 
-pub const MAX_INSTRUCTION_SIZE_BYTES: usize = 1 + 8;
+pub const RWASM_INSTRUCTION_ALIGNMENT: bool = false;
+pub const RWASM_MAX_INSTRUCTION_SIZE_BYTES: usize = 1 + 8;
 
 impl<'a> BinaryFormat<'a> for Instruction {
     type SelfType = Instruction;
 
     fn encoded_length(&self) -> usize {
-        MAX_INSTRUCTION_SIZE_BYTES
+        if RWASM_INSTRUCTION_ALIGNMENT {
+            return RWASM_MAX_INSTRUCTION_SIZE_BYTES;
+        }
+        let mut sink = [0u8; RWASM_MAX_INSTRUCTION_SIZE_BYTES];
+        let mut binary_writer = BinaryFormatWriter::new(&mut sink);
+        self.write_binary(&mut binary_writer).unwrap()
     }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
@@ -278,11 +284,13 @@ impl<'a> BinaryFormat<'a> for Instruction {
             _ => unreachable!("not supported opcode: {:?}", self),
         };
         // we align all opcodes to 9 bytes
-        while n < MAX_INSTRUCTION_SIZE_BYTES {
-            sink.write_u8(0)?;
-            n += 1;
+        if RWASM_INSTRUCTION_ALIGNMENT {
+            while n < RWASM_MAX_INSTRUCTION_SIZE_BYTES {
+                sink.write_u8(0)?;
+                n += 1;
+            }
+            debug_assert_eq!(n, RWASM_MAX_INSTRUCTION_SIZE_BYTES);
         }
-        debug_assert_eq!(n, MAX_INSTRUCTION_SIZE_BYTES);
         Ok(n)
     }
 
@@ -497,9 +505,11 @@ impl<'a> BinaryFormat<'a> for Instruction {
             _ => return Err(BinaryFormatError::IllegalOpcode(byte)),
         };
         // we align all opcodes to 9 bytes
-        let len = sink.pos() - current_pos;
-        for _ in 0..(MAX_INSTRUCTION_SIZE_BYTES - len) {
-            sink.read_u8()?;
+        if RWASM_INSTRUCTION_ALIGNMENT {
+            let len = sink.pos() - current_pos;
+            for _ in 0..(RWASM_MAX_INSTRUCTION_SIZE_BYTES - len) {
+                sink.read_u8()?;
+            }
         }
         Ok(instr)
     }
@@ -576,7 +586,7 @@ impl InstructionExtra for Instruction {
     }
 
     fn info(&self) -> (u8, usize) {
-        let mut sink = [0u8; MAX_INSTRUCTION_SIZE_BYTES];
+        let mut sink = [0u8; RWASM_MAX_INSTRUCTION_SIZE_BYTES];
         let mut binary_writer = BinaryFormatWriter::new(&mut sink);
         let size = self.write_binary(&mut binary_writer).unwrap();
         (sink[0], size - 1)
