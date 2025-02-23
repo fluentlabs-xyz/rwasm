@@ -3359,7 +3359,6 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
             builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
             builder.alloc.inst_builder.push_inst(Instruction::I32Or);
-            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(1)));
             builder.alloc.inst_builder.push_inst(Instruction::BrIfNez(BranchOffset::from(3)));
             builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(0)));
             builder.alloc.inst_builder.push_inst(Instruction::I32DivU);
@@ -3466,9 +3465,6 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(4)));
             builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
             builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(1)));
-            builder.alloc.inst_builder.push_inst(Instruction::I32Sub);
-            builder.alloc.inst_builder.push_inst(Instruction::LocalTee(LocalDepth::from(6))); //counter
-            builder.alloc.inst_builder.push_inst(Instruction::BrIfNez(BranchOffset::from(-89)));
             builder.alloc.inst_builder.push_inst(Instruction::I32Add);
             builder.alloc.inst_builder.push_inst(Instruction::I32Mul);
             builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(2)));
