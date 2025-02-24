@@ -2262,7 +2262,10 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             builder.stack_height.pop3();
-            //TODO: Stack types
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+
             if is_rwasm {
                 let (ib, rb) = (
                     &mut builder.alloc.inst_builder,
@@ -2314,7 +2317,10 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             builder.stack_height.pop3();
-            //TODO: Stack types
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+
             builder
                 .alloc
                 .inst_builder
@@ -2329,7 +2335,10 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             debug_assert_eq!(src_mem, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             builder.stack_height.pop3();
-            //TODO: Stack types
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+
             builder
                 .alloc
                 .inst_builder
@@ -2359,7 +2368,8 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let table = TableIdx::from(table_index);
             builder.stack_height.push();
-            //TODO: Stack types
+            builder.stack_types.push(ValueType::I32);
+
             builder
                 .alloc
                 .inst_builder
@@ -2374,7 +2384,10 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let table = TableIdx::from(table_index);
             builder.stack_height.pop1();
-            //TODO: Stack types
+            //TODO: Check count of operands
+            builder.stack_types.pop();
+
+
             let ib = &mut builder.alloc.inst_builder;
             // for rWASM we inject table limit error check, if we exceed number of allowed elements
             // then we push `u32::MAX` on the stack that is equal to table grow overflow error
@@ -2411,7 +2424,10 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             let dst = TableIdx::from(dst_table);
             let src = TableIdx::from(src_table);
             builder.stack_height.pop3();
-            //TODO: Stack types
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+
             builder
                 .alloc
                 .inst_builder
@@ -2429,7 +2445,10 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let table = TableIdx::from(table_index);
             builder.stack_height.pop3();
-            //TODO: Stack types
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+
             builder
                 .alloc
                 .inst_builder
@@ -2455,7 +2474,10 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let table = TableIdx::from(table_index);
             builder.stack_height.pop2();
-            //TODO: Stack types
+            //TODO: Do set and get for i32 x2 as i64
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+
             builder
                 .alloc
                 .inst_builder
@@ -2473,7 +2495,11 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             let is_rwasm = builder.engine().config().get_rwasm_config().is_some();
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             builder.stack_height.pop3();
-            //TODO: Stack types
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+            builder.stack_types.pop();
+
+
             if is_rwasm {
                 let (ib, rb) = (
                     &mut builder.alloc.inst_builder,
@@ -2723,8 +2749,6 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.stack_height.pop2();
             builder.stack_height.push();
 
-
-            //TODO: Add in all comparisons operation
             builder.stack_types.pop();
             builder.stack_types.pop();
             builder.stack_types.push(ValueType::I32);
@@ -3141,7 +3165,6 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.alloc.inst_builder.push_inst(Instruction::Drop);
             builder.alloc.inst_builder.push_inst(Instruction::Drop);
             builder.alloc.inst_builder.push_inst(Instruction::Drop);
-
 
             Ok(())
         })
