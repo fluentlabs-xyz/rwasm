@@ -3649,7 +3649,31 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.stack_height.pop2();
             builder.stack_height.push();
             builder.stack_height.push();
-            //TODO: Stack types
+
+            builder.stack_types.pop();
+
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(63)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32And);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::BrIfEqz(BranchOffset::from(32)));
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(31)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32GtU);
+            builder.alloc.inst_builder.push_inst(Instruction::BrIfEqz(BranchOffset::from(10)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(32)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Sub);
+            builder.alloc.inst_builder.push_inst(Instruction::I32Shl);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(0)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::Br(BranchOffset::from(19)));
+
             builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(4)));
             builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
             builder.alloc.inst_builder.push_inst(Instruction::I32Shl);
@@ -3657,6 +3681,16 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
             builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
             builder.alloc.inst_builder.push_inst(Instruction::I32Shl);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(32)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(31)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32And);
+            builder.alloc.inst_builder.push_inst(Instruction::I32Sub);
+            builder.alloc.inst_builder.push_inst(Instruction::I32ShrU);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Or);
             builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(3)));
             builder.alloc.inst_builder.push_inst(Instruction::Drop);
             builder.alloc.inst_builder.push_inst(Instruction::Drop);
@@ -3666,11 +3700,121 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
     }
 
     fn visit_i64_shr_s(&mut self) -> Result<(), TranslationError> {
-        self.translate_binary_operation(ValueType::I64, Instruction::I64ShrS)
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.stack_height.pop2();
+            builder.stack_height.pop2();
+            builder.stack_height.push();
+            builder.stack_height.push();
+
+            builder.stack_types.pop();
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(63)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32And);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::BrIfEqz(BranchOffset::from(34)));
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(31)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32GtU);
+            builder.alloc.inst_builder.push_inst(Instruction::BrIfEqz(BranchOffset::from(12)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(32)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Sub);
+            builder.alloc.inst_builder.push_inst(Instruction::I32ShrS);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(31)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32ShrS);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::Br(BranchOffset::from(19)));
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32ShrS);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(3)));
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32ShrS);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(4)));
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(32)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(31)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32And);
+            builder.alloc.inst_builder.push_inst(Instruction::I32Sub);
+            builder.alloc.inst_builder.push_inst(Instruction::I32Shl);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(5)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Or);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::Drop);
+            builder.alloc.inst_builder.push_inst(Instruction::Drop);
+
+            Ok(())
+        })
     }
 
     fn visit_i64_shr_u(&mut self) -> Result<(), TranslationError> {
-        self.translate_binary_operation(ValueType::I64, Instruction::I64ShrU)
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.stack_height.pop2();
+            builder.stack_height.pop2();
+            builder.stack_height.push();
+            builder.stack_height.push();
+
+            builder.stack_types.pop();
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(63)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32And);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::BrIfEqz(BranchOffset::from(32)));
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(31)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32GtU);
+            builder.alloc.inst_builder.push_inst(Instruction::BrIfEqz(BranchOffset::from(10)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(32)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Sub);
+            builder.alloc.inst_builder.push_inst(Instruction::I32ShrU);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(0)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::Br(BranchOffset::from(19)));
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32ShrU);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(3)));
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32ShrU);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(4)));
+
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(32)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(31)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32And);
+            builder.alloc.inst_builder.push_inst(Instruction::I32Sub);
+            builder.alloc.inst_builder.push_inst(Instruction::I32Shl);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(5)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Or);
+            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::Drop);
+            builder.alloc.inst_builder.push_inst(Instruction::Drop);
+
+            Ok(())
+        })
     }
 
     fn visit_i64_rotl(&mut self) -> Result<(), TranslationError> {
