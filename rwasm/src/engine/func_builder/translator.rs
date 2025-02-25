@@ -3389,6 +3389,26 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(0)));
             builder.alloc.inst_builder.push_inst(Instruction::I32DivU);
 
+
+            // integer overflow check
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(0)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Eq);
+            builder.alloc.inst_builder.push_inst(Instruction::BrIfEqz(BranchOffset::from(14)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(3)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(-2147483648)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Eq);
+            builder.alloc.inst_builder.push_inst(Instruction::BrIfEqz(BranchOffset::from(10)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(2)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32And);
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(-1)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Eq);
+            builder.alloc.inst_builder.push_inst(Instruction::BrIfEqz(BranchOffset::from(4)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(-2147483648)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(-1)));
+            builder.alloc.inst_builder.push_inst(Instruction::I32DivS);
+
             // zero division check
             builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(4)));
             builder.alloc.inst_builder.push_inst(Instruction::LocalGet(LocalDepth::from(4)));
