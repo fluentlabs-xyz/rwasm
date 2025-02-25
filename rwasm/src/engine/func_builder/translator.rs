@@ -1528,6 +1528,8 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             let mut max_drop_keep_fuel = 0;
 
             builder.stack_height.pop1();
+            builder.stack_types.pop();
+
             builder.alloc.br_table_branches.clear();
             for (n, depth) in targets.into_iter().enumerate() {
                 let target = compute_instr(builder, n, depth, &mut max_drop_keep_fuel)?;
