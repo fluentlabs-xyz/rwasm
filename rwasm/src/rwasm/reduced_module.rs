@@ -1,6 +1,7 @@
 use crate::{
     core::ImportLinker,
-    engine::RwasmConfig,
+    engine::{DropKeep, RwasmConfig},
+    instruction_set,
     module::{FuncIdx, FuncTypeIdx, MemoryIdx, ModuleBuilder, ModuleError},
     rwasm::{
         BinaryFormat,
@@ -19,7 +20,14 @@ use crate::{
 };
 use alloc::{string::ToString, vec::Vec};
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone, Eq, Hash)]
+pub struct RwasmModuleInstance {
+    pub module: RwasmModule,
+    pub func_segments: Vec<u32>,
+    pub start: usize,
+}
+
+#[derive(Debug, Default, PartialEq, Clone, Eq, Hash)]
 pub struct RwasmModule {
     pub code_section: InstructionSet,
     pub memory_section: Vec<u8>,
@@ -66,17 +74,63 @@ impl RwasmModule {
     }
 
     pub fn compile_with_config(wasm_binary: &[u8], config: &Config) -> Result<Self, Error> {
+        let (result, _) = Self::compile_and_retrieve_input(wasm_binary, config)?;
+        Ok(result)
+    }
+
+    pub fn compile_and_retrieve_input(
+        wasm_binary: &[u8],
+        config: &Config,
+    ) -> Result<(Self, Vec<u8>), Error> {
         assert!(
             config.get_rwasm_config().is_some(),
             "rWASM mode must be enabled in config"
         );
         let engine = Engine::new(&config);
         let module = Module::new(&engine, wasm_binary)?;
-        Ok(Self::from_module(&module))
+        let input_section = module
+            .custom_sections
+            .iter()
+            .find(|c| c.name() == "input")
+            .map(|c| c.data().to_vec())
+            .unwrap_or_else(Vec::new);
+        Ok((Self::from_module(&module), input_section))
     }
 
     pub fn new(module: &[u8]) -> Result<Self, BinaryFormatError> {
         Self::read_from_slice(module)
+    }
+
+    pub fn new_or_empty(module: &[u8]) -> Result<Self, BinaryFormatError> {
+        if module.is_empty() {
+            return Ok(Self::empty());
+        }
+        Self::new(module)
+    }
+
+    pub fn empty() -> Self {
+        let instruction_set = instruction_set! {
+            Return(DropKeep::none())
+        };
+        Self::from(instruction_set)
+    }
+
+    pub fn instantiate(self) -> RwasmModuleInstance {
+        let mut func_segments = vec![0u32];
+        let mut total_func_len = 0u32;
+        for func_len in self.func_section.iter().take(self.func_section.len() - 1) {
+            total_func_len += *func_len;
+            func_segments.push(total_func_len);
+        }
+        let source_pc = func_segments
+            .last()
+            .copied()
+            .expect("rwasm: empty function section");
+        RwasmModuleInstance {
+            module: self,
+            start: source_pc as usize,
+            func_segments,
+        }
     }
 
     pub fn from_module(module: &Module) -> Self {

@@ -226,6 +226,12 @@ impl ConstExpr {
         }
     }
 
+    pub fn from_const(value: UntypedValue) -> Self {
+        Self {
+            op: Op::Const(ConstOp { value }),
+        }
+    }
+
     /// Creates a new [`ConstExpr`] from the given Wasm [`ConstExpr`].
     ///
     /// # Note

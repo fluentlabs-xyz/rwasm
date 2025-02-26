@@ -81,6 +81,14 @@ impl DataSegmentEntity {
         Self { bytes: None }
     }
 
+    /// Performs an emptiness check.
+    /// This function returns `true` only if the segment contains no items and not just an empty
+    /// array.
+    /// This check is crucial to determine if a segment has been dropped.
+    pub fn is_empty(&self) -> bool {
+        self.bytes.is_none()
+    }
+
     /// Returns the bytes of the [`DataSegmentEntity`].
     pub fn bytes(&self) -> &[u8] {
         self.bytes

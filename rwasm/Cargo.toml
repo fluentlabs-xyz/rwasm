@@ -24,6 +24,7 @@ strum_macros = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 serde = { version = "1.0.205", features = ["derive", "rc"] }
 [dev-dependencies]
+hex-literal = "0.4.1"
 wat = "1"
 assert_matches = "1.5"
 wast = "52.0"

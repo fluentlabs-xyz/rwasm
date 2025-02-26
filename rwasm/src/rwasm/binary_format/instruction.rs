@@ -26,41 +26,45 @@ use crate::{
     },
 };
 
-pub const MAX_INSTRUCTION_SIZE_BYTES: usize = 1 + 8;
+pub const RWASM_INSTRUCTION_ALIGNMENT: bool = false;
+pub const RWASM_MAX_INSTRUCTION_SIZE_BYTES: usize = 1 + 8;
 
 impl<'a> BinaryFormat<'a> for Instruction {
     type SelfType = Instruction;
 
     fn encoded_length(&self) -> usize {
-        let mut sink = [0u8; MAX_INSTRUCTION_SIZE_BYTES];
+        if RWASM_INSTRUCTION_ALIGNMENT {
+            return RWASM_MAX_INSTRUCTION_SIZE_BYTES;
+        }
+        let mut sink = [0u8; RWASM_MAX_INSTRUCTION_SIZE_BYTES];
         let mut binary_writer = BinaryFormatWriter::new(&mut sink);
         self.write_binary(&mut binary_writer).unwrap()
     }
 
     fn write_binary(&self, sink: &mut BinaryFormatWriter<'a>) -> Result<usize, BinaryFormatError> {
-        let n = match self {
+        let mut n = match self {
+            Instruction::Unreachable => sink.write_u8(0x00)?,
             // local Instruction family
-            Instruction::LocalGet(index) => sink.write_u8(0x00)? + index.write_binary(sink)?,
-            Instruction::LocalSet(index) => sink.write_u8(0x01)? + index.write_binary(sink)?,
-            Instruction::LocalTee(index) => sink.write_u8(0x02)? + index.write_binary(sink)?,
+            Instruction::LocalGet(index) => sink.write_u8(0x01)? + index.write_binary(sink)?,
+            Instruction::LocalSet(index) => sink.write_u8(0x02)? + index.write_binary(sink)?,
+            Instruction::LocalTee(index) => sink.write_u8(0x03)? + index.write_binary(sink)?,
             // control flow Instruction family
             Instruction::Br(branch_params) => {
-                sink.write_u8(0x03)? + branch_params.write_binary(sink)?
-            }
-            Instruction::BrIfEqz(branch_params) => {
                 sink.write_u8(0x04)? + branch_params.write_binary(sink)?
             }
-            Instruction::BrIfNez(branch_params) => {
+            Instruction::BrIfEqz(branch_params) => {
                 sink.write_u8(0x05)? + branch_params.write_binary(sink)?
             }
-            Instruction::BrAdjust(branch_params) => {
+            Instruction::BrIfNez(branch_params) => {
                 sink.write_u8(0x06)? + branch_params.write_binary(sink)?
             }
-            Instruction::BrAdjustIfNez(branch_params) => {
+            Instruction::BrAdjust(branch_params) => {
                 sink.write_u8(0x07)? + branch_params.write_binary(sink)?
             }
-            Instruction::BrTable(targets) => sink.write_u8(0x08)? + targets.write_binary(sink)?,
-            Instruction::Unreachable => sink.write_u8(0x09)?,
+            Instruction::BrAdjustIfNez(branch_params) => {
+                sink.write_u8(0x08)? + branch_params.write_binary(sink)?
+            }
+            Instruction::BrTable(targets) => sink.write_u8(0x09)? + targets.write_binary(sink)?,
             Instruction::ConsumeFuel(u) => sink.write_u8(0x0a)? + u.write_binary(sink)?,
             Instruction::Return(drop_keep) => {
                 sink.write_u8(0x0b)? + drop_keep.write_binary(sink)?
@@ -279,24 +283,33 @@ impl<'a> BinaryFormat<'a> for Instruction {
             Instruction::I64TruncSatF64U => sink.write_u8(0xc5)?,
             _ => unreachable!("not supported opcode: {:?}", self),
         };
+        // we align all opcodes to 9 bytes
+        if RWASM_INSTRUCTION_ALIGNMENT {
+            while n < RWASM_MAX_INSTRUCTION_SIZE_BYTES {
+                sink.write_u8(0)?;
+                n += 1;
+            }
+            debug_assert_eq!(n, RWASM_MAX_INSTRUCTION_SIZE_BYTES);
+        }
         Ok(n)
     }
 
     fn read_binary(sink: &mut BinaryFormatReader<'a>) -> Result<Instruction, BinaryFormatError> {
+        let current_pos = sink.pos();
         let byte = sink.read_u8()?;
         let instr = match byte {
+            0x00 => Instruction::Unreachable,
             // local Instruction family
-            0x00 => Instruction::LocalGet(LocalDepth::read_binary(sink)?),
-            0x01 => Instruction::LocalSet(LocalDepth::read_binary(sink)?),
-            0x02 => Instruction::LocalTee(LocalDepth::read_binary(sink)?),
+            0x01 => Instruction::LocalGet(LocalDepth::read_binary(sink)?),
+            0x02 => Instruction::LocalSet(LocalDepth::read_binary(sink)?),
+            0x03 => Instruction::LocalTee(LocalDepth::read_binary(sink)?),
             // control flow Instruction family
-            0x03 => Instruction::Br(BranchOffset::read_binary(sink)?),
-            0x04 => Instruction::BrIfEqz(BranchOffset::read_binary(sink)?),
-            0x05 => Instruction::BrIfNez(BranchOffset::read_binary(sink)?),
-            0x06 => Instruction::BrAdjust(BranchOffset::read_binary(sink)?),
-            0x07 => Instruction::BrAdjustIfNez(BranchOffset::read_binary(sink)?),
-            0x08 => Instruction::BrTable(BranchTableTargets::read_binary(sink)?),
-            0x09 => Instruction::Unreachable,
+            0x04 => Instruction::Br(BranchOffset::read_binary(sink)?),
+            0x05 => Instruction::BrIfEqz(BranchOffset::read_binary(sink)?),
+            0x06 => Instruction::BrIfNez(BranchOffset::read_binary(sink)?),
+            0x07 => Instruction::BrAdjust(BranchOffset::read_binary(sink)?),
+            0x08 => Instruction::BrAdjustIfNez(BranchOffset::read_binary(sink)?),
+            0x09 => Instruction::BrTable(BranchTableTargets::read_binary(sink)?),
             0x0a => Instruction::ConsumeFuel(BlockFuel::read_binary(sink)?),
             0x0b => Instruction::Return(DropKeep::read_binary(sink)?),
             0x0c => Instruction::ReturnIfNez(DropKeep::read_binary(sink)?),
@@ -491,6 +504,13 @@ impl<'a> BinaryFormat<'a> for Instruction {
             0xc5 => Instruction::I64TruncSatF64U,
             _ => return Err(BinaryFormatError::IllegalOpcode(byte)),
         };
+        // we align all opcodes to 9 bytes
+        if RWASM_INSTRUCTION_ALIGNMENT {
+            let len = sink.pos() - current_pos;
+            for _ in 0..(RWASM_MAX_INSTRUCTION_SIZE_BYTES - len) {
+                sink.read_u8()?;
+            }
+        }
         Ok(instr)
     }
 }
@@ -566,7 +586,7 @@ impl InstructionExtra for Instruction {
     }
 
     fn info(&self) -> (u8, usize) {
-        let mut sink = [0u8; MAX_INSTRUCTION_SIZE_BYTES];
+        let mut sink = [0u8; RWASM_MAX_INSTRUCTION_SIZE_BYTES];
         let mut binary_writer = BinaryFormatWriter::new(&mut sink);
         let size = self.write_binary(&mut binary_writer).unwrap();
         (sink[0], size - 1)

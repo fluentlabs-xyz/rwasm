@@ -1510,7 +1510,8 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         let table_idx = self.fetch_table_idx(1);
         // we use some tricky structure for rWASM to determine what element segments dropped
         let is_empty_segment = if self.ctx.engine().config().get_rwasm_config().is_some() {
-            // increase segment index, because first index is used for the global element segment
+            // increase segment index, because the first index is used for the global element
+            // segment
             let (_, _, element) = self
                 .cache
                 .get_table_and_element_segment(self.ctx, table_idx, elem);
