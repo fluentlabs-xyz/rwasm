@@ -1731,12 +1731,22 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.stack_height.pop3();
             builder.stack_height.push();
 
+            builder.stack_types.pop();
             let item = builder.stack_types.pop().unwrap();
-            builder.stack_types.pop();
-            builder.stack_types.pop();
-            builder.stack_types.push(item);
 
-            builder.alloc.inst_builder.push_inst(Instruction::Select);
+            if item == ValueType::I64 {
+                builder.stack_height.pop1();
+
+                builder.alloc.inst_builder.push_inst(Instruction::BrIfEqz(BranchOffset::from(4)));
+                builder.alloc.inst_builder.push_inst(Instruction::Drop);
+                builder.alloc.inst_builder.push_inst(Instruction::Drop);
+                builder.alloc.inst_builder.push_inst(Instruction::Br(BranchOffset::from(3)));
+                builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(2)));
+                builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(2)));
+
+            } else {
+                builder.alloc.inst_builder.push_inst(Instruction::Select);
+            }
             Ok(())
         })
     }
