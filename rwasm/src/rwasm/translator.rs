@@ -14,6 +14,7 @@ use crate::{
 };
 use alloc::vec::Vec;
 use core::iter;
+use crate::value::split_i64_to_i32;
 
 pub struct RwasmTranslator<'parser> {
     /// The interface to incrementally build up the `wasmi` bytecode function.
@@ -194,6 +195,28 @@ impl<'parser> RwasmTranslator<'parser> {
         Ok(())
     }
 
+    pub fn translate_const(&mut self, const_type: ValueType, value: UntypedValue) {
+        let ib = &mut self.translator.alloc.inst_builder;
+
+        match const_type {
+            ValueType::I32 => {
+                ib.push_inst(Instruction::I32Const(value));
+            }
+            ValueType::I64 => {
+                let [lower, upper] = split_i64_to_i32(value.as_u64() as i64);
+                ib.push_inst(Instruction::I32Const(UntypedValue::from(lower)));
+                ib.push_inst(Instruction::I32Const(UntypedValue::from(upper)));
+            }
+            ValueType::F32 => {
+                ib.push_inst(Instruction::F32Const(value));
+            }
+            ValueType::F64 => {
+                ib.push_inst(Instruction::F64Const(value));
+            }
+            _ => {ib.push_inst(Instruction::I32Const(value));}
+        }
+    }
+
     pub fn translate_global(&mut self, global_index: u32) -> Result<(), RwasmBuilderError> {
         let ib = &mut self.translator.alloc.inst_builder;
         let globals = &self.res.res.globals;
@@ -201,12 +224,21 @@ impl<'parser> RwasmTranslator<'parser> {
         // if global index less than global num then its imported global, and we have special call
         // index to translate such calls
         let len_globals = self.res.res.imports.len_globals();
+        let global_type = globals[global_index as usize].content();
         if global_index < len_globals as u32 {
             // so let's put this hardcoded condition here only for e2e tests, otherwise we need to
             // patch a lot of spec tests
             if cfg!(feature = "e2e") {
-                ib.push_inst(Instruction::I64Const(666.into()));
-                ib.push_inst(Instruction::GlobalSet(global_index.into()));
+                if global_type == ValueType::I64 {
+                    ib.push_inst(Instruction::I32Const(666.into()));
+                    ib.push_inst(Instruction::I32Const(0.into()));
+                    ib.push_inst(Instruction::GlobalSet((global_index * 2).into()));
+                    ib.push_inst(Instruction::GlobalSet((global_index * 2 + 1).into()));
+                } else {
+                    ib.push_inst(Instruction::I32Const(666.into()));
+                    ib.push_inst(Instruction::GlobalSet((global_index * 2).into()));
+                }
+
                 return Ok(());
             }
             return Err(RwasmBuilderError::ImportedGlobalsAreDisabled);
@@ -215,16 +247,23 @@ impl<'parser> RwasmTranslator<'parser> {
         assert!(global_index as usize - len_globals < global_inits.len());
         let global_expr = &global_inits[global_index as usize - len_globals];
         if let Some(value) = global_expr.eval_const() {
-            ib.push_inst(Instruction::I64Const(value));
+            self.translate_const(global_type, value);
         } else if let Some(value) = global_expr.funcref() {
             ib.push_inst(Instruction::RefFunc(value.into_u32().into()));
         } else if let Some(index) = global_expr.global() {
-            ib.push_inst(Instruction::GlobalGet(index.into()));
+            if global_type == ValueType::I64 {
+                ib.push_inst(Instruction::GlobalGet((index * 2 + 1).into()));
+            }
+            ib.push_inst(Instruction::GlobalGet((index * 2).into()));
         } else {
             let value = Self::translate_const_expr(global_expr)?;
-            ib.push_inst(Instruction::I64Const(value));
+            self.translate_const(global_type, value);
         }
-        ib.push_inst(Instruction::GlobalSet(global_index.into()));
+        self.translator.alloc.inst_builder.push_inst(Instruction::GlobalSet((global_index * 2).into()));
+        if global_type == ValueType::I64 {
+            self.translator.alloc.inst_builder.push_inst(Instruction::GlobalSet((global_index * 2 + 1).into()));
+        }
+
         Ok(())
     }
 
