@@ -3565,8 +3565,6 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.stack_types.pop();
             builder.stack_types.push(ValueType::I64);
 
-            builder.alloc.inst_builder.push_inst(Instruction::I32Const(UntypedValue::from(-1)));
-            builder.alloc.inst_builder.push_inst(Instruction::LocalSet(LocalDepth::from(5)));
             builder.translate_i64_div_u();
 
             builder.alloc.inst_builder.push_inst(Instruction::Drop);
