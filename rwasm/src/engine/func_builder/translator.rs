@@ -1768,7 +1768,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         // Since `wasmi` bytecode is untyped we have no special `null` instructions
         // but simply reuse the `i64.eqz` instruction with an immediate value of 0.
         // Note that `FuncRef` and `ExternRef` are encoded as 64-bit values in `wasmi`.
-        self.visit_i64_eqz()
+        self.visit_i32_eqz()
     }
 
     fn visit_ref_func(&mut self, func_index: u32) -> Result<(), TranslationError> {
@@ -1876,14 +1876,23 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let global_idx = GlobalIdx::from(global_idx);
             builder.stack_height.push();
-            //TODO: Stack types
+
             let (global_type, init_value) = builder.res.get_global(global_idx);
             let global_idx = bytecode::GlobalIdx::from(global_idx.into_u32());
             let engine = builder.engine();
             let instr = Self::optimize_global_get(&global_type, init_value, engine)?.unwrap_or({
                 // No optimization took place in this case.
-                Instruction::GlobalGet(global_idx)
+                Instruction::GlobalGet((global_idx.to_u32() * 2).into())
             });
+
+            builder.stack_types.push(global_type.content());
+
+            if global_type.content() == ValueType::I64 {
+                builder.alloc.inst_builder.push_inst(Instruction::GlobalGet((global_idx.to_u32() * 2 + 1).into()));
+
+                builder.stack_height.push();
+            }
+
             builder.alloc.inst_builder.push_inst(instr);
             Ok(())
         })
@@ -1896,12 +1905,25 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             let global_type = builder.res.get_type_of_global(global_idx);
             debug_assert_eq!(global_type.mutability(), Mutability::Var);
             builder.stack_height.pop1();
-            //TODO: Stack types
-            let global_idx = bytecode::GlobalIdx::from(global_idx.into_u32());
+            builder.stack_types.pop();
+
+            let idx = global_idx.into_u32() * 2;
+            let global_idx = bytecode::GlobalIdx::from(idx);
+
             builder
                 .alloc
                 .inst_builder
                 .push_inst(Instruction::GlobalSet(global_idx));
+
+            if global_type.content() == ValueType::I64 {
+                builder
+                    .alloc
+                    .inst_builder
+                    .push_inst(Instruction::GlobalSet(bytecode::GlobalIdx::from(idx + 1)));
+
+                builder.stack_height.pop1();
+            }
+
             Ok(())
         })
     }
