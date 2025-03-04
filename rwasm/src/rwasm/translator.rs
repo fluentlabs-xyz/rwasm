@@ -97,7 +97,6 @@ impl<'parser> RwasmTranslator<'parser> {
             Some(value) => value,
             None => return Ok(()),
         };
-        let instr_builder = &mut self.translator.alloc.inst_builder;
         let export_index = self
             .res
             .res
@@ -109,11 +108,19 @@ impl<'parser> RwasmTranslator<'parser> {
             .into_u32();
         // we must validate the number of input/output params
         // to make sure it won't cause potential stack overflow or underflow
+        self.ensure_func_type_empty(export_index)?;
+        // emit call internal for the `main` function inside entrypoint
+        let instr_builder = &mut self.translator.alloc.inst_builder;
+        instr_builder.push_inst(Instruction::CallInternal(export_index.into()));
+        Ok(())
+    }
+
+    fn ensure_func_type_empty(&self, func_index: u32) -> Result<(), RwasmBuilderError> {
         let dedup_func_type = self
             .res
             .res
             .funcs
-            .get(export_index as usize)
+            .get(func_index as usize)
             .ok_or(RwasmBuilderError::MalformedEntrypointFuncType)?;
         let is_empty_params = self
             .res
@@ -122,11 +129,10 @@ impl<'parser> RwasmTranslator<'parser> {
                 func_type.len_params() == (0, 0)
             });
         if !is_empty_params {
-            return Err(RwasmBuilderError::MalformedEntrypointFuncType);
+            Err(RwasmBuilderError::MalformedEntrypointFuncType)
+        } else {
+            Ok(())
         }
-        // emit call internal for the `main` function inside entrypoint
-        instr_builder.push_inst(Instruction::CallInternal(export_index.into()));
-        Ok(())
     }
 
     fn translate_state_router(&mut self) -> Result<(), RwasmBuilderError> {
@@ -145,12 +151,28 @@ impl<'parser> RwasmTranslator<'parser> {
         // translate state router
         for (entrypoint_name, state_value) in state_router.states.iter() {
             let exports = &self.res.res.exports;
-            let export_index = exports
+            let Some(func_idx) = exports
                 .get(entrypoint_name.as_str())
                 .and_then(|v| v.into_func_idx())
-                .map(|v| v.into_u32());
-            if export_index.is_none() {
+                .map(|v| v.into_u32())
+            else {
                 continue;
+            };
+            // make sure func type is empty
+            let dedup_func_type = self
+                .res
+                .res
+                .funcs
+                .get(func_idx as usize)
+                .ok_or(RwasmBuilderError::MalformedEntrypointFuncType)?;
+            let is_empty_params = self
+                .res
+                .engine()
+                .resolve_func_type(dedup_func_type, |func_type| {
+                    func_type.len_params() == (0, 0)
+                });
+            if !is_empty_params {
+                return Err(RwasmBuilderError::MalformedEntrypointFuncType);
             }
             instr_builder.push_inst(Instruction::LocalGet(1.into()));
             instr_builder.push_inst(Instruction::I32Const((*state_value).into()));
@@ -159,7 +181,7 @@ impl<'parser> RwasmTranslator<'parser> {
             // it's super important to drop the original state from the stack
             // because input params might be passed though the stack
             instr_builder.push_inst(Instruction::Drop);
-            instr_builder.push_inst(Instruction::CallInternal(export_index.unwrap().into()));
+            instr_builder.push_inst(Instruction::CallInternal(func_idx.into()));
             instr_builder.push_inst(Instruction::Return(DropKeep::none()));
         }
         // drop input state from the stack
