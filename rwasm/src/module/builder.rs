@@ -131,7 +131,7 @@ impl<'a> ModuleResources<'a> {
             } else {
                 let index =
                     (func_idx.into_u32() as usize).checked_sub(self.res.imports.len_funcs())?;
-                // otherwise we must disallow accessing entrypoint
+                // otherwise, we must disallow accessing entrypoint
                 if index == self.res.compiled_funcs.len() - 1 {
                     return None;
                 }

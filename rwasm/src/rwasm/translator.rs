@@ -107,6 +107,24 @@ impl<'parser> RwasmTranslator<'parser> {
             .into_func_idx()
             .ok_or(RwasmBuilderError::MissingEntrypoint)?
             .into_u32();
+        // we must validate the number of input/output params
+        // to make sure it won't cause potential stack overflow or underflow
+        let dedup_func_type = self
+            .res
+            .res
+            .funcs
+            .get(export_index as usize)
+            .ok_or(RwasmBuilderError::MalformedEntrypointFuncType)?;
+        let is_empty_params = self
+            .res
+            .engine()
+            .resolve_func_type(dedup_func_type, |func_type| {
+                func_type.len_params() == (0, 0)
+            });
+        if !is_empty_params {
+            return Err(RwasmBuilderError::MalformedEntrypointFuncType);
+        }
+        // emit call internal for the `main` function inside entrypoint
         instr_builder.push_inst(Instruction::CallInternal(export_index.into()));
         Ok(())
     }
