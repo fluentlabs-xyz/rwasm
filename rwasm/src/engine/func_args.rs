@@ -46,7 +46,9 @@ impl<'a> FuncResults<'a> {
         T: EncodeUntypedSlice,
     {
         UntypedValue::encode_slice::<T>(self.results, values)
-            .unwrap_or_else(|error| panic!("encountered unexpected invalid tuple length: {error}"));
+            .unwrap_or_else(|error|
+                panic!("encountered unexpected invalid tuple length: {error}")
+            );
         FuncFinished {}
     }
 

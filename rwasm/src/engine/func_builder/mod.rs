@@ -106,6 +106,9 @@ impl<'parser> FuncBuilder<'parser> {
             }
         } else {
             self.translator.register_locals(amount);
+            (0..amount as usize).for_each(|_| {
+                self.translator.stack_types.push(ValueType::from(value_type));
+            });
         }
         Ok(())
     }
