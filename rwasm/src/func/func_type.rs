@@ -238,7 +238,7 @@ mod tests {
     fn new_works() {
         let types = [
             &[ValueType::I32][..],
-            &[ValueType::I64][..],
+            &[ValueType::I32, ValueType::I32][..],
             &[ValueType::F32][..],
             &[ValueType::F64][..],
             &[ValueType::I32, ValueType::I32][..],
@@ -261,7 +261,7 @@ mod tests {
             ][..],
             &[
                 ValueType::I32,
-                ValueType::I64,
+                ValueType::I32, ValueType::I32,
                 ValueType::F32,
                 ValueType::F64,
             ][..],

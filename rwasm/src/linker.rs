@@ -836,18 +836,18 @@ mod tests {
             .get_typed_func::<i32, ()>(&store, "wasm_set_a")
             .unwrap();
         let wasm_get_b = instance
-            .get_typed_func::<(), i64>(&store, "wasm_get_b")
+            .get_typed_func::<(), (i32, i32)>(&store, "wasm_get_b")
             .unwrap();
         let wasm_set_b = instance
-            .get_typed_func::<i64, ()>(&store, "wasm_set_b")
+            .get_typed_func::<(i32, i32), ()>(&store, "wasm_set_b")
             .unwrap();
 
         assert_eq!(wasm_get_a.call(&mut store, ()).unwrap(), a_init);
         wasm_set_a.call(&mut store, 100).unwrap();
         assert_eq!(wasm_get_a.call(&mut store, ()).unwrap(), 100);
 
-        assert_eq!(wasm_get_b.call(&mut store, ()).unwrap(), b_init);
-        wasm_set_b.call(&mut store, 200).unwrap();
-        assert_eq!(wasm_get_b.call(&mut store, ()).unwrap(), 200);
+        assert_eq!(wasm_get_b.call(&mut store, ()).unwrap(), (0, b_init as i32));
+        wasm_set_b.call(&mut store, (0, 200)).unwrap();
+        assert_eq!(wasm_get_b.call(&mut store, ()).unwrap(), (0, 200 as i32));
     }
 }
