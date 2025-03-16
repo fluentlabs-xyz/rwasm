@@ -40,6 +40,9 @@ pub struct RwasmConfig {
     /// An option for translating a drop keeps into SetLocal/GetLocal opcodes,
     /// right now under a flag because the function is unstable
     pub translate_drop_keep: bool,
+    /// An option to disable malformed entrypoint func type check. We need this check for e2e tests
+    /// where we manage stack manually.
+    pub allow_malformed_entrypoint_func_type: bool,
 }
 
 impl Default for RwasmConfig {
@@ -50,6 +53,7 @@ impl Default for RwasmConfig {
             import_linker: None,
             wrap_import_functions: false,
             translate_drop_keep: false,
+            allow_malformed_entrypoint_func_type: false,
         }
     }
 }

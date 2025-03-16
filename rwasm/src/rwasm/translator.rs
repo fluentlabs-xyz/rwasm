@@ -116,6 +116,11 @@ impl<'parser> RwasmTranslator<'parser> {
     }
 
     fn ensure_func_type_empty(&self, func_index: u32) -> Result<(), RwasmBuilderError> {
+        let config = self.res.engine().config();
+        let allow_malformed_entrypoint_func_type = config
+            .get_rwasm_config()
+            .map(|rwasm_config| rwasm_config.allow_malformed_entrypoint_func_type)
+            .unwrap_or(false);
         let dedup_func_type = self
             .res
             .res
@@ -128,7 +133,7 @@ impl<'parser> RwasmTranslator<'parser> {
             .resolve_func_type(dedup_func_type, |func_type| {
                 func_type.len_params() == (0, 0)
             });
-        if !is_empty_params {
+        if !is_empty_params && !allow_malformed_entrypoint_func_type {
             Err(RwasmBuilderError::MalformedEntrypointFuncType)
         } else {
             Ok(())
@@ -138,6 +143,10 @@ impl<'parser> RwasmTranslator<'parser> {
     fn translate_state_router(&mut self) -> Result<(), RwasmBuilderError> {
         let config = self.res.engine().config();
         // if we have a state router, then translate state router
+        let allow_malformed_entrypoint_func_type = config
+            .get_rwasm_config()
+            .map(|rwasm_config| rwasm_config.allow_malformed_entrypoint_func_type)
+            .unwrap_or(false);
         let state_router = config
             .get_rwasm_config()
             .and_then(|rwasm_config| rwasm_config.state_router.as_ref());
@@ -171,7 +180,7 @@ impl<'parser> RwasmTranslator<'parser> {
                 .resolve_func_type(dedup_func_type, |func_type| {
                     func_type.len_params() == (0, 0)
                 });
-            if !is_empty_params {
+            if !is_empty_params && !allow_malformed_entrypoint_func_type {
                 return Err(RwasmBuilderError::MalformedEntrypointFuncType);
             }
             instr_builder.push_inst(Instruction::LocalGet(1.into()));
