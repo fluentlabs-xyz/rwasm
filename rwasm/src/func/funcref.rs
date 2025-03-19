@@ -89,7 +89,7 @@ impl FuncRef {
     /// # let engine = Engine::default();
     /// # let mut store = <Store<()>>::new(&engine, ());
     /// assert!(FuncRef::new(None).is_null());
-    /// assert!(FuncRef::new(Func::wrap(&mut store, |x: i32| x)).func().is_some());
+    /// assert!(FuncRef::new(Func::wrap::<_,_,_,false>(&mut store, |x: i32| x)).func().is_some());
     /// ```
     pub fn new(nullable_func: impl Into<Option<Func>>) -> Self {
         Self {

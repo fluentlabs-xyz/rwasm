@@ -234,8 +234,10 @@ impl<'engine> ModuleParser<'engine> {
     /// If an unsupported function type is encountered.
     fn process_types(&mut self, section: TypeSectionReader) -> Result<(), ModuleError> {
         self.validator.type_section(&section)?;
+        let is_i32_translator = self.builder.engine().config().get_i32_translator();
         let func_types = section.into_iter().map(|result| match result? {
-            wasmparser::Type::Func(ty) => Ok(FuncType::from_wasmparser(ty)),
+            wasmparser::Type::Func(ty) if is_i32_translator => Ok(FuncType::from_wasmparser::<true>(ty)),
+            wasmparser::Type::Func(ty) => Ok(FuncType::from_wasmparser::<false>(ty)),
         });
         self.builder.push_func_types(func_types)?;
         self.builder.ensure_empty_func_type_exists();
@@ -268,6 +270,7 @@ impl<'engine> ModuleParser<'engine> {
                     compiled_func,
                     ModuleResources::new(&self.builder),
                     allocations.translation,
+                    self.builder.engine().config().get_i32_translator(),
                 )
                 .translate_import_func(import_func_index as u32)?;
                 allocations = ReusableAllocations {
@@ -526,6 +529,7 @@ impl<'engine> ModuleParser<'engine> {
             validator.into_validator(allocations.validation),
             module_resources,
             allocations.translation,
+            self.builder.engine().config().get_i32_translator(),
         )?;
         let _ = replace(&mut self.allocations, allocations);
         Ok(())
@@ -543,6 +547,7 @@ impl<'engine> ModuleParser<'engine> {
             compiled_func,
             ModuleResources::new(&self.builder),
             allocations.translation,
+            self.builder.engine().config().get_i32_translator(),
         )
         .translate_entrypoint()?;
         let instr_builder = take(&mut func_allocations.inst_builder);

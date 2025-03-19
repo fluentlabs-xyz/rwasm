@@ -14,11 +14,12 @@ use crate::{
 };
 use alloc::vec::Vec;
 use core::iter;
+use crate::engine::func_builder::{FuncTranslatorI32, FuncTranslators};
 use crate::value::split_i64_to_i32;
 
 pub struct RwasmTranslator<'parser> {
     /// The interface to incrementally build up the `wasmi` bytecode function.
-    translator: FuncTranslator<'parser>,
+    translator: FuncTranslators<'parser>,
     /// Module resources
     res: ModuleResources<'parser>,
 }
@@ -29,8 +30,10 @@ impl<'parser> RwasmTranslator<'parser> {
         compiled_func: CompiledFunc,
         res: ModuleResources<'parser>,
         allocations: FuncTranslatorAllocations,
+        i32_translator: bool,
     ) -> Self {
-        let translator = FuncTranslator::new(func, compiled_func, res, allocations);
+        let translator = if i32_translator { FuncTranslators::TranslatorI32(FuncTranslatorI32::new(func, compiled_func, res, allocations))} else {
+            FuncTranslators::Translator(FuncTranslator::new(func, compiled_func, res, allocations))};
         Self { translator, res }
     }
 
@@ -50,7 +53,10 @@ impl<'parser> RwasmTranslator<'parser> {
         self.translator
             .finish()
             .map_err(Into::<ModuleError>::into)?;
-        Ok((self.translator.alloc, sys_index))
+        Ok((match self.translator{
+            FuncTranslators::Translator(t) => {t.alloc}
+            FuncTranslators::TranslatorI32(t) => {t.alloc}
+        }, sys_index))
     }
 
     fn translate_entrypoint_internal(&mut self) -> Result<(), RwasmBuilderError> {
@@ -63,14 +69,14 @@ impl<'parser> RwasmTranslator<'parser> {
             match self.res.get_compiled_func(start) {
                 Some(compiled_func) => {
                     self.translator
-                        .alloc
+                        .alloc()
                         .inst_builder
                         .push_inst(Instruction::CallInternal(compiled_func));
                 }
                 None => {
                     let func_idx = bytecode::FuncIdx::from(start.into_u32());
                     self.translator
-                        .alloc
+                        .alloc()
                         .inst_builder
                         .push_inst(Instruction::Call(func_idx));
                 }
@@ -83,7 +89,7 @@ impl<'parser> RwasmTranslator<'parser> {
         }
         // push unreachable in the end (indication of the entrypoint end)
         self.translator
-            .alloc
+            .alloc()
             .inst_builder
             .push_inst(Instruction::Return(DropKeep::none()));
         Ok(())
@@ -99,7 +105,7 @@ impl<'parser> RwasmTranslator<'parser> {
             Some(value) => value,
             None => return Ok(()),
         };
-        let instr_builder = &mut self.translator.alloc.inst_builder;
+        let instr_builder = &mut self.translator.alloc().inst_builder;
         let export_index = self
             .res
             .res
@@ -123,7 +129,7 @@ impl<'parser> RwasmTranslator<'parser> {
             Some(value) => value,
             None => return Ok(()),
         };
-        let instr_builder = &mut self.translator.alloc.inst_builder;
+        let instr_builder = &mut self.translator.alloc().inst_builder;
         // push state on the stack
         instr_builder.push_inst(state_router.opcode);
         // translate state router
@@ -152,7 +158,7 @@ impl<'parser> RwasmTranslator<'parser> {
         import_fn_index: u32,
     ) -> Result<u32, RwasmBuilderError> {
         let (import_index, fuel_cost) = self.resolve_host_call(import_fn_index)?;
-        let instr_builder = &mut self.translator.alloc.inst_builder;
+        let instr_builder = &mut self.translator.alloc().inst_builder;
         if self.res.engine().config().get_consume_fuel() {
             instr_builder.push_inst(Instruction::ConsumeFuel(fuel_cost.into()));
         }
@@ -196,29 +202,37 @@ impl<'parser> RwasmTranslator<'parser> {
     }
 
     pub fn translate_const(&mut self, const_type: ValueType, value: UntypedValue) {
-        let ib = &mut self.translator.alloc.inst_builder;
+        let is_i32_translator = self.translator.is_i32_translator();
+        let ib = &mut self.translator.alloc().inst_builder;
+        if is_i32_translator {
+            match const_type {
+                ValueType::I32 => {
+                    ib.push_inst(Instruction::I32Const(value));
+                }
+                ValueType::I64 => {
+                    if is_i32_translator {
 
-        match const_type {
-            ValueType::I32 => {
-                ib.push_inst(Instruction::I32Const(value));
+                    }
+                    let [lower, upper] = split_i64_to_i32(value.as_u64() as i64);
+                    ib.push_inst(Instruction::I32Const(UntypedValue::from(lower)));
+                    ib.push_inst(Instruction::I32Const(UntypedValue::from(upper)));
+                }
+                ValueType::F32 => {
+                    ib.push_inst(Instruction::F32Const(value));
+                }
+                ValueType::F64 => {
+                    ib.push_inst(Instruction::F64Const(value));
+                }
+                _ => {ib.push_inst(Instruction::I32Const(value));}
             }
-            ValueType::I64 => {
-                let [lower, upper] = split_i64_to_i32(value.as_u64() as i64);
-                ib.push_inst(Instruction::I32Const(UntypedValue::from(lower)));
-                ib.push_inst(Instruction::I32Const(UntypedValue::from(upper)));
-            }
-            ValueType::F32 => {
-                ib.push_inst(Instruction::F32Const(value));
-            }
-            ValueType::F64 => {
-                ib.push_inst(Instruction::F64Const(value));
-            }
-            _ => {ib.push_inst(Instruction::I32Const(value));}
+        } else {
+            ib.push_inst(Instruction::I64Const(value));
         }
     }
 
     pub fn translate_global(&mut self, global_index: u32) -> Result<(), RwasmBuilderError> {
-        let ib = &mut self.translator.alloc.inst_builder;
+        let is_i32_translator = self.translator.is_i32_translator();
+        let ib = &mut self.translator.alloc().inst_builder;
         let globals = &self.res.res.globals;
         assert!(global_index < globals.len() as u32);
         // if global index less than global num then its imported global, and we have special call
@@ -229,14 +243,19 @@ impl<'parser> RwasmTranslator<'parser> {
             // so let's put this hardcoded condition here only for e2e tests, otherwise we need to
             // patch a lot of spec tests
             if cfg!(feature = "e2e") {
-                if global_type == ValueType::I64 {
-                    ib.push_inst(Instruction::I32Const(666.into()));
-                    ib.push_inst(Instruction::I32Const(0.into()));
-                    ib.push_inst(Instruction::GlobalSet((global_index * 2).into()));
-                    ib.push_inst(Instruction::GlobalSet((global_index * 2 + 1).into()));
+                if is_i32_translator {
+                    if global_type == ValueType::I64 && is_i32_translator{
+                        ib.push_inst(Instruction::I32Const(666.into()));
+                        ib.push_inst(Instruction::I32Const(0.into()));
+                        ib.push_inst(Instruction::GlobalSet((global_index * 2).into()));
+                        ib.push_inst(Instruction::GlobalSet((global_index * 2 + 1).into()));
+                    } else {
+                        ib.push_inst(Instruction::I32Const(666.into()));
+                        ib.push_inst(Instruction::GlobalSet((global_index * 2).into()));
+                    }
                 } else {
-                    ib.push_inst(Instruction::I32Const(666.into()));
-                    ib.push_inst(Instruction::GlobalSet((global_index * 2).into()));
+                    ib.push_inst(Instruction::I64Const(666.into()));
+                    ib.push_inst(Instruction::GlobalSet(global_index.into()));
                 }
 
                 return Ok(());
@@ -249,26 +268,37 @@ impl<'parser> RwasmTranslator<'parser> {
         if let Some(value) = global_expr.eval_const() {
             self.translate_const(global_type, value);
         } else if let Some(value) = global_expr.funcref() {
+            let ib = &mut self.translator.alloc().inst_builder;
             ib.push_inst(Instruction::RefFunc(value.into_u32().into()));
         } else if let Some(index) = global_expr.global() {
-            if global_type == ValueType::I64 {
-                ib.push_inst(Instruction::GlobalGet((index * 2 + 1).into()));
+            let ib = &mut self.translator.alloc().inst_builder;
+            if is_i32_translator {
+                if global_type == ValueType::I64 {
+                    ib.push_inst(Instruction::GlobalGet((index * 2 + 1).into()));
+                }
+                ib.push_inst(Instruction::GlobalGet((index * 2).into()));
+            } else {
+                ib.push_inst(Instruction::GlobalGet(index.into()));
             }
-            ib.push_inst(Instruction::GlobalGet((index * 2).into()));
         } else {
             let value = Self::translate_const_expr(global_expr)?;
             self.translate_const(global_type, value);
         }
-        self.translator.alloc.inst_builder.push_inst(Instruction::GlobalSet((global_index * 2).into()));
-        if global_type == ValueType::I64 {
-            self.translator.alloc.inst_builder.push_inst(Instruction::GlobalSet((global_index * 2 + 1).into()));
+        if is_i32_translator {
+            self.translator.alloc().inst_builder.push_inst(Instruction::GlobalSet((global_index * 2).into()));
+            if global_type == ValueType::I64 {
+                self.translator.alloc().inst_builder.push_inst(Instruction::GlobalSet((global_index * 2 + 1).into()));
+            }
+        } else {
+            let ib = &mut self.translator.alloc().inst_builder;
+            ib.push_inst(Instruction::GlobalSet(global_index.into()));
         }
 
         Ok(())
     }
 
     pub fn translate_tables(&mut self) -> Result<(), RwasmBuilderError> {
-        let instr_builder = &mut self.translator.alloc.inst_builder;
+        let instr_builder = &mut self.translator.alloc().inst_builder;
         for (table_index, table) in self.res.res.tables.iter().enumerate() {
             // don't use ref_func here due to the entrypoint section
             if table_index < self.res.res.imports.len_tables() {
@@ -301,9 +331,10 @@ impl<'parser> RwasmTranslator<'parser> {
     }
 
     pub fn translate_elements(&mut self) -> Result<(), RwasmBuilderError> {
+        let alloc = self.translator.alloc();
         let (rwasm_builder, instr_builder) = (
-            &mut self.translator.alloc.segment_builder,
-            &mut self.translator.alloc.inst_builder,
+            &mut alloc.segment_builder,
+            &mut alloc.inst_builder,
         );
         for (i, e) in self.res.res.element_segments.iter().enumerate() {
             if e.ty() != ValueType::FuncRef {
@@ -342,9 +373,10 @@ impl<'parser> RwasmTranslator<'parser> {
     }
 
     fn translate_memory(&mut self) -> Result<(), RwasmBuilderError> {
+        let alloc = self.translator.alloc();
         let (rwasm_builder, instr_builder) = (
-            &mut self.translator.alloc.segment_builder,
-            &mut self.translator.alloc.inst_builder,
+            &mut alloc.segment_builder,
+            &mut alloc.inst_builder,
         );
         let is_imported_memory = self.res.res.imports.len_memories() > 0;
         if is_imported_memory {

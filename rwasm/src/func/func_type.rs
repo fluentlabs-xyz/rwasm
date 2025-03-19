@@ -38,7 +38,28 @@ impl fmt::Debug for FuncType {
 
 impl FuncType {
     /// Creates a new [`FuncType`].
-    pub fn new<P, R>(params: P, results: R) -> Self
+    pub fn new<P, R, const I32: bool>(params: P, results: R) -> Self
+    where
+        P: IntoIterator<Item = ValueType> + Clone,
+        R: IntoIterator<Item = ValueType> + Clone,
+    {
+        if I32 {
+            return Self::new_i32(params, results);
+        }
+
+        let mut params_results = params.into_iter().collect::<Vec<_>>();
+        let len_params = params_results.len();
+        params_results.extend(results);
+        Self {
+            origin_params: vec![],
+            origin_results: vec![],
+            params_results: params_results.into(),
+            params: vec![],
+            len_params,
+        }
+    }
+
+    pub fn new_i32<P, R>(params: P, results: R) -> Self
     where
         P: IntoIterator<Item = ValueType> + Clone,
         R: IntoIterator<Item = ValueType> + Clone,
@@ -62,8 +83,22 @@ impl FuncType {
         }
     }
 
-    /// Creates a new [`FuncType`].
     pub fn new_with_refs<'a>(params: &'a [ValueType], results: &'a [ValueType]) -> Self {
+        let mut params_results = Vec::new();
+        params_results.extend_from_slice(params);
+        let len_params = params_results.len();
+        params_results.extend_from_slice(results);
+        Self {
+            origin_params: vec![],
+            origin_results: vec![],
+            params_results: params_results.into(),
+            params: vec![],
+            len_params,
+        }
+    }
+
+    /// Creates a new [`FuncType`].
+    pub fn new_i32_with_refs<'a>(params: &'a [ValueType], results: &'a [ValueType]) -> Self {
         let mut params_results = Vec::new();
         params_results.extend_from_slice(params);
         params_results = params_results.into_iter().flat_map(|v| match v {
@@ -71,7 +106,7 @@ impl FuncType {
             v => vec![v],
         }).collect();
         let len_params = params_results.len();
-        let flat_results: Vec<ValueType> = results.clone().into_iter().flat_map(|v| match v {
+        let flat_results: Vec<ValueType> = results.into_iter().flat_map(|v| match v {
             ValueType::I64 => vec![ValueType::I32, ValueType::I32],
             v => vec![*v],
         }).collect();
@@ -227,7 +262,7 @@ mod tests {
 
     #[test]
     fn new_empty_works() {
-        let ft = FuncType::new([], []);
+        let ft = FuncType::new::<_,_,false>([], []);
         assert!(ft.params().is_empty());
         assert!(ft.results().is_empty());
         assert_eq!(ft.params(), ft.params_results().0);
@@ -268,7 +303,7 @@ mod tests {
         ];
         for params in types {
             for results in types {
-                let ft = FuncType::new(params.iter().copied(), results.iter().copied());
+                let ft = FuncType::new_i32(params.iter().copied(), results.iter().copied());
                 assert_eq!(ft.params(), params);
                 assert_eq!(ft.results(), results);
                 assert_eq!(ft.params(), ft.params_results().0);

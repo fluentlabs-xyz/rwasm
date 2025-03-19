@@ -56,6 +56,7 @@ macro_rules! define_spec_tests {
 fn mvp_config() -> Config {
     let mut config = Config::default();
     config
+        .i32_translator(false)
         .wasm_mutable_global(false)
         .wasm_saturating_float_to_int(false)
         .wasm_sign_extension(false)

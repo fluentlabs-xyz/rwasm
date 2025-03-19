@@ -45,7 +45,18 @@ impl<'a> FuncResults<'a> {
     where
         T: EncodeUntypedSlice,
     {
-        UntypedValue::encode_slice::<T>(self.results, values, self.origin_results)
+        UntypedValue::encode_slice::<T>(self.results, values)
+            .unwrap_or_else(|error|
+                panic!("encountered unexpected invalid tuple length: {error}")
+            );
+        FuncFinished {}
+    }
+
+    pub fn encode_results_i32<T>(self, values: T) -> FuncFinished
+    where
+        T: EncodeUntypedSlice,
+    {
+        UntypedValue::encode_slice_i32::<T>(self.results, values, self.origin_results)
             .unwrap_or_else(|error|
                 panic!("encountered unexpected invalid tuple length: {error}")
             );
@@ -114,7 +125,17 @@ impl<'a> FuncParams<'a> {
     where
         T: DecodeUntypedSlice,
     {
-        let decoded = UntypedValue::decode_slice::<T>(self.params(), self.origin_params.as_slice())
+        let decoded = UntypedValue::decode_slice::<T>(self.params())
+            .unwrap_or_else(|error| panic!("encountered unexpected invalid tuple length: {error}"));
+        let results = self.into_func_results();
+        (decoded, results)
+    }
+
+    pub fn decode_params_i32<T>(self) -> (T, FuncResults<'a>)
+    where
+        T: DecodeUntypedSlice,
+    {
+        let decoded = UntypedValue::decode_slice_i32::<T>(self.params(), self.origin_params.as_slice())
             .unwrap_or_else(|error| panic!("encountered unexpected invalid tuple length: {error}"));
         let results = self.into_func_results();
         (decoded, results)

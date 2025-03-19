@@ -89,6 +89,7 @@ pub struct Config {
     fuel_costs: FuelCosts,
     /// Translate into rWASM compatible binary
     rwasm_config: Option<RwasmConfig>,
+    i32_translator: bool,
 }
 
 /// The fuel consumption mode of the `wasmi` [`Engine`].
@@ -260,6 +261,7 @@ impl Default for Config {
             fuel_costs: FuelCosts::default(),
             fuel_consumption_mode: FuelConsumptionMode::default(),
             rwasm_config: None,
+            i32_translator: false,
         }
     }
 }
@@ -417,6 +419,15 @@ impl Config {
     /// [`Engine`]: crate::Engine
     pub fn consume_fuel(&mut self, enable: bool) -> &mut Self {
         self.consume_fuel = enable;
+        self
+    }
+
+    pub fn get_i32_translator(&self) -> bool {
+        self.i32_translator
+    }
+
+    pub fn i32_translator(&mut self, enable: bool) -> &mut Self {
+        self.i32_translator = enable;
         self
     }
 

@@ -542,11 +542,11 @@ impl<T> Linker<T> {
     /// If there already is a definition under the same name for this [`Linker`].
     ///
     /// [`Store`]: crate::Store
-    pub fn func_wrap<Params, Args>(
+    pub fn func_wrap<Params, Args, const I32: bool>(
         &mut self,
         module: &str,
         name: &str,
-        func: impl IntoFunc<T, Params, Args>,
+        func: impl IntoFunc<T, Params, Args, I32>,
     ) -> Result<&mut Self, LinkerError> {
         let func = HostFuncTrampolineEntity::wrap(&self.engine, func);
         let key = self.import_key(module, name);
@@ -749,7 +749,7 @@ impl<T> Linker<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{core::ValueType, Store};
+    use crate::{core::ValueType, Config, Store};
 
     struct HostState {
         a: i32,
@@ -758,13 +758,13 @@ mod tests {
 
     #[test]
     fn linker_funcs_work() {
-        let engine = Engine::default();
+        let  engine = Engine::new(Config::default().i32_translator(true));
         let mut linker = <Linker<HostState>>::new(&engine);
         linker
             .func_new(
                 "host",
                 "get_a",
-                FuncType::new([], [ValueType::I32]),
+                FuncType::new::<_,_,true>([], [ValueType::I32]),
                 |ctx: Caller<HostState>, _params: &[Value], results: &mut [Value]| {
                     results[0] = Value::from(ctx.data().a);
                     Ok(())
@@ -775,7 +775,7 @@ mod tests {
             .func_new(
                 "host",
                 "set_a",
-                FuncType::new([ValueType::I32], []),
+                FuncType::new::<_,_,true>([ValueType::I32], []),
                 |mut ctx: Caller<HostState>, params: &[Value], _results: &mut [Value]| {
                     ctx.data_mut().a = params[0].i32().unwrap();
                     Ok(())
@@ -783,10 +783,10 @@ mod tests {
             )
             .unwrap();
         linker
-            .func_wrap("host", "get_b", |ctx: Caller<HostState>| ctx.data().b)
+            .func_wrap::<_,_,true>("host", "get_b", |ctx: Caller<HostState>| ctx.data().b)
             .unwrap();
         linker
-            .func_wrap("host", "set_b", |mut ctx: Caller<HostState>, value: i64| {
+            .func_wrap::<_,_,true>("host", "set_b", |mut ctx: Caller<HostState>, value: i64| {
                 ctx.data_mut().b = value
             })
             .unwrap();
