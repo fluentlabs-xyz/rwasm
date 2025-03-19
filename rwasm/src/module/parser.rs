@@ -236,7 +236,9 @@ impl<'engine> ModuleParser<'engine> {
         self.validator.type_section(&section)?;
         let is_i32_translator = self.builder.engine().config().get_i32_translator();
         let func_types = section.into_iter().map(|result| match result? {
-            wasmparser::Type::Func(ty) if is_i32_translator => Ok(FuncType::from_wasmparser::<true>(ty)),
+            wasmparser::Type::Func(ty) if is_i32_translator => {
+                Ok(FuncType::from_wasmparser::<true>(ty))
+            }
             wasmparser::Type::Func(ty) => Ok(FuncType::from_wasmparser::<false>(ty)),
         });
         self.builder.push_func_types(func_types)?;

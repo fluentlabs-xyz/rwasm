@@ -173,13 +173,11 @@ impl Stack {
         instance: Option<&Instance>,
         func_types: &FuncTypeRegistry,
     ) -> Result<(), Trap> {
-        let func_type = func_types
-            .resolve_func_type(host_func.ty_dedup());
+        let func_type = func_types.resolve_func_type(host_func.ty_dedup());
 
         // The host function signature is required for properly
         // adjusting, inspecting and manipulating the value stack.
-        let (input_types, output_types) = func_type
-            .params_results();
+        let (input_types, output_types) = func_type.params_results();
         // In case the host function returns more values than it takes
         // we are required to extend the value stack.
         let len_inputs = input_types.len();
@@ -201,7 +199,7 @@ impl Stack {
             len_inputs,
             len_outputs,
             func_type.origin_params().to_vec(),
-            func_type.origin_results().to_vec()
+            func_type.origin_results().to_vec(),
         );
         // Now we are ready to perform the host function call.
         // Note: We need to clone the host function due to some borrowing issues.

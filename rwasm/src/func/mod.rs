@@ -225,7 +225,10 @@ impl<T> HostFuncTrampolineEntity<T> {
     }
 
     /// Creates a new host function trampoline from the given statically typed closure.
-    pub fn wrap<Params, Results, const I32: bool>(engine: &Engine, func: impl IntoFunc<T, Params, Results, I32>) -> Self {
+    pub fn wrap<Params, Results, const I32: bool>(
+        engine: &Engine,
+        func: impl IntoFunc<T, Params, Results, I32>,
+    ) -> Self {
         let (signature, trampoline) = func.into_func();
         let ty = engine.alloc_func_type(signature);
         Self { ty, trampoline }

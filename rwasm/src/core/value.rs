@@ -43,7 +43,7 @@ impl ValueType {
     }
 }
 
-impl From<ValType> for ValueType{
+impl From<ValType> for ValueType {
     fn from(value: ValType) -> Self {
         match value {
             ValType::I32 => ValueType::I32,
@@ -56,7 +56,6 @@ impl From<ValType> for ValueType{
         }
     }
 }
-
 
 /// Convert one type to another by wrapping.
 pub trait WrapInto<T> {

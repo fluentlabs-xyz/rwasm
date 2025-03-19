@@ -213,11 +213,10 @@ impl<'engine> ModuleBuilder<'engine> {
 
     pub(crate) fn ensure_empty_func_type_exists(&mut self) -> FuncTypeIdx {
         if self.engine.config().get_i32_translator() {
-            self.ensure_func_type_index(FuncType::new::<_,_, true>([], []))
+            self.ensure_func_type_index(FuncType::new::<_, _, true>([], []))
         } else {
-            self.ensure_func_type_index(FuncType::new::<_,_, false>([], []))
+            self.ensure_func_type_index(FuncType::new::<_, _, false>([], []))
         }
-
     }
 
     pub(crate) fn ensure_func_type_index(&mut self, func_type: FuncType) -> FuncTypeIdx {
@@ -239,9 +238,9 @@ impl<'engine> ModuleBuilder<'engine> {
         // }
         // create new func type
         let empty_func_type = if self.engine.config().get_i32_translator() {
-            FuncType::new::<_,_, true>([], [])
+            FuncType::new::<_, _, true>([], [])
         } else {
-            FuncType::new::<_,_, false>([], [])
+            FuncType::new::<_, _, false>([], [])
         };
 
         self.func_types

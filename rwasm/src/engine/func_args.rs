@@ -1,8 +1,12 @@
 //! API using the Rust type system to guide host function trampoline execution.
 
-use crate::{core::{DecodeUntypedSlice, EncodeUntypedSlice, UntypedError, UntypedValue}, value::WithType, Value, WasmTypeList};
+use crate::{
+    core::{DecodeUntypedSlice, EncodeUntypedSlice, UntypedError, UntypedValue, ValueType},
+    value::WithType,
+    Value,
+    WasmTypeList,
+};
 use core::cmp;
-use crate::core::ValueType;
 
 /// Used to decode host function parameters.
 #[derive(Debug)]
@@ -33,7 +37,10 @@ pub struct FuncResults<'a> {
 impl<'a> FuncResults<'a> {
     /// Create new [`FuncResults`] from the given `results` slice.
     fn new(results: &'a mut [UntypedValue], origin_results: Vec<ValueType>) -> Self {
-        Self { results, origin_results}
+        Self {
+            results,
+            origin_results,
+        }
     }
 
     /// Encodes the results of the host function invocation as `T`.
@@ -46,9 +53,7 @@ impl<'a> FuncResults<'a> {
         T: EncodeUntypedSlice,
     {
         UntypedValue::encode_slice::<T>(self.results, values)
-            .unwrap_or_else(|error|
-                panic!("encountered unexpected invalid tuple length: {error}")
-            );
+            .unwrap_or_else(|error| panic!("encountered unexpected invalid tuple length: {error}"));
         FuncFinished {}
     }
 
@@ -57,9 +62,7 @@ impl<'a> FuncResults<'a> {
         T: EncodeUntypedSlice,
     {
         UntypedValue::encode_slice_i32::<T>(self.results, values, self.origin_results)
-            .unwrap_or_else(|error|
-                panic!("encountered unexpected invalid tuple length: {error}")
-            );
+            .unwrap_or_else(|error| panic!("encountered unexpected invalid tuple length: {error}"));
         FuncFinished {}
     }
 
@@ -135,8 +138,11 @@ impl<'a> FuncParams<'a> {
     where
         T: DecodeUntypedSlice,
     {
-        let decoded = UntypedValue::decode_slice_i32::<T>(self.params(), self.origin_params.as_slice())
-            .unwrap_or_else(|error| panic!("encountered unexpected invalid tuple length: {error}"));
+        let decoded =
+            UntypedValue::decode_slice_i32::<T>(self.params(), self.origin_params.as_slice())
+                .unwrap_or_else(|error| {
+                    panic!("encountered unexpected invalid tuple length: {error}")
+                });
         let results = self.into_func_results();
         (decoded, results)
     }
@@ -160,6 +166,9 @@ impl<'a> FuncParams<'a> {
 
     /// Consumes `self` to return the [`FuncResults`] out of it.
     fn into_func_results(self) -> FuncResults<'a> {
-        FuncResults::new(&mut self.params_results[..self.len_results], self.origin_results)
+        FuncResults::new(
+            &mut self.params_results[..self.len_results],
+            self.origin_results,
+        )
     }
 }

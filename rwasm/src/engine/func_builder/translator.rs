@@ -128,7 +128,7 @@ impl<'parser> FuncTranslator<'parser> {
             locals: LocalsRegistry::default(),
             alloc,
         }
-            .init()
+        .init()
     }
 
     /// Returns a shared reference to the underlying [`Engine`].
@@ -379,7 +379,7 @@ impl<'parser> FuncTranslator<'parser> {
             drop_keep.drop() as usize + len_params_locals,
             drop_keep.keep() as usize,
         )
-            .map_err(Into::into)
+        .map_err(Into::into)
     }
 
     /// Returns the relative depth on the stack of the local variable.

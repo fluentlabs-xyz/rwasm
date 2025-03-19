@@ -80,7 +80,7 @@ impl FuncType {
         }
         let params = func_type.params().iter().map(extract_value_type);
         let results = func_type.results().iter().map(extract_value_type);
-        Self::new::<_,_,I32>(params, results)
+        Self::new::<_, _, I32>(params, results)
     }
 }
 

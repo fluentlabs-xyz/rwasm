@@ -2,6 +2,7 @@ use super::{error::TestError, TestContext, TestDescriptor};
 use anyhow::Result;
 use rwasm::{
     core::{F32, F64},
+    value::split_i64_to_i32,
     Config,
     ExternRef,
     FuncRef,
@@ -21,7 +22,6 @@ use wast::{
     WastRet,
     Wat,
 };
-use rwasm::value::split_i64_to_i32;
 
 /// Runs the Wasm test spec identified by the given name.
 pub fn run_wasm_spec_test(name: &str, config: Config) {
@@ -231,7 +231,14 @@ fn assert_trap(test_context: &TestContext, span: Span, error: TestError, message
 fn assert_results(context: &TestContext, span: Span, results: &[Value], expected: &[WastRet]) {
     let config = context.get_config();
     if config.get_i32_translator() {
-        assert_eq!(results.len(), expected.len() + expected.iter().filter(|c| matches!(c, WastRet::Core(WastRetCore::I64(_)))).count());
+        assert_eq!(
+            results.len(),
+            expected.len()
+                + expected
+                    .iter()
+                    .filter(|c| matches!(c, WastRet::Core(WastRetCore::I64(_))))
+                    .count()
+        );
     } else {
         assert_eq!(results.len(), expected.len());
     }
@@ -260,8 +267,10 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
             (Value::I32(result), WastRetCore::I64(expected)) => {
                 if config.get_i32_translator() {
                     let low = result;
-                    let high = &results[i+shift+1].i32().expect("Failed to find low part of i64");
-                    shift+=1;
+                    let high = &results[i + shift + 1]
+                        .i32()
+                        .expect("Failed to find low part of i64");
+                    shift += 1;
                     let [expected_low, expected_high] = split_i64_to_i32(*expected);
                     assert_eq!(*high, expected_high, "in {}", context.spanned(span));
                     assert_eq!(*low, expected_low, "in {}", context.spanned(span));

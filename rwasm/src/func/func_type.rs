@@ -64,15 +64,23 @@ impl FuncType {
         P: IntoIterator<Item = ValueType> + Clone,
         R: IntoIterator<Item = ValueType> + Clone,
     {
-        let mut params_results = params.clone().into_iter().flat_map(|v| match v {
-            ValueType::I64 => vec![ValueType::I32, ValueType::I32],
-            v => vec![v],
-        }).collect::<Vec<_>>();
+        let mut params_results = params
+            .clone()
+            .into_iter()
+            .flat_map(|v| match v {
+                ValueType::I64 => vec![ValueType::I32, ValueType::I32],
+                v => vec![v],
+            })
+            .collect::<Vec<_>>();
         let len_params = params_results.len();
-        let flat_results: Vec<ValueType> = results.clone().into_iter().flat_map(|v| match v {
-            ValueType::I64 => vec![ValueType::I32, ValueType::I32],
-            v => vec![v],
-        }).collect();
+        let flat_results: Vec<ValueType> = results
+            .clone()
+            .into_iter()
+            .flat_map(|v| match v {
+                ValueType::I64 => vec![ValueType::I32, ValueType::I32],
+                v => vec![v],
+            })
+            .collect();
         params_results.extend(flat_results);
         Self {
             origin_params: params.clone().into_iter().collect(),
@@ -101,15 +109,21 @@ impl FuncType {
     pub fn new_i32_with_refs<'a>(params: &'a [ValueType], results: &'a [ValueType]) -> Self {
         let mut params_results = Vec::new();
         params_results.extend_from_slice(params);
-        params_results = params_results.into_iter().flat_map(|v| match v {
-            ValueType::I64 => vec![ValueType::I32, ValueType::I32],
-            v => vec![v],
-        }).collect();
+        params_results = params_results
+            .into_iter()
+            .flat_map(|v| match v {
+                ValueType::I64 => vec![ValueType::I32, ValueType::I32],
+                v => vec![v],
+            })
+            .collect();
         let len_params = params_results.len();
-        let flat_results: Vec<ValueType> = results.into_iter().flat_map(|v| match v {
-            ValueType::I64 => vec![ValueType::I32, ValueType::I32],
-            v => vec![*v],
-        }).collect();
+        let flat_results: Vec<ValueType> = results
+            .into_iter()
+            .flat_map(|v| match v {
+                ValueType::I64 => vec![ValueType::I32, ValueType::I32],
+                v => vec![*v],
+            })
+            .collect();
         params_results.extend_from_slice(flat_results.as_slice());
 
         Self {
@@ -262,7 +276,7 @@ mod tests {
 
     #[test]
     fn new_empty_works() {
-        let ft = FuncType::new::<_,_,false>([], []);
+        let ft = FuncType::new::<_, _, false>([], []);
         assert!(ft.params().is_empty());
         assert!(ft.results().is_empty());
         assert_eq!(ft.params(), ft.params_results().0);
@@ -296,7 +310,8 @@ mod tests {
             ][..],
             &[
                 ValueType::I32,
-                ValueType::I32, ValueType::I32,
+                ValueType::I32,
+                ValueType::I32,
                 ValueType::F32,
                 ValueType::F64,
             ][..],

@@ -3,7 +3,7 @@ use crate::{
     engine::{
         bytecode,
         bytecode::Instruction,
-        func_builder::FuncTranslator,
+        func_builder::{FuncTranslator, FuncTranslatorI32, FuncTranslators},
         CompiledFunc,
         DropKeep,
         FuncTranslatorAllocations,
@@ -11,11 +11,10 @@ use crate::{
     errors::ModuleError,
     module::{ConstExpr, DataSegmentKind, ElementSegmentKind, FuncIdx, ModuleResources},
     rwasm::RwasmBuilderError,
+    value::split_i64_to_i32,
 };
 use alloc::vec::Vec;
 use core::iter;
-use crate::engine::func_builder::{FuncTranslatorI32, FuncTranslators};
-use crate::value::split_i64_to_i32;
 
 pub struct RwasmTranslator<'parser> {
     /// The interface to incrementally build up the `wasmi` bytecode function.
@@ -32,8 +31,16 @@ impl<'parser> RwasmTranslator<'parser> {
         allocations: FuncTranslatorAllocations,
         i32_translator: bool,
     ) -> Self {
-        let translator = if i32_translator { FuncTranslators::TranslatorI32(FuncTranslatorI32::new(func, compiled_func, res, allocations))} else {
-            FuncTranslators::Translator(FuncTranslator::new(func, compiled_func, res, allocations))};
+        let translator = if i32_translator {
+            FuncTranslators::TranslatorI32(FuncTranslatorI32::new(
+                func,
+                compiled_func,
+                res,
+                allocations,
+            ))
+        } else {
+            FuncTranslators::Translator(FuncTranslator::new(func, compiled_func, res, allocations))
+        };
         Self { translator, res }
     }
 
@@ -53,10 +60,13 @@ impl<'parser> RwasmTranslator<'parser> {
         self.translator
             .finish()
             .map_err(Into::<ModuleError>::into)?;
-        Ok((match self.translator{
-            FuncTranslators::Translator(t) => {t.alloc}
-            FuncTranslators::TranslatorI32(t) => {t.alloc}
-        }, sys_index))
+        Ok((
+            match self.translator {
+                FuncTranslators::Translator(t) => t.alloc,
+                FuncTranslators::TranslatorI32(t) => t.alloc,
+            },
+            sys_index,
+        ))
     }
 
     fn translate_entrypoint_internal(&mut self) -> Result<(), RwasmBuilderError> {
@@ -210,9 +220,7 @@ impl<'parser> RwasmTranslator<'parser> {
                     ib.push_inst(Instruction::I32Const(value));
                 }
                 ValueType::I64 => {
-                    if is_i32_translator {
-
-                    }
+                    if is_i32_translator {}
                     let [lower, upper] = split_i64_to_i32(value.as_u64() as i64);
                     ib.push_inst(Instruction::I32Const(UntypedValue::from(lower)));
                     ib.push_inst(Instruction::I32Const(UntypedValue::from(upper)));
@@ -223,7 +231,9 @@ impl<'parser> RwasmTranslator<'parser> {
                 ValueType::F64 => {
                     ib.push_inst(Instruction::F64Const(value));
                 }
-                _ => {ib.push_inst(Instruction::I32Const(value));}
+                _ => {
+                    ib.push_inst(Instruction::I32Const(value));
+                }
             }
         } else {
             ib.push_inst(Instruction::I64Const(value));
@@ -244,7 +254,7 @@ impl<'parser> RwasmTranslator<'parser> {
             // patch a lot of spec tests
             if cfg!(feature = "e2e") {
                 if is_i32_translator {
-                    if global_type == ValueType::I64 && is_i32_translator{
+                    if global_type == ValueType::I64 && is_i32_translator {
                         ib.push_inst(Instruction::I32Const(666.into()));
                         ib.push_inst(Instruction::I32Const(0.into()));
                         ib.push_inst(Instruction::GlobalSet((global_index * 2).into()));
@@ -285,9 +295,15 @@ impl<'parser> RwasmTranslator<'parser> {
             self.translate_const(global_type, value);
         }
         if is_i32_translator {
-            self.translator.alloc().inst_builder.push_inst(Instruction::GlobalSet((global_index * 2).into()));
+            self.translator
+                .alloc()
+                .inst_builder
+                .push_inst(Instruction::GlobalSet((global_index * 2).into()));
             if global_type == ValueType::I64 {
-                self.translator.alloc().inst_builder.push_inst(Instruction::GlobalSet((global_index * 2 + 1).into()));
+                self.translator
+                    .alloc()
+                    .inst_builder
+                    .push_inst(Instruction::GlobalSet((global_index * 2 + 1).into()));
             }
         } else {
             let ib = &mut self.translator.alloc().inst_builder;
@@ -332,10 +348,7 @@ impl<'parser> RwasmTranslator<'parser> {
 
     pub fn translate_elements(&mut self) -> Result<(), RwasmBuilderError> {
         let alloc = self.translator.alloc();
-        let (rwasm_builder, instr_builder) = (
-            &mut alloc.segment_builder,
-            &mut alloc.inst_builder,
-        );
+        let (rwasm_builder, instr_builder) = (&mut alloc.segment_builder, &mut alloc.inst_builder);
         for (i, e) in self.res.res.element_segments.iter().enumerate() {
             if e.ty() != ValueType::FuncRef {
                 return Err(RwasmBuilderError::OnlyFuncRefAllowed);
@@ -374,10 +387,7 @@ impl<'parser> RwasmTranslator<'parser> {
 
     fn translate_memory(&mut self) -> Result<(), RwasmBuilderError> {
         let alloc = self.translator.alloc();
-        let (rwasm_builder, instr_builder) = (
-            &mut alloc.segment_builder,
-            &mut alloc.inst_builder,
-        );
+        let (rwasm_builder, instr_builder) = (&mut alloc.segment_builder, &mut alloc.inst_builder);
         let is_imported_memory = self.res.res.imports.len_memories() > 0;
         if is_imported_memory {
             return Err(RwasmBuilderError::ImportedMemoriesAreDisabled);
