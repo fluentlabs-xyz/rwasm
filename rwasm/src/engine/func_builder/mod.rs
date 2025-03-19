@@ -15,11 +15,12 @@ pub use self::{
     translator::{FuncTranslator, FuncTranslatorAllocations},
     translator_i32::FuncTranslatorI32,
 };
+pub use crate::engine::func_builder::value_stack::ValueStackHeight;
 use super::CompiledFunc;
 use crate::{
     arena::ArenaIndex,
     core::ValueType,
-    engine::{bytecode::Instruction, func_builder::value_stack::ValueStackHeight},
+    engine::{bytecode::Instruction},
     module::{FuncIdx, ModuleResources, ReusableAllocations},
 };
 use wasmparser::{BinaryReaderError, ValType, VisitOperator};

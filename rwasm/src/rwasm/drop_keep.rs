@@ -3,8 +3,9 @@ use crate::engine::{
     DropKeep,
     InstructionsBuilder,
 };
+use crate::engine::func_builder::ValueStackHeight;
 
-pub fn translate_drop_keep(instr_builder: &mut InstructionsBuilder, drop_keep: DropKeep) -> usize {
+pub fn translate_drop_keep(instr_builder: &mut InstructionsBuilder, drop_keep: DropKeep, height: &mut ValueStackHeight) -> usize {
     let (drop, keep) = (drop_keep.drop(), drop_keep.keep());
     if drop == 0 {
         return 0;
@@ -20,6 +21,8 @@ pub fn translate_drop_keep(instr_builder: &mut InstructionsBuilder, drop_keep: D
             opcode_count += 1;
         });
     } else {
+        height.push();
+        height.pop1();
         (0..keep).for_each(|i| {
             instr_builder.push_inst(Instruction::LocalGet(LocalDepth::from(
                 keep as u32 - i as u32,
@@ -61,7 +64,7 @@ mod tests {
         ];
         for (input, output, drop_keep) in tests.iter() {
             let mut instr_builder = InstructionsBuilder::default();
-            translate_drop_keep(&mut instr_builder, *drop_keep);
+            translate_drop_keep(&mut instr_builder, *drop_keep, );
             let (opcodes, _) = instr_builder.finalize().unwrap();
             let mut stack = input.clone();
             for opcode in opcodes {
