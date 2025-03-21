@@ -1617,8 +1617,9 @@ impl<'a> VisitOperator<'a> for FuncTranslatorI32<'a> {
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
                     builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-                    let offset = builder.branch_offset(end_label)?;
+
                     if drop_keep.is_noop() {
+                        let offset = builder.branch_offset(end_label)?;
                         builder
                             .alloc
                             .inst_builder
@@ -1640,11 +1641,13 @@ impl<'a> VisitOperator<'a> for FuncTranslatorI32<'a> {
                                 .last_nth_mut(drop_keep_length)
                                 .unwrap()
                                 .update_branch_offset(drop_keep_length as i32 + 2);
+                            let offset = builder.branch_offset(end_label)?;
                             builder
                                 .alloc
                                 .inst_builder
                                 .push_inst(Instruction::Br(offset));
                         } else {
+                            let offset = builder.branch_offset(end_label)?;
                             builder
                                 .alloc
                                 .inst_builder

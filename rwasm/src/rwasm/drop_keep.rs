@@ -40,6 +40,35 @@ pub fn translate_drop_keep(instr_builder: &mut InstructionsBuilder, drop_keep: D
     opcode_count
 }
 
+pub fn translate_drop_keep_to_ixs(drop_keep: DropKeep) -> Vec<Instruction> {
+    let (drop, keep) = (drop_keep.drop(), drop_keep.keep());
+    let mut result = vec![];
+    if drop == 0 {
+        return result
+    }
+    if drop >= keep {
+        (0..keep).for_each(|_| {
+            result.push(Instruction::LocalSet(LocalDepth::from(drop as u32)));
+        });
+        (0..(drop - keep)).for_each(|_| {
+            result.push(Instruction::Drop);
+        });
+    } else {
+        (0..keep).for_each(|i| {
+            result.push(Instruction::LocalGet(LocalDepth::from(
+                keep as u32 - i as u32,
+            )));
+            result.push(Instruction::LocalSet(LocalDepth::from(
+                keep as u32 + drop as u32 - i as u32,
+            )));
+        });
+        (0..drop).for_each(|_| {
+            result.push(Instruction::Drop);
+        });
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

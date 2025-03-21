@@ -53,6 +53,8 @@ use crate::{
 };
 use alloc::vec::Vec;
 use wasmparser::VisitOperator;
+use crate::engine::bytecode::Instruction::Drop;
+use crate::rwasm::translate_drop_keep_to_ixs;
 
 /// Reusable allocations of a [`FuncTranslator`].
 #[derive(Debug, Default)]
@@ -1105,8 +1107,9 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
                     builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-                    let mut offset = builder.branch_offset(end_label)?;
+
                     if drop_keep.is_noop() {
+                        let offset = builder.branch_offset(end_label)?;
                         builder
                             .alloc
                             .inst_builder
@@ -1129,15 +1132,14 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                                 .unwrap()
                                 .update_branch_offset(drop_keep_length as i32 + 2);
 
-                            if offset.to_i32() < 0 {
-                                offset = BranchOffset::from(offset.to_i32() - drop_keep_length as i32 - 1);
-                            }
+                            let offset = builder.branch_offset(end_label)?;
 
                             builder
                                 .alloc
                                 .inst_builder
                                 .push_inst(Instruction::Br(offset));
                         } else {
+                            let offset = builder.branch_offset(end_label)?;
                             builder
                                 .alloc
                                 .inst_builder
@@ -1180,6 +1182,7 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
         enum BrTableTarget {
             Br(BranchOffset, DropKeep),
             Return(DropKeep),
+            Label(LabelRef, DropKeep)
         }
 
         self.translate_if_reachable(|builder| {
@@ -1192,18 +1195,23 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                 n: usize,
                 depth: RelativeDepth,
                 max_drop_keep_fuel: &mut u64,
+                rwasm_drop_keep: bool,
             ) -> Result<BrTableTarget, TranslationError> {
                 match builder.acquire_target(depth.into_u32())? {
                     AcquiredTarget::Branch(label, drop_keep) => {
                         *max_drop_keep_fuel = (*max_drop_keep_fuel)
                             .max(builder.fuel_costs().fuel_for_drop_keep(drop_keep));
-                        let base = builder.alloc.inst_builder.current_pc();
-                        let instr = offset_instr(base, 2 * n + 1);
-                        let offset = builder
-                            .alloc
-                            .inst_builder
-                            .try_resolve_label_for(label, instr)?;
-                        Ok(BrTableTarget::Br(offset, drop_keep))
+                        if rwasm_drop_keep {
+                            Ok(BrTableTarget::Label(label, drop_keep))
+                        } else {
+                            let base = builder.alloc.inst_builder.current_pc();
+                            let instr = offset_instr(base, 2 * n + 1);
+                            let offset = builder
+                                .alloc
+                                .inst_builder
+                                .try_resolve_label_for(label, instr)?;
+                            Ok(BrTableTarget::Br(offset, drop_keep))
+                        }
                     }
                     AcquiredTarget::Return(drop_keep) => {
                         *max_drop_keep_fuel = (*max_drop_keep_fuel)
@@ -1228,8 +1236,86 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
                         stream.push(Instruction::Return(drop_keep));
                         stream.push(Instruction::Return(drop_keep));
                     }
+                    BrTableTarget::Label(label, drop_keep) => {
+                        stream.push(Instruction::i32_const(label.into_usize() as i32));
+                        stream.push(Instruction::Return(drop_keep));
+                    }
                 }
             }
+
+            fn translate_br_table_drop_keep(builder: &mut FuncTranslator, base: Instr) -> Result<(), TranslationError>{
+                if builder.alloc.br_table_branches.len() % 2 != 0 {
+                    panic!("wrong count of instructions in br_table_branches")
+                }
+
+                for i in (0..builder.alloc.br_table_branches.len()).step_by(2) {
+                    let translate_position = builder.alloc.br_table_branches.len();
+                    match builder.alloc.br_table_branches[i] {
+                        Instruction::BrAdjust(offset) => {
+                            let drop_keep = if let Instruction::Return(drop_keep) = builder.alloc.br_table_branches[i+1] {
+                                drop_keep
+                            } else {
+                                panic!("wrong return instruction in br_table_branches")
+                            };
+
+                            if !drop_keep.is_noop() {
+                                builder.alloc.br_table_branches[i] = Instruction::Br(BranchOffset::from((translate_position - i) as i32));
+
+                                let mut ixs = translate_drop_keep_to_ixs(drop_keep);
+                                builder.alloc.br_table_branches.append(&mut ixs);
+
+                                builder.alloc.br_table_branches.push(Instruction::Br(offset));
+                            }
+                        }
+                        Instruction::Return(drop_keep) => {
+                            if !drop_keep.is_noop() {
+                                builder.alloc.br_table_branches[i] = Instruction::Br(BranchOffset::from((translate_position - i) as i32));
+
+                                let mut ixs = translate_drop_keep_to_ixs(drop_keep);
+                                builder.alloc.br_table_branches.append(&mut ixs);
+
+                                builder.alloc.br_table_branches.push(Instruction::Return(DropKeep::none()));
+                            }
+                        }
+                        Instruction::I32Const(label) => {
+                            let drop_keep = if let Instruction::Return(drop_keep) = builder.alloc.br_table_branches[i+1] {
+                                drop_keep
+                            } else {
+                                panic!("wrong return instruction in br_table_branches")
+                            };
+                            if !drop_keep.is_noop() {
+                                builder.alloc.br_table_branches[i] = Instruction::Br(BranchOffset::from((translate_position - i) as i32));
+
+                                let mut ixs = translate_drop_keep_to_ixs(drop_keep);
+                                builder.alloc.br_table_branches.append(&mut ixs);
+
+                                // builder.alloc.br_table_branches.push(Instruction::Br(BranchOffset::from(0)));
+
+                                let instr = offset_instr(base, builder.alloc.br_table_branches.len());
+                                let offset = builder
+                                    .alloc
+                                    .inst_builder
+                                    .try_resolve_label_for(LabelRef::new(label.as_u32()), instr)?;
+                                let len = builder.alloc.br_table_branches.len();
+                                builder.alloc.br_table_branches.push(Instruction::Br(BranchOffset::from(offset)));
+                            } else {
+                                let instr = offset_instr(base, i);
+                                let offset = builder
+                                    .alloc
+                                    .inst_builder
+                                    .try_resolve_label_for(LabelRef::new(label.as_u32()), instr)?;
+                                let len = builder.alloc.br_table_branches.len();
+                                builder.alloc.br_table_branches[i] = Instruction::Br(BranchOffset::from(offset));
+                            }
+                        }
+
+                        ix => panic!("wrong instruction in br_table_branches: {:?}", ix)
+                    }
+                }
+
+                Ok(())
+            }
+
 
             let default = RelativeDepth::from_u32(table.default());
             let targets = table
@@ -1252,8 +1338,16 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
 
             builder.stack_height.pop1();
             builder.alloc.br_table_branches.clear();
+
+            let rwasm_drop_keep = builder
+                .engine()
+                .config()
+                .get_rwasm_config()
+                .map(|v| v.translate_drop_keep)
+                .unwrap_or_default();
+
             for (n, depth) in targets.into_iter().enumerate() {
-                let target = compute_instr(builder, n, depth, &mut max_drop_keep_fuel)?;
+                let target = compute_instr(builder, n, depth, &mut max_drop_keep_fuel, rwasm_drop_keep)?;
                 encode_br_table_target(&mut builder.alloc.br_table_branches, target)
             }
 
@@ -1261,13 +1355,18 @@ impl<'a> VisitOperator<'a> for FuncTranslator<'a> {
             // words.
             let len_branches = builder.alloc.br_table_branches.len() / 2;
             let default_branch =
-                compute_instr(builder, len_branches, default, &mut max_drop_keep_fuel)?;
+                compute_instr(builder, len_branches, default, &mut max_drop_keep_fuel, rwasm_drop_keep)?;
             let len_targets = BranchTableTargets::try_from(len_branches + 1)?;
             builder
                 .alloc
                 .inst_builder
                 .push_inst(Instruction::BrTable(len_targets));
             encode_br_table_target(&mut builder.alloc.br_table_branches, default_branch);
+
+            if rwasm_drop_keep {
+                translate_br_table_drop_keep(builder,  Instr::from_usize(builder.alloc.inst_builder.current_pc().into_usize()))?;
+            }
+
             for branch in builder.alloc.br_table_branches.drain(..) {
                 builder.alloc.inst_builder.push_inst(branch);
             }
