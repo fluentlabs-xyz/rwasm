@@ -758,13 +758,13 @@ mod tests {
 
     #[test]
     fn linker_funcs_work() {
-        let engine = Engine::new(Config::default().i32_translator(true));
+        let engine = Engine::new(&Config::default());
         let mut linker = <Linker<HostState>>::new(&engine);
         linker
             .func_new(
                 "host",
                 "get_a",
-                FuncType::new::<_, _, true>([], [ValueType::I32]),
+                FuncType::new::<_, _, false>([], [ValueType::I32]),
                 |ctx: Caller<HostState>, _params: &[Value], results: &mut [Value]| {
                     results[0] = Value::from(ctx.data().a);
                     Ok(())
@@ -775,7 +775,7 @@ mod tests {
             .func_new(
                 "host",
                 "set_a",
-                FuncType::new::<_, _, true>([ValueType::I32], []),
+                FuncType::new::<_, _, false>([ValueType::I32], []),
                 |mut ctx: Caller<HostState>, params: &[Value], _results: &mut [Value]| {
                     ctx.data_mut().a = params[0].i32().unwrap();
                     Ok(())
@@ -783,10 +783,10 @@ mod tests {
             )
             .unwrap();
         linker
-            .func_wrap::<_, _, true>("host", "get_b", |ctx: Caller<HostState>| ctx.data().b)
+            .func_wrap::<_, _, false>("host", "get_b", |ctx: Caller<HostState>| ctx.data().b)
             .unwrap();
         linker
-            .func_wrap::<_, _, true>("host", "set_b", |mut ctx: Caller<HostState>, value: i64| {
+            .func_wrap::<_, _, false>("host", "set_b", |mut ctx: Caller<HostState>, value: i64| {
                 ctx.data_mut().b = value
             })
             .unwrap();
@@ -836,18 +836,18 @@ mod tests {
             .get_typed_func::<i32, ()>(&store, "wasm_set_a")
             .unwrap();
         let wasm_get_b = instance
-            .get_typed_func::<(), (i32, i32)>(&store, "wasm_get_b")
+            .get_typed_func::<(), (i64)>(&store, "wasm_get_b")
             .unwrap();
         let wasm_set_b = instance
-            .get_typed_func::<(i32, i32), ()>(&store, "wasm_set_b")
+            .get_typed_func::<(i64), ()>(&store, "wasm_set_b")
             .unwrap();
 
         assert_eq!(wasm_get_a.call(&mut store, ()).unwrap(), a_init);
         wasm_set_a.call(&mut store, 100).unwrap();
         assert_eq!(wasm_get_a.call(&mut store, ()).unwrap(), 100);
 
-        assert_eq!(wasm_get_b.call(&mut store, ()).unwrap(), (0, b_init as i32));
-        wasm_set_b.call(&mut store, (0, 200)).unwrap();
-        assert_eq!(wasm_get_b.call(&mut store, ()).unwrap(), (0, 200 as i32));
+        assert_eq!(wasm_get_b.call(&mut store, ()).unwrap(), b_init);
+        wasm_set_b.call(&mut store, 200).unwrap();
+        assert_eq!(wasm_get_b.call(&mut store, ()).unwrap(), 200);
     }
 }

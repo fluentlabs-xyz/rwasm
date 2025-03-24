@@ -74,7 +74,6 @@ fn make_config(rwasm_mode: bool) -> Config {
     // it seems that the entire Wasm spec test suite is already built
     // on the basis of its semantics.
     config
-        .i32_translator(false)
         .wasm_mutable_global(true)
         .wasm_saturating_float_to_int(true)
         .wasm_sign_extension(true)
@@ -90,17 +89,11 @@ fn make_config(rwasm_mode: bool) -> Config {
             import_linker: None,
             wrap_import_functions: false,
             translate_drop_keep: true,
+            use_32bit_mode: true,
         });
     }
     config
 }
-// --- type-i32 ---
-// 0:       SignatureCheck(SignatureIdx(0))        stack(0):[]
-// 1:       I32Const(UntypedValue { bits: 0 })     stack(0):[]
-// 2:       I32Const(UntypedValue { bits: 1 })     stack(1):[0]
-// 3:       BrAdjustIfNez(BranchOffset(4))         stack(2):[1, 0]
-// 7:       Return(DropKeep { drop: 0, keep: 0 })  stack(0):[]
-
 
 define_spec_tests! {
     let config = make_config(true);

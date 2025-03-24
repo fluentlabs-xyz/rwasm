@@ -3,7 +3,6 @@ use super::{parser::ReusableAllocations, FuncIdx, ModuleResources};
 use crate::{
     engine::{CompiledFunc, FuncBuilder, FuncTranslatorAllocations},
     errors::ModuleError,
-    Config,
 };
 use wasmparser::{FuncValidator, FunctionBody, ValidatorResources};
 

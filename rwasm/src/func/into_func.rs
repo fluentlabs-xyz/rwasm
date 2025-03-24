@@ -81,9 +81,7 @@ macro_rules! impl_into_func {
                         } else {
                             params_results.decode_params()
                         };
-
-                        let results: Self::Results =
-                                (self)(caller, $($tuple),*).into_fallible()?;
+                        let results: Self::Results = (self)(caller, $($tuple),*).into_fallible()?;
                         if is_i32_translator {
                             Ok(func_results.encode_results_i32(results))
                         } else {

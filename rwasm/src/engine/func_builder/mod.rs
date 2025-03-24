@@ -15,12 +15,12 @@ pub use self::{
     translator::{FuncTranslator, FuncTranslatorAllocations},
     translator_i32::FuncTranslatorI32,
 };
-pub use crate::engine::func_builder::value_stack::ValueStackHeight;
 use super::CompiledFunc;
+pub use crate::engine::func_builder::value_stack::ValueStackHeight;
 use crate::{
     arena::ArenaIndex,
     core::ValueType,
-    engine::{bytecode::Instruction},
+    engine::bytecode::Instruction,
     module::{FuncIdx, ModuleResources, ReusableAllocations},
 };
 use wasmparser::{BinaryReaderError, ValType, VisitOperator};
@@ -101,7 +101,7 @@ impl<'parser> FuncTranslators<'parser> {
     }
     pub(crate) fn stack_types(&mut self) -> &mut Vec<ValueType> {
         match self {
-            FuncTranslators::Translator(t) => {
+            FuncTranslators::Translator(_) => {
                 panic!("Translator not support stack types")
             }
             FuncTranslators::TranslatorI32(t) => &mut t.stack_types,

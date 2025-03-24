@@ -36,4 +36,4 @@ default = ["std"]
 # Use `no-default-features` for a `no_std` build.
 std = ["num-traits/std", "downcast-rs/std", "byteorder/std", "dep:strum", "dep:strum_macros"]
 print-trace = ["std"]
-e2e = ["print-trace"]
+e2e = []

@@ -4,7 +4,6 @@ use crate::{
     core::{DecodeUntypedSlice, EncodeUntypedSlice, UntypedError, UntypedValue, ValueType},
     value::WithType,
     Value,
-    WasmTypeList,
 };
 use core::cmp;
 

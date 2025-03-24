@@ -9,8 +9,6 @@ use super::{
     labels::LabelRef,
     locals_registry::LocalsRegistry,
     value_stack::ValueStackHeight,
-    ControlFlowStack,
-    InstructionsBuilder,
     TranslationError,
 };
 use crate::{
@@ -47,7 +45,7 @@ use crate::{
         ModuleResources,
         DEFAULT_MEMORY_INDEX,
     },
-    rwasm::{translate_drop_keep, SegmentBuilder},
+    rwasm::translate_drop_keep,
     value::split_i64_to_i32,
     Engine,
     FuncType,
@@ -55,7 +53,6 @@ use crate::{
     Mutability,
 };
 use alloc::vec::Vec;
-use num_traits::CheckedSub;
 use wasmparser::VisitOperator;
 
 /// Type concerned with translating from Wasm bytecode to `wasmi` bytecode.
@@ -1572,7 +1569,11 @@ impl<'a> VisitOperator<'a> for FuncTranslatorI32<'a> {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
                     builder.bump_fuel_consumption(builder.fuel_costs().base)?;
                     let drop_keep = if rwasm_drop_keep {
-                        translate_drop_keep(&mut builder.alloc.inst_builder, drop_keep, &mut builder.stack_height );
+                        translate_drop_keep(
+                            &mut builder.alloc.inst_builder,
+                            drop_keep,
+                            &mut builder.stack_height,
+                        );
                         DropKeep::none()
                     } else {
                         drop_keep
@@ -1633,8 +1634,11 @@ impl<'a> VisitOperator<'a> for FuncTranslatorI32<'a> {
                                 .alloc
                                 .inst_builder
                                 .push_inst(Instruction::BrIfEqz(BranchOffset::uninit()));
-                            let drop_keep_length =
-                                translate_drop_keep(&mut builder.alloc.inst_builder, drop_keep, &mut builder.stack_height);
+                            let drop_keep_length = translate_drop_keep(
+                                &mut builder.alloc.inst_builder,
+                                drop_keep,
+                                &mut builder.stack_height,
+                            );
                             builder
                                 .alloc
                                 .inst_builder
@@ -1661,8 +1665,11 @@ impl<'a> VisitOperator<'a> for FuncTranslatorI32<'a> {
                             .alloc
                             .inst_builder
                             .push_inst(Instruction::BrIfEqz(BranchOffset::uninit()));
-                        let drop_keep_length =
-                            translate_drop_keep(&mut builder.alloc.inst_builder, drop_keep, &mut builder.stack_height );
+                        let drop_keep_length = translate_drop_keep(
+                            &mut builder.alloc.inst_builder,
+                            drop_keep,
+                            &mut builder.stack_height,
+                        );
                         builder
                             .alloc
                             .inst_builder
@@ -1801,7 +1808,11 @@ impl<'a> VisitOperator<'a> for FuncTranslatorI32<'a> {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.bump_fuel_consumption(builder.fuel_costs().fuel_for_drop_keep(drop_keep))?;
             if rwasm_drop_keep {
-                translate_drop_keep(&mut builder.alloc.inst_builder, drop_keep, &mut builder.stack_height );
+                translate_drop_keep(
+                    &mut builder.alloc.inst_builder,
+                    drop_keep,
+                    &mut builder.stack_height,
+                );
                 builder
                     .alloc
                     .inst_builder

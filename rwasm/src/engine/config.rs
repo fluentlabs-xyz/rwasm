@@ -40,6 +40,9 @@ pub struct RwasmConfig {
     /// An option for translating a drop keeps into SetLocal/GetLocal opcodes,
     /// right now under a flag because the function is unstable
     pub translate_drop_keep: bool,
+    /// A mode for 32-bit stack alignment
+    /// that disables all 64-bit instructions and replace them with 32-bit ones
+    pub use_32bit_mode: bool,
 }
 
 impl Default for RwasmConfig {
@@ -50,6 +53,7 @@ impl Default for RwasmConfig {
             import_linker: None,
             wrap_import_functions: false,
             translate_drop_keep: false,
+            use_32bit_mode: false,
         }
     }
 }
@@ -89,7 +93,6 @@ pub struct Config {
     fuel_costs: FuelCosts,
     /// Translate into rWASM compatible binary
     rwasm_config: Option<RwasmConfig>,
-    i32_translator: bool,
 }
 
 /// The fuel consumption mode of the `wasmi` [`Engine`].
@@ -261,7 +264,6 @@ impl Default for Config {
             fuel_costs: FuelCosts::default(),
             fuel_consumption_mode: FuelConsumptionMode::default(),
             rwasm_config: None,
-            i32_translator: false,
         }
     }
 }
@@ -423,12 +425,10 @@ impl Config {
     }
 
     pub fn get_i32_translator(&self) -> bool {
-        self.i32_translator
-    }
-
-    pub fn i32_translator(&mut self, enable: bool) -> &mut Self {
-        self.i32_translator = enable;
-        self
+        self.rwasm_config
+            .as_ref()
+            .map(|v| v.use_32bit_mode)
+            .unwrap_or(false)
     }
 
     /// Returns `true` if the [`Config`] enables fuel consumption by the [`Engine`].

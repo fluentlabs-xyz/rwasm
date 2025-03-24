@@ -352,6 +352,7 @@ fn test_state_router() {
         import_linker: Some(create_import_linker()),
         wrap_import_functions: true,
         translate_drop_keep: false,
+        use_32bit_mode: false,
     });
     // run with deployment state (a result is 200)
     let mut host_state = HostState::default();

@@ -1,11 +1,15 @@
 use crate::engine::{
     bytecode::{Instruction, LocalDepth},
+    func_builder::ValueStackHeight,
     DropKeep,
     InstructionsBuilder,
 };
-use crate::engine::func_builder::ValueStackHeight;
 
-pub fn translate_drop_keep(instr_builder: &mut InstructionsBuilder, drop_keep: DropKeep, height: &mut ValueStackHeight) -> usize {
+pub fn translate_drop_keep(
+    instr_builder: &mut InstructionsBuilder,
+    drop_keep: DropKeep,
+    height: &mut ValueStackHeight,
+) -> usize {
     let (drop, keep) = (drop_keep.drop(), drop_keep.keep());
     if drop == 0 {
         return 0;
@@ -44,7 +48,7 @@ pub fn translate_drop_keep_to_ixs(drop_keep: DropKeep) -> Vec<Instruction> {
     let (drop, keep) = (drop_keep.drop(), drop_keep.keep());
     let mut result = vec![];
     if drop == 0 {
-        return result
+        return result;
     }
     if drop >= keep {
         (0..keep).for_each(|_| {
@@ -93,7 +97,8 @@ mod tests {
         ];
         for (input, output, drop_keep) in tests.iter() {
             let mut instr_builder = InstructionsBuilder::default();
-            translate_drop_keep(&mut instr_builder, *drop_keep, );
+            let mut stack_height = ValueStackHeight::default();
+            translate_drop_keep(&mut instr_builder, *drop_keep, &mut stack_height);
             let (opcodes, _) = instr_builder.finalize().unwrap();
             let mut stack = input.clone();
             for opcode in opcodes {

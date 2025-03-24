@@ -1605,12 +1605,12 @@ macro_rules! impl_encode_untyped_slice {
                                 if [< _origin_results_ $tuple >] == &ValueType::I64 {
                                     let [low, high] = split_i64_to_i32(untyped.as_u64() as i64);
                                     results[i] = UntypedValue::from(high);
-                                    i+=1;
+                                    i += 1;
                                     results[i] = UntypedValue::from(low);
-                                    i+=1;
+                                    i += 1;
                                 } else {
                                     results[i] = untyped;
-                                    i+=1;
+                                    i += 1;
                                 }
                             )*
                             if i != results.len() {
