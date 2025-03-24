@@ -4,6 +4,7 @@ use crate::engine::{
     DropKeep,
     InstructionsBuilder,
 };
+use alloc::{vec, vec::Vec};
 
 pub fn translate_drop_keep(
     instr_builder: &mut InstructionsBuilder,

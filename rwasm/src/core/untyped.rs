@@ -17,6 +17,7 @@ use crate::{
     },
     value::split_i64_to_i32,
 };
+use alloc::vec::Vec;
 use core::{
     fmt::{self, Display, Formatter},
     ops::{Neg, Shl, Shr},

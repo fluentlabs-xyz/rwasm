@@ -5,6 +5,7 @@ use crate::{
     value::WithType,
     Value,
 };
+use alloc::vec::Vec;
 use core::cmp;
 
 /// Used to decode host function parameters.

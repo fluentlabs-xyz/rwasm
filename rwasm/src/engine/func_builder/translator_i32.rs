@@ -278,9 +278,6 @@ impl<'parser> FuncTranslatorI32<'parser> {
     fn len_locals(&self) -> usize {
         let len_params_locals = self.locals.types_registered() as usize;
         let len_params = self.func_type().origin_params().len();
-        if len_params_locals < len_params {
-            println!("This");
-        }
         debug_assert!(len_params_locals >= len_params);
         len_params_locals - len_params
     }
@@ -1525,12 +1522,6 @@ impl<'a> VisitOperator<'a> for FuncTranslatorI32<'a> {
             self.stack_height.shrink_to(frame_stack_height);
 
             while old_stack_height > self.stack_height.height() {
-                println!(
-                    "stack: {} {} {:?}",
-                    old_stack_height,
-                    self.stack_height.height(),
-                    self.stack_types
-                );
                 match self.stack_types.pop() {
                     Some(ValueType::I64) => {
                         old_stack_height -= 2;

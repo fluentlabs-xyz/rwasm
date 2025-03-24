@@ -23,6 +23,7 @@ use crate::{
     engine::bytecode::Instruction,
     module::{FuncIdx, ModuleResources, ReusableAllocations},
 };
+use alloc::vec::Vec;
 use wasmparser::{BinaryReaderError, ValType, VisitOperator};
 
 /// The used function validator type.
