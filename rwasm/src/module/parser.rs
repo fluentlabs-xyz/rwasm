@@ -110,7 +110,7 @@ impl<'engine> ModuleParser<'engine> {
                     func_bodies.push(func_body);
                 }
                 Payload::End(offset) => {
-                    // before processing code entries we must process an entrypoint
+                    // before processing code entries, we must process an entrypoint
                     let instr_builder =
                         if self.builder.engine().config().get_rwasm_config().is_some() {
                             Some(self.process_rwasm_entrypoint()?)
@@ -127,6 +127,11 @@ impl<'engine> ModuleParser<'engine> {
                         self.rewrite_sections()?;
                     }
                     self.process_end(offset)?;
+                }
+                Payload::CustomSection(reader) => {
+                    self.builder
+                        .custom_sections
+                        .push(reader.name(), reader.data());
                 }
                 _ => {
                     self.process_payload(payload)?;

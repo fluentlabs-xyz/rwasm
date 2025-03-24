@@ -20,14 +20,14 @@ use crate::{
 };
 use alloc::{string::ToString, vec::Vec};
 
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Debug, Default, PartialEq, Clone, Eq, Hash)]
 pub struct RwasmModuleInstance {
     pub module: RwasmModule,
     pub func_segments: Vec<u32>,
     pub start: usize,
 }
 
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Debug, Default, PartialEq, Clone, Eq, Hash)]
 pub struct RwasmModule {
     pub code_section: InstructionSet,
     pub memory_section: Vec<u8>,
@@ -74,13 +74,27 @@ impl RwasmModule {
     }
 
     pub fn compile_with_config(wasm_binary: &[u8], config: &Config) -> Result<Self, Error> {
+        let (result, _) = Self::compile_and_retrieve_input(wasm_binary, config)?;
+        Ok(result)
+    }
+
+    pub fn compile_and_retrieve_input(
+        wasm_binary: &[u8],
+        config: &Config,
+    ) -> Result<(Self, Vec<u8>), Error> {
         assert!(
             config.get_rwasm_config().is_some(),
             "rWASM mode must be enabled in config"
         );
         let engine = Engine::new(&config);
         let module = Module::new(&engine, wasm_binary)?;
-        Ok(Self::from_module(&module))
+        let input_section = module
+            .custom_sections
+            .iter()
+            .find(|c| c.name() == "input")
+            .map(|c| c.data().to_vec())
+            .unwrap_or_else(Vec::new);
+        Ok((Self::from_module(&module), input_section))
     }
 
     pub fn new(module: &[u8]) -> Result<Self, BinaryFormatError> {

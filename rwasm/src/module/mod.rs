@@ -1,5 +1,6 @@
 mod builder;
 mod compile;
+mod custom_section;
 mod data;
 mod element;
 mod error;
@@ -15,6 +16,7 @@ mod utils;
 pub use self::{
     builder::{ModuleBuilder, ModuleResources},
     compile::BlockType,
+    custom_section::{CustomSection, CustomSections, CustomSectionsBuilder, CustomSectionsIter},
     data::{DataSegment, DataSegmentKind},
     element::{ElementSegment, ElementSegmentItems, ElementSegmentKind},
     error::ModuleError,
@@ -62,6 +64,7 @@ pub struct Module {
     pub compiled_funcs: Box<[CompiledFunc]>,
     pub element_segments: Box<[ElementSegment]>,
     pub data_segments: Box<[DataSegment]>,
+    pub custom_sections: CustomSections,
 }
 
 /// The index of the default Wasm linear memory.
@@ -165,6 +168,7 @@ impl Module {
             compiled_funcs: builder.compiled_funcs.into(),
             element_segments: builder.element_segments.into(),
             data_segments: builder.data_segments.into(),
+            custom_sections: builder.custom_sections.finish(),
         }
     }
 

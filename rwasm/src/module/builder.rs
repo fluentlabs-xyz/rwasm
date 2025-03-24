@@ -2,6 +2,7 @@ use super::{
     export::ExternIdx,
     import::FuncTypeIdx,
     ConstExpr,
+    CustomSectionsBuilder,
     DataSegment,
     DataSegmentKind,
     ElementSegment,
@@ -53,6 +54,7 @@ pub struct ModuleBuilder<'engine> {
     pub element_segments: Vec<ElementSegment>,
     pub data_segments: Vec<DataSegment>,
     pub import_mapping: BTreeMap<u32, FuncIdx>,
+    pub custom_sections: CustomSectionsBuilder,
 }
 
 /// The import names of the [`Module`] imports.
@@ -129,7 +131,7 @@ impl<'a> ModuleResources<'a> {
             } else {
                 let index =
                     (func_idx.into_u32() as usize).checked_sub(self.res.imports.len_funcs())?;
-                // otherwise we must disallow accessing entrypoint
+                // otherwise, we must disallow accessing entrypoint
                 if index == self.res.compiled_funcs.len() - 1 {
                     return None;
                 }
@@ -178,6 +180,7 @@ impl<'engine> ModuleBuilder<'engine> {
             element_segments: Vec::new(),
             data_segments: Vec::new(),
             import_mapping: BTreeMap::new(),
+            custom_sections: CustomSectionsBuilder::default(),
         }
     }
 

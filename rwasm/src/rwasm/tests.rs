@@ -352,6 +352,7 @@ fn test_state_router() {
         import_linker: Some(create_import_linker()),
         wrap_import_functions: true,
         translate_drop_keep: false,
+        allow_malformed_entrypoint_func_type: false,
         use_32bit_mode: false,
     });
     // run with deployment state (a result is 200)
@@ -363,4 +364,24 @@ fn test_state_router() {
     host_state.state = STATE_MAIN;
     host_state = execute_binary(wat, host_state, config);
     assert_eq!(host_state.exit_code, 100);
+}
+
+#[test]
+fn test_input_retrieval() {
+    let wat = r#"
+    (module
+      (type (;0;) (func))
+      (func (;0;) (type 0)
+        return
+      )
+      (memory (;0;) 17)
+      (export "main" (func 0))
+      (@custom "input" "\00\01\02")
+    )"#;
+    let config = RwasmModule::default_config(Some(create_import_linker()));
+    let wasm_binary = wat::parse_str(wat).unwrap();
+    let (_, input) = RwasmModule::compile_and_retrieve_input(&wasm_binary, &config).unwrap();
+    assert_eq!(input, vec![0x00, 0x01, 0x02]);
+    let host_state = execute_binary_default(wat);
+    assert_eq!(host_state.exit_code, 0);
 }

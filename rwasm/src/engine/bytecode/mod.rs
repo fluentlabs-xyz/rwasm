@@ -625,7 +625,7 @@ impl Instruction {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone, PartialEq)]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct InstrMeta(usize, u16, pub(crate) usize);
 
 impl InstrMeta {
