@@ -836,10 +836,10 @@ mod tests {
             .get_typed_func::<i32, ()>(&store, "wasm_set_a")
             .unwrap();
         let wasm_get_b = instance
-            .get_typed_func::<(), (i64)>(&store, "wasm_get_b")
+            .get_typed_func::<(), i64>(&store, "wasm_get_b")
             .unwrap();
         let wasm_set_b = instance
-            .get_typed_func::<(i64), ()>(&store, "wasm_set_b")
+            .get_typed_func::<i64, ()>(&store, "wasm_set_b")
             .unwrap();
 
         assert_eq!(wasm_get_a.call(&mut store, ()).unwrap(), a_init);
