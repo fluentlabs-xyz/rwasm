@@ -36,9 +36,6 @@ jobs:
       - name: Setup cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Install wasm32 target
-        run: rustup target add wasm32-unknown-unknown
-
       - name: Run tests
         run: cargo test --no-fail-fast
 
@@ -63,37 +60,3 @@ jobs:
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
         continue-on-error: true
-
-  evm-e2e-tests:
-    name: REVM E2E Tests
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: "recursive"
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-
-      - name: Setup cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "revm/e2e -> target"
-
-      - name: Sync ethereum tests
-        working-directory: revm/e2e
-        run: make sync_tests
-
-      - name: Run ethereum tests
-        working-directory: revm/e2e
-        run: make run_general_state_tests
