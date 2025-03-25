@@ -8,7 +8,8 @@ use core::iter::FusedIterator;
 /// or [`Instance::get_export`](crate::Instance::get_export).
 #[derive(Debug, Copy, Clone)]
 pub enum Extern {
-    /// A WebAssembly global which acts like a [`Cell<T>`] of sorts, supporting `get` and `set` operations.
+    /// A WebAssembly global which acts like a [`Cell<T>`] of sorts, supporting `get` and `set`
+    /// operations.
     ///
     /// [`Cell<T>`]: https://doc.rust-lang.org/core/cell/struct.Cell.html
     Global(Global),
@@ -225,7 +226,8 @@ impl<'instance> Export<'instance> {
         self.definition.into_memory()
     }
 
-    /// Returns the underlying [`Global`], if the [`Export`] is a global variable or `None` otherwise.
+    /// Returns the underlying [`Global`], if the [`Export`] is a global variable or `None`
+    /// otherwise.
     pub fn into_global(self) -> Option<Global> {
         self.definition.into_global()
     }

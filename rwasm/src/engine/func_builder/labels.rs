@@ -22,8 +22,12 @@ pub struct LabelRef(u32);
 impl LabelRef {
     /// Returns the `usize` value of the [`LabelRef`].
     #[inline]
-    fn into_usize(self) -> usize {
+    pub(crate) fn into_usize(self) -> usize {
         self.0 as usize
+    }
+
+    pub(crate) fn new(label: u32) -> LabelRef {
+        LabelRef(label)
     }
 }
 

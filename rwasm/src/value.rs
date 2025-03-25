@@ -190,3 +190,9 @@ impl From<ExternRef> for Value {
         Self::ExternRef(externref)
     }
 }
+
+pub fn split_i64_to_i32(value: i64) -> [i32; 2] {
+    let lower = (value & 0xFFFF_FFFF) as i32; // Extract lower 32 bits
+    let upper = (value >> 32) as i32; // Extract upper 32 bits
+    [lower, upper]
+}

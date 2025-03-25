@@ -30,9 +30,8 @@ pub trait ResourceLimiter {
     ///
     /// * `current` is the current size of the linear memory in bytes.
     /// * `desired` is the desired size of the linear memory in bytes.
-    /// * `maximum` is either the linear memory's maximum or a maximum from an
-    ///   instance allocator, also in bytes. A value of `None`
-    ///   indicates that the linear memory is unbounded.
+    /// * `maximum` is either the linear memory's maximum or a maximum from an instance allocator,
+    ///   also in bytes. A value of `None` indicates that the linear memory is unbounded.
     ///
     /// The `current` and `desired` amounts are guaranteed to always be
     /// multiples of the WebAssembly page size, 64KiB.
@@ -70,8 +69,8 @@ pub trait ResourceLimiter {
     ///
     /// * `current` is the current number of elements in the table.
     /// * `desired` is the desired number of elements in the table.
-    /// * `maximum` is either the table's maximum or a maximum from an instance
-    ///   allocator.  A value of `None` indicates that the table is unbounded.
+    /// * `maximum` is either the table's maximum or a maximum from an instance allocator.  A value
+    ///   of `None` indicates that the table is unbounded.
     ///
     /// # Errors
     ///

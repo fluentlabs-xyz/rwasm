@@ -69,7 +69,7 @@ impl FuncType {
     ///
     /// We do not use the `From` trait here so that this conversion
     /// routine does not become part of the public API of [`FuncType`].
-    pub(crate) fn from_wasmparser(func_type: wasmparser::FuncType) -> Self {
+    pub(crate) fn from_wasmparser<const I32: bool>(func_type: wasmparser::FuncType) -> Self {
         /// Returns the [`ValueType`] from the given [`wasmparser::Type`].
         ///
         /// # Panics
@@ -80,7 +80,7 @@ impl FuncType {
         }
         let params = func_type.params().iter().map(extract_value_type);
         let results = func_type.results().iter().map(extract_value_type);
-        Self::new(params, results)
+        Self::new::<_, _, I32>(params, results)
     }
 }
 

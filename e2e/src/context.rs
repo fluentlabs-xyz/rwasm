@@ -4,6 +4,7 @@ use rwasm::{
     core::{ValueType, F32, F64},
     module::{FuncIdx, Imported},
     rwasm::{BinaryFormat, RwasmModule},
+    value::split_i64_to_i32,
     Config,
     Engine,
     Extern,
@@ -67,25 +68,56 @@ impl<'a> TestContext<'a> {
         let global_i64 = Global::new(&mut store, Value::I64(666), Mutability::Const);
         let global_f32 = Global::new(&mut store, Value::F32(666.0.into()), Mutability::Const);
         let global_f64 = Global::new(&mut store, Value::F64(666.0.into()), Mutability::Const);
-        let print = Func::wrap(&mut store, || {
+
+        let is_i32 = engine.config().get_i32_translator();
+
+        let print = if is_i32 {
+            Func::wrap::<_, _, _, true>
+        } else {
+            Func::wrap::<_, _, _, false>
+        }(&mut store, || {
             println!("print");
         });
-        let print_i32 = Func::wrap(&mut store, |value: i32| {
+        let print_i32 = if is_i32 {
+            Func::wrap::<_, _, _, true>
+        } else {
+            Func::wrap::<_, _, _, false>
+        }(&mut store, |value: i32| {
             println!("print: {value}");
         });
-        let print_i64 = Func::wrap(&mut store, |value: i64| {
+        let print_i64 = if is_i32 {
+            Func::wrap::<_, _, _, true>
+        } else {
+            Func::wrap::<_, _, _, false>
+        }(&mut store, |value: i64| {
             println!("print: {value}");
         });
-        let print_f32 = Func::wrap(&mut store, |value: F32| {
+        let print_f32 = if is_i32 {
+            Func::wrap::<_, _, _, true>
+        } else {
+            Func::wrap::<_, _, _, false>
+        }(&mut store, |value: F32| {
             println!("print: {value:?}");
         });
-        let print_f64 = Func::wrap(&mut store, |value: F64| {
+        let print_f64 = if is_i32 {
+            Func::wrap::<_, _, _, true>
+        } else {
+            Func::wrap::<_, _, _, false>
+        }(&mut store, |value: F64| {
             println!("print: {value:?}");
         });
-        let print_i32_f32 = Func::wrap(&mut store, |v0: i32, v1: F32| {
+        let print_i32_f32 = if is_i32 {
+            Func::wrap::<_, _, _, true>
+        } else {
+            Func::wrap::<_, _, _, false>
+        }(&mut store, |v0: i32, v1: F32| {
             println!("print: {v0:?} {v1:?}");
         });
-        let print_f64_f64 = Func::wrap(&mut store, |v0: F64, v1: F64| {
+        let print_f64_f64 = if is_i32 {
+            Func::wrap::<_, _, _, true>
+        } else {
+            Func::wrap::<_, _, _, false>
+        }(&mut store, |v0: F64, v1: F64| {
             println!("print: {v0:?} {v1:?}");
         });
         linker.define("spectest", "memory", default_memory).unwrap();
@@ -315,6 +347,26 @@ impl TestContext<'_> {
         let len_results = func.ty(&self.store).results().len();
         self.results.clear();
         self.results.resize(len_results, Value::I32(0));
+
+        let flat_args: Vec<Value>;
+        let args = if self.store.engine().config().get_i32_translator() {
+            flat_args = args
+                .iter()
+                .cloned()
+                .flat_map(|v| match v {
+                    Value::I64(v) => split_i64_to_i32(v)
+                        .into_iter()
+                        .map(|v| Value::I32(v))
+                        .collect(),
+                    Value::F64(_) => vec![v],
+                    v => vec![v],
+                })
+                .collect();
+            flat_args.as_slice()
+        } else {
+            args
+        };
+
         func.call(&mut self.store, args, &mut self.results)?;
         Ok(&self.results)
     }
@@ -342,5 +394,9 @@ impl TestContext<'_> {
             })?;
         let value = global.get(&self.store);
         Ok(value)
+    }
+
+    pub fn get_config(&self) -> &Config {
+        &self.config
     }
 }

@@ -1,10 +1,16 @@
 use crate::engine::{
     bytecode::{Instruction, LocalDepth},
+    func_builder::ValueStackHeight,
     DropKeep,
     InstructionsBuilder,
 };
+use alloc::{vec, vec::Vec};
 
-pub fn translate_drop_keep(instr_builder: &mut InstructionsBuilder, drop_keep: DropKeep) -> usize {
+pub fn translate_drop_keep(
+    instr_builder: &mut InstructionsBuilder,
+    drop_keep: DropKeep,
+    height: &mut ValueStackHeight,
+) -> usize {
     let (drop, keep) = (drop_keep.drop(), drop_keep.keep());
     if drop == 0 {
         return 0;
@@ -20,6 +26,8 @@ pub fn translate_drop_keep(instr_builder: &mut InstructionsBuilder, drop_keep: D
             opcode_count += 1;
         });
     } else {
+        height.push();
+        height.pop1();
         (0..keep).for_each(|i| {
             instr_builder.push_inst(Instruction::LocalGet(LocalDepth::from(
                 keep as u32 - i as u32,
@@ -35,6 +43,35 @@ pub fn translate_drop_keep(instr_builder: &mut InstructionsBuilder, drop_keep: D
         });
     }
     opcode_count
+}
+
+pub fn translate_drop_keep_to_ixs(drop_keep: DropKeep) -> Vec<Instruction> {
+    let (drop, keep) = (drop_keep.drop(), drop_keep.keep());
+    let mut result = vec![];
+    if drop == 0 {
+        return result;
+    }
+    if drop >= keep {
+        (0..keep).for_each(|_| {
+            result.push(Instruction::LocalSet(LocalDepth::from(drop as u32)));
+        });
+        (0..(drop - keep)).for_each(|_| {
+            result.push(Instruction::Drop);
+        });
+    } else {
+        (0..keep).for_each(|i| {
+            result.push(Instruction::LocalGet(LocalDepth::from(
+                keep as u32 - i as u32,
+            )));
+            result.push(Instruction::LocalSet(LocalDepth::from(
+                keep as u32 + drop as u32 - i as u32,
+            )));
+        });
+        (0..drop).for_each(|_| {
+            result.push(Instruction::Drop);
+        });
+    }
+    result
 }
 
 #[cfg(test)]
@@ -61,7 +98,8 @@ mod tests {
         ];
         for (input, output, drop_keep) in tests.iter() {
             let mut instr_builder = InstructionsBuilder::default();
-            translate_drop_keep(&mut instr_builder, *drop_keep);
+            let mut stack_height = ValueStackHeight::default();
+            translate_drop_keep(&mut instr_builder, *drop_keep, &mut stack_height);
             let (opcodes, _) = instr_builder.finalize().unwrap();
             let mut stack = input.clone();
             for opcode in opcodes {

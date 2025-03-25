@@ -5,6 +5,7 @@ mod inst_builder;
 mod labels;
 mod locals_registry;
 mod translator;
+mod translator_i32;
 mod value_stack;
 
 use self::{control_frame::ControlFrame, control_stack::ControlFlowStack};
@@ -12,13 +13,17 @@ pub use self::{
     error::{TranslationError, TranslationErrorInner},
     inst_builder::{Instr, InstructionsBuilder, RelativeDepth},
     translator::{FuncTranslator, FuncTranslatorAllocations},
+    translator_i32::FuncTranslatorI32,
 };
 use super::CompiledFunc;
+pub use crate::engine::func_builder::value_stack::ValueStackHeight;
 use crate::{
     arena::ArenaIndex,
+    core::ValueType,
     engine::bytecode::Instruction,
     module::{FuncIdx, ModuleResources, ReusableAllocations},
 };
+use alloc::vec::Vec;
 use wasmparser::{BinaryReaderError, ValType, VisitOperator};
 
 /// The used function validator type.
@@ -35,9 +40,105 @@ pub struct FuncBuilder<'parser> {
     /// The Wasm function validator.
     validator: FuncValidator,
     /// The underlying Wasm to `wasmi` bytecode translator.
-    translator: FuncTranslator<'parser>,
+    translator: FuncTranslators<'parser>,
     /// If we're in rWASM mode
     pub(crate) is_rwasm: bool,
+}
+
+pub enum FuncTranslators<'parser> {
+    Translator(FuncTranslator<'parser>),
+    TranslatorI32(FuncTranslatorI32<'parser>),
+}
+
+impl<'parser> FuncTranslators<'parser> {
+    pub(crate) fn is_i32_translator(&self) -> bool {
+        match self {
+            FuncTranslators::Translator(_) => false,
+            FuncTranslators::TranslatorI32(_) => true,
+        }
+    }
+
+    pub(crate) fn into_allocations(self) -> FuncTranslatorAllocations {
+        match self {
+            FuncTranslators::Translator(t) => t.into_allocations(),
+            FuncTranslators::TranslatorI32(t) => t.into_allocations(),
+        }
+    }
+}
+
+impl<'parser> FuncTranslators<'parser> {
+    pub(crate) fn finish(&mut self) -> Result<(), TranslationError> {
+        match self {
+            FuncTranslators::Translator(t) => t.finish(),
+            FuncTranslators::TranslatorI32(t) => t.finish(),
+        }
+    }
+}
+
+impl<'parser> FuncTranslators<'parser> {
+    pub(crate) fn register_opcode_metadata(&mut self, pos: usize, opcode: u16) {
+        match self {
+            FuncTranslators::Translator(t) => t.register_opcode_metadata(pos, opcode),
+            FuncTranslators::TranslatorI32(t) => t.register_opcode_metadata(pos, opcode),
+        }
+    }
+}
+
+impl<'parser> FuncTranslators<'parser> {
+    pub(crate) fn finish_translate_locals(&mut self) -> Result<(), TranslationError> {
+        match self {
+            FuncTranslators::Translator(t) => t.finish_translate_locals(),
+            FuncTranslators::TranslatorI32(t) => t.finish_translate_locals(),
+        }
+    }
+}
+
+impl<'parser> FuncTranslators<'parser> {
+    pub(crate) fn stack_height(&mut self) -> &mut ValueStackHeight {
+        match self {
+            FuncTranslators::Translator(t) => &mut t.stack_height,
+            FuncTranslators::TranslatorI32(t) => &mut t.stack_height,
+        }
+    }
+    pub(crate) fn stack_types(&mut self) -> &mut Vec<ValueType> {
+        match self {
+            FuncTranslators::Translator(_) => {
+                panic!("Translator not support stack types")
+            }
+            FuncTranslators::TranslatorI32(t) => &mut t.stack_types,
+        }
+    }
+
+    pub(crate) fn register_locals(&mut self, amount: u32) {
+        match self {
+            FuncTranslators::Translator(t) => t.register_locals(amount),
+            FuncTranslators::TranslatorI32(t) => t.register_locals(amount),
+        }
+    }
+    pub(crate) fn alloc(&mut self) -> &mut FuncTranslatorAllocations {
+        match self {
+            FuncTranslators::Translator(t) => &mut t.alloc,
+            FuncTranslators::TranslatorI32(t) => &mut t.alloc,
+        }
+    }
+}
+
+impl<'parser> FuncTranslators<'parser> {
+    pub(crate) fn func(&self) -> FuncIdx {
+        match self {
+            FuncTranslators::Translator(t) => t.func,
+            FuncTranslators::TranslatorI32(t) => t.func,
+        }
+    }
+}
+
+impl<'parser> FuncTranslators<'parser> {
+    pub(crate) fn res(&self) -> &ModuleResources<'parser> {
+        match self {
+            FuncTranslators::Translator(t) => &t.res,
+            FuncTranslators::TranslatorI32(t) => &t.res,
+        }
+    }
 }
 
 impl<'parser> FuncBuilder<'parser> {
@@ -48,26 +149,42 @@ impl<'parser> FuncBuilder<'parser> {
         res: ModuleResources<'parser>,
         validator: FuncValidator,
         allocations: FuncTranslatorAllocations,
+        i32_translator: bool,
     ) -> Self {
         let is_rwasm = res.res.engine().config().get_rwasm_config().is_some();
         Self {
             pos: 0,
             validator,
-            translator: FuncTranslator::new(func, compiled_func, res, allocations),
+            translator: if i32_translator {
+                FuncTranslators::TranslatorI32(FuncTranslatorI32::new(
+                    func,
+                    compiled_func,
+                    res,
+                    allocations,
+                ))
+            } else {
+                FuncTranslators::Translator(FuncTranslator::new(
+                    func,
+                    compiled_func,
+                    res,
+                    allocations,
+                ))
+            },
             is_rwasm,
         }
     }
 
     pub fn translate_signature_check(&mut self) {
-        let func_type = &self.translator.res.res.funcs[self.translator.func.into_u32() as usize];
+        let func_type =
+            &self.translator.res().res.funcs[self.translator.func().into_u32() as usize];
         let func_type = self
             .translator
-            .res
+            .res()
             .res
             .engine()
             .resolve_func_signature(&func_type);
         self.translator
-            .alloc
+            .alloc()
             .inst_builder
             .push_inst(Instruction::SignatureCheck(
                 (func_type.into_usize() as u32).into(),
@@ -86,18 +203,42 @@ impl<'parser> FuncBuilder<'parser> {
         if self.is_rwasm {
             let instr = match value_type {
                 ValType::I32 => Instruction::I32Const(0i32.into()),
-                ValType::I64 => Instruction::I64Const(0i64.into()),
+                ValType::I64 => {
+                    if self.i32_translator() {
+                        Instruction::I32Const(0i64.into())
+                    } else {
+                        Instruction::I64Const(0i64.into())
+                    }
+                }
                 ValType::F32 => Instruction::F32Const(0f32.into()),
                 ValType::F64 => Instruction::F64Const(0f64.into()),
                 ValType::FuncRef => Instruction::RefFunc(0u32.into()),
                 _ => unreachable!("not supported local type ({:?})", value_type),
             };
             (0..amount as usize).for_each(|_| {
-                self.translator.alloc.inst_builder.push_inst(instr);
+                self.translator.alloc().inst_builder.push_inst(instr);
+                if self.i32_translator() {
+                    if value_type == ValType::I64 {
+                        self.translator.alloc().inst_builder.push_inst(instr);
+                    }
+                    self.translator
+                        .stack_types()
+                        .push(ValueType::from(value_type));
+                }
             });
-            self.translator.stack_height.push_n(amount);
+            self.translator.stack_height().push_n(amount);
+            if self.i32_translator() && value_type == ValType::I64 {
+                self.translator.stack_height().push_n(amount);
+            }
         } else {
             self.translator.register_locals(amount);
+            if self.i32_translator() {
+                (0..amount as usize).for_each(|_| {
+                    self.translator
+                        .stack_types()
+                        .push(ValueType::from(value_type));
+                });
+            }
         }
         Ok(())
     }
@@ -148,11 +289,15 @@ impl<'parser> FuncBuilder<'parser> {
     ) -> Result<(), TranslationError>
     where
         V: FnOnce(&mut FuncValidator) -> Result<(), BinaryReaderError>,
-        T: FnOnce(&mut FuncTranslator<'parser>) -> Result<(), TranslationError>,
+        T: FnOnce(&mut FuncTranslators<'parser>) -> Result<(), TranslationError>,
     {
         validate(&mut self.validator)?;
         translate(&mut self.translator)?;
         Ok(())
+    }
+
+    fn i32_translator(&self) -> bool {
+        self.translator.is_i32_translator()
     }
 }
 
@@ -166,7 +311,10 @@ macro_rules! impl_visit_operator {
             let arg_cloned = $arg.clone();
             self.validate_then_translate(
                 |validator| validator.visitor(offset).$visit(arg_cloned),
-                |translator| translator.$visit($arg),
+                |translator| match translator {
+                    FuncTranslators::Translator(t) => {t.$visit($arg)}
+                    FuncTranslators::TranslatorI32(t) => {t.$visit($arg)}
+                }
             )
         }
         impl_visit_operator!($($rest)*);
@@ -194,7 +342,10 @@ macro_rules! impl_visit_operator {
             let offset = self.current_pos();
             self.validate_then_translate(
                 |v| v.visitor(offset).$visit($($($arg),*)?),
-                |t| t.$visit($($($arg),*)?),
+                |t|  match t {
+                    FuncTranslators::Translator(t) => {t.$visit($($($arg),*)?)}
+                    FuncTranslators::TranslatorI32(t) => {t.$visit($($($arg),*)?)}
+                },
             )
         }
         impl_visit_operator!($($rest)*);

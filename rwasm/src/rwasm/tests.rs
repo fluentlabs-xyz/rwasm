@@ -67,13 +67,13 @@ fn execute_binary(wat: &str, host_state: HostState, config: Config) -> HostState
     let mut store = Store::new(&engine, host_state);
     store.add_fuel(1_000_000).unwrap();
     let mut linker = Linker::<HostState>::new(&engine);
-    let sys_halt_func = Func::wrap(
+    let sys_halt_func = Func::wrap::<_, _, _, false>(
         store.as_context_mut(),
         |mut caller: Caller<'_, HostState>, exit_code: i32| {
             caller.data_mut().exit_code = exit_code;
         },
     );
-    let sys_state_func = Func::wrap(
+    let sys_state_func = Func::wrap::<_, _, _, false>(
         store.as_context_mut(),
         |mut caller: Caller<'_, HostState>| -> u32 { caller.data_mut().state },
     );
@@ -351,7 +351,9 @@ fn test_state_router() {
         entrypoint_name: None,
         import_linker: Some(create_import_linker()),
         wrap_import_functions: true,
-        translate_drop_keep: false,
+        translate_drop_keep: true,
+        allow_malformed_entrypoint_func_type: false,
+        use_32bit_mode: true,
     });
     // run with deployment state (a result is 200)
     let mut host_state = HostState::default();

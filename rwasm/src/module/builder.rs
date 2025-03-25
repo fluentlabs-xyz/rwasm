@@ -131,7 +131,7 @@ impl<'a> ModuleResources<'a> {
             } else {
                 let index =
                     (func_idx.into_u32() as usize).checked_sub(self.res.imports.len_funcs())?;
-                // otherwise we must disallow accessing entrypoint
+                // otherwise, we must disallow accessing entrypoint
                 if index == self.res.compiled_funcs.len() - 1 {
                     return None;
                 }
@@ -215,7 +215,11 @@ impl<'engine> ModuleBuilder<'engine> {
     }
 
     pub(crate) fn ensure_empty_func_type_exists(&mut self) -> FuncTypeIdx {
-        self.ensure_func_type_index(FuncType::new([], []))
+        if self.engine.config().get_i32_translator() {
+            self.ensure_func_type_index(FuncType::new::<_, _, true>([], []))
+        } else {
+            self.ensure_func_type_index(FuncType::new::<_, _, false>([], []))
+        }
     }
 
     pub(crate) fn ensure_func_type_index(&mut self, func_type: FuncType) -> FuncTypeIdx {
@@ -236,7 +240,12 @@ impl<'engine> ModuleBuilder<'engine> {
         //     return FuncTypeIdx::from(type_index);
         // }
         // create new func type
-        let empty_func_type = FuncType::new([], []);
+        let empty_func_type = if self.engine.config().get_i32_translator() {
+            FuncType::new::<_, _, true>([], [])
+        } else {
+            FuncType::new::<_, _, false>([], [])
+        };
+
         self.func_types
             .push(self.engine.alloc_func_type(empty_func_type.clone()));
         return FuncTypeIdx::from(self.func_types.len() as u32 - 1);
