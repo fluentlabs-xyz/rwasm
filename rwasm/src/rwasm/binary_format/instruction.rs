@@ -682,6 +682,28 @@ impl Instruction {
         }
     }
 
+    pub fn is_memory_load_instruction(self) -> bool {
+        match self {
+            Instruction::I32Load8S(_)|
+            Instruction::I32Load8U(_)|
+            Instruction::I32Load16S(_)|
+            Instruction::I32Load16U(_)|
+            Instruction::I32Load(_)=>true,
+            _ => false,
+        }
+    }
+
+
+    pub fn is_memory_store_instruction(self) -> bool {
+        match self {
+            Instruction::I32Store8(_)|
+            Instruction::I32Store16(_)|
+            Instruction::I32Store(_) =>true,
+            
+            _ => false,
+        }
+    }
+
     pub fn is_ecall_instruction(self) -> bool {
         match self {
             _ => false,
