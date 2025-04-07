@@ -792,6 +792,14 @@ impl Instruction {
             _=>false,
         }
     }
+
+    pub fn is_const_instruction(self)->bool{
+        match self {
+            Instruction::I32Const(_)=>true,
+            _=>false,
+
+        }
+    }
       
     
 }
