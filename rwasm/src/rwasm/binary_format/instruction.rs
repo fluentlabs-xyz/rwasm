@@ -800,6 +800,16 @@ impl Instruction {
 
         }
     }
+
+    pub fn is_local_instruction(self)->bool{
+        match self {
+            Instruction::LocalGet(_)|
+            Instruction::LocalSet(_)|
+            Instruction::LocalTee(_)=>true,
+            _=>false,
+
+        }
+    }
       
     
 }
