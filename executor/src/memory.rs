@@ -1,4 +1,4 @@
-use revm_interpreter::SharedMemory;
+use bytes::BytesMut;
 use rwasm::{
     core::{Pages, TrapCode},
     engine::executor::EntityGrowError,
@@ -8,14 +8,13 @@ use rwasm::{
 };
 
 pub struct GlobalMemory {
-    pub shared_memory: SharedMemory,
+    pub shared_memory: BytesMut,
     pub memory_type: MemoryType,
     pub current_pages: Pages,
 }
 
 impl GlobalMemory {
     pub fn new(
-        mut shared_memory: SharedMemory,
         memory_type: MemoryType,
         limiter: &mut ResourceLimiterRef<'_>,
     ) -> Result<Self, MemoryError> {
@@ -29,7 +28,8 @@ impl GlobalMemory {
             }
         }
         if let Some(initial_len) = initial_len {
-            shared_memory.resize(initial_len);
+            let mut shared_memory = BytesMut::with_capacity(initial_len);
+            shared_memory.resize(initial_len, 0);
             let memory = Self {
                 shared_memory,
                 memory_type,
@@ -100,7 +100,7 @@ impl GlobalMemory {
                     // At this point, it is okay to grow the underlying virtual memory
                     // by the given number of additional pages.
                     assert!(new_size >= self.shared_memory.len());
-                    self.shared_memory.resize(new_size);
+                    self.shared_memory.resize(new_size, 0);
                     self.current_pages = new_pages;
                     ret = Ok(current_pages)
                 }
@@ -119,12 +119,12 @@ impl GlobalMemory {
 
     /// Returns a shared slice to the bytes underlying to the byte buffer.
     pub fn data(&self) -> &[u8] {
-        self.shared_memory.context_memory()
+        self.shared_memory.as_ref()
     }
 
     /// Returns an exclusive slice to the bytes underlying to the byte buffer.
     pub fn data_mut(&mut self) -> &mut [u8] {
-        self.shared_memory.context_memory_mut()
+        self.shared_memory.as_mut()
     }
 
     /// Reads `n` bytes from `memory[offset..offset+n]` into `buffer`

@@ -316,15 +316,11 @@ fn extract_module(quote_wat: QuoteWat) -> Option<wast::core::Module> {
     }
 }
 
-fn module_compilation_succeeds(
-    context: &mut TestContext,
-    span: Span,
-    module: wast::core::Module,
-) -> Instance {
+fn module_compilation_succeeds(context: &mut TestContext, span: Span, module: wast::core::Module) {
     match context.compile_and_instantiate(module) {
-        Ok(instance) => instance,
+        Ok(_) => {}
         Err(error) => panic!(
-            "{}: failed to instantiate module but should have suceeded: {}",
+            "{}: failed to instantiate module but should have suceeded: {:?}",
             context.spanned(span),
             error
         ),

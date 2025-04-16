@@ -1,4 +1,4 @@
-use fluentbase_rwasm::{Caller, RwasmError, SyscallHandler};
+use rwasm_executor::{Caller, RwasmError, SyscallHandler};
 
 pub const ENTRYPOINT_FUNC_IDX: u32 = u32::MAX;
 

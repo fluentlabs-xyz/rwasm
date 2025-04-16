@@ -1,5 +1,5 @@
 [package]
-name = "fluentbase-rwasm"
+name = "rwasm-executor"
 version = "0.1.0"
 authors.workspace = true
 repository.workspace = true
@@ -15,15 +15,12 @@ tiny-keccak = { workspace = true }
 byteorder = { workspace = true }
 num_enum = { workspace = true }
 paste = { workspace = true }
+bytes = { workspace = true }
 
-# revm (a temporary solution)
-revm-interpreter = { workspace = true }
-
-# we have rwasm only here because we are planning to remove this dependency in the future
-rwasm = { workspace = true }
+rwasm = { path = "../rwasm" }
 
 [features]
-default = ["std"]
+default = ["std", "bytes/std"]
 std = []
 tracer = []
 e2e = []

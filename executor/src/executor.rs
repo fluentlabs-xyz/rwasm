@@ -13,9 +13,7 @@ use crate::{
     N_MAX_TABLE_SIZE,
     TABLE_ELEMENT_NULL,
 };
-use core::mem::replace;
 use hashbrown::HashMap;
-use revm_interpreter::{SharedMemory, EMPTY_SHARED_MEMORY};
 use rwasm::{
     core::{TrapCode, UntypedValue, ValueType, N_MAX_MEMORY_PAGES},
     engine::{
@@ -82,24 +80,17 @@ pub struct RwasmExecutor<T> {
 impl<T> RwasmExecutor<T> {
     pub fn parse(
         rwasm_bytecode: &[u8],
-        shared_memory: SharedMemory,
         config: ExecutorConfig,
         context: T,
     ) -> Result<Self, RwasmError> {
         Ok(Self::new(
             Arc::new(RwasmModule2::new(rwasm_bytecode)),
-            shared_memory,
             config,
             context,
         ))
     }
 
-    pub fn new(
-        module: Arc<RwasmModule2>,
-        shared_memory: SharedMemory,
-        config: ExecutorConfig,
-        context: T,
-    ) -> Self {
+    pub fn new(module: Arc<RwasmModule2>, config: ExecutorConfig, context: T) -> Self {
         // create stack with sp
         let mut value_stack = ValueStack::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE);
         let sp = value_stack.stack_ptr();
@@ -111,7 +102,6 @@ impl<T> RwasmExecutor<T> {
         // create global memory
         let mut resource_limiter_ref = ResourceLimiterRef::default();
         let global_memory = GlobalMemory::new(
-            shared_memory,
             MemoryType::new(0, Some(N_MAX_MEMORY_PAGES)).expect("rwasm: bad initial memory"),
             &mut resource_limiter_ref,
         )
@@ -451,13 +441,5 @@ impl<T> RwasmExecutor<T> {
         );
         self.ip.add(instr_ref as usize);
         Ok(())
-    }
-
-    pub fn take_shared_memory(&mut self) -> SharedMemory {
-        replace(&mut self.global_memory.shared_memory, EMPTY_SHARED_MEMORY)
-    }
-
-    pub fn insert_shared_memory(&mut self, shared_memory: SharedMemory) {
-        self.global_memory.shared_memory = shared_memory;
     }
 }

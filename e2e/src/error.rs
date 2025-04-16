@@ -1,4 +1,5 @@
 use rwasm::Error as WasmiError;
+use rwasm_executor::RwasmError;
 use std::{error::Error, fmt, fmt::Display};
 
 /// Errors that may occur upon Wasm spec test suite execution.
