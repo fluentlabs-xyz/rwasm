@@ -126,7 +126,7 @@ impl<'parser> RwasmTranslator<'parser> {
             .res
             .funcs
             .get(func_index as usize)
-            .ok_or(RwasmBuilderError::MalformedEntrypointFuncType)?;
+            .ok_or(RwasmBuilderError::MalformedFuncType)?;
         let is_empty_params = self
             .res
             .engine()
@@ -134,7 +134,7 @@ impl<'parser> RwasmTranslator<'parser> {
                 func_type.len_params() == (0, 0)
             });
         if !is_empty_params && !allow_malformed_entrypoint_func_type {
-            Err(RwasmBuilderError::MalformedEntrypointFuncType)
+            Err(RwasmBuilderError::MalformedFuncType)
         } else {
             Ok(())
         }
@@ -173,7 +173,7 @@ impl<'parser> RwasmTranslator<'parser> {
                 .res
                 .funcs
                 .get(func_idx as usize)
-                .ok_or(RwasmBuilderError::MalformedEntrypointFuncType)?;
+                .ok_or(RwasmBuilderError::MalformedFuncType)?;
             let is_empty_params = self
                 .res
                 .engine()
@@ -181,7 +181,7 @@ impl<'parser> RwasmTranslator<'parser> {
                     func_type.len_params() == (0, 0)
                 });
             if !is_empty_params && !allow_malformed_entrypoint_func_type {
-                return Err(RwasmBuilderError::MalformedEntrypointFuncType);
+                return Err(RwasmBuilderError::MalformedFuncType);
             }
             instr_builder.push_inst(Instruction::LocalGet(1.into()));
             instr_builder.push_inst(Instruction::I32Const((*state_value).into()));
@@ -202,30 +202,38 @@ impl<'parser> RwasmTranslator<'parser> {
         &mut self,
         import_fn_index: u32,
     ) -> Result<u32, RwasmBuilderError> {
-        let (import_index, fuel_cost) = self.resolve_host_call(import_fn_index)?;
-        let instr_builder = &mut self.translator.alloc.inst_builder;
-        if self.res.engine().config().get_consume_fuel() {
-            instr_builder.push_inst(Instruction::ConsumeFuel(fuel_cost.into()));
-        }
-        instr_builder.push_inst(Instruction::Call(import_index.into()));
-        instr_builder.push_inst(Instruction::Return(DropKeep::none()));
-        Ok(import_index)
-    }
-
-    fn resolve_host_call(&mut self, fn_index: u32) -> Result<(u32, u32), RwasmBuilderError> {
         let imports = self.res.res.imports.funcs.iter().collect::<Vec<_>>();
-        if fn_index >= imports.len() as u32 {
+        if import_fn_index >= imports.len() as u32 {
             return Err(RwasmBuilderError::NotSupportedImport);
         }
-        let import_name = imports[fn_index as usize];
+        let import_name = imports[import_fn_index as usize];
         let config = self.res.res.engine().config();
-        let (index, fuel_cost) = config
+        let (index, fuel_cost, func_type) = config
             .get_rwasm_config()
             .and_then(|rwasm_config| rwasm_config.import_linker.as_ref())
             .ok_or(RwasmBuilderError::UnknownImport(import_name.clone()))?
             .resolve_by_import_name(import_name)
             .ok_or(RwasmBuilderError::UnknownImport(import_name.clone()))?;
-        Ok((index, fuel_cost))
+        let dedup_func_type = self
+            .res
+            .res
+            .funcs
+            .get(import_fn_index as usize)
+            .ok_or(RwasmBuilderError::MalformedFuncType)?;
+        let is_type_matches = self
+            .res
+            .engine()
+            .resolve_func_type(dedup_func_type, |func_type2| func_type2 == func_type);
+        if !is_type_matches {
+            return Err(RwasmBuilderError::MalformedFuncType);
+        }
+        let instr_builder = &mut self.translator.alloc.inst_builder;
+        if self.res.engine().config().get_consume_fuel() {
+            instr_builder.push_inst(Instruction::ConsumeFuel(*fuel_cost));
+        }
+        instr_builder.push_inst(Instruction::Call((*index).into()));
+        instr_builder.push_inst(Instruction::Return(DropKeep::none()));
+        Ok(import_fn_index)
     }
 
     pub fn translate_sections(&mut self) -> Result<(), RwasmBuilderError> {
