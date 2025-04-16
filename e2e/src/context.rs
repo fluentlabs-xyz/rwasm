@@ -13,7 +13,7 @@ use crate::handler::{
 };
 use anyhow::Result;
 use rwasm::{
-    core::{ImportLinker, ValueType, F32, F64},
+    core::{ImportLinker, ImportLinkerEntity, ValueType, F32, F64},
     engine::{
         bytecode::{BlockFuel, Instruction},
         RwasmConfig,
@@ -102,51 +102,65 @@ impl<'a> TestContext<'a> {
             (
                 "spectest",
                 "print",
-                FUNC_PRINT,
-                BlockFuel::from(0),
-                FuncType::new([], []),
+                ImportLinkerEntity::new(
+                    FUNC_PRINT.into(),
+                    BlockFuel::from(0),
+                    FuncType::new([], []),
+                ),
             ),
             (
                 "spectest",
                 "print_i32",
-                FUNC_PRINT_I32,
-                BlockFuel::from(0),
-                FuncType::new([ValueType::I32], []),
+                ImportLinkerEntity::new(
+                    FUNC_PRINT_I32.into(),
+                    BlockFuel::from(0),
+                    FuncType::new([ValueType::I32], []),
+                ),
             ),
             (
                 "spectest",
                 "print_i64",
-                FUNC_PRINT_I64,
-                BlockFuel::from(0),
-                FuncType::new([ValueType::I64], []),
+                ImportLinkerEntity::new(
+                    FUNC_PRINT_I64.into(),
+                    BlockFuel::from(0),
+                    FuncType::new([ValueType::I64], []),
+                ),
             ),
             (
                 "spectest",
                 "print_f32",
-                FUNC_PRINT_F32,
-                BlockFuel::from(0),
-                FuncType::new([ValueType::F32], []),
+                ImportLinkerEntity::new(
+                    FUNC_PRINT_F32.into(),
+                    BlockFuel::from(0),
+                    FuncType::new([ValueType::F32], []),
+                ),
             ),
             (
                 "spectest",
                 "print_f64",
-                FUNC_PRINT_F64,
-                BlockFuel::from(0),
-                FuncType::new([ValueType::F64], []),
+                ImportLinkerEntity::new(
+                    FUNC_PRINT_F64.into(),
+                    BlockFuel::from(0),
+                    FuncType::new([ValueType::F64], []),
+                ),
             ),
             (
                 "spectest",
                 "print_i32_f32",
-                FUNC_PRINT_I32_F32,
-                BlockFuel::from(0),
-                FuncType::new([ValueType::I32, ValueType::F32], []),
+                ImportLinkerEntity::new(
+                    FUNC_PRINT_I32_F32.into(),
+                    BlockFuel::from(0),
+                    FuncType::new([ValueType::I32, ValueType::F32], []),
+                ),
             ),
             (
                 "spectest",
                 "print_i64_f64",
-                FUNC_PRINT_I64_F64,
-                BlockFuel::from(0),
-                FuncType::new([ValueType::I64, ValueType::F64], []),
+                ImportLinkerEntity::new(
+                    FUNC_PRINT_I64_F64.into(),
+                    BlockFuel::from(0),
+                    FuncType::new([ValueType::I64, ValueType::F64], []),
+                ),
             ),
         ]);
 
