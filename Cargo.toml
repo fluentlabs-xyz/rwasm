@@ -1,7 +1,7 @@
 [workspace]
 members = [
-    #    "bin",
     "e2e",
+    "executor",
     "rwasm",
 ]
 exclude = []
@@ -20,16 +20,10 @@ categories = ["wasm", "no-std", "virtualization"]
 
 [workspace.dependencies]
 byteorder = { version = "1.5.0", default-features = false }
-hashbrown = "0.14.3"
-strum = { version = "0.26" }
-strum_macros = { version = "0.26" }
-
-[profile.release]
-panic = "abort"
-lto = true
-opt-level = 3
-strip = true
-debug = false
-debug-assertions = false
-rpath = false
-codegen-units = 1
+hashbrown = "0.15.2"
+strum = { version = "0.27.1" }
+strum_macros = { version = "0.27.1" }
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+paste = { version = "1.0", default-features = false }
+num_enum = { version = "0.7.3" }
+bytes = { version = "1.10.1", default-features = false }

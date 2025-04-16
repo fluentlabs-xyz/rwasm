@@ -180,7 +180,7 @@ impl RwasmModule {
         builder.finish()
     }
 
-    pub fn to_module_builder<'a>(&'a self, engine: &'a Engine) -> ModuleBuilder {
+    pub fn to_module_builder<'a>(&'a self, engine: &'a Engine) -> ModuleBuilder<'a> {
         let mut builder = ModuleBuilder::new(engine);
         // the main function has empty inputs and outputs
         let empty_func_type = builder.ensure_empty_func_type_exists();

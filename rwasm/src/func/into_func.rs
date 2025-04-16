@@ -335,6 +335,7 @@ mod tests {
         marker: core::marker::PhantomData<fn() -> T>,
     }
     /// Utility trait for the fallback case of the `implements_wasm_results` macro.
+    #[allow(dead_code)]
     pub trait ImplementsWasmRetFallback {
         const VALUE: bool = false;
     }

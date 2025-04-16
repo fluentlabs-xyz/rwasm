@@ -1,16 +1,30 @@
 use super::{TestDescriptor, TestError, TestProfile, TestSpan};
+use crate::handler::{
+    testing_context_syscall_handler,
+    TestingContext,
+    ENTRYPOINT_FUNC_IDX,
+    FUNC_PRINT,
+    FUNC_PRINT_F32,
+    FUNC_PRINT_F64,
+    FUNC_PRINT_I32,
+    FUNC_PRINT_I32_F32,
+    FUNC_PRINT_I64,
+    FUNC_PRINT_I64_F64,
+};
 use anyhow::Result;
 use rwasm::{
-    core::{ValueType, F32, F64},
-    module::{FuncIdx, Imported},
-    rwasm::{BinaryFormat, RwasmModule},
+    core::{ImportLinker, ValueType, F32, F64},
+    engine::{bytecode::Instruction, RwasmConfig, StateRouterConfig},
+    func::FuncIdx,
+    module::{ImportName, Imported},
+    rwasm::{BinaryFormat, BinaryFormatWriter, RwasmModule},
     value::split_i64_to_i32,
     Config,
     Engine,
     Extern,
     Func,
+    FuncType,
     Global,
-    Instance,
     Linker,
     Memory,
     MemoryType,
@@ -21,11 +35,24 @@ use rwasm::{
     TableType,
     Value,
 };
-use std::collections::HashMap;
+use rwasm_executor::{
+    make_instruction_table,
+    Caller,
+    ExecutorConfig,
+    InstructionTable,
+    RwasmError,
+    RwasmExecutor,
+    RwasmModule2,
+};
+use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc, sync::Arc};
 use wast::token::{Id, Span};
 
+type TestingRwasmExecutor = RwasmExecutor<TestingContext>;
+type Instance = Rc<RefCell<TestingRwasmExecutor>>;
+
+const TESTING_INSTRUCTION_TABLE: InstructionTable<TestingContext> = make_instruction_table();
+
 /// The context of a single Wasm test spec suite run.
-#[derive(Debug)]
 pub struct TestContext<'a> {
     /// The wasmi config
     config: Config,
@@ -36,9 +63,12 @@ pub struct TestContext<'a> {
     /// The store to hold all runtime data during the test.
     store: Store<()>,
     /// The list of all encountered Wasm modules belonging to the test.
-    modules: Vec<Module>,
+    modules: Vec<RwasmModule>,
     /// The list of all instantiated modules.
     instances: HashMap<String, Instance>,
+    import_linker: ImportLinker,
+    extern_types: HashMap<String, FuncType>,
+    extern_state: HashMap<String, u32>,
     /// The last touched module instance.
     last_instance: Option<Instance>,
     /// Profiling during the Wasm spec test run.
@@ -64,79 +94,17 @@ impl<'a> TestContext<'a> {
             Value::default(ValueType::FuncRef),
         )
         .unwrap();
-        let global_i32 = Global::new(&mut store, Value::I32(666), Mutability::Const);
-        let global_i64 = Global::new(&mut store, Value::I64(666), Mutability::Const);
-        let global_f32 = Global::new(&mut store, Value::F32(666.0.into()), Mutability::Const);
-        let global_f64 = Global::new(&mut store, Value::F64(666.0.into()), Mutability::Const);
 
-        let is_i32 = engine.config().get_i32_translator();
+        let import_linker = ImportLinker::from([
+            ("spectest", "print", FUNC_PRINT, 0),
+            ("spectest", "print_i32", FUNC_PRINT_I32, 0),
+            ("spectest", "print_i64", FUNC_PRINT_I64, 0),
+            ("spectest", "print_f32", FUNC_PRINT_F32, 0),
+            ("spectest", "print_f64", FUNC_PRINT_F64, 0),
+            ("spectest", "print_i32_f32", FUNC_PRINT_I32_F32, 0),
+            ("spectest", "print_f64_f64", FUNC_PRINT_I64_F64, 0),
+        ]);
 
-        let print = if is_i32 {
-            Func::wrap::<_, _, _, true>
-        } else {
-            Func::wrap::<_, _, _, false>
-        }(&mut store, || {
-            println!("print");
-        });
-        let print_i32 = if is_i32 {
-            Func::wrap::<_, _, _, true>
-        } else {
-            Func::wrap::<_, _, _, false>
-        }(&mut store, |value: i32| {
-            println!("print: {value}");
-        });
-        let print_i64 = if is_i32 {
-            Func::wrap::<_, _, _, true>
-        } else {
-            Func::wrap::<_, _, _, false>
-        }(&mut store, |value: i64| {
-            println!("print: {value}");
-        });
-        let print_f32 = if is_i32 {
-            Func::wrap::<_, _, _, true>
-        } else {
-            Func::wrap::<_, _, _, false>
-        }(&mut store, |value: F32| {
-            println!("print: {value:?}");
-        });
-        let print_f64 = if is_i32 {
-            Func::wrap::<_, _, _, true>
-        } else {
-            Func::wrap::<_, _, _, false>
-        }(&mut store, |value: F64| {
-            println!("print: {value:?}");
-        });
-        let print_i32_f32 = if is_i32 {
-            Func::wrap::<_, _, _, true>
-        } else {
-            Func::wrap::<_, _, _, false>
-        }(&mut store, |v0: i32, v1: F32| {
-            println!("print: {v0:?} {v1:?}");
-        });
-        let print_f64_f64 = if is_i32 {
-            Func::wrap::<_, _, _, true>
-        } else {
-            Func::wrap::<_, _, _, false>
-        }(&mut store, |v0: F64, v1: F64| {
-            println!("print: {v0:?} {v1:?}");
-        });
-        linker.define("spectest", "memory", default_memory).unwrap();
-        linker.define("spectest", "table", default_table).unwrap();
-        linker.define("spectest", "global_i32", global_i32).unwrap();
-        linker.define("spectest", "global_i64", global_i64).unwrap();
-        linker.define("spectest", "global_f32", global_f32).unwrap();
-        linker.define("spectest", "global_f64", global_f64).unwrap();
-        linker.define("spectest", "print", print).unwrap();
-        linker.define("spectest", "print_i32", print_i32).unwrap();
-        linker.define("spectest", "print_i64", print_i64).unwrap();
-        linker.define("spectest", "print_f32", print_f32).unwrap();
-        linker.define("spectest", "print_f64", print_f64).unwrap();
-        linker
-            .define("spectest", "print_i32_f32", print_i32_f32)
-            .unwrap();
-        linker
-            .define("spectest", "print_f64_f64", print_f64_f64)
-            .unwrap();
         TestContext {
             config,
             engine,
@@ -144,6 +112,9 @@ impl<'a> TestContext<'a> {
             store,
             modules: Vec::new(),
             instances: HashMap::new(),
+            import_linker,
+            extern_types: Default::default(),
+            extern_state: Default::default(),
             last_instance: None,
             profile: TestProfile::default(),
             results: Vec::new(),
@@ -191,10 +162,9 @@ impl TestContext<'_> {
     pub fn compile_and_instantiate(
         &mut self,
         mut module: wast::core::Module,
-    ) -> Result<Instance, TestError> {
+    ) -> Result<(), TestError> {
         println!("\n --- creating module ---");
-        println!("{:?}", module);
-        println!(" -----------------------\n");
+        // println!("{:?}", module);
         let module_name = module.id.map(|id| id.name());
         let wasm = module.encode().unwrap_or_else(|error| {
             panic!(
@@ -203,70 +173,125 @@ impl TestContext<'_> {
                 error
             )
         });
-        let module = if self.engine.config().get_rwasm_config().is_some() {
-            // let original_engine = Engine::new(&self.config);
-            let original_engine = self.engine();
-            let original_module = Module::new(original_engine, &wasm[..])?;
-            let rwasm_module = RwasmModule::from_module(&original_module);
-            // encode and decode rwasm module (to tests encoding/decoding flow)
-            let mut encoded_rwasm_module = Vec::new();
-            rwasm_module
-                .write_binary_to_vec(&mut encoded_rwasm_module)
-                .unwrap();
-            let rwasm_module = RwasmModule::read_from_slice(&encoded_rwasm_module).unwrap();
-            // create module builder
-            let mut module_builder = rwasm_module.to_module_builder(self.engine());
-            // copy imports
-            for (i, imported) in original_module.imports.items.iter().enumerate() {
-                match imported {
-                    Imported::Func(import_name) => {
-                        let func_type = original_module.funcs[i];
-                        let func_type =
-                            original_engine.resolve_func_type(&func_type, |v| v.clone());
-                        let new_func_type = self.engine.alloc_func_type(func_type);
-                        module_builder.funcs.insert(i, new_func_type);
-                        module_builder.imports.funcs.push(import_name.clone());
-                    }
-                    Imported::Global(_) => continue,
-                    _ => unreachable!("not supported import type ({:?})", imported),
+
+        // extract all exports first to calculate rwasm config
+        let rwasm_config = {
+            let wasm_module = Module::new(self.engine(), &wasm[..])?;
+            let mut states = Vec::<(String, u32)>::new();
+            for (k, v) in wasm_module.exports.iter() {
+                let func_idx = v.into_func_idx();
+                if func_idx.is_none() {
+                    continue;
                 }
+                let func_idx = func_idx.unwrap();
+                let func_typ = wasm_module.get_export(k).unwrap();
+                let func_typ = func_typ.func().unwrap();
+                let state_value = 10000 + func_idx.into_u32();
+                self.extern_types.insert(k.to_string(), func_typ.clone());
+                self.extern_state.insert(k.to_string(), state_value);
+                states.push((k.to_string(), state_value));
             }
-            // copy exports indices (it's not affected, so we can safely copy)
-            for (k, v) in original_module.exports.iter() {
-                if let Some(func_index) = v.into_func_idx() {
-                    let func_index = func_index.into_u32();
-                    if func_index < original_module.imports.len_funcs as u32 {
-                        unreachable!("this is imported and exported func at the same time... ?")
-                    }
-                    let func_type = original_module.funcs[func_index as usize];
-                    let func_type = original_engine.resolve_func_type(&func_type, |v| v.clone());
-                    // remap exported a func type
-                    let new_func_type = self.engine.alloc_func_type(func_type);
-                    module_builder.funcs[func_index as usize] = new_func_type;
-                }
-                module_builder.push_export(k.clone(), *v);
+            // println!("states={:?}", states);
+            RwasmConfig {
+                state_router: Some(StateRouterConfig {
+                    states: states.into(),
+                    opcode: Instruction::Call(u32::MAX.into()),
+                }),
+                entrypoint_name: None,
+                import_linker: Some(self.import_linker.clone()),
+                wrap_import_functions: true,
+                translate_drop_keep: false,
+                allow_malformed_entrypoint_func_type: true,
+                use_32bit_mode: false,
             }
-            let mut module = module_builder.finish();
-            // for rWASM set entrypoint as a start function to init module and sections
-            let entrypoint_func_index = module.funcs.len() - 1;
-            module.start = Some(FuncIdx::from(entrypoint_func_index as u32));
-            module
-        } else {
-            Module::new(self.engine(), &wasm[..])?
         };
-        let instance_pre = self.linker.instantiate(&mut self.store, &module)?;
+
+        let mut config = Config::default();
+        config
+            .wasm_mutable_global(false)
+            .wasm_saturating_float_to_int(false)
+            .wasm_sign_extension(false)
+            .wasm_multi_value(false)
+            .wasm_mutable_global(true)
+            .wasm_saturating_float_to_int(true)
+            .wasm_sign_extension(true)
+            .wasm_multi_value(true)
+            .wasm_bulk_memory(true)
+            .wasm_reference_types(true)
+            .wasm_tail_call(true)
+            .wasm_extended_const(true);
+        config.rwasm_config(rwasm_config);
+
+        let engine = Engine::new(&config);
+        let wasm_module = Module::new(&engine, &wasm[..])?;
+
+        let rwasm_module = RwasmModule::from_module(&wasm_module);
+        // encode and decode rwasm module (to tests encoding/decoding flow)
+        let mut encoded_rwasm_module = Vec::new();
+        rwasm_module
+            .write_binary_to_vec(&mut encoded_rwasm_module)
+            .unwrap();
+        let rwasm_module = RwasmModule2::new(&encoded_rwasm_module);
+
+        // println!();
+        // #[allow(unused)]
+        // fn trace_rwasm(rwasm_bytecode: &[u8]) {
+        //     let rwasm_module = RwasmModule::new(rwasm_bytecode).unwrap();
+        //     let mut func_length = 0usize;
+        //     let mut expected_func_length = rwasm_module
+        //         .func_section
+        //         .first()
+        //         .copied()
+        //         .unwrap_or(u32::MAX) as usize;
+        //     let mut func_index = 0usize;
+        //     println!("\n -- function #{} -- ", func_index);
+        //     for (i, instr) in rwasm_module.code_section.instr.iter().enumerate() {
+        //         println!("{:02}: {:?}", i, instr);
+        //         func_length += 1;
+        //         if func_length == expected_func_length {
+        //             func_index += 1;
+        //             expected_func_length = rwasm_module
+        //                 .func_section
+        //                 .get(func_index)
+        //                 .copied()
+        //                 .unwrap_or(u32::MAX) as usize;
+        //             if expected_func_length != u32::MAX as usize {
+        //                 println!("\n -- function #{} -- ", func_index);
+        //             }
+        //             func_length = 0;
+        //         }
+        //     }
+        //     println!("\n")
+        // }
+        // trace_rwasm(&encoded_rwasm_module);
+        // println!();
+
+        let mut executor = TestingRwasmExecutor::new(
+            rwasm_module.into(),
+            ExecutorConfig::new().floats_enabled(true),
+            TestingContext::default(),
+        );
+        executor.set_syscall_handler(testing_context_syscall_handler);
+        executor.context_mut().state = ENTRYPOINT_FUNC_IDX;
         println!(" --- entrypoint ---");
-        let instance = instance_pre.start(&mut self.store)?;
-        self.modules.push(module);
+        let exit_code = executor.run().map_err(|err| {
+            let trap_code = match err {
+                RwasmError::TrapCode(trap_code) => trap_code,
+                _ => unreachable!("not possible error: {:?}", err),
+            };
+            TestError::Wasmi(rwasm::Error::Trap(trap_code.into()))
+        })?;
+        assert_eq!(exit_code, 0);
+        println!();
+
+        let instance = Rc::new(RefCell::new(executor));
+
         if let Some(module_name) = module_name {
-            self.instances.insert(module_name.to_string(), instance);
-            for export in instance.exports(&self.store) {
-                self.linker
-                    .define(module_name, export.name(), export.into_extern())?;
-            }
+            self.instances
+                .insert(module_name.to_string(), instance.clone());
         }
         self.last_instance = Some(instance);
-        Ok(instance)
+        Ok(())
     }
 
     /// Loads the Wasm module instance with the given name.
@@ -277,7 +302,7 @@ impl TestContext<'_> {
     pub fn instance_by_name(&self, name: &str) -> Result<Instance, TestError> {
         self.instances
             .get(name)
-            .copied()
+            .cloned()
             .ok_or_else(|| TestError::InstanceNotRegistered {
                 name: name.to_owned(),
             })
@@ -290,7 +315,11 @@ impl TestContext<'_> {
     /// If there have been no Wasm module instances registered so far.
     pub fn instance_by_name_or_last(&self, name: Option<&str>) -> Result<Instance, TestError> {
         name.map(|name| self.instance_by_name(name))
-            .unwrap_or_else(|| self.last_instance.ok_or(TestError::NoModuleInstancesFound))
+            .unwrap_or_else(|| {
+                self.last_instance
+                    .clone()
+                    .ok_or(TestError::NoModuleInstancesFound)
+            })
     }
 
     /// Registers the given [`Instance`] with the given `name` and sets it as the last instance.
@@ -299,19 +328,19 @@ impl TestContext<'_> {
             // Already registered the instance.
             return;
         }
-        self.instances.insert(name.to_string(), instance);
-        for export in instance.exports(&self.store) {
-            self.linker
-                .define(name, export.name(), export.clone().into_extern())
-                .unwrap_or_else(|error| {
-                    let field_name = export.name();
-                    let export = export.clone().into_extern();
-                    panic!(
-                        "failed to define export {name}::{field_name}: \
-                        {export:?}: {error}",
-                    )
-                });
-        }
+        self.instances.insert(name.to_string(), instance.clone());
+        // for export in instance.exports(&self.store) {
+        //     self.linker
+        //         .define(name, export.name(), export.clone().into_extern())
+        //         .unwrap_or_else(|error| {
+        //             let field_name = export.name();
+        //             let export = export.clone().into_extern();
+        //             panic!(
+        //                 "failed to define export {name}::{field_name}: \
+        //                 {export:?}: {error}",
+        //             )
+        //         });
+        // }
         self.last_instance = Some(instance);
     }
 
@@ -336,38 +365,53 @@ impl TestContext<'_> {
         args: &[Value],
     ) -> Result<&[Value], TestError> {
         println!("\n --- {} ---", func_name);
-        let instance = self.instance_by_name_or_last(module_name)?;
-        let func = instance
-            .get_export(&self.store, func_name)
-            .and_then(Extern::into_func)
-            .ok_or_else(|| TestError::FuncNotFound {
-                module_name: module_name.map(|name| name.to_string()),
-                func_name: func_name.to_string(),
-            })?;
-        let len_results = func.ty(&self.store).results().len();
+
+        let mut instance = self.instance_by_name_or_last(module_name)?;
+        let mut instance = instance.borrow_mut();
+
+        // We reset an instruction pointer to the state function position to re-invoke the function.
+        // However, with different states.
+        // Some tests might fail, and we might keep outdated signature value in the state,
+        // make sure the state is clear before every new call.
+        let pc = instance.context().program_counter as usize;
+        instance.reset(Some(pc));
+
+        let func_state = self
+            .extern_state
+            .get(&func_name.to_string())
+            .unwrap()
+            .clone();
+
+        let mut caller = Caller::new(&mut instance);
+        for value in args {
+            caller.stack_push(value.clone());
+        }
+
+        // change function state for router
+        instance.context_mut().state = func_state;
+        let exit_code = instance.run().map_err(|err| {
+            let trap_code = match err {
+                RwasmError::TrapCode(trap_code) => trap_code,
+                _ => unreachable!("not possible error: {:?}", err),
+            };
+            TestError::Wasmi(rwasm::Error::Trap(trap_code.into()))
+        })?;
+        // copy results
+        let func_type = self.extern_types.get(func_name).unwrap();
+        let len_results = func_type.results().len();
         self.results.clear();
         self.results.resize(len_results, Value::I32(0));
-
-        let flat_args: Vec<Value>;
-        let args = if self.store.engine().config().get_i32_translator() {
-            flat_args = args
-                .iter()
-                .cloned()
-                .flat_map(|v| match v {
-                    Value::I64(v) => split_i64_to_i32(v)
-                        .into_iter()
-                        .map(|v| Value::I32(v))
-                        .collect(),
-                    Value::F64(_) => vec![v],
-                    v => vec![v],
-                })
-                .collect();
-            flat_args.as_slice()
-        } else {
-            args
-        };
-
-        func.call(&mut self.store, args, &mut self.results)?;
+        let mut caller = Caller::new(&mut instance);
+        for (i, val_type) in func_type.results().iter().rev().enumerate() {
+            let popped_value = caller.stack_pop();
+            self.results[len_results - 1 - i] = match val_type {
+                ValueType::I32 => Value::I32(popped_value.into()),
+                ValueType::I64 => Value::I64(popped_value.into()),
+                ValueType::F32 => Value::F32(popped_value.into()),
+                ValueType::F64 => Value::F64(popped_value.into()),
+                _ => unreachable!("unsupported result type: {:?}", val_type),
+            };
+        }
         Ok(&self.results)
     }
 
@@ -384,16 +428,17 @@ impl TestContext<'_> {
         global_name: &str,
     ) -> Result<Value, TestError> {
         let module_name = module_name.map(|id| id.name());
-        let instance = self.instance_by_name_or_last(module_name)?;
-        let global = instance
-            .get_export(&self.store, global_name)
-            .and_then(Extern::into_global)
-            .ok_or_else(|| TestError::GlobalNotFound {
-                module_name: module_name.map(|name| name.to_string()),
-                global_name: global_name.to_string(),
-            })?;
-        let value = global.get(&self.store);
-        Ok(value)
+        // let instance = self.instance_by_name_or_last(module_name)?;
+        // let global = instance
+        //     .get_export(&self.store, global_name)
+        //     .and_then(Extern::into_global)
+        //     .ok_or_else(|| TestError::GlobalNotFound {
+        //         module_name: module_name.map(|name| name.to_string()),
+        //         global_name: global_name.to_string(),
+        //     })?;
+        // let value = global.get(&self.store);
+        // Ok(value)
+        todo!()
     }
 
     pub fn get_config(&self) -> &Config {
