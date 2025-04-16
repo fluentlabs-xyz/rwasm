@@ -1,8 +1,4 @@
-use crate::{
-    engine::bytecode::{BlockFuel, FuncIdx},
-    module::ImportName,
-    FuncType,
-};
+use crate::{core::ValueType, module::ImportName};
 use hashbrown::HashMap;
 
 #[derive(Debug, Default, Clone)]
@@ -12,19 +8,10 @@ pub struct ImportLinker {
 
 #[derive(Debug, Clone)]
 pub struct ImportLinkerEntity {
-    pub func_idx: FuncIdx,
-    pub block_fuel: BlockFuel,
-    pub func_type: FuncType,
-}
-
-impl ImportLinkerEntity {
-    pub const fn new(func_idx: FuncIdx, block_fuel: BlockFuel, func_type: FuncType) -> Self {
-        Self {
-            func_idx,
-            block_fuel,
-            func_type,
-        }
-    }
+    pub func_idx: u32,
+    pub block_fuel: u32,
+    pub params: &'static [ValueType],
+    pub result: &'static [ValueType],
 }
 
 impl<const N: usize> From<[(&'static str, &'static str, ImportLinkerEntity); N]> for ImportLinker {
@@ -46,18 +33,24 @@ impl<const N: usize> From<[(ImportName, ImportLinkerEntity); N]> for ImportLinke
 }
 
 impl ImportLinker {
-    pub fn insert_function<I: Into<u32>>(
+    pub fn insert_function(
         &mut self,
         import_name: ImportName,
-        sys_func_index: I,
-        block_fuel: BlockFuel,
-        func_type: FuncType,
+        func_idx: u32,
+        block_fuel: u32,
+        params: &'static [ValueType],
+        result: &'static [ValueType],
     ) {
         let last_value = self.func_by_name.insert(
             import_name,
-            ImportLinkerEntity::new(FuncIdx::from(sys_func_index.into()), block_fuel, func_type),
+            ImportLinkerEntity {
+                func_idx,
+                block_fuel,
+                params,
+                result,
+            },
         );
-        assert!(last_value.is_none(), "import linker name collision");
+        assert!(last_value.is_none(), "rwasm: import linker name collision");
     }
 
     pub fn resolve_by_import_name(&self, import_name: &ImportName) -> Option<&ImportLinkerEntity> {

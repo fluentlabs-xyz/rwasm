@@ -1,5 +1,5 @@
 use crate::{
-    core::{ImportLinkerEntity, UntypedValue, ValueType},
+    core::{UntypedValue, ValueType},
     engine::{
         bytecode,
         bytecode::Instruction,
@@ -208,11 +208,7 @@ impl<'parser> RwasmTranslator<'parser> {
         }
         let import_name = imports[import_fn_index as usize];
         let config = self.res.res.engine().config();
-        let ImportLinkerEntity {
-            func_idx,
-            block_fuel,
-            func_type,
-        } = config
+        let linker_entity = config
             .get_rwasm_config()
             .and_then(|rwasm_config| rwasm_config.import_linker.as_ref())
             .ok_or(RwasmBuilderError::UnknownImport(import_name.clone()))?
@@ -227,15 +223,18 @@ impl<'parser> RwasmTranslator<'parser> {
         let is_type_matches = self
             .res
             .engine()
-            .resolve_func_type(dedup_func_type, |func_type2| func_type2 == func_type);
+            .resolve_func_type(dedup_func_type, |func_type| {
+                let (params, result) = func_type.params_results();
+                params == linker_entity.params && result == linker_entity.result
+            });
         if !is_type_matches {
             return Err(RwasmBuilderError::MalformedFuncType);
         }
         let instr_builder = &mut self.translator.alloc.inst_builder;
         if self.res.engine().config().get_consume_fuel() {
-            instr_builder.push_inst(Instruction::ConsumeFuel(*block_fuel));
+            instr_builder.push_inst(Instruction::ConsumeFuel(linker_entity.block_fuel.into()));
         }
-        instr_builder.push_inst(Instruction::Call(*func_idx));
+        instr_builder.push_inst(Instruction::Call(linker_entity.func_idx.into()));
         instr_builder.push_inst(Instruction::Return(DropKeep::none()));
         Ok(import_fn_index)
     }

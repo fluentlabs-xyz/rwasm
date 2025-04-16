@@ -1,10 +1,6 @@
 use crate::{
     core::{ImportLinker, ValueType},
-    engine::{
-        bytecode::{BlockFuel, Instruction},
-        RwasmConfig,
-        StateRouterConfig,
-    },
+    engine::{bytecode::Instruction, RwasmConfig, StateRouterConfig},
     module::ImportName,
     rwasm::{BinaryFormat, RwasmModule},
     AsContextMut,
@@ -12,7 +8,6 @@ use crate::{
     Config,
     Engine,
     Func,
-    FuncType,
     Linker,
     Module,
     Store,
@@ -51,14 +46,16 @@ fn create_import_linker() -> ImportLinker {
     import_linker.insert_function(
         ImportName::new("env", "_sys_halt"),
         SYS_HALT_CODE,
-        BlockFuel::from(1),
-        FuncType::new([ValueType::I32], []),
+        1,
+        &[ValueType::I32],
+        &[],
     );
     import_linker.insert_function(
         ImportName::new("env", "_sys_state"),
         SYS_STATE_CODE,
-        BlockFuel::from(1),
-        FuncType::new([], [ValueType::I32]),
+        1,
+        &[],
+        &[ValueType::I32],
     );
     import_linker
 }
