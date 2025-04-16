@@ -1,5 +1,5 @@
 use crate::{
-    core::ImportLinker,
+    core::{ImportLinker, ValueType},
     engine::{bytecode::Instruction, RwasmConfig, StateRouterConfig},
     module::ImportName,
     rwasm::{BinaryFormat, RwasmModule},
@@ -43,8 +43,20 @@ const SYS_STATE_CODE: u32 = 1011;
 
 fn create_import_linker() -> ImportLinker {
     let mut import_linker = ImportLinker::default();
-    import_linker.insert_function(ImportName::new("env", "_sys_halt"), SYS_HALT_CODE, 1);
-    import_linker.insert_function(ImportName::new("env", "_sys_state"), SYS_STATE_CODE, 1);
+    import_linker.insert_function(
+        ImportName::new("env", "_sys_halt"),
+        SYS_HALT_CODE,
+        1,
+        &[ValueType::I32],
+        &[],
+    );
+    import_linker.insert_function(
+        ImportName::new("env", "_sys_state"),
+        SYS_STATE_CODE,
+        1,
+        &[],
+        &[ValueType::I32],
+    );
     import_linker
 }
 

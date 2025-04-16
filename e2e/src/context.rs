@@ -13,8 +13,12 @@ use crate::handler::{
 };
 use anyhow::Result;
 use rwasm::{
-    core::{ImportLinker, ValueType, F32, F64},
-    engine::{bytecode::Instruction, RwasmConfig, StateRouterConfig},
+    core::{ImportLinker, ImportLinkerEntity, ValueType, F32, F64},
+    engine::{
+        bytecode::{BlockFuel, Instruction},
+        RwasmConfig,
+        StateRouterConfig,
+    },
     func::FuncIdx,
     module::{ImportName, Imported},
     rwasm::{BinaryFormat, BinaryFormatWriter, RwasmModule},
@@ -96,13 +100,76 @@ impl<'a> TestContext<'a> {
         .unwrap();
 
         let import_linker = ImportLinker::from([
-            ("spectest", "print", FUNC_PRINT, 0),
-            ("spectest", "print_i32", FUNC_PRINT_I32, 0),
-            ("spectest", "print_i64", FUNC_PRINT_I64, 0),
-            ("spectest", "print_f32", FUNC_PRINT_F32, 0),
-            ("spectest", "print_f64", FUNC_PRINT_F64, 0),
-            ("spectest", "print_i32_f32", FUNC_PRINT_I32_F32, 0),
-            ("spectest", "print_f64_f64", FUNC_PRINT_I64_F64, 0),
+            (
+                "spectest",
+                "print",
+                ImportLinkerEntity {
+                    func_idx: FUNC_PRINT,
+                    block_fuel: 0,
+                    params: &[],
+                    result: &[],
+                },
+            ),
+            (
+                "spectest",
+                "print_i32",
+                ImportLinkerEntity {
+                    func_idx: FUNC_PRINT_I32,
+                    block_fuel: 0,
+                    params: &[ValueType::I32],
+                    result: &[],
+                },
+            ),
+            (
+                "spectest",
+                "print_i64",
+                ImportLinkerEntity {
+                    func_idx: FUNC_PRINT_I64,
+                    block_fuel: 0,
+                    params: &[ValueType::I64],
+                    result: &[],
+                },
+            ),
+            (
+                "spectest",
+                "print_f32",
+                ImportLinkerEntity {
+                    func_idx: FUNC_PRINT_F32.into(),
+                    block_fuel: 0,
+                    params: &[ValueType::F32],
+                    result: &[],
+                },
+            ),
+            (
+                "spectest",
+                "print_f64",
+                ImportLinkerEntity {
+                    func_idx: FUNC_PRINT_F64,
+                    block_fuel: 0,
+                    params: &[ValueType::F64],
+                    result: &[],
+                },
+            ),
+            (
+                "spectest",
+                "print_i32_f32",
+                ImportLinkerEntity {
+                    func_idx: FUNC_PRINT_I32_F32,
+                    block_fuel: 0,
+                    params: &[ValueType::I32, ValueType::F32],
+                    result: &[],
+                },
+            ),
+            (
+                "spectest",
+                "print_i64_f64",
+                ImportLinkerEntity {
+                    func_idx: FUNC_PRINT_I64_F64,
+                    block_fuel: 0,
+                    params: &[ValueType::I64, ValueType::F64],
+                    result: &[],
+                },
+            ),
         ]);
 
         TestContext {

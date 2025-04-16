@@ -19,7 +19,7 @@ pub const N_MAX_RECURSION_DEPTH: usize = 1024;
 #[derive(Debug)]
 pub enum RwasmBuilderError {
     MissingEntrypoint,
-    MalformedEntrypointFuncType,
+    MalformedFuncType,
     NotSupportedImport,
     UnknownImport(ImportName),
     ImportedGlobalsAreDisabled,
@@ -33,7 +33,7 @@ impl Display for RwasmBuilderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingEntrypoint => write!(f, "MissingEntrypoint"),
-            Self::MalformedEntrypointFuncType => write!(f, "MalformedEntrypointFuncType"),
+            Self::MalformedFuncType => write!(f, "MalformedEntrypointFuncType"),
             Self::NotSupportedImport => write!(f, "NotSupportedImport"),
             Self::UnknownImport(_) => write!(f, "UnknownImport"),
             Self::ImportedGlobalsAreDisabled => write!(f, "ImportedGlobalsAreDisabled"),
