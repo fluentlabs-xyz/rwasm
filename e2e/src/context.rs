@@ -450,6 +450,25 @@ impl TestContext<'_> {
             .clone();
 
         let mut caller = Caller::new(&mut instance);
+
+        let flat_args: Vec<Value>;
+        let args = if self.store.engine().config().get_i32_translator() {
+            flat_args = args
+                .iter()
+                .cloned()
+                .flat_map(|v| match v {
+                    Value::I64(v) => split_i64_to_i32(v)
+                        .into_iter()
+                        .map(|v| Value::I32(v))
+                        .collect(),
+                    v => vec![v],
+                })
+                .collect();
+            flat_args.as_slice()
+        } else {
+            args
+        };
+
         for value in args {
             caller.stack_push(value.clone());
         }

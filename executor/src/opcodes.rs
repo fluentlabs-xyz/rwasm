@@ -38,6 +38,22 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
     }
     while !vm.stop_exec {
         let instr = *vm.ip.get();
+        #[cfg(feature = "debug-print")]
+        {
+            let stack = vm.value_stack.dump_stack(vm.sp);
+            println!(
+                "{}:\t {:?} \tstack({}):{:?}",
+                vm.ip.pc(),
+                instr,
+                stack.len(),
+                stack
+                    .iter()
+                    .rev()
+                    .take(10)
+                    .map(|v| v.as_usize())
+                    .collect::<Vec<_>>()
+            );
+        }
         use Instruction::*;
         match instr {
             Unreachable => visit_unreachable_wrapped(vm),
