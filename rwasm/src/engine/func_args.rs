@@ -1,10 +1,11 @@
 //! API using the Rust type system to guide host function trampoline execution.
 
 use crate::{
-    core::{DecodeUntypedSlice, EncodeUntypedSlice, UntypedError, UntypedValue},
+    core::{DecodeUntypedSlice, EncodeUntypedSlice, UntypedError, UntypedValue, ValueType},
     value::WithType,
     Value,
 };
+use alloc::vec::Vec;
 use core::cmp;
 
 /// Used to decode host function parameters.
@@ -22,18 +23,24 @@ pub struct FuncParams<'a> {
     len_params: usize,
     /// The length of the expected results of the function invocation.
     len_results: usize,
+    origin_params: Vec<ValueType>,
+    origin_results: Vec<ValueType>,
 }
 
 /// Used to encode host function results.
 #[derive(Debug)]
 pub struct FuncResults<'a> {
     results: &'a mut [UntypedValue],
+    origin_results: Vec<ValueType>,
 }
 
 impl<'a> FuncResults<'a> {
     /// Create new [`FuncResults`] from the given `results` slice.
-    fn new(results: &'a mut [UntypedValue]) -> Self {
-        Self { results }
+    fn new(results: &'a mut [UntypedValue], origin_results: Vec<ValueType>) -> Self {
+        Self {
+            results,
+            origin_results,
+        }
     }
 
     /// Encodes the results of the host function invocation as `T`.
@@ -46,6 +53,15 @@ impl<'a> FuncResults<'a> {
         T: EncodeUntypedSlice,
     {
         UntypedValue::encode_slice::<T>(self.results, values)
+            .unwrap_or_else(|error| panic!("encountered unexpected invalid tuple length: {error}"));
+        FuncFinished {}
+    }
+
+    pub fn encode_results_i32<T>(self, values: T) -> FuncFinished
+    where
+        T: EncodeUntypedSlice,
+    {
+        UntypedValue::encode_slice_i32::<T>(self.results, values, self.origin_results)
             .unwrap_or_else(|error| panic!("encountered unexpected invalid tuple length: {error}"));
         FuncFinished {}
     }
@@ -85,12 +101,16 @@ impl<'a> FuncParams<'a> {
         params_results: &'a mut [UntypedValue],
         len_params: usize,
         len_results: usize,
+        origin_params: Vec<ValueType>,
+        origin_results: Vec<ValueType>,
     ) -> Self {
         assert_eq!(params_results.len(), cmp::max(len_params, len_results));
         Self {
             params_results,
             len_params,
             len_results,
+            origin_params,
+            origin_results,
         }
     }
 
@@ -114,6 +134,19 @@ impl<'a> FuncParams<'a> {
         (decoded, results)
     }
 
+    pub fn decode_params_i32<T>(self) -> (T, FuncResults<'a>)
+    where
+        T: DecodeUntypedSlice,
+    {
+        let decoded =
+            UntypedValue::decode_slice_i32::<T>(self.params(), self.origin_params.as_slice())
+                .unwrap_or_else(|error| {
+                    panic!("encountered unexpected invalid tuple length: {error}")
+                });
+        let results = self.into_func_results();
+        (decoded, results)
+    }
+
     /// Decodes and stores the executed host functions parameters into `values`.
     ///
     /// # Panics
@@ -133,6 +166,9 @@ impl<'a> FuncParams<'a> {
 
     /// Consumes `self` to return the [`FuncResults`] out of it.
     fn into_func_results(self) -> FuncResults<'a> {
-        FuncResults::new(&mut self.params_results[..self.len_results])
+        FuncResults::new(
+            &mut self.params_results[..self.len_results],
+            self.origin_results,
+        )
     }
 }

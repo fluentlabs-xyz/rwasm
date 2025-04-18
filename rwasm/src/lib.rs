@@ -39,7 +39,7 @@
 //!     // which in this case we are using `42` for.
 //!     type HostState = u32;
 //!     let mut store = Store::new(&engine, 42);
-//!     let host_hello = Func::wrap(&mut store, |caller: Caller<'_, HostState>, param: i32| {
+//!     let host_hello = Func::wrap::<_,_,_,false>(&mut store, |caller: Caller<'_, HostState>, param: i32| {
 //!         println!("Got {param} from WebAssembly");
 //!         println!("My host state is: {}", caller.data());
 //!     });

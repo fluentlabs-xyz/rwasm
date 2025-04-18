@@ -11,6 +11,10 @@ use core::fmt;
 pub struct FuncType {
     /// The number of function parameters.
     len_params: usize,
+
+    params: Vec<ValueType>,
+    origin_params: Vec<ValueType>,
+    origin_results: Vec<ValueType>,
     /// The ordered and merged parameter and result types of the function type.
     ///
     /// # Note
@@ -28,34 +32,107 @@ impl fmt::Debug for FuncType {
         f.debug_struct("FuncType")
             .field("params", &self.params())
             .field("results", &self.results())
+            .field("origin_params", &self.origin_params)
+            .field("origin_results", &self.origin_results)
             .finish()
     }
 }
 
 impl FuncType {
     /// Creates a new [`FuncType`].
-    pub fn new<P, R>(params: P, results: R) -> Self
+    pub fn new<P, R, const I32: bool>(params: P, results: R) -> Self
     where
-        P: IntoIterator<Item = ValueType>,
-        R: IntoIterator<Item = ValueType>,
+        P: IntoIterator<Item = ValueType> + Clone,
+        R: IntoIterator<Item = ValueType> + Clone,
     {
+        if I32 {
+            return Self::new_i32(params, results);
+        }
+
         let mut params_results = params.into_iter().collect::<Vec<_>>();
         let len_params = params_results.len();
         params_results.extend(results);
         Self {
+            origin_params: vec![],
+            origin_results: vec![],
             params_results: params_results.into(),
+            params: vec![],
             len_params,
         }
     }
 
-    /// Creates a new [`FuncType`].
+    pub fn new_i32<P, R>(params: P, results: R) -> Self
+    where
+        P: IntoIterator<Item = ValueType> + Clone,
+        R: IntoIterator<Item = ValueType> + Clone,
+    {
+        let mut params_results = params
+            .clone()
+            .into_iter()
+            .flat_map(|v| match v {
+                ValueType::I64 => vec![ValueType::I32, ValueType::I32],
+                v => vec![v],
+            })
+            .collect::<Vec<_>>();
+        let len_params = params_results.len();
+        let flat_results: Vec<ValueType> = results
+            .clone()
+            .into_iter()
+            .flat_map(|v| match v {
+                ValueType::I64 => vec![ValueType::I32, ValueType::I32],
+                v => vec![v],
+            })
+            .collect();
+        params_results.extend(flat_results);
+        Self {
+            origin_params: params.clone().into_iter().collect(),
+            origin_results: results.into_iter().collect(),
+            params_results: params_results.into(),
+            params: params.into_iter().collect(),
+            len_params,
+        }
+    }
+
     pub fn new_with_refs<'a>(params: &'a [ValueType], results: &'a [ValueType]) -> Self {
         let mut params_results = Vec::new();
         params_results.extend_from_slice(params);
         let len_params = params_results.len();
         params_results.extend_from_slice(results);
         Self {
+            origin_params: vec![],
+            origin_results: vec![],
             params_results: params_results.into(),
+            params: vec![],
+            len_params,
+        }
+    }
+
+    /// Creates a new [`FuncType`].
+    pub fn new_i32_with_refs<'a>(params: &'a [ValueType], results: &'a [ValueType]) -> Self {
+        let mut params_results = Vec::new();
+        params_results.extend_from_slice(params);
+        params_results = params_results
+            .into_iter()
+            .flat_map(|v| match v {
+                ValueType::I64 => vec![ValueType::I32, ValueType::I32],
+                v => vec![v],
+            })
+            .collect();
+        let len_params = params_results.len();
+        let flat_results: Vec<ValueType> = results
+            .into_iter()
+            .flat_map(|v| match v {
+                ValueType::I64 => vec![ValueType::I32, ValueType::I32],
+                v => vec![*v],
+            })
+            .collect();
+        params_results.extend_from_slice(flat_results.as_slice());
+
+        Self {
+            origin_params: params.into_iter().cloned().collect(),
+            origin_results: results.into_iter().cloned().collect(),
+            params_results: params_results.into(),
+            params: params.into_iter().cloned().collect(),
             len_params,
         }
     }
@@ -72,6 +149,13 @@ impl FuncType {
     /// Returns the parameter types of the function type.
     pub fn params(&self) -> &[ValueType] {
         &self.params_results[..self.len_params]
+    }
+
+    pub fn origin_params(&self) -> &[ValueType] {
+        &self.origin_params
+    }
+    pub fn origin_results(&self) -> &[ValueType] {
+        &self.origin_results
     }
 
     /// Returns the result types of the function type.
@@ -194,7 +278,7 @@ mod tests {
 
     #[test]
     fn new_empty_works() {
-        let ft = FuncType::new([], []);
+        let ft = FuncType::new::<_, _, false>([], []);
         assert!(ft.params().is_empty());
         assert!(ft.results().is_empty());
         assert_eq!(ft.params(), ft.params_results().0);
@@ -205,7 +289,7 @@ mod tests {
     fn new_works() {
         let types = [
             &[ValueType::I32][..],
-            &[ValueType::I64][..],
+            &[ValueType::I32, ValueType::I32][..],
             &[ValueType::F32][..],
             &[ValueType::F64][..],
             &[ValueType::I32, ValueType::I32][..],
@@ -228,14 +312,15 @@ mod tests {
             ][..],
             &[
                 ValueType::I32,
-                ValueType::I64,
+                ValueType::I32,
+                ValueType::I32,
                 ValueType::F32,
                 ValueType::F64,
             ][..],
         ];
         for params in types {
             for results in types {
-                let ft = FuncType::new(params.iter().copied(), results.iter().copied());
+                let ft = FuncType::new_i32(params.iter().copied(), results.iter().copied());
                 assert_eq!(ft.params(), params);
                 assert_eq!(ft.results(), results);
                 assert_eq!(ft.params(), ft.params_results().0);

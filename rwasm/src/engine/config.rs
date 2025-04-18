@@ -43,6 +43,9 @@ pub struct RwasmConfig {
     /// An option to disable malformed entrypoint func type check. We need this check for e2e tests
     /// where we manage stack manually.
     pub allow_malformed_entrypoint_func_type: bool,
+    /// A mode for 32-bit stack alignment
+    /// that disables all 64-bit instructions and replace them with 32-bit ones
+    pub use_32bit_mode: bool,
 }
 
 impl Default for RwasmConfig {
@@ -54,6 +57,7 @@ impl Default for RwasmConfig {
             wrap_import_functions: false,
             translate_drop_keep: false,
             allow_malformed_entrypoint_func_type: false,
+            use_32bit_mode: false,
         }
     }
 }
@@ -422,6 +426,13 @@ impl Config {
     pub fn consume_fuel(&mut self, enable: bool) -> &mut Self {
         self.consume_fuel = enable;
         self
+    }
+
+    pub fn get_i32_translator(&self) -> bool {
+        self.rwasm_config
+            .as_ref()
+            .map(|v| v.use_32bit_mode)
+            .unwrap_or(false)
     }
 
     /// Returns `true` if the [`Config`] enables fuel consumption by the [`Engine`].

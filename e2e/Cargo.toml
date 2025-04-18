@@ -6,12 +6,8 @@ edition = "2021"
 [dependencies]
 rwasm-executor = { path = "../executor" }
 rwasm = { path = "../rwasm" }
-
-byteorder = "1.4.3"
-wat = "1.0.66"
 anyhow = "1.0.71"
 wast = "62.0.0"
-serial_test = "3.0.0"
 
 [features]
 default = ["e2e"]

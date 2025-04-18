@@ -2,6 +2,7 @@ use super::{error::TestError, TestContext, TestDescriptor};
 use anyhow::Result;
 use rwasm::{
     core::{F32, F64},
+    value::split_i64_to_i32,
     Config,
     ExternRef,
     FuncRef,
@@ -228,15 +229,32 @@ fn assert_trap(test_context: &TestContext, span: Span, error: TestError, message
 
 /// Asserts that `results` match the `expected` values.
 fn assert_results(context: &TestContext, span: Span, results: &[Value], expected: &[WastRet]) {
-    assert_eq!(results.len(), expected.len());
+    let config = context.get_config();
+    if config.get_i32_translator() {
+        assert_eq!(
+            results.len(),
+            expected.len()
+                + expected
+                    .iter()
+                    .filter(|c| matches!(c, WastRet::Core(WastRetCore::I64(_))))
+                    .count()
+        );
+    } else {
+        assert_eq!(results.len(), expected.len());
+    }
+
     let expected = expected.iter().map(|expected| match expected {
         WastRet::Core(expected) => expected,
         WastRet::Component(expected) => panic!(
             "{:?}: `wasmi` does not support the Wasm `component-model` proposal but found {expected:?}",
             context.spanned(span),
         ),
-    });
-    for (result, expected) in results.iter().zip(expected) {
+    }).collect::<Vec<_>>();
+    let mut shift = 0;
+    for i in 0..expected.len() {
+        let result = &results[i + shift];
+        let expected = &expected[i];
+
         match (result, expected) {
             (Value::I32(result), WastRetCore::I32(expected)) => {
                 assert_eq!(result, expected, "in {}", context.spanned(span))
@@ -247,7 +265,18 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
             // in rWASM we support only 64 bit globals, but technically both these types are having
             // 64 bit representation, so there is no diff, and we can safely compare them
             (Value::I32(result), WastRetCore::I64(expected)) => {
-                assert_eq!(*result as i64, *expected, "in {}", context.spanned(span))
+                if config.get_i32_translator() {
+                    let low = result;
+                    let high = &results[i + shift + 1]
+                        .i32()
+                        .expect("Failed to find low part of i64");
+                    shift += 1;
+                    let [expected_low, expected_high] = split_i64_to_i32(*expected);
+                    assert_eq!(*high, expected_high, "in {}", context.spanned(span));
+                    assert_eq!(*low, expected_low, "in {}", context.spanned(span));
+                } else {
+                    assert_eq!(*result as i64, *expected, "in {}", context.spanned(span));
+                }
             }
             (Value::I64(result), WastRetCore::I32(expected)) => {
                 assert_eq!(*result, *expected as i64, "in {}", context.spanned(span))

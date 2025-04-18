@@ -82,15 +82,16 @@ fn make_config(rwasm_mode: bool) -> Config {
         .wasm_bulk_memory(true)
         .wasm_reference_types(true)
         .wasm_tail_call(true)
-        .wasm_extended_const(true);
+        .wasm_extended_const(false);
     if rwasm_mode {
         config.rwasm_config(RwasmConfig {
             state_router: None,
             entrypoint_name: None,
             import_linker: None,
             wrap_import_functions: false,
-            translate_drop_keep: false,
+            translate_drop_keep: true,
             allow_malformed_entrypoint_func_type: true,
+            use_32bit_mode: false,
         });
     }
     config
@@ -101,13 +102,13 @@ define_spec_tests! {
     let runner = run::run_wasm_spec_test;
 
     fn wasm_address("address");
-    fn wasm_align("align");
+    fn wasm_align("align"); //br_table
     fn wasm_binary_leb128("binary-leb128");
     fn wasm_binary("binary");
     fn wasm_block("block");
     fn wasm_br("br");
     fn wasm_br_if("br_if");
-    fn wasm_br_table("br_table");
+    fn wasm_br_table("br_table"); // br_table
     fn wasm_bulk("bulk");
     fn wasm_call("call");
     fn wasm_call_indirect("call_indirect");
@@ -130,7 +131,7 @@ define_spec_tests! {
     fn wasm_f64("f64");
     fn wasm_f64_bitwise("f64_bitwise");
     fn wasm_f64_cmp("f64_cmp");
-    fn wasm_fac("fac");
+    fn wasm_fac("fac"); //wrong branch
     fn wasm_float_exprs("float_exprs");
     fn wasm_float_literals("float_literals");
     fn wasm_float_memory("float_memory");

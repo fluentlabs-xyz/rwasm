@@ -3,6 +3,7 @@ use crate::core::{
     TrapCode,
 };
 use core::{f32, i32, i64, u32, u64};
+use wasmparser::ValType;
 
 /// Type of a value.
 ///
@@ -39,6 +40,20 @@ impl ValueType {
     /// This is `true` for [`ValueType::FuncRef`] and [`ValueType::ExternRef`].
     pub fn is_ref(&self) -> bool {
         matches!(self, Self::ExternRef | Self::FuncRef)
+    }
+}
+
+impl From<ValType> for ValueType {
+    fn from(value: ValType) -> Self {
+        match value {
+            ValType::I32 => ValueType::I32,
+            ValType::I64 => ValueType::I64,
+            ValType::F32 => ValueType::F32,
+            ValType::F64 => ValueType::F64,
+            ValType::FuncRef => ValueType::FuncRef,
+            ValType::ExternRef => ValueType::ExternRef,
+            _ => unreachable!("not supported local type ({:?})", value),
+        }
     }
 }
 

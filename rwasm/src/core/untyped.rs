@@ -1,18 +1,23 @@
-use crate::core::{
-    value::{LoadInto, StoreFrom},
-    ArithmeticOps,
-    ExtendInto,
-    Float,
-    Integer,
-    LittleEndianConvert,
-    SignExtendFrom,
-    TrapCode,
-    TruncateSaturateInto,
-    TryTruncateInto,
-    WrapInto,
-    F32,
-    F64,
+use crate::{
+    core::{
+        value::{LoadInto, StoreFrom},
+        ArithmeticOps,
+        ExtendInto,
+        Float,
+        Integer,
+        LittleEndianConvert,
+        SignExtendFrom,
+        TrapCode,
+        TruncateSaturateInto,
+        TryTruncateInto,
+        ValueType,
+        WrapInto,
+        F32,
+        F64,
+    },
+    value::split_i64_to_i32,
 };
+use alloc::vec::Vec;
 use core::{
     fmt::{self, Display, Formatter},
     ops::{Neg, Shl, Shr},
@@ -1389,6 +1394,16 @@ impl UntypedValue {
         <T as DecodeUntypedSlice>::decode_untyped_slice(slice)
     }
 
+    pub fn decode_slice_i32<T>(
+        slice: &[Self],
+        origin_params: &[ValueType],
+    ) -> Result<T, UntypedError>
+    where
+        T: DecodeUntypedSlice,
+    {
+        <T as DecodeUntypedSlice>::decode_untyped_slice_i32(slice, origin_params)
+    }
+
     /// Encodes the slice of [`UntypedValue`] from the given value of type `T`.
     ///
     /// # Note
@@ -1405,6 +1420,17 @@ impl UntypedValue {
     {
         <T as EncodeUntypedSlice>::encode_untyped_slice(input, slice)
     }
+
+    pub fn encode_slice_i32<T>(
+        slice: &mut [Self],
+        input: T,
+        origin_results: Vec<ValueType>,
+    ) -> Result<(), UntypedError>
+    where
+        T: EncodeUntypedSlice,
+    {
+        <T as EncodeUntypedSlice>::encode_untyped_slice_i32(input, slice, origin_results)
+    }
 }
 
 /// Tuple types that allow to decode a slice of [`UntypedValue`].
@@ -1420,6 +1446,11 @@ pub trait DecodeUntypedSlice: Sized {
     ///
     /// If the tuple length of `Self` and the length of `slice` does not match.
     fn decode_untyped_slice(params: &[UntypedValue]) -> Result<Self, UntypedError>;
+
+    fn decode_untyped_slice_i32(
+        params: &[UntypedValue],
+        origin_params: &[ValueType],
+    ) -> Result<Self, UntypedError>;
 }
 
 impl<T1> DecodeUntypedSlice for T1
@@ -1429,6 +1460,14 @@ where
     #[inline]
     fn decode_untyped_slice(results: &[UntypedValue]) -> Result<Self, UntypedError> {
         <(T1,) as DecodeUntypedSlice>::decode_untyped_slice(results).map(|t| t.0)
+    }
+
+    #[inline]
+    fn decode_untyped_slice_i32(
+        results: &[UntypedValue],
+        origin_params: &[ValueType],
+    ) -> Result<Self, UntypedError> {
+        <(T1,) as DecodeUntypedSlice>::decode_untyped_slice_i32(results, origin_params).map(|t| t.0)
     }
 }
 
@@ -1440,7 +1479,7 @@ macro_rules! impl_decode_untyped_slice {
                 $tuple: From<UntypedValue>
             ),*
         {
-            #[allow(non_snake_case)]
+                        #[allow(non_snake_case)]
             #[inline]
             fn decode_untyped_slice(results: &[UntypedValue]) -> Result<Self, UntypedError> {
                 match results {
@@ -1449,6 +1488,40 @@ macro_rules! impl_decode_untyped_slice {
                             <$tuple as From<UntypedValue>>::from($tuple),
                         )*
                     )),
+                    _ => Err(UntypedError::invalid_len()),
+                }
+            }
+
+            #[allow(non_snake_case)]
+            #[inline]
+            fn decode_untyped_slice_i32(results: &[UntypedValue], origin_params: &[ValueType]) -> Result<Self, UntypedError> {
+                let mut i = 0;
+                match origin_params {
+                    &[ $($tuple),* ]   => Ok((
+                    $(
+                        {
+                            if $tuple == ValueType::I64 {
+                                if i + 1 >= results.len() {
+                                    return Err(UntypedError::invalid_len());
+                                }
+                                let high = results[i].as_u64();
+                                let low = results[i + 1].as_u64();
+                                i += 2;
+
+                                <$tuple as From<UntypedValue>>::from(UntypedValue::from((high << 32) | low))
+                            } else {
+                                if i >= results.len() {
+                                    return Err(UntypedError::invalid_len());
+                                }
+                                let value = results[i].clone();
+                                i += 1;
+
+                                <$tuple as From<UntypedValue>>::from(value)
+                            }
+                        },
+                    )*
+
+                )),
                     _ => Err(UntypedError::invalid_len()),
                 }
             }
@@ -1470,6 +1543,12 @@ pub trait EncodeUntypedSlice {
     ///
     /// If the tuple length of `Self` and the length of `slice` does not match.
     fn encode_untyped_slice(self, results: &mut [UntypedValue]) -> Result<(), UntypedError>;
+
+    fn encode_untyped_slice_i32(
+        self,
+        results: &mut [UntypedValue],
+        origin_results: Vec<ValueType>,
+    ) -> Result<(), UntypedError>;
 }
 
 impl<T1> EncodeUntypedSlice for T1
@@ -1479,6 +1558,15 @@ where
     #[inline]
     fn encode_untyped_slice(self, results: &mut [UntypedValue]) -> Result<(), UntypedError> {
         <(T1,) as EncodeUntypedSlice>::encode_untyped_slice((self,), results)
+    }
+
+    #[inline]
+    fn encode_untyped_slice_i32(
+        self,
+        results: &mut [UntypedValue],
+        origin_results: Vec<ValueType>,
+    ) -> Result<(), UntypedError> {
+        <(T1,) as EncodeUntypedSlice>::encode_untyped_slice_i32((self,), results, origin_results)
     }
 }
 
@@ -1501,6 +1589,37 @@ macro_rules! impl_encode_untyped_slice {
                                 *[< _results_ $tuple >] = <$tuple as Into<UntypedValue>>::into([< _self_ $tuple >]);
                             )*
                             Ok(())
+                        }
+                        _ => Err(UntypedError::invalid_len())
+                    }
+                }
+
+                #[allow(non_snake_case)]
+                #[inline]
+                fn encode_untyped_slice_i32(self, results: &mut [UntypedValue], origin_results: Vec<ValueType>) -> Result<(), UntypedError> {
+                    let mut i = 0;
+                    match origin_results.as_slice() {
+                        [ $( [< _origin_results_ $tuple >] ,)* ] => {
+                            let ( $( [< _self_ $tuple >] ,)* ) = self;
+                            $(
+                                let untyped = <$tuple as Into<UntypedValue>>::into([< _self_ $tuple >]);
+                                if [< _origin_results_ $tuple >] == &ValueType::I64 {
+                                    let [low, high] = split_i64_to_i32(untyped.as_u64() as i64);
+                                    results[i] = UntypedValue::from(high);
+                                    i += 1;
+                                    results[i] = UntypedValue::from(low);
+                                    i += 1;
+                                } else {
+                                    results[i] = untyped;
+                                    i += 1;
+                                }
+                            )*
+                            if i != results.len() {
+                                Err(UntypedError::invalid_len())
+                            } else {
+                                Ok(())
+                            }
+
                         }
                         _ => Err(UntypedError::invalid_len())
                     }

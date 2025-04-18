@@ -1,5 +1,4 @@
 use core::{fmt, fmt::Display};
-
 #[cfg(feature = "std")]
 use std::io;
 
@@ -30,7 +29,8 @@ impl Display for ReadError {
 /// [`Module::new`]: [`crate::Module::new`]
 /// [std_io_read]: https://doc.rust-lang.org/std/io/trait.Read.html
 pub trait Read {
-    /// Pull some bytes from this source into the specified buffer, returning how many bytes were read.
+    /// Pull some bytes from this source into the specified buffer, returning how many bytes were
+    /// read.
     ///
     /// # Note
     ///

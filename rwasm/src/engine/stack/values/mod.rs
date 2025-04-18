@@ -108,7 +108,7 @@ impl ValueStack {
 
     pub fn dump_stack(&mut self, sp: ValueStackPtr) -> Vec<UntypedValue> {
         let size = self.stack_len(sp);
-        self.entries[0..size].to_vec()
+        self.entries[0..size.min(self.entries.len())].to_vec()
     }
 
     /// Returns the base [`ValueStackPtr`] of `self`.
