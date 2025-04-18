@@ -151,6 +151,9 @@ pub enum Instruction {
     /// and will never be executed by itself.
     CallIndirect(SignatureIdx),
     SignatureCheck(SignatureIdx),
+    StackAlloc {
+        max_stack_height: u32,
+    },
     Drop,
     Select,
     GlobalGet(GlobalIdx),

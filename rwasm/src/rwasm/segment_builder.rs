@@ -30,6 +30,7 @@ impl SegmentBuilder {
         }
         // it makes no sense to grow memory with 0 pages
         if initial_pages > 0 {
+            // TODO(dmitry123): "add stack height check"
             code_section.push_inst(Instruction::I32Const(initial_pages.into()));
             code_section.push_inst(Instruction::MemoryGrow);
             code_section.push_inst(Instruction::Drop);
@@ -66,6 +67,7 @@ impl SegmentBuilder {
         } else {
             code_section.push_inst(Instruction::I64Const(data_length.into()));
         }
+        // TODO(dmitry123): "add stack height check"
         code_section.push_inst(Instruction::MemoryInit(DEFAULT_MEMORY_INDEX.into()));
         code_section.push_inst(Instruction::DataDrop((segment_idx.to_u32() + 1).into()));
         // store passive section info
@@ -96,6 +98,7 @@ impl SegmentBuilder {
         self.global_element_section.extend(elements);
         let segment_length = self.global_element_section.len() - segment_offset;
         // init table with these elements
+        // TODO(dmitry123): "add stack height check"
         code_section.push_inst(Instruction::I32Const(offset.into()));
         code_section.push_inst(Instruction::I64Const(segment_offset.into()));
         code_section.push_inst(Instruction::I64Const(segment_length.into()));

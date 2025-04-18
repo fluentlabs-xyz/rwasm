@@ -111,7 +111,7 @@ impl<'engine> ModuleParser<'engine> {
                 }
                 Payload::End(offset) => {
                     // before processing code entries, we must process an entrypoint
-                    let instr_builder =
+                    let entrypoint_instr_builder =
                         if self.builder.engine().config().get_rwasm_config().is_some() {
                             Some(self.process_rwasm_entrypoint()?)
                         } else {
@@ -120,9 +120,9 @@ impl<'engine> ModuleParser<'engine> {
                     for func_body in take(&mut func_bodies) {
                         self.process_code_entry(func_body)?;
                     }
-                    // rewrite memory & table sections for rWASM (encoding/decoding simulation)
+                    // rewrite memory and table sections for rWASM (encoding/decoding simulation)
                     if self.builder.engine().config().get_rwasm_config().is_some() {
-                        let (mut instr_builder, compiled_func) = instr_builder.unwrap();
+                        let (mut instr_builder, compiled_func) = entrypoint_instr_builder.unwrap();
                         instr_builder.finish(self.builder.engine(), compiled_func, 0, 0)?;
                         self.rewrite_sections()?;
                     }

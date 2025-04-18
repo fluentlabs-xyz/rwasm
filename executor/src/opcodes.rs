@@ -238,6 +238,7 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
             I64Extend8S => visit_i64_extend8_s(vm),
             I64Extend16S => visit_i64_extend16_s(vm),
             I64Extend32S => visit_i64_extend32_s(vm),
+            StackAlloc => visit_stack_alloc_wrapped(vm),
         }
     }
     vm.stop_exec = false;
@@ -249,7 +250,7 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
 macro_rules! wrap_function_result {
     ($fn_name:ident) => {
         paste::paste! {
-            #[inline(never)]
+            #[inline(always)]
             pub(crate) fn [< $fn_name _wrapped >]<T>(vm: &mut RwasmExecutor<T>,) {
                 if let Err(err) = $fn_name(vm, /* &mut ResourceLimiterRef<'_> */) {
                     vm.next_result = Some(Err(RwasmError::from(err)));
@@ -279,6 +280,7 @@ wrap_function_result!(visit_table_get);
 wrap_function_result!(visit_table_set);
 wrap_function_result!(visit_table_copy);
 wrap_function_result!(visit_table_init);
+wrap_function_result!(visit_stack_alloc);
 
 // #[cfg(feature = "debug-print")]
 // {
@@ -316,12 +318,12 @@ wrap_function_result!(visit_table_init);
 //     );
 // }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_unreachable<T>(_vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     Err(RwasmError::TrapCode(TrapCode::UnreachableCodeReached))
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_local_get<T>(vm: &mut RwasmExecutor<T>) {
     let local_depth = match vm.ip.data() {
         InstructionData::LocalDepth(local_depth) => local_depth,
@@ -332,7 +334,7 @@ pub(crate) fn visit_local_get<T>(vm: &mut RwasmExecutor<T>) {
     vm.ip.add(1);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_local_set<T>(vm: &mut RwasmExecutor<T>) {
     let local_depth = match vm.ip.data() {
         InstructionData::LocalDepth(local_depth) => local_depth,
@@ -343,7 +345,7 @@ pub(crate) fn visit_local_set<T>(vm: &mut RwasmExecutor<T>) {
     vm.ip.add(1);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_local_tee<T>(vm: &mut RwasmExecutor<T>) {
     let local_depth = match vm.ip.data() {
         InstructionData::LocalDepth(local_depth) => local_depth,
@@ -354,7 +356,7 @@ pub(crate) fn visit_local_tee<T>(vm: &mut RwasmExecutor<T>) {
     vm.ip.add(1);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_br<T>(vm: &mut RwasmExecutor<T>) {
     let branch_offset = match vm.ip.data() {
         InstructionData::BranchOffset(branch_offset) => branch_offset,
@@ -363,7 +365,7 @@ pub(crate) fn visit_br<T>(vm: &mut RwasmExecutor<T>) {
     vm.ip.offset(branch_offset.to_i32() as isize)
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_br_if<T>(vm: &mut RwasmExecutor<T>) {
     let branch_offset = match vm.ip.data() {
         InstructionData::BranchOffset(branch_offset) => branch_offset,
@@ -377,7 +379,7 @@ pub(crate) fn visit_br_if<T>(vm: &mut RwasmExecutor<T>) {
     }
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_br_if_nez<T>(vm: &mut RwasmExecutor<T>) {
     let branch_offset = match vm.ip.data() {
         InstructionData::BranchOffset(branch_offset) => branch_offset,
@@ -391,7 +393,7 @@ pub(crate) fn visit_br_if_nez<T>(vm: &mut RwasmExecutor<T>) {
     }
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_br_adjust<T>(vm: &mut RwasmExecutor<T>) {
     let branch_offset = match vm.ip.data() {
         InstructionData::BranchOffset(branch_offset) => branch_offset,
@@ -402,7 +404,7 @@ pub(crate) fn visit_br_adjust<T>(vm: &mut RwasmExecutor<T>) {
     vm.ip.offset(branch_offset.to_i32() as isize);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_br_adjust_if_nez<T>(vm: &mut RwasmExecutor<T>) {
     let branch_offset = match vm.ip.data() {
         InstructionData::BranchOffset(branch_offset) => branch_offset,
@@ -418,7 +420,7 @@ pub(crate) fn visit_br_adjust_if_nez<T>(vm: &mut RwasmExecutor<T>) {
     }
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_br_table<T>(vm: &mut RwasmExecutor<T>) {
     let targets = match vm.ip.data() {
         InstructionData::BranchTableTargets(targets) => targets,
@@ -430,7 +432,7 @@ pub(crate) fn visit_br_table<T>(vm: &mut RwasmExecutor<T>) {
     vm.ip.add(2 * normalized_index + 1);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_consume_fuel<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let block_fuel = match vm.ip.data() {
         InstructionData::BlockFuel(block_fuel) => block_fuel,
@@ -443,7 +445,7 @@ pub(crate) fn visit_consume_fuel<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwa
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_return<T>(vm: &mut RwasmExecutor<T>) {
     let drop_keep = match vm.ip.data() {
         InstructionData::DropKeep(drop_keep) => drop_keep,
@@ -462,7 +464,7 @@ pub(crate) fn visit_return<T>(vm: &mut RwasmExecutor<T>) {
     }
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_return_if_nez<T>(vm: &mut RwasmExecutor<T>) {
     let drop_keep = match vm.ip.data() {
         InstructionData::DropKeep(drop_keep) => drop_keep,
@@ -486,7 +488,7 @@ pub(crate) fn visit_return_if_nez<T>(vm: &mut RwasmExecutor<T>) {
     }
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_return_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let func_idx = match vm.ip.data() {
         InstructionData::CompiledFunc(func_idx) => *func_idx,
@@ -513,7 +515,7 @@ pub(crate) fn visit_return_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_return_call<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let func_idx = match vm.ip.data() {
         InstructionData::CompiledFunc(func_idx) => *func_idx,
@@ -529,7 +531,7 @@ pub(crate) fn visit_return_call<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_return_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let signature_idx = match vm.ip.data() {
         InstructionData::SignatureIdx(value) => *value,
@@ -556,7 +558,7 @@ pub(crate) fn visit_return_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result
     vm.execute_call_internal(false, 3, func_idx)
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let func_idx = match vm.ip.data() {
         InstructionData::CompiledFunc(value) => *value,
@@ -585,7 +587,7 @@ pub(crate) fn visit_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rw
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_call<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let func_idx = match vm.ip.data() {
         InstructionData::FuncIdx(value) => *value,
@@ -598,7 +600,7 @@ pub(crate) fn visit_call<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError>
     (vm.syscall_handler)(Caller::new(vm), func_idx.to_u32())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let signature_idx = match vm.ip.data() {
         InstructionData::SignatureIdx(value) => *value,
@@ -643,7 +645,7 @@ pub(crate) fn visit_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rw
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_signature_check<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let signature_idx = match vm.ip.data() {
         InstructionData::SignatureIdx(value) => *value,
@@ -658,13 +660,13 @@ pub(crate) fn visit_signature_check<T>(vm: &mut RwasmExecutor<T>) -> Result<(), 
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_drop<T>(vm: &mut RwasmExecutor<T>) {
     vm.sp.drop();
     vm.ip.add(1);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_select<T>(vm: &mut RwasmExecutor<T>) {
     vm.sp.eval_top3(|e1, e2, e3| {
         let condition = <bool as From<UntypedValue>>::from(e3);
@@ -677,7 +679,7 @@ pub(crate) fn visit_select<T>(vm: &mut RwasmExecutor<T>) {
     vm.ip.add(1);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_global_get<T>(vm: &mut RwasmExecutor<T>) {
     let global_idx = match vm.ip.data() {
         InstructionData::GlobalIdx(value) => *value,
@@ -692,7 +694,7 @@ pub(crate) fn visit_global_get<T>(vm: &mut RwasmExecutor<T>) {
     vm.ip.add(1);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_global_set<T>(vm: &mut RwasmExecutor<T>) {
     let global_idx = match vm.ip.data() {
         InstructionData::GlobalIdx(value) => *value,
@@ -736,14 +738,14 @@ impl_visit_store! {
     fn visit_i64_store_32(i64_store32, 4);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_memory_size<T>(vm: &mut RwasmExecutor<T>) {
     let result: u32 = vm.global_memory.current_pages().into();
     vm.sp.push_as(result);
     vm.ip.add(1);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_memory_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let mut limiter = ResourceLimiterRef::default();
     let delta: u32 = vm.sp.pop_as();
@@ -769,7 +771,7 @@ pub(crate) fn visit_memory_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_memory_fill<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let (d, val, n) = vm.sp.pop3();
     let n = i32::from(n) as usize;
@@ -792,7 +794,7 @@ pub(crate) fn visit_memory_fill<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_memory_copy<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let (d, s, n) = vm.sp.pop3();
     let n = i32::from(n) as usize;
@@ -821,7 +823,7 @@ pub(crate) fn visit_memory_copy<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_memory_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let data_segment_idx = match vm.ip.data() {
         InstructionData::DataSegmentIdx(value) => *value,
@@ -857,7 +859,7 @@ pub(crate) fn visit_memory_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_data_drop<T>(vm: &mut RwasmExecutor<T>) {
     let data_segment_idx = match vm.ip.data() {
         InstructionData::DataSegmentIdx(value) => *value,
@@ -868,7 +870,7 @@ pub(crate) fn visit_data_drop<T>(vm: &mut RwasmExecutor<T>) {
     vm.ip.add(1);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_table_size<T>(vm: &mut RwasmExecutor<T>) {
     let table_idx = match vm.ip.data() {
         InstructionData::TableIdx(value) => *value,
@@ -883,7 +885,7 @@ pub(crate) fn visit_table_size<T>(vm: &mut RwasmExecutor<T>) {
     vm.ip.add(1);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_table_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let mut limiter = ResourceLimiterRef::default();
     let table_idx = match vm.ip.data() {
@@ -909,7 +911,7 @@ pub(crate) fn visit_table_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_table_fill<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let table_idx = match vm.ip.data() {
         InstructionData::TableIdx(value) => *value,
@@ -925,7 +927,7 @@ pub(crate) fn visit_table_fill<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_table_get<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let table_idx = match vm.ip.data() {
         InstructionData::TableIdx(value) => *value,
@@ -941,7 +943,7 @@ pub(crate) fn visit_table_get<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmE
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_table_set<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let table_idx = match vm.ip.data() {
         InstructionData::TableIdx(value) => *value,
@@ -958,7 +960,7 @@ pub(crate) fn visit_table_set<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmE
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_table_copy<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let dst_table_idx = match vm.ip.data() {
         InstructionData::TableIdx(value) => *value,
@@ -990,7 +992,7 @@ pub(crate) fn visit_table_copy<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_table_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
     let element_segment_idx = match vm.ip.data() {
         InstructionData::ElementSegmentIdx(value) => *value,
@@ -1028,7 +1030,7 @@ pub(crate) fn visit_table_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
     Ok(())
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_element_drop<T>(vm: &mut RwasmExecutor<T>) {
     let element_segment_idx = match vm.ip.data() {
         InstructionData::ElementSegmentIdx(value) => *value,
@@ -1039,7 +1041,7 @@ pub(crate) fn visit_element_drop<T>(vm: &mut RwasmExecutor<T>) {
     vm.ip.add(1);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_ref_func<T>(vm: &mut RwasmExecutor<T>) {
     let func_idx = match vm.ip.data() {
         InstructionData::FuncIdx(value) => *value,
@@ -1049,7 +1051,7 @@ pub(crate) fn visit_ref_func<T>(vm: &mut RwasmExecutor<T>) {
     vm.ip.add(1);
 }
 
-#[inline(never)]
+#[inline(always)]
 pub(crate) fn visit_i32_i64_const<T>(vm: &mut RwasmExecutor<T>) {
     let untyped_value = match vm.ip.data() {
         InstructionData::UntypedValue(value) => *value,
@@ -1218,4 +1220,15 @@ impl_visit_fallible_binary! {
     fn visit_i64_div_u(i64_div_u);
     fn visit_i64_rem_s(i64_rem_s);
     fn visit_i64_rem_u(i64_rem_u);
+}
+
+#[inline(always)]
+pub(crate) fn visit_stack_alloc<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+    let max_stack_height = match vm.ip.data() {
+        InstructionData::StackAlloc { max_stack_height } => *max_stack_height,
+        _ => unreachable!("rwasm: missing instr data"),
+    };
+    vm.value_stack.reserve(max_stack_height as usize)?;
+    vm.ip.add(1);
+    Ok(())
 }

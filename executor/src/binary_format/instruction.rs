@@ -64,6 +64,9 @@ pub fn decode_rwasm_instruction(
         I32Const | I64Const | F32Const | F64Const => {
             InstructionData::UntypedValue(UntypedValue::read_binary(sink)?)
         }
+        StackAlloc => InstructionData::StackAlloc {
+            max_stack_height: u32::read_binary(sink)?,
+        },
         _ => InstructionData::EmptyData,
     };
     Ok((instruction, data))

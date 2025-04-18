@@ -289,6 +289,7 @@ pub enum Instruction {
     I64TruncSatF32U = 0xc3,
     I64TruncSatF64S = 0xc4,
     I64TruncSatF64U = 0xc5,
+    StackAlloc = 0xc6,
 }
 
 #[cfg(feature = "std")]
@@ -300,7 +301,7 @@ impl core::fmt::Display for Instruction {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub enum InstructionData {
     #[default]
     EmptyData,
@@ -318,4 +319,7 @@ pub enum InstructionData {
     TableIdx(TableIdx),
     ElementSegmentIdx(ElementSegmentIdx),
     UntypedValue(UntypedValue),
+    StackAlloc {
+        max_stack_height: u32,
+    },
 }

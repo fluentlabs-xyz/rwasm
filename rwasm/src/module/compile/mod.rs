@@ -76,6 +76,7 @@ impl<'parser> FunctionTranslator<'parser> {
         let len_locals = reader.get_count();
         if self.func_builder.is_rwasm {
             self.func_builder.translate_signature_check();
+            self.func_builder.translate_rwasm_locals();
         }
         for _ in 0..len_locals {
             let offset = reader.original_position();
