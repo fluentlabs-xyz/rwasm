@@ -79,13 +79,13 @@ fn execute_binary(wat: &str, host_state: HostState, config: Config) -> HostState
     let mut store = Store::new(&engine, host_state);
     store.add_fuel(1_000_000).unwrap();
     let mut linker = Linker::<HostState>::new(&engine);
-    let sys_halt_func = Func::wrap::<_, _, _, false>(
+    let sys_halt_func = Func::wrap::<_, _, _, true>(
         store.as_context_mut(),
         |mut caller: Caller<'_, HostState>, exit_code: i32| {
             caller.data_mut().exit_code = exit_code;
         },
     );
-    let sys_state_func = Func::wrap::<_, _, _, false>(
+    let sys_state_func = Func::wrap::<_, _, _, true>(
         store.as_context_mut(),
         |mut caller: Caller<'_, HostState>| -> u32 { caller.data_mut().state },
     );

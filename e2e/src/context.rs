@@ -269,7 +269,7 @@ impl TestContext<'_> {
                 wrap_import_functions: true,
                 translate_drop_keep: false,
                 allow_malformed_entrypoint_func_type: true,
-                use_32bit_mode: false,
+                use_32bit_mode: self.config.get_i32_translator(),
             }
         };
 
@@ -495,6 +495,7 @@ impl TestContext<'_> {
                 ValueType::I64 => Value::I64(popped_value.into()),
                 ValueType::F32 => Value::F32(popped_value.into()),
                 ValueType::F64 => Value::F64(popped_value.into()),
+                ValueType::ExternRef => Value::ExternRef(popped_value.into()),
                 _ => unreachable!("unsupported result type: {:?}", val_type),
             };
         }

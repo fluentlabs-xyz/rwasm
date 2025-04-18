@@ -32,6 +32,8 @@ impl fmt::Debug for FuncType {
         f.debug_struct("FuncType")
             .field("params", &self.params())
             .field("results", &self.results())
+            .field("origin_params", &self.origin_params)
+            .field("origin_results", &self.origin_results)
             .finish()
     }
 }
