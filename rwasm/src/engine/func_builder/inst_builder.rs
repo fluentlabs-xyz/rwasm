@@ -206,6 +206,9 @@ impl InstructionsBuilder {
         local_stack_height: usize,
     ) -> Result<(), TranslationError> {
         self.update_branch_offsets()?;
+        if engine.config().get_rwasm_config().is_some() {
+            self.update_max_stack_height(local_stack_height, len_locals);
+        }
         assert_eq!(
             self.insts.len(),
             self.metas.len(),
@@ -257,6 +260,21 @@ impl InstructionsBuilder {
             self.insts[user.into_usize()].update_branch_offset(offset?);
         }
         Ok(())
+    }
+
+    fn update_max_stack_height(&mut self, max_stack_height_value: usize, _num_locals_value: usize) {
+        let mut iter = self.insts.iter_mut().take(3);
+        loop {
+            let opcode = iter.next().unwrap();
+            match opcode {
+                Instruction::ConsumeFuel(_) | Instruction::SignatureCheck(_) => {}
+                Instruction::StackAlloc { max_stack_height } => {
+                    *max_stack_height = max_stack_height_value as u32;
+                    return;
+                }
+                _ => unreachable!("rwasm: not allowed opcode"),
+            }
+        }
     }
 
     /// Adds the given `delta` amount of fuel to the [`ConsumeFuel`] instruction `instr`.

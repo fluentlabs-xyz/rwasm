@@ -512,6 +512,10 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                 Instr::I64Extend8S => self.visit_i64_extend8_s(),
                 Instr::I64Extend16S => self.visit_i64_extend16_s(),
                 Instr::I64Extend32S => self.visit_i64_extend32_s(),
+                Instr::StackAlloc { max_stack_height } => {
+                    self.value_stack.reserve(max_stack_height as usize)?;
+                    self.next_instr();
+                }
             }
         }
     }

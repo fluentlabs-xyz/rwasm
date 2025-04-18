@@ -100,8 +100,6 @@ define_spec_tests! {
     let config = make_config(true);
     let runner = run::run_wasm_spec_test;
 
-    // fn wasm_skip_stack_guard_page("skip-stack-guard-page"); // randomly crashes everything
-
     fn wasm_address("address");
     fn wasm_align("align");
     fn wasm_binary_leb128("binary-leb128");
@@ -171,7 +169,7 @@ define_spec_tests! {
     fn wasm_ref_null("ref_null");
     fn wasm_return("return");
     fn wasm_select("select");
-    // fn wasm_skip_stack_guard_page("skip-stack-guard-page"); // randomly crashes everything
+    fn wasm_skip_stack_guard_page("skip-stack-guard-page");
     fn wasm_stack("stack");
     fn wasm_start("start");
     fn wasm_store("store");

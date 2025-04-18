@@ -19,7 +19,7 @@ use crate::{
     engine::bytecode::Instruction,
     module::{FuncIdx, ModuleResources, ReusableAllocations},
 };
-use wasmparser::{BinaryReaderError, ValType, VisitOperator};
+use wasmparser::{BinaryReaderError, VisitOperator};
 
 /// The used function validator type.
 type FuncValidator = wasmparser::FuncValidator<wasmparser::ValidatorResources>;
@@ -85,11 +85,11 @@ impl<'parser> FuncBuilder<'parser> {
         // for rWASM we fill locals with zero values
         if self.is_rwasm {
             let instr = match value_type {
-                ValType::I32 => Instruction::I32Const(0i32.into()),
-                ValType::I64 => Instruction::I64Const(0i64.into()),
-                ValType::F32 => Instruction::F32Const(0f32.into()),
-                ValType::F64 => Instruction::F64Const(0f64.into()),
-                ValType::FuncRef => Instruction::RefFunc(0u32.into()),
+                wasmparser::ValType::I32 => Instruction::I32Const(0i32.into()),
+                wasmparser::ValType::I64 => Instruction::I64Const(0i64.into()),
+                wasmparser::ValType::F32 => Instruction::F32Const(0f32.into()),
+                wasmparser::ValType::F64 => Instruction::F64Const(0f64.into()),
+                wasmparser::ValType::FuncRef => Instruction::RefFunc(0u32.into()),
                 _ => unreachable!("not supported local type ({:?})", value_type),
             };
             (0..amount as usize).for_each(|_| {
@@ -100,6 +100,16 @@ impl<'parser> FuncBuilder<'parser> {
             self.translator.register_locals(amount);
         }
         Ok(())
+    }
+
+    pub fn translate_rwasm_locals(&mut self) {
+        // we use `u32::MAX` here because in finish we replace it with final calculated value
+        self.translator
+            .alloc
+            .inst_builder
+            .push_inst(Instruction::StackAlloc {
+                max_stack_height: u32::MAX,
+            });
     }
 
     /// This informs the [`FuncBuilder`] that the function header translation is finished.

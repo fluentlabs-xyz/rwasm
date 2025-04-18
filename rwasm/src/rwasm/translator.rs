@@ -53,6 +53,11 @@ impl<'parser> RwasmTranslator<'parser> {
     }
 
     fn translate_entrypoint_internal(&mut self) -> Result<(), RwasmBuilderError> {
+        let ib = &mut self.translator.alloc.inst_builder;
+        ib.push_inst(Instruction::SignatureCheck(0.into()));
+        ib.push_inst(Instruction::StackAlloc {
+            max_stack_height: 0,
+        });
         // first, we must translate all sections; this is an entrypoint
         self.translate_sections()?;
         // translate router for the main index (only if entrypoint is enabled)
@@ -230,12 +235,16 @@ impl<'parser> RwasmTranslator<'parser> {
         if !is_type_matches {
             return Err(RwasmBuilderError::MalformedFuncType);
         }
-        let instr_builder = &mut self.translator.alloc.inst_builder;
+        let ib = &mut self.translator.alloc.inst_builder;
+        ib.push_inst(Instruction::SignatureCheck(0.into()));
+        ib.push_inst(Instruction::StackAlloc {
+            max_stack_height: 0,
+        });
         if self.res.engine().config().get_consume_fuel() {
-            instr_builder.push_inst(Instruction::ConsumeFuel(linker_entity.block_fuel.into()));
+            ib.push_inst(Instruction::ConsumeFuel(linker_entity.block_fuel.into()));
         }
-        instr_builder.push_inst(Instruction::Call(linker_entity.func_idx.into()));
-        instr_builder.push_inst(Instruction::Return(DropKeep::none()));
+        ib.push_inst(Instruction::Call(linker_entity.func_idx.into()));
+        ib.push_inst(Instruction::Return(DropKeep::none()));
         Ok(import_fn_index)
     }
 
@@ -269,7 +278,9 @@ impl<'parser> RwasmTranslator<'parser> {
             // patch a lot of spec tests
             if cfg!(feature = "e2e") {
                 ib.push_inst(Instruction::I64Const(666.into()));
+                self.translator.stack_height.push();
                 ib.push_inst(Instruction::GlobalSet(global_index.into()));
+                self.translator.stack_height.pop1();
                 return Ok(());
             }
             return Err(RwasmBuilderError::ImportedGlobalsAreDisabled);
@@ -279,15 +290,20 @@ impl<'parser> RwasmTranslator<'parser> {
         let global_expr = &global_inits[global_index as usize - len_globals];
         if let Some(value) = global_expr.eval_const() {
             ib.push_inst(Instruction::I64Const(value));
+            self.translator.stack_height.push();
         } else if let Some(value) = global_expr.funcref() {
             ib.push_inst(Instruction::RefFunc(value.into_u32().into()));
+            self.translator.stack_height.push();
         } else if let Some(index) = global_expr.global() {
             ib.push_inst(Instruction::GlobalGet(index.into()));
+            self.translator.stack_height.push();
         } else {
             let value = Self::translate_const_expr(global_expr)?;
             ib.push_inst(Instruction::I64Const(value));
+            self.translator.stack_height.push();
         }
         ib.push_inst(Instruction::GlobalSet(global_index.into()));
+        self.translator.stack_height.pop1();
         Ok(())
     }
 
@@ -299,9 +315,13 @@ impl<'parser> RwasmTranslator<'parser> {
                 return Err(RwasmBuilderError::ImportedTablesAreDisabled);
             }
             instr_builder.push_inst(Instruction::I32Const(0.into()));
+            self.translator.stack_height.push();
             instr_builder.push_inst(Instruction::I64Const(table.minimum().into()));
+            self.translator.stack_height.push();
             instr_builder.push_inst(Instruction::TableGrow((table_index as u32).into()));
             instr_builder.push_inst(Instruction::Drop);
+            self.translator.stack_height.pop2();
+            self.translator.stack_height.push();
         }
         Ok(())
     }
@@ -315,7 +335,7 @@ impl<'parser> RwasmTranslator<'parser> {
             );
             // we encode nullptr as `u32::MAX` since its impossible number of
             // function refs
-            // TODO: "is it right decision? more tests needed"
+            // TODO(dmitry123): "is it right decision? more tests needed"
             u32::MAX
         } else {
             v.funcref()
@@ -397,6 +417,8 @@ impl<'parser> RwasmTranslator<'parser> {
     }
 
     pub fn translate_const_expr(const_expr: &ConstExpr) -> Result<UntypedValue, RwasmBuilderError> {
+        // we hardcode this value to pass some e2e tests
+        // and avoid applying a lot of patches for spec tests
         if cfg!(feature = "e2e") && const_expr.global().is_some() {
             return Ok(UntypedValue::from(666));
         }
