@@ -20,7 +20,7 @@ bytes = { workspace = true }
 rwasm = { path = "../rwasm" }
 
 [features]
-default = ["std", "bytes/std", "debug-print"]
+default = ["std", "bytes/std"]
 std = []
 tracer = []
 e2e = []

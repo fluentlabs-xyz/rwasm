@@ -91,7 +91,7 @@ fn make_config(rwasm_mode: bool) -> Config {
             wrap_import_functions: false,
             translate_drop_keep: true,
             allow_malformed_entrypoint_func_type: true,
-            use_32bit_mode: true,
+            use_32bit_mode: false,
         });
     }
     config
@@ -100,8 +100,6 @@ fn make_config(rwasm_mode: bool) -> Config {
 define_spec_tests! {
     let config = make_config(true);
     let runner = run::run_wasm_spec_test;
-
-    // fn wasm_skip_stack_guard_page("skip-stack-guard-page"); // randomly crashes everything
 
     fn wasm_address("address");
     fn wasm_align("align"); //br_table
@@ -172,7 +170,7 @@ define_spec_tests! {
     fn wasm_ref_null("ref_null");
     fn wasm_return("return");
     fn wasm_select("select");
-    // fn wasm_skip_stack_guard_page("skip-stack-guard-page"); // randomly crashes everything
+    fn wasm_skip_stack_guard_page("skip-stack-guard-page");
     fn wasm_stack("stack");
     fn wasm_start("start");
     fn wasm_store("store");
