@@ -112,12 +112,11 @@ impl<'parser> RwasmTranslator<'parser> {
     fn translate_simple_router(&mut self) -> Result<(), RwasmBuilderError> {
         let config = self.res.engine().config();
         // if we have an entrypoint, then translate it
-        let entrypoint_name = config
+        let Some(entrypoint_name) = config
             .get_rwasm_config()
-            .and_then(|rwasm_config| rwasm_config.entrypoint_name.as_ref());
-        let entrypoint_name = match entrypoint_name {
-            Some(value) => value,
-            None => return Ok(()),
+            .and_then(|rwasm_config| rwasm_config.entrypoint_name.as_ref())
+        else {
+            return Ok(());
         };
         let export_index = self
             .res

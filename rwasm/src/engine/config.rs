@@ -3,14 +3,11 @@ use crate::{
     core::{ImportLinker, UntypedValue},
     engine::bytecode::Instruction,
 };
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-};
+use alloc::{boxed::Box, string::String};
 use core::{mem::size_of, num::NonZeroU64};
 use wasmparser::WasmFeatures;
 
-/// The default amount of stacks kept in the cache at most.
+/// The default number of stacks kept in the cache at most.
 const DEFAULT_CACHED_STACKS: usize = 2;
 
 #[derive(Debug, Clone)]
@@ -59,6 +56,43 @@ impl Default for RwasmConfig {
             allow_malformed_entrypoint_func_type: false,
             use_32bit_mode: false,
         }
+    }
+}
+
+impl RwasmConfig {
+    pub fn with_state_router(mut self, state_router_config: StateRouterConfig) -> Self {
+        self.state_router = Some(state_router_config);
+        self
+    }
+
+    pub fn with_entrypoint_name(mut self, entrypoint_name: String) -> Self {
+        self.entrypoint_name = Some(entrypoint_name);
+        self
+    }
+
+    pub fn with_import_linker(mut self, linker: ImportLinker) -> Self {
+        self.import_linker = Some(linker);
+        self
+    }
+
+    pub fn with_wrap_import_functions(mut self, wrap_import_functions: bool) -> Self {
+        self.wrap_import_functions = wrap_import_functions;
+        self
+    }
+
+    pub fn with_translate_drop_keep(mut self, translate_drop_keep: bool) -> Self {
+        self.translate_drop_keep = translate_drop_keep;
+        self
+    }
+
+    pub fn with_allow_malformed_entrypoint_func_type(mut self) -> Self {
+        self.allow_malformed_entrypoint_func_type = true;
+        self
+    }
+
+    pub fn with_use_32bit_mode(mut self) -> Self {
+        self.use_32bit_mode = true;
+        self
     }
 }
 
