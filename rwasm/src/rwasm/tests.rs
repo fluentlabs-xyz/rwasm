@@ -46,14 +46,14 @@ fn create_import_linker() -> ImportLinker {
     import_linker.insert_function(
         ImportName::new("env", "_sys_halt"),
         SYS_HALT_CODE,
-        1,
+        &[],
         &[ValueType::I32],
         &[],
     );
     import_linker.insert_function(
         ImportName::new("env", "_sys_state"),
         SYS_STATE_CODE,
-        1,
+        &[],
         &[],
         &[ValueType::I32],
     );

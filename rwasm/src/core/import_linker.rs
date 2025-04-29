@@ -1,5 +1,6 @@
 use crate::{core::ValueType, module::ImportName};
 use hashbrown::HashMap;
+use crate::engine::bytecode::Instruction;
 
 #[derive(Debug, Default, Clone)]
 pub struct ImportLinker {
@@ -9,25 +10,18 @@ pub struct ImportLinker {
 #[derive(Debug, Clone)]
 pub struct ImportLinkerEntity {
     pub func_idx: u32,
-    pub block_fuel: u32,
+    pub fuel_procedure: &'static [Instruction],
     pub params: &'static [ValueType],
     pub result: &'static [ValueType],
 }
 
-impl<const N: usize> From<[(&'static str, &'static str, ImportLinkerEntity); N]> for ImportLinker {
-    fn from(arr: [(&'static str, &'static str, ImportLinkerEntity); N]) -> Self {
+impl<I> From<I> for ImportLinker
+where
+    I: IntoIterator<Item = (ImportName, ImportLinkerEntity)>,
+{
+    fn from(iter: I) -> Self {
         Self {
-            func_by_name: HashMap::from_iter(arr.into_iter().map(
-                |(module_name, fn_name, entity)| (ImportName::new(module_name, fn_name), entity),
-            )),
-        }
-    }
-}
-
-impl<const N: usize> From<[(ImportName, ImportLinkerEntity); N]> for ImportLinker {
-    fn from(arr: [(ImportName, ImportLinkerEntity); N]) -> Self {
-        Self {
-            func_by_name: HashMap::from(arr),
+            func_by_name: HashMap::from_iter(iter),
         }
     }
 }
@@ -37,7 +31,7 @@ impl ImportLinker {
         &mut self,
         import_name: ImportName,
         func_idx: u32,
-        block_fuel: u32,
+        fuel_procedure: &'static [Instruction],
         params: &'static [ValueType],
         result: &'static [ValueType],
     ) {
@@ -45,7 +39,7 @@ impl ImportLinker {
             import_name,
             ImportLinkerEntity {
                 func_idx,
-                block_fuel,
+                fuel_procedure,
                 params,
                 result,
             },

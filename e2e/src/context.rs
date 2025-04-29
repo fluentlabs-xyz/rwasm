@@ -101,71 +101,64 @@ impl<'a> TestContext<'a> {
 
         let import_linker = ImportLinker::from([
             (
-                "spectest",
-                "print",
+                ImportName::new("spectest", "print"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT,
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: &[],
                     result: &[],
                 },
             ),
             (
-                "spectest",
-                "print_i32",
+                ImportName::new("spectest", "print_i32"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_I32,
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: &[ValueType::I32],
                     result: &[],
                 },
             ),
             (
-                "spectest",
-                "print_i64",
+                ImportName::new("spectest", "print_i64"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_I64,
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: &[ValueType::I64],
                     result: &[],
                 },
             ),
             (
-                "spectest",
-                "print_f32",
+                ImportName::new("spectest", "print_f32"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_F32.into(),
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: &[ValueType::F32],
                     result: &[],
                 },
             ),
             (
-                "spectest",
-                "print_f64",
+                ImportName::new("spectest", "print_f64"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_F64,
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: &[ValueType::F64],
                     result: &[],
                 },
             ),
             (
-                "spectest",
-                "print_i32_f32",
+                ImportName::new("spectest", "print_i32_f32"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_I32_F32,
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: &[ValueType::I32, ValueType::F32],
                     result: &[],
                 },
             ),
             (
-                "spectest",
-                "print_i64_f64",
+                ImportName::new("spectest", "print_i64_f64"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_I64_F64,
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: &[ValueType::I64, ValueType::F64],
                     result: &[],
                 },
