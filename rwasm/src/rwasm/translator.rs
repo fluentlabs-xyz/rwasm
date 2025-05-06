@@ -256,7 +256,7 @@ impl<'parser> RwasmTranslator<'parser> {
         ib.push_inst(Instruction::StackAlloc {
             max_stack_height: 0,
         });
-        if self.res.engine().config().get_consume_fuel() {
+        if self.res.engine().config().get_builtins_consume_fuel() {
             for instr in linker_entity.fuel_procedure.iter() {
                 ib.push_inst(instr.clone());
             }
