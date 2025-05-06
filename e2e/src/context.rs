@@ -263,6 +263,7 @@ impl TestContext<'_> {
                 translate_drop_keep: false,
                 allow_malformed_entrypoint_func_type: true,
                 use_32bit_mode: self.config.get_i32_translator(),
+                builtins_consume_fuel: false,
             }
         };
 

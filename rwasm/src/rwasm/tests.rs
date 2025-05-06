@@ -366,6 +366,7 @@ fn test_state_router() {
         translate_drop_keep: true,
         allow_malformed_entrypoint_func_type: false,
         use_32bit_mode: true,
+        builtins_consume_fuel: false,
     });
     // run with deployment state (a result is 200)
     let mut host_state = HostState::default();
