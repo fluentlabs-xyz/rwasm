@@ -40,8 +40,11 @@ impl From<u32> for FuncIdx {
 }
 
 impl FuncIdx {
+    pub const fn from_u32(value: u32) -> Self {
+        Self(value)
+    }
     /// Returns the index value as `u32`.
-    pub fn to_u32(self) -> u32 {
+    pub const fn to_u32(self) -> u32 {
         self.0
     }
 }
@@ -100,8 +103,11 @@ impl From<u32> for LocalDepth {
 }
 
 impl LocalDepth {
+    pub const fn from_u32(value: u32) -> Self {
+        Self(value)
+    }
     /// Returns the depth as `usize` index.
-    pub fn to_usize(self) -> usize {
+    pub const fn to_usize(self) -> usize {
         self.0 as usize
     }
 }

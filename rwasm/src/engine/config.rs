@@ -46,6 +46,8 @@ pub struct RwasmConfig {
     /// A mode for 32-bit stack alignment
     /// that disables all 64-bit instructions and replace them with 32-bit ones
     pub use_32bit_mode: bool,
+    /// Should fuel-charging instructions be injected before each builtin call
+    pub builtins_consume_fuel: bool,
 }
 
 impl Default for RwasmConfig {
@@ -58,6 +60,7 @@ impl Default for RwasmConfig {
             translate_drop_keep: false,
             allow_malformed_entrypoint_func_type: false,
             use_32bit_mode: false,
+            builtins_consume_fuel: true,
         }
     }
 }
@@ -95,6 +98,11 @@ impl RwasmConfig {
 
     pub fn with_use_32bit_mode(mut self) -> Self {
         self.use_32bit_mode = true;
+        self
+    }
+
+    pub fn with_builtins_consume_fuel(mut self, builtins_consume_fuel: bool) -> Self {
+        self.builtins_consume_fuel = builtins_consume_fuel;
         self
     }
 }
@@ -465,6 +473,13 @@ impl Config {
         self
     }
 
+    pub fn builtins_consume_fuel(&mut self, builtins_consume_fuel: bool) -> &mut Self {
+        if self.rwasm_config.is_some() {
+            self.rwasm_config.as_mut().unwrap().builtins_consume_fuel = builtins_consume_fuel;
+        }
+        self
+    }
+
     pub fn get_i32_translator(&self) -> bool {
         self.rwasm_config
             .as_ref()
@@ -477,6 +492,13 @@ impl Config {
     /// [`Engine`]: crate::Engine
     pub fn get_consume_fuel(&self) -> bool {
         self.consume_fuel
+    }
+
+    pub fn get_builtins_consume_fuel(&self) -> bool {
+        self.rwasm_config
+            .as_ref()
+            .map(|rwasm_config| rwasm_config.builtins_consume_fuel)
+            .unwrap_or(false)
     }
 
     /// Returns the configured [`FuelCosts`].
