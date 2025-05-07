@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rwasm-executor = { path = "../executor" }
-rwasm = { path = "../rwasm" }
+rwasm = { path = ".." }
+rwasm-legacy = { path = "../legacy" }
 anyhow = "1.0.71"
-wast = "62.0.0"
+wast = "=62.0.0"
 
 [features]
 default = ["e2e"]
-e2e = ["rwasm-executor/e2e", "rwasm/e2e"]
+e2e = ["rwasm-legacy/e2e"]
+debug-print = ["rwasm/debug-print"]

@@ -13,7 +13,7 @@ use self::{
     error::TestError,
     profile::TestProfile,
 };
-use ::rwasm::{engine::RwasmConfig, Config};
+use ::rwasm_legacy::{engine::RwasmConfig, Config};
 
 macro_rules! define_tests {
     (
@@ -27,7 +27,7 @@ macro_rules! define_tests {
             #[test]
             $( #[$attr] )*
             fn $test_name() {
-                $runner_fn(&format!("{}/{}", $test_folder, $file_name), $get_config)
+                $runner_fn(&format!("{}/{}", $test_folder, $file_name))
             }
         )*
     };

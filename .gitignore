@@ -1,8 +1,7 @@
-
 /target/
 **/*.rs.bk
-rwasm/Cargo.lock
-rwasm/spec/target
+legacy/Cargo.lock
+legacy/spec/target
 
 **/fuzz/corpus/
 **/fuzz/target/
@@ -11,7 +10,9 @@ rwasm/spec/target
 /.idea
 .vscode
 .DS_Store
-libzktrie.so
 
 /tmp/*
 !/tmp/.gitkeep
+
+target
+Cargo.lock
