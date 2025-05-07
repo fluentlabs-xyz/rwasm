@@ -52,7 +52,7 @@ pub struct TestContext<'a> {
     descriptor: &'a TestDescriptor,
 }
 
-pub(crate) const ENABLE_32_BIT_TRANSLATOR: bool = false;
+pub(crate) const ENABLE_32_BIT_TRANSLATOR: bool = true;
 
 impl<'a> TestContext<'a> {
     /// Creates a new [`TestContext`] with the given [`TestDescriptor`].
@@ -97,7 +97,11 @@ impl<'a> TestContext<'a> {
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_I64,
                     block_fuel: 0,
-                    params: &[ValueType::I64],
+                    params: if ENABLE_32_BIT_TRANSLATOR {
+                        &[ValueType::I32; 2]
+                    } else {
+                        &[ValueType::I64]
+                    },
                     result: &[],
                 },
             ),
@@ -117,7 +121,11 @@ impl<'a> TestContext<'a> {
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_F64,
                     block_fuel: 0,
-                    params: &[ValueType::F64],
+                    params: if ENABLE_32_BIT_TRANSLATOR {
+                        &[ValueType::F32; 2]
+                    } else {
+                        &[ValueType::F64]
+                    },
                     result: &[],
                 },
             ),
@@ -137,7 +145,16 @@ impl<'a> TestContext<'a> {
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_I64_F64,
                     block_fuel: 0,
-                    params: &[ValueType::I64, ValueType::F64],
+                    params: if ENABLE_32_BIT_TRANSLATOR {
+                        &[
+                            ValueType::I32,
+                            ValueType::I32,
+                            ValueType::F32,
+                            ValueType::F32,
+                        ]
+                    } else {
+                        &[ValueType::I64, ValueType::F64]
+                    },
                     result: &[],
                 },
             ),
