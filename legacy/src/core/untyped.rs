@@ -43,11 +43,11 @@ impl Display for UntypedValue {
 }
 
 impl UntypedValue {
-    pub fn from_bits(bits: u64) -> Self {
+    pub const fn from_bits(bits: u64) -> Self {
         Self { bits }
     }
     /// Returns the underlying bits of the [`UntypedValue`].
-    pub fn to_bits(self) -> u64 {
+    pub const fn to_bits(self) -> u64 {
         self.bits
     }
 }

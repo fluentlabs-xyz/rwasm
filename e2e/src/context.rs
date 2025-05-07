@@ -23,7 +23,10 @@ use rwasm::{
     RwasmModule,
     Value,
 };
-use rwasm_legacy::core::{ImportLinker, ImportLinkerEntity, ValueType};
+use rwasm_legacy::{
+    core::{ImportLinker, ImportLinkerEntity, ValueType},
+    module::ImportName,
+};
 use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc, sync::Arc};
 use wast::token::{Id, Span};
 
@@ -52,7 +55,7 @@ pub struct TestContext<'a> {
     descriptor: &'a TestDescriptor,
 }
 
-pub(crate) const ENABLE_32_BIT_TRANSLATOR: bool = true;
+pub(crate) const ENABLE_32_BIT_TRANSLATOR: bool = false;
 
 impl<'a> TestContext<'a> {
     /// Creates a new [`TestContext`] with the given [`TestDescriptor`].
@@ -72,31 +75,28 @@ impl<'a> TestContext<'a> {
     pub fn import_linker() -> ImportLinker {
         ImportLinker::from([
             (
-                "spectest",
-                "print",
+                ImportName::new("spectest", "print"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT,
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: &[],
                     result: &[],
                 },
             ),
             (
-                "spectest",
-                "print_i32",
+                ImportName::new("spectest", "print_i32"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_I32,
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: &[ValueType::I32],
                     result: &[],
                 },
             ),
             (
-                "spectest",
-                "print_i64",
+                ImportName::new("spectest", "print_i64"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_I64,
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: if ENABLE_32_BIT_TRANSLATOR {
                         &[ValueType::I32; 2]
                     } else {
@@ -106,21 +106,19 @@ impl<'a> TestContext<'a> {
                 },
             ),
             (
-                "spectest",
-                "print_f32",
+                ImportName::new("spectest", "print_f32"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_F32.into(),
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: &[ValueType::F32],
                     result: &[],
                 },
             ),
             (
-                "spectest",
-                "print_f64",
+                ImportName::new("spectest", "print_f64"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_F64,
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: if ENABLE_32_BIT_TRANSLATOR {
                         &[ValueType::F32; 2]
                     } else {
@@ -130,21 +128,19 @@ impl<'a> TestContext<'a> {
                 },
             ),
             (
-                "spectest",
-                "print_i32_f32",
+                ImportName::new("spectest", "print_i32_f32"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_I32_F32,
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: &[ValueType::I32, ValueType::F32],
                     result: &[],
                 },
             ),
             (
-                "spectest",
-                "print_i64_f64",
+                ImportName::new("spectest", "print_i64_f64"),
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_I64_F64,
-                    block_fuel: 0,
+                    fuel_procedure: &[],
                     params: if ENABLE_32_BIT_TRANSLATOR {
                         &[
                             ValueType::I32,
@@ -240,6 +236,7 @@ impl TestContext<'_> {
                 translate_drop_keep: false,
                 allow_malformed_entrypoint_func_type: true,
                 use_32bit_mode: ENABLE_32_BIT_TRANSLATOR,
+                builtins_consume_fuel: false,
             }
         };
 

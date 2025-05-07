@@ -46,14 +46,14 @@ fn create_import_linker() -> ImportLinker {
     import_linker.insert_function(
         ImportName::new("env", "_sys_halt"),
         SYS_HALT_CODE,
-        1,
+        &[],
         &[ValueType::I32],
         &[],
     );
     import_linker.insert_function(
         ImportName::new("env", "_sys_state"),
         SYS_STATE_CODE,
-        1,
+        &[],
         &[],
         &[ValueType::I32],
     );
@@ -366,6 +366,7 @@ fn test_state_router() {
         translate_drop_keep: true,
         allow_malformed_entrypoint_func_type: false,
         use_32bit_mode: true,
+        builtins_consume_fuel: false,
     });
     // run with deployment state (a result is 200)
     let mut host_state = HostState::default();

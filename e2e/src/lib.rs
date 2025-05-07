@@ -92,6 +92,7 @@ fn make_config(rwasm_mode: bool) -> Config {
             translate_drop_keep: true,
             allow_malformed_entrypoint_func_type: true,
             use_32bit_mode: false,
+            builtins_consume_fuel: false,
         });
     }
     config
