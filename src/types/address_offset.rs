@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 ///
 /// # Note
 ///
-/// Used to calculate the effective address of a linear memory access.
+/// Used to calculate the effective address of linear memory access.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
 pub struct AddressOffset(u32);

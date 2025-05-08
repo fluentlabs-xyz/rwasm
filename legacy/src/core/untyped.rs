@@ -1494,6 +1494,7 @@ macro_rules! impl_decode_untyped_slice {
 
             #[allow(non_snake_case)]
             #[inline]
+            #[allow(unused_variables, unused_mut, unused_assignments)]
             fn decode_untyped_slice_i32(results: &[UntypedValue], origin_params: &[ValueType]) -> Result<Self, UntypedError> {
                 let mut i = 0;
                 match origin_params {
@@ -1596,6 +1597,7 @@ macro_rules! impl_encode_untyped_slice {
 
                 #[allow(non_snake_case)]
                 #[inline]
+                #[allow(unused_variables, unused_mut, unused_assignments)]
                 fn encode_untyped_slice_i32(self, results: &mut [UntypedValue], origin_results: Vec<ValueType>) -> Result<(), UntypedError> {
                     let mut i = 0;
                     match origin_results.as_slice() {

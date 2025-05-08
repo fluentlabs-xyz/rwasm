@@ -2,11 +2,11 @@
 #![allow(dead_code)]
 #![warn(unused_crate_dependencies)]
 
-mod executor;
 mod types;
+mod vm;
 
 extern crate alloc;
 extern crate core;
 
-pub use executor::*;
 pub use types::*;
+pub use vm::*;

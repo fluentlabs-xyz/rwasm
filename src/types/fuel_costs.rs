@@ -50,7 +50,7 @@ pub struct FuelCosts {
 }
 
 impl FuelCosts {
-    /// Returns the fuel consumption of the amount of items with costs per items.
+    /// Returns the fuel consumption of the number of items with costs per items.
     fn costs_per(len_items: u64, items_per_fuel: u64) -> u64 {
         NonZeroU64::new(items_per_fuel)
             .map(|items_per_fuel| len_items / items_per_fuel)

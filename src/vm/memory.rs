@@ -6,7 +6,7 @@ pub struct GlobalMemory {
     pub current_pages: Pages,
 }
 
-const MEMORY_MAX_PAGES: Pages = Pages::new_unchecked(N_MAX_MEMORY_PAGES as u32);
+const MEMORY_MAX_PAGES: Pages = Pages::new_unchecked(N_MAX_MEMORY_PAGES);
 
 impl GlobalMemory {
     pub fn new(initial_pages: Pages) -> Self {
@@ -27,19 +27,19 @@ impl GlobalMemory {
         }
     }
 
-    /// Returns the amount of pages in use by the linear memory.
+    /// Returns the number of pages in use by the linear memory.
     pub fn current_pages(&self) -> Pages {
         self.current_pages
     }
 
-    /// Grows the linear memory by the given amount of new pages.
+    /// Grows the linear memory by the given number of new pages.
     ///
-    /// Returns the amount of pages before the operation upon success.
+    /// Returns the number of pages before the operation upon success.
     ///
     /// # Errors
     ///
-    /// If the linear memory would grow beyond its maximum limit after
-    /// the grow operation.
+    /// If the linear memory grows beyond its maximum limit after
+    /// the growth operation.
     pub fn grow(&mut self, additional: Pages) -> Result<Pages, RwasmError> {
         let current_pages = self.current_pages();
         if additional == Pages::from(0) {

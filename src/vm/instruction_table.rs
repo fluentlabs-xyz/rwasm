@@ -1,4 +1,4 @@
-use crate::executor::executor::RwasmExecutor;
+use crate::vm::executor::RwasmExecutor;
 
 pub type VisitInstruction<T> = fn(&mut RwasmExecutor<T>);
 
@@ -6,7 +6,7 @@ pub type InstructionTable<T> = [VisitInstruction<T>; 0x100];
 
 #[inline]
 pub const fn make_instruction_table<T>() -> InstructionTable<T> {
-    use crate::{executor::opcodes::*, types::Opcode::*};
+    use crate::{types::Opcode::*, vm::opcodes::*};
     const {
         let mut tables: InstructionTable<T> = [visit_unreachable_wrapped; 0x100];
         tables[Unreachable as usize] = visit_unreachable_wrapped;

@@ -1,6 +1,6 @@
 use crate::{
-    executor::context::Caller,
     types::{RwasmError, UntypedValue},
+    vm::context::Caller,
 };
 
 pub type SyscallHandler<T> = fn(Caller<T>, u32) -> Result<(), RwasmError>;

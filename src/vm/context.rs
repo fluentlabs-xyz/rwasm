@@ -1,6 +1,6 @@
 use crate::{
-    executor::executor::RwasmExecutor,
     types::{RwasmError, UntypedValue},
+    vm::executor::RwasmExecutor,
 };
 
 pub struct Caller<'a, T> {

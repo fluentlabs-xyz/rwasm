@@ -1,11 +1,4 @@
 use crate::{
-    executor::{
-        context::Caller,
-        element_entity::ElementSegmentEntity,
-        executor::RwasmExecutor,
-        instr_ptr::InstructionPtr,
-        table_entity::TableEntity,
-    },
     types::{
         Opcode,
         OpcodeData,
@@ -16,7 +9,12 @@ use crate::{
         FUNC_REF_OFFSET,
         N_MAX_RECURSION_DEPTH,
     },
-    ElementSegmentIdx,
+    vm::{
+        context::Caller,
+        executor::RwasmExecutor,
+        instr_ptr::InstructionPtr,
+        table_entity::TableEntity,
+    },
 };
 use core::cmp;
 
@@ -854,7 +852,14 @@ pub(crate) fn visit_memory_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
         OpcodeData::DataSegmentIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
     };
-    let is_empty_data_segment = vm.resolve_data_or_create(data_segment_idx).is_empty();
+
+    let is_empty_data_segment = vm
+        .empty_data_segments
+        .get(data_segment_idx.to_u32() as usize)
+        .as_deref()
+        .copied()
+        .unwrap_or(false);
+
     let (d, s, n) = vm.sp.pop3();
     let n = i32::from(n) as usize;
     let src_offset = i32::from(s) as usize;
@@ -890,8 +895,8 @@ pub(crate) fn visit_data_drop<T>(vm: &mut RwasmExecutor<T>) {
         OpcodeData::DataSegmentIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
     };
-    let data_segment = vm.resolve_data_or_create(data_segment_idx);
-    data_segment.drop_bytes();
+    vm.empty_data_segments
+        .set(data_segment_idx.to_u32() as usize, true);
     vm.ip.add(1);
 }
 
@@ -921,8 +926,8 @@ pub(crate) fn visit_table_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
     if vm.config.fuel_enabled {
         vm.try_consume_fuel(vm.fuel_costs.fuel_for_elements(delta as u64))?;
     }
-    let table = vm.resolve_table_or_create(table_idx);
-    let result = table.grow_untyped(delta, init)?;
+    let table = vm.tables.entry(table_idx).or_insert_with(TableEntity::new);
+    let result = table.grow_untyped(delta, init);
     vm.sp.push_as(result);
     if let Some(tracer) = vm.tracer.as_mut() {
         tracer.table_size_change(table_idx.to_u32(), init.into(), delta);
@@ -941,7 +946,9 @@ pub(crate) fn visit_table_fill<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
     if vm.config.fuel_enabled {
         vm.try_consume_fuel(vm.fuel_costs.fuel_for_elements(n.into()))?;
     }
-    vm.resolve_table(table_idx)
+    vm.tables
+        .get_mut(&table_idx)
+        .expect("rwasm: missing table")
         .fill_untyped(i.into(), val, n.into())?;
     vm.ip.add(1);
     Ok(())
@@ -955,7 +962,9 @@ pub(crate) fn visit_table_get<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmE
     };
     let index = vm.sp.pop();
     let value = vm
-        .resolve_table(table_idx)
+        .tables
+        .get_mut(&table_idx)
+        .expect("rwasm: missing table")
         .get_untyped(index.into())
         .ok_or(RwasmError::TableOutOfBounds)?;
     vm.sp.push(value);
@@ -970,7 +979,9 @@ pub(crate) fn visit_table_set<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmE
         _ => unreachable!("rwasm: missing instr data"),
     };
     let (index, value) = vm.sp.pop2();
-    vm.resolve_table(table_idx)
+    vm.tables
+        .get_mut(&table_idx)
+        .expect("rwasm: missing table")
         .set_untyped(index.into(), value)
         .map_err(|_| RwasmError::TableOutOfBounds)?;
     if let Some(tracer) = vm.tracer.as_mut() {
@@ -1019,6 +1030,7 @@ pub(crate) fn visit_table_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
         _ => unreachable!("rwasm: missing instr data"),
     };
     let table_idx = vm.fetch_table_index(1);
+
     let (d, s, n) = vm.sp.pop3();
     let len = u32::from(n);
     let src_index = u32::from(s);
@@ -1037,15 +1049,20 @@ pub(crate) fn visit_table_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
     // to perform an emptiness check.
     // Therefore, in `element_segment_idx`, we store the original index,
     // which is always > 0.
-    let is_empty_segment = vm.resolve_element_or_create(element_segment_idx).is_empty();
+    let is_empty_segment = vm
+        .empty_elements_segments
+        .get(element_segment_idx.to_u32() as usize)
+        .as_deref()
+        .copied()
+        .unwrap_or(false);
 
-    let (table, mut element) =
-        vm.resolve_table_with_element_or_create(table_idx, ElementSegmentIdx::from(0));
-    let mut empty_element_segment = ElementSegmentEntity::empty();
+    let mut module_elements_section = &vm.default_elements_segment[..];
     if is_empty_segment {
-        element = &mut empty_element_segment;
+        module_elements_section = &[];
     }
-    table.init_untyped(dst_index, element, src_index, len)?;
+    let table = vm.tables.get_mut(&table_idx).expect("rwasm: missing table");
+    table.init_untyped(dst_index, module_elements_section, src_index, len)?;
+
     vm.ip.add(2);
     Ok(())
 }
@@ -1056,8 +1073,8 @@ pub(crate) fn visit_element_drop<T>(vm: &mut RwasmExecutor<T>) {
         OpcodeData::ElementSegmentIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
     };
-    let element_segment = vm.resolve_element_or_create(element_segment_idx);
-    element_segment.drop_items();
+    vm.empty_elements_segments
+        .set(element_segment_idx.to_u32() as usize, true);
     vm.ip.add(1);
 }
 

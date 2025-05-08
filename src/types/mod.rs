@@ -19,9 +19,12 @@ mod value;
 
 pub const N_DEFAULT_STACK_SIZE: usize = 4096;
 pub const N_MAX_STACK_SIZE: usize = 4096;
-pub const DEFAULT_TABLE_LIMIT: usize = 1024;
 pub const N_MAX_TABLE_SIZE: usize = 1024;
 pub const N_MAX_RECURSION_DEPTH: usize = 1024;
+
+pub const N_MAX_DATA_SEGMENTS: usize = 1024;
+
+pub const DEFAULT_TABLE_LIMIT: usize = 1024;
 pub const DEFAULT_MEMORY_LIMIT: usize = 10000;
 
 pub const DEFAULT_MIN_VALUE_STACK_HEIGHT: usize = 1024;
@@ -38,7 +41,7 @@ pub const N_BYTES_PER_MEMORY_PAGE: u32 = 65536;
 /// that is equal to ~64mB
 pub const N_MAX_MEMORY_PAGES: u32 = 1024;
 
-/// To optimize a proving process, we have to limit max
+/// To optimize a proving process, we have to limit the max
 /// number of pages, tables, etc. We found 1024 is enough.
 pub const N_MAX_TABLES: u32 = 1024;
 

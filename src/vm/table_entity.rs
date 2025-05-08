@@ -1,12 +1,9 @@
-use crate::{
-    executor::element_entity::ElementSegmentEntity,
-    types::{RwasmError, UntypedValue, N_MAX_TABLE_SIZE},
-};
+use crate::types::{RwasmError, UntypedValue, N_MAX_TABLE_SIZE};
 
 /// A Wasm table entity.
 #[derive(Debug)]
 pub struct TableEntity {
-    elements: Vec<UntypedValue>,
+    pub(crate) elements: Vec<UntypedValue>,
 }
 
 impl TableEntity {
@@ -15,9 +12,8 @@ impl TableEntity {
     /// # Errors
     ///
     /// If `init` does not match the [`TableType`] element type.
-    pub fn new(init: UntypedValue, default_size: usize) -> Self {
-        let mut elements = Vec::with_capacity(N_MAX_TABLE_SIZE);
-        elements.resize(default_size, init);
+    pub fn new() -> Self {
+        let elements = Vec::with_capacity(N_MAX_TABLE_SIZE);
         Self { elements }
     }
 
@@ -26,7 +22,7 @@ impl TableEntity {
         self.elements.len() as u32
     }
 
-    /// Grows the table by the given amount of elements.
+    /// Grows the table by the given number of elements.
     ///
     /// Returns the old size of the [`Table`] upon success.
     ///
@@ -39,17 +35,16 @@ impl TableEntity {
     /// # Errors
     ///
     /// If the table is grown beyond its maximum limits.
-    pub fn grow_untyped(&mut self, delta: u32, init: UntypedValue) -> Result<u32, RwasmError> {
-        // ResourceLimiter gets the first look at the request.
+    pub fn grow_untyped(&mut self, delta: u32, init: UntypedValue) -> u32 {
         let current = self.size();
         let Some(desired) = current.checked_add(delta) else {
-            return Ok(u32::MAX);
+            return u32::MAX;
         };
         if desired as usize > self.elements.capacity() {
-            return Ok(u32::MAX);
+            return u32::MAX;
         }
         self.elements.resize(desired as usize, init);
-        Ok(current)
+        current
     }
 
     /// Returns the untyped [`Table`] element value at `index`.
@@ -78,10 +73,46 @@ impl TableEntity {
         Ok(())
     }
 
+    /// Initializes a segment of the `elements` table with values from a specified `element` array.
+    ///
+    /// # Parameters
+    ///
+    /// - `&mut self`: A mutable reference to the current instance, allowing modification of the
+    ///   `elements` table.
+    /// - `dst_index`: The starting index in the `elements` table where the initialization will
+    ///   begin.
+    /// - `element`: A slice of `UntypedValue` containing the values to copy into the `elements`
+    ///   table.
+    /// - `src_index`: The starting index in the `element` slice from which to copy values.
+    /// - `len`: The number of values to copy from `element` to `elements`.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if the segment was successfully initialized.
+    /// - `Err(RwasmError::TableOutOfBounds)` if the source or destination ranges are out of bounds.
+    ///
+    /// # Behavior
+    ///
+    /// 1. Convert `dst_index`, `src_index`, and `len` to `usize` for indexing.
+    /// 2. Performs bounds-checking for both the `elements` table and the `element` slice:
+    ///    - Ensures enough elements are available starting from `dst_index` and `src_index` for the
+    ///      specified `len`.
+    ///    - If the bounds are exceeded, it returns `Err(RwasmError::TableOutOfBounds)`.
+    /// 3. If `len` is 0, the method returns early with `Ok(())` after performing the necessary
+    ///    bounds check.
+    /// 4. Copies the specified `len` values from `element[src_index..]` into
+    ///    `elements[dst_index..]`.
+    ///
+    /// # Notes
+    ///
+    /// - The bound check is always performed, even if `len` is 0, to adhere to WebAssembly
+    ///   specifications.
+    /// - This function works with untyped values (`UntypedValue`), allowing generic initialization
+    ///   of table segments.
     pub fn init_untyped(
         &mut self,
         dst_index: u32,
-        element: &ElementSegmentEntity,
+        element: &[UntypedValue],
         src_index: u32,
         len: u32,
     ) -> Result<(), RwasmError> {
@@ -96,7 +127,6 @@ impl TableEntity {
             .and_then(|items| items.get_mut(..len))
             .ok_or(RwasmError::TableOutOfBounds)?;
         let src_items = element
-            .items()
             .get(src_index..)
             .and_then(|items| items.get(..len))
             .ok_or(RwasmError::TableOutOfBounds)?;

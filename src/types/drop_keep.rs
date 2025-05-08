@@ -20,9 +20,9 @@ impl fmt::Debug for DropKeep {
 /// An error that may occur upon operating on [`DropKeep`].
 #[derive(Debug, Copy, Clone)]
 pub enum DropKeepError {
-    /// The amount of kept elements exceeds the engine's limits.
+    /// The number of kept elements exceeds the engine's limits.
     KeepOutOfBounds,
-    /// The amount of dropped elements exceeds the engine's limits.
+    /// The number of dropped elements exceeds the engine's limits.
     DropOutOfBounds,
 }
 
@@ -30,10 +30,10 @@ impl Display for DropKeepError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DropKeepError::KeepOutOfBounds => {
-                write!(f, "amount of kept elements exceeds engine limits")
+                write!(f, "number of kept elements exceeds engine limits")
             }
             DropKeepError::DropOutOfBounds => {
-                write!(f, "amount of dropped elements exceeds engine limits")
+                write!(f, "number of dropped elements exceeds engine limits")
             }
         }
     }
@@ -44,7 +44,7 @@ impl DropKeep {
         Self { drop: 0, keep: 0 }
     }
 
-    /// Returns the amount of stack values to keep.
+    /// Returns the number of stack values to keep.
     pub fn keep(self) -> u16 {
         self.keep
     }
@@ -53,7 +53,7 @@ impl DropKeep {
         self.keep += delta;
     }
 
-    /// Returns the amount of stack values to drop.
+    /// Returns the number of stack values to drop.
     pub fn drop(self) -> u16 {
         self.drop
     }

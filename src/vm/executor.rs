@@ -1,21 +1,7 @@
 use crate::{
-    executor::{
-        config::ExecutorConfig,
-        data_entity::DataSegmentEntity,
-        element_entity::ElementSegmentEntity,
-        handler::{always_failing_syscall_handler, SyscallHandler},
-        instr_ptr::InstructionPtr,
-        memory::GlobalMemory,
-        opcodes::run_the_loop,
-        table_entity::TableEntity,
-        tracer::Tracer,
-        value_stack::{ValueStack, ValueStackPtr},
-    },
     types::{
         AddressOffset,
-        DataSegmentIdx,
         DropKeep,
-        ElementSegmentIdx,
         FuelCosts,
         GlobalIdx,
         OpcodeData,
@@ -25,16 +11,87 @@ use crate::{
         SignatureIdx,
         TableIdx,
         UntypedValue,
-        FUNC_REF_NULL,
         FUNC_REF_OFFSET,
         N_DEFAULT_STACK_SIZE,
+        N_MAX_DATA_SEGMENTS,
         N_MAX_RECURSION_DEPTH,
         N_MAX_STACK_SIZE,
+        N_MAX_TABLE_SIZE,
+    },
+    vm::{
+        config::ExecutorConfig,
+        handler::{always_failing_syscall_handler, SyscallHandler},
+        instr_ptr::InstructionPtr,
+        memory::GlobalMemory,
+        opcodes::run_the_loop,
+        table_entity::TableEntity,
+        tracer::Tracer,
+        value_stack::{ValueStack, ValueStackPtr},
     },
 };
 use alloc::sync::Arc;
+use bitvec::{bitvec, prelude::BitVec};
 use hashbrown::HashMap;
 
+/// The `RwasmExecutor` struct represents the state and functionality required to execute
+/// WebAssembly (WASM) instructions within an embedded WASM runtime environment.
+/// It manages the
+/// execution context, configuration, and other runtime parts necessary for the proper
+/// execution and operation of WASM modules, particularly when leveraging the `rwasm` ecosystem.
+///
+/// # Generic Parameters
+/// - `T`:
+/// Custom execution context type to enable user-defined functionality during WASM execution.
+///
+/// # Fields
+/// - `module`: A reference-counted pointer to the `RwasmModule` representing the compiled and
+///   loaded WASM module.
+/// - `config`: Configuration settings for the WASM executor, encapsulated in an `ExecutorConfig`.
+/// - `consumed_fuel`: Tracks the total amount of fuel consumed, where fuel represents computational
+///   resource usage.
+/// - `refunded_fuel`: Tracks the amount of fuel refunded during execution, allowing optimizations
+///   and reimbursements.
+/// - `value_stack`: Stack for runtime values, used for computations and function calls in the WASM
+///   runtime.
+/// - `sp`: Pointer to the current position in the value stack.
+/// - `global_memory`: Representation of the global memory accessible to the WASM module during
+///   execution.
+/// - `ip`: Instruction pointer used to track the next instruction to be executed.
+/// - `context`: Custom execution context provided by the user, allowing external state to interact
+///   with the executor.
+/// - `tracer`: Optional field for an instance of `Tracer`,
+/// used to trace or debug execution flow if
+///   enabled.
+/// - `fuel_costs`: Structure representing fuel consumption costs for various operations, enabling
+///   fine-grained control of execution resources.
+/// - `tables`: A map associating `TableIdx` (table index) to `TableEntity`, representing managed
+///   tables in the WASM module.
+/// - `call_stack`: A stack of instruction pointers,
+/// used to manage nested function calls and return
+///   points during execution.
+/// - `last_signature`: Optionally stores the last used signature index, needed for validating
+///   indirect function calls.
+/// - `next_result`: Optionally stores the result of the next operation, either a valid result or an
+///   error of type `RwasmError`.
+/// - `stop_exec`: A boolean flag indicating whether the execution should halt prematurely.
+/// - `syscall_handler`: A handler of type `SyscallHandler<T>` to execute host function calls or
+///   system calls invoked by the WASM module.
+/// - `default_elements_segment`: A vector of untyped values representing the default elements
+///   segment used in `rwasm`'s modified execution context.
+/// - `global_variables`: A map of global variable indices (`GlobalIdx`) to untyped values,
+///   representing global variables in the WASM runtime.
+/// - `empty_elements_segments`: A bit vector indicating which element segments are considered
+///   empty.
+/// - `empty_data_segments`: A bit vector indicating which data segments are considered empty.
+///
+/// # Usage
+/// The `RwasmExecutor` is designed to be instantiated and used as the main driver for executing
+/// WASM programs.
+/// It maintains the state required for computation, controls the flow of execution,
+/// and integrates user-defined functionality via the `T` generic execution context.
+///
+/// Note: This struct is intended as part of an internal runtime and may not expose all fields to
+/// public interfaces.
 pub struct RwasmExecutor<T> {
     // function segments
     pub(crate) module: Arc<RwasmModule>,
@@ -50,10 +107,11 @@ pub struct RwasmExecutor<T> {
     pub(crate) tracer: Option<Tracer>,
     pub(crate) fuel_costs: FuelCosts,
     // rwasm modified segments
-    pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
     pub(crate) tables: HashMap<TableIdx, TableEntity>,
-    pub(crate) data_segments: HashMap<DataSegmentIdx, DataSegmentEntity>,
-    pub(crate) elements: HashMap<ElementSegmentIdx, ElementSegmentEntity>,
+    pub(crate) default_elements_segment: Vec<UntypedValue>,
+    pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
+    pub(crate) empty_elements_segments: BitVec,
+    pub(crate) empty_data_segments: BitVec,
     // list of nested calls return pointers
     pub(crate) call_stack: Vec<InstructionPtr>,
     // the last used signature (needed for indirect calls type checks)
@@ -88,25 +146,21 @@ impl<T> RwasmExecutor<T> {
         // create global memory
         let global_memory = GlobalMemory::new(Pages::default());
 
-        // create the main element segment (index 0) from the module elements
-        let mut element_segments = HashMap::new();
-        element_segments.insert(
-            ElementSegmentIdx::from(0u32),
-            ElementSegmentEntity::new(
-                module
-                    .element_section
-                    .iter()
-                    .copied()
-                    .map(|v| UntypedValue::from(v + FUNC_REF_OFFSET))
-                    .collect(),
-            ),
-        );
+        let dropped_elements = bitvec![0; N_MAX_TABLE_SIZE];
+        let empty_data_segments = bitvec![0; N_MAX_DATA_SEGMENTS];
 
         let tracer = if config.trace_enabled {
             Some(Tracer::default())
         } else {
             None
         };
+
+        let module_elements_section = module
+            .element_section
+            .iter()
+            .copied()
+            .map(|v| UntypedValue::from(v + FUNC_REF_OFFSET))
+            .collect::<Vec<_>>();
 
         Self {
             module,
@@ -122,13 +176,14 @@ impl<T> RwasmExecutor<T> {
             fuel_costs: Default::default(),
             global_variables: Default::default(),
             tables: Default::default(),
-            data_segments: Default::default(),
-            elements: element_segments,
             call_stack: vec![],
             last_signature: None,
             next_result: None,
             stop_exec: false,
             syscall_handler: always_failing_syscall_handler,
+            default_elements_segment: module_elements_section,
+            empty_elements_segments: dropped_elements,
+            empty_data_segments,
         }
     }
 
@@ -215,64 +270,6 @@ impl<T> RwasmExecutor<T> {
                 _ => Err(err),
             },
         }
-    }
-
-    pub(crate) fn resolve_table(&mut self, table_idx: TableIdx) -> &mut TableEntity {
-        self.tables
-            .get_mut(&table_idx)
-            .expect("rwasm: missing table")
-    }
-
-    pub(crate) fn resolve_table_or_create(&mut self, table_idx: TableIdx) -> &mut TableEntity {
-        self.tables
-            .entry(table_idx)
-            .or_insert_with(Self::empty_table)
-    }
-
-    fn empty_table() -> TableEntity {
-        TableEntity::new(UntypedValue::from(FUNC_REF_NULL), 0)
-    }
-
-    fn empty_element_segment() -> ElementSegmentEntity {
-        ElementSegmentEntity::new(vec![])
-    }
-
-    fn empty_data_segment() -> DataSegmentEntity {
-        DataSegmentEntity::new([0x1].into())
-    }
-
-    pub(crate) fn resolve_data_or_create(
-        &mut self,
-        data_segment_idx: DataSegmentIdx,
-    ) -> &mut DataSegmentEntity {
-        self.data_segments
-            .entry(data_segment_idx)
-            .or_insert_with(Self::empty_data_segment)
-    }
-
-    pub(crate) fn resolve_element_or_create(
-        &mut self,
-        element_idx: ElementSegmentIdx,
-    ) -> &mut ElementSegmentEntity {
-        self.elements
-            .entry(element_idx)
-            .or_insert_with(Self::empty_element_segment)
-    }
-
-    pub(crate) fn resolve_table_with_element_or_create(
-        &mut self,
-        table_idx: TableIdx,
-        element_idx: ElementSegmentIdx,
-    ) -> (&mut TableEntity, &mut ElementSegmentEntity) {
-        let table_entity = self
-            .tables
-            .entry(table_idx)
-            .or_insert_with(Self::empty_table);
-        let element_entity = self
-            .elements
-            .entry(element_idx)
-            .or_insert_with(Self::empty_element_segment);
-        (table_entity, element_entity)
     }
 
     pub(crate) fn fetch_drop_keep(&self, offset: usize) -> DropKeep {
