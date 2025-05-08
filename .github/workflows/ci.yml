@@ -37,7 +37,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run tests
-        run:
+        run: |
           cargo test --no-fail-fast
           cargo test --no-fail-fast --manifest-path=./e2e/Cargo.toml
 
