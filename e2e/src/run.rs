@@ -1,14 +1,7 @@
 use super::{error::TestError, TestContext, TestDescriptor};
+use crate::ENABLE_32_BIT_TRANSLATOR;
 use anyhow::Result;
-use rwasm::{
-    core::{F32, F64},
-    value::split_i64_to_i32,
-    Config,
-    ExternRef,
-    FuncRef,
-    Instance,
-    Value,
-};
+use rwasm::{split_i64_to_i32, ExternRef, FuncRef, Value, F32, F64};
 use wast::{
     core::{HeapType, NanPattern, WastRetCore},
     lexer::Lexer,
@@ -24,9 +17,9 @@ use wast::{
 };
 
 /// Runs the Wasm test spec identified by the given name.
-pub fn run_wasm_spec_test(name: &str, config: Config) {
+pub fn run_wasm_spec_test(name: &str) {
     let test = TestDescriptor::new(name);
-    let mut context = TestContext::new(&test, config);
+    let mut context = TestContext::new(&test);
 
     let mut lexer = Lexer::new(test.file());
     lexer.allow_confusing_unicode(true);
@@ -218,6 +211,17 @@ fn assert_trap(test_context: &TestContext, span: Span, error: TestError, message
                 error,
             );
         }
+        TestError::Rwasm(error) => {
+            assert!(
+                error.to_string().contains(message),
+                "{}: the directive trapped as expected but with an unexpected message\n\
+                    expected: {},\n\
+                    encountered: {}",
+                test_context.spanned(span),
+                message,
+                error,
+            );
+        }
         unexpected => panic!(
             "{}: encountered unexpected error: \n\t\
                 found: '{unexpected}'\n\t\
@@ -229,8 +233,7 @@ fn assert_trap(test_context: &TestContext, span: Span, error: TestError, message
 
 /// Asserts that `results` match the `expected` values.
 fn assert_results(context: &TestContext, span: Span, results: &[Value], expected: &[WastRet]) {
-    let config = context.get_config();
-    if config.get_i32_translator() {
+    if ENABLE_32_BIT_TRANSLATOR {
         assert_eq!(
             results.len(),
             expected.len()
@@ -265,7 +268,7 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
             // in rWASM we support only 64 bit globals, but technically both these types are having
             // 64 bit representation, so there is no diff, and we can safely compare them
             (Value::I32(result), WastRetCore::I64(expected)) => {
-                if config.get_i32_translator() {
+                if ENABLE_32_BIT_TRANSLATOR {
                     let low = result;
                     let high = &results[i + shift + 1]
                         .i32()
@@ -312,12 +315,8 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
                 assert!(externref.is_null());
             }
             (Value::ExternRef(externref), WastRetCore::RefExtern(expected)) => {
-                let value = externref
-                    .data(context.store())
-                    .expect("unexpected null element")
-                    .downcast_ref::<u32>()
-                    .expect("unexpected non-u32 data");
-                assert_eq!(value, expected);
+                let value = externref.resolve_index();
+                assert_eq!(value, *expected);
             }
             (result, expected) => panic!(
                 "{}: encountered mismatch in evaluation. expected {:?} but found {:?}",
@@ -403,7 +402,7 @@ fn execute_wast_invoke(
     let mut args = <Vec<Value>>::new();
     for arg in invoke.args {
         let value = match arg {
-            wast::WastArg::Core(arg) => value(context.store_mut(), &arg).unwrap_or_else(|| {
+            wast::WastArg::Core(arg) => value(&arg).unwrap_or_else(|| {
                 panic!(
                     "{}: encountered unsupported WastArgCore argument: {arg:?}",
                     context.spanned(span)
@@ -422,7 +421,7 @@ fn execute_wast_invoke(
 }
 
 /// Converts the [`WastArgCore`][`wast::core::WastArgCore`] into a [`wasmi::Value`] if possible.
-fn value(ctx: &mut rwasm::Store<()>, value: &wast::core::WastArgCore) -> Option<Value> {
+fn value(value: &wast::core::WastArgCore) -> Option<Value> {
     Some(match value {
         wast::core::WastArgCore::I32(arg) => Value::I32(*arg),
         wast::core::WastArgCore::I64(arg) => Value::I64(*arg),
@@ -430,7 +429,7 @@ fn value(ctx: &mut rwasm::Store<()>, value: &wast::core::WastArgCore) -> Option<
         wast::core::WastArgCore::F64(arg) => Value::F64(F64::from_bits(arg.bits)),
         wast::core::WastArgCore::RefNull(HeapType::Func) => Value::FuncRef(FuncRef::null()),
         wast::core::WastArgCore::RefNull(HeapType::Extern) => Value::ExternRef(ExternRef::null()),
-        wast::core::WastArgCore::RefExtern(value) => Value::ExternRef(ExternRef::new(ctx, *value)),
+        wast::core::WastArgCore::RefExtern(value) => Value::ExternRef(ExternRef::new(*value)),
         _ => return None,
     })
 }
