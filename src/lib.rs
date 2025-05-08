@@ -10,3 +10,7 @@ extern crate core;
 
 pub use types::*;
 pub use vm::*;
+
+pub mod legacy {
+    pub use rwasm_legacy::*;
+}
