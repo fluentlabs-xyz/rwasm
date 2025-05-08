@@ -21,6 +21,9 @@ downcast-rs = { version = "2.0.1", default-features = false, features = ["sync"]
 bincode = { version = "2.0.1", default-features = false, features = ["alloc", "derive"] }
 num-traits = { version = "0.2", default-features = false }
 
+# an rwasm legacy dependency
+rwasm-legacy = { path = "./legacy" }
+
 [dev-dependencies]
 rand = "0.9.1"
 

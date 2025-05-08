@@ -1,5 +1,5 @@
 use super::{error::TestError, TestContext, TestDescriptor};
-use crate::context::ENABLE_32_BIT_TRANSLATOR;
+use crate::ENABLE_32_BIT_TRANSLATOR;
 use anyhow::Result;
 use rwasm::{split_i64_to_i32, ExternRef, FuncRef, Value, F32, F64};
 use wast::{

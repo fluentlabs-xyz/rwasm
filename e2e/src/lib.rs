@@ -18,7 +18,6 @@ use ::rwasm_legacy::{engine::RwasmConfig, Config};
 macro_rules! define_tests {
     (
         let folder = $test_folder:literal;
-        let config = $get_config:expr;
         let runner = $runner_fn:path;
 
         $( $(#[$attr:meta])* fn $test_name:ident($file_name:expr); )*
@@ -35,14 +34,12 @@ macro_rules! define_tests {
 
 macro_rules! define_spec_tests {
     (
-        let config = $get_config:expr;
         let runner = $runner_fn:path;
 
         $( $(#[$attr:meta])* fn $test_name:ident($file_name:expr); )*
     ) => {
         define_tests! {
             let folder = "testsuite";
-            let config = $get_config;
             let runner = $runner_fn;
 
             $(
@@ -53,63 +50,19 @@ macro_rules! define_spec_tests {
     };
 }
 
-/// Create a [`Config`] for the Wasm MVP feature set.
-fn mvp_config() -> Config {
-    let mut config = Config::default();
-    config
-        .wasm_mutable_global(false)
-        .wasm_saturating_float_to_int(false)
-        .wasm_sign_extension(false)
-        .wasm_multi_value(false);
-    config
-}
-
-/// Create a [`Config`] with all Wasm feature supported by `wasmi` enabled.
-///
-/// # Note
-///
-/// The Wasm MVP has no Wasm proposals enabled.
-fn make_config(rwasm_mode: bool) -> Config {
-    let mut config = mvp_config();
-    // We have to enable the `mutable-global` Wasm proposal because
-    // it seems that the entire Wasm spec test suite is already built
-    // on the basis of its semantics.
-    config
-        .wasm_mutable_global(true)
-        .wasm_saturating_float_to_int(true)
-        .wasm_sign_extension(true)
-        .wasm_multi_value(true)
-        .wasm_bulk_memory(true)
-        .wasm_reference_types(true)
-        .wasm_tail_call(true)
-        .wasm_extended_const(false);
-    if rwasm_mode {
-        config.rwasm_config(RwasmConfig {
-            state_router: None,
-            entrypoint_name: None,
-            import_linker: None,
-            wrap_import_functions: false,
-            translate_drop_keep: true,
-            allow_malformed_entrypoint_func_type: true,
-            use_32bit_mode: false,
-            builtins_consume_fuel: false,
-        });
-    }
-    config
-}
+pub(crate) const ENABLE_32_BIT_TRANSLATOR: bool = false;
 
 define_spec_tests! {
-    let config = make_config(true);
     let runner = run::run_wasm_spec_test;
 
     fn wasm_address("address");
-    fn wasm_align("align"); //br_table
+    fn wasm_align("align");
     fn wasm_binary_leb128("binary-leb128");
     fn wasm_binary("binary");
     fn wasm_block("block");
     fn wasm_br("br");
     fn wasm_br_if("br_if");
-    fn wasm_br_table("br_table"); // br_table
+    fn wasm_br_table("br_table");
     fn wasm_bulk("bulk");
     fn wasm_call("call");
     fn wasm_call_indirect("call_indirect");

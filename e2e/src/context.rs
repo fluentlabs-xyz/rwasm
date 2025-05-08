@@ -1,4 +1,4 @@
-use super::{TestDescriptor, TestError, TestProfile, TestSpan};
+use super::{TestDescriptor, TestError, TestProfile, TestSpan, ENABLE_32_BIT_TRANSLATOR};
 use crate::handler::{
     testing_context_syscall_handler,
     TestingContext,
@@ -33,8 +33,6 @@ use wast::token::{Id, Span};
 type TestingRwasmExecutor = RwasmExecutor<TestingContext>;
 type Instance = Rc<RefCell<TestingRwasmExecutor>>;
 
-const TESTING_INSTRUCTION_TABLE: InstructionTable<TestingContext> = make_instruction_table();
-
 /// The context of a single Wasm test spec suite run.
 pub struct TestContext<'a> {
     /// The list of all encountered Wasm modules belonging to the test.
@@ -54,8 +52,6 @@ pub struct TestContext<'a> {
     /// Useful for printing better debug messages in case of failure.
     descriptor: &'a TestDescriptor,
 }
-
-pub(crate) const ENABLE_32_BIT_TRANSLATOR: bool = false;
 
 impl<'a> TestContext<'a> {
     /// Creates a new [`TestContext`] with the given [`TestDescriptor`].
