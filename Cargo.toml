@@ -15,15 +15,16 @@ wasmparser = { version = "0.100.1", package = "wasmparser-nostd", default-featur
 hashbrown = { version = "0.15.2", features = ["alloc"] }
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 paste = { version = "1.0", default-features = false }
-num_enum = { version = "0.7.3" }
+num_enum = { version = "0.7.3", default-features = false }
 bytes = { version = "1.10.1", default-features = false }
 downcast-rs = { version = "2.0.1", default-features = false, features = ["sync"] }
 bincode = { version = "2.0.1", default-features = false, features = ["alloc", "derive"] }
 num-traits = { version = "0.2", default-features = false }
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
+libm = "0.2.1"
 
 # an rwasm legacy dependency
-rwasm-legacy = { path = "./legacy" }
+rwasm-legacy = { path = "./legacy", default-features = false }
 
 [dev-dependencies]
 rand = "0.9.1"
@@ -36,5 +37,6 @@ std = [
     "bincode/std",
     "num-traits/std",
     "bitvec/std",
+    "rwasm-legacy/std",
 ]
 debug-print = []

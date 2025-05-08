@@ -17,7 +17,8 @@ use crate::{
     },
     StackAlloc,
 };
-use core::fmt::Formatter;
+use alloc::{format, vec::Vec};
+use core::fmt::{Display, Formatter};
 
 #[derive(
     Debug,
@@ -234,8 +235,7 @@ pub enum Opcode {
     StackAlloc = 0xc6,
 }
 
-#[cfg(feature = "std")]
-impl core::fmt::Display for Opcode {
+impl Display for Opcode {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         let name = format!("{:?}", self);
         let name: Vec<_> = name.split('(').collect();

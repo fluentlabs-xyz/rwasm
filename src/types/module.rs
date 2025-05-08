@@ -1,4 +1,5 @@
 use crate::types::InstructionSet;
+use alloc::{vec, vec::Vec};
 use bincode::{
     de::Decoder,
     enc::Encoder,

@@ -29,7 +29,7 @@ use crate::{
         value_stack::{ValueStack, ValueStackPtr},
     },
 };
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec, vec::Vec};
 use bitvec::{bitvec, prelude::BitVec};
 use hashbrown::HashMap;
 

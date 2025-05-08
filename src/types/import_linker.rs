@@ -1,7 +1,6 @@
 use crate::{ImportName, ValueType};
-use core::ops::Deref;
+use core::ops::{Deref, DerefMut};
 use hashbrown::HashMap;
-use std::ops::DerefMut;
 
 #[derive(Debug, Default, Clone)]
 pub struct ImportLinker {

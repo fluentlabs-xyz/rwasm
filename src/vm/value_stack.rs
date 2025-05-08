@@ -5,6 +5,7 @@ use crate::types::{
     DEFAULT_MAX_VALUE_STACK_HEIGHT,
     DEFAULT_MIN_VALUE_STACK_HEIGHT,
 };
+use alloc::{vec, vec::Vec};
 use core::fmt::Debug;
 
 /// The value stack used to execute Wasm bytecode.

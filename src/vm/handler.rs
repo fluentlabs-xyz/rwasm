@@ -2,6 +2,7 @@ use crate::{
     types::{RwasmError, UntypedValue},
     vm::context::Caller,
 };
+use alloc::{vec, vec::Vec};
 
 pub type SyscallHandler<T> = fn(Caller<T>, u32) -> Result<(), RwasmError>;
 

@@ -304,6 +304,7 @@ dependencies = [
  "bytes",
  "downcast-rs 2.0.1",
  "hashbrown",
+ "libm",
  "num-traits",
  "num_enum",
  "paste",

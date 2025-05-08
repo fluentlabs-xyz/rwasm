@@ -1,4 +1,5 @@
 use crate::types::{RwasmError, UntypedValue, N_MAX_TABLE_SIZE};
+use alloc::vec::Vec;
 
 /// A Wasm table entity.
 #[derive(Debug)]

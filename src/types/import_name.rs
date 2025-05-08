@@ -1,3 +1,5 @@
+use alloc::boxed::Box;
+
 /// The name or namespace of an imported item.
 #[derive(Debug, Clone, PartialOrd, PartialEq, Ord, Eq, Hash)]
 pub struct ImportName {

@@ -2,6 +2,7 @@ use crate::{
     types::{RwasmError, UntypedValue},
     vm::executor::RwasmExecutor,
 };
+use alloc::{vec, vec::Vec};
 
 pub struct Caller<'a, T> {
     vm: &'a mut RwasmExecutor<T>,

@@ -1,4 +1,5 @@
 use crate::types::HostError;
+use alloc::boxed::Box;
 use core::fmt::Formatter;
 
 #[derive(Debug)]

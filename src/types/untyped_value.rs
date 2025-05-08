@@ -16,7 +16,7 @@ use crate::{
     F32,
     F64,
 };
-use alloc::vec::Vec;
+use alloc::{format, vec::Vec};
 use bincode::{Decode, Encode};
 use core::{
     fmt::{self, Display, Formatter},

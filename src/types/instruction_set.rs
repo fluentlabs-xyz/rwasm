@@ -17,7 +17,7 @@ use crate::types::{
     TableIdx,
     UntypedValue,
 };
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use bincode::{
     de::Decoder,
     enc::Encoder,
