@@ -27,6 +27,7 @@ use rwasm_legacy::{
     module::ImportName,
 };
 use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc, sync::Arc};
+use rwasm_legacy::engine::RwasmConfig;
 use wast::token::{Id, Span};
 
 type TestingRwasmExecutor = RwasmExecutor<TestingContext>;
@@ -204,6 +205,18 @@ impl TestContext<'_> {
 
         // extract all exports first to calculate rwasm config
         let rwasm_config = {
+            if ENABLE_32_BIT_TRANSLATOR {
+                config.rwasm_config(RwasmConfig{
+                    state_router: None,
+                    entrypoint_name: None,
+                    import_linker: None,
+                    wrap_import_functions: false,
+                    translate_drop_keep: false,
+                    allow_malformed_entrypoint_func_type: false,
+                    use_32bit_mode: true,
+                    builtins_consume_fuel: false,
+                });
+            }
             let engine = rwasm_legacy::Engine::new(&config);
             let wasm_module = rwasm_legacy::Module::new(&engine, &wasm[..])?;
             let mut states = Vec::<(String, u32)>::new();
