@@ -1,10 +1,16 @@
+mod alu;
+mod control_flow;
+// mod fpu;
+mod memory;
+mod stack;
+mod system;
+
 use crate::{
     types::{
-        AddressOffset,
         DropKeep,
         FuelCosts,
         GlobalIdx,
-        OpcodeData,
+        Instruction,
         Pages,
         RwasmError,
         RwasmModule,
@@ -16,21 +22,36 @@ use crate::{
         N_MAX_DATA_SEGMENTS,
         N_MAX_RECURSION_DEPTH,
         N_MAX_STACK_SIZE,
-        N_MAX_TABLE_SIZE,
     },
     vm::{
         config::ExecutorConfig,
-        handler::{always_failing_syscall_handler, SyscallHandler},
+        executor::{
+            alu::{
+                exec_arith_signed_opcode,
+                exec_arith_unsigned_opcode,
+                exec_bitwise_binary_opcode,
+                exec_bitwise_unary_opcode,
+                exec_compare_binary_opcode,
+                exec_compare_unary_opcode,
+                exec_convert_unary_opcode,
+            },
+            control_flow::exec_control_flow_opcode,
+            memory::{exec_memory_load_opcode, exec_memory_store_opcode},
+            stack::exec_stack_opcode,
+            system::exec_system_opcode,
+        },
         instr_ptr::InstructionPtr,
         memory::GlobalMemory,
-        opcodes::run_the_loop,
-        table_entity::TableEntity,
-        tracer::Tracer,
+        syscall::{always_failing_syscall_handler, SyscallHandler},
+        table::TableEntity,
         value_stack::{ValueStack, ValueStackPtr},
     },
+    Opcode,
+    TrapCode,
+    N_MAX_ELEMENT_SEGMENTS,
 };
 use alloc::{sync::Arc, vec, vec::Vec};
-use bitvec::{bitvec, prelude::BitVec};
+use bitvec::{bitarr, prelude::BitArray};
 use hashbrown::HashMap;
 
 /// The `RwasmExecutor` struct represents the state and functionality required to execute
@@ -59,15 +80,13 @@ use hashbrown::HashMap;
 /// - `ip`: Instruction pointer used to track the next instruction to be executed.
 /// - `context`: Custom execution context provided by the user, allowing external state to interact
 ///   with the executor.
-/// - `tracer`: Optional field for an instance of `Tracer`,
-/// used to trace or debug execution flow if
+/// - `tracer`: Optional field for an instance of `Tracer`, used to trace or debug execution flow if
 ///   enabled.
 /// - `fuel_costs`: Structure representing fuel consumption costs for various operations, enabling
 ///   fine-grained control of execution resources.
 /// - `tables`: A map associating `TableIdx` (table index) to `TableEntity`, representing managed
 ///   tables in the WASM module.
-/// - `call_stack`: A stack of instruction pointers,
-/// used to manage nested function calls and return
+/// - `call_stack`: A stack of instruction pointers, used to manage nested function calls and return
 ///   points during execution.
 /// - `last_signature`: Optionally stores the last used signature index, needed for validating
 ///   indirect function calls.
@@ -104,21 +123,30 @@ pub struct RwasmExecutor<T> {
     pub(crate) global_memory: GlobalMemory,
     pub(crate) ip: InstructionPtr,
     pub(crate) context: T,
-    pub(crate) tracer: Option<Tracer>,
+    #[cfg(feature = "tracing")]
+    pub(crate) tracer: Option<crate::Tracer>,
     pub(crate) fuel_costs: FuelCosts,
     // rwasm modified segments
     pub(crate) tables: HashMap<TableIdx, TableEntity>,
     pub(crate) default_elements_segment: Vec<UntypedValue>,
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
-    pub(crate) empty_elements_segments: BitVec,
-    pub(crate) empty_data_segments: BitVec,
+    pub(crate) empty_elements_segments:
+        BitArray<[usize; bitvec::mem::elts::<usize>(N_MAX_ELEMENT_SEGMENTS)]>,
+    pub(crate) empty_data_segments:
+        BitArray<[usize; ::bitvec::mem::elts::<usize>(N_MAX_DATA_SEGMENTS)]>,
     // list of nested calls return pointers
     pub(crate) call_stack: Vec<InstructionPtr>,
     // the last used signature (needed for indirect calls type checks)
     pub(crate) last_signature: Option<SignatureIdx>,
-    pub(crate) next_result: Option<Result<i32, RwasmError>>,
-    pub(crate) stop_exec: bool,
     pub(crate) syscall_handler: SyscallHandler<T>,
+}
+
+macro_rules! time {
+    () => {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+    };
 }
 
 impl<T> RwasmExecutor<T> {
@@ -146,14 +174,8 @@ impl<T> RwasmExecutor<T> {
         // create global memory
         let global_memory = GlobalMemory::new(Pages::default());
 
-        let dropped_elements = bitvec![0; N_MAX_TABLE_SIZE];
-        let empty_data_segments = bitvec![0; N_MAX_DATA_SEGMENTS];
-
-        let tracer = if config.trace_enabled {
-            Some(Tracer::default())
-        } else {
-            None
-        };
+        let empty_elements_segments = bitarr![0; N_MAX_ELEMENT_SEGMENTS];
+        let empty_data_segments = bitarr![0; N_MAX_DATA_SEGMENTS];
 
         let module_elements_section = module
             .element_section
@@ -161,6 +183,13 @@ impl<T> RwasmExecutor<T> {
             .copied()
             .map(|v| UntypedValue::from(v + FUNC_REF_OFFSET))
             .collect::<Vec<_>>();
+
+        #[cfg(feature = "tracing")]
+        let tracer = if config.trace_enabled {
+            Some(crate::Tracer::default())
+        } else {
+            None
+        };
 
         Self {
             module,
@@ -172,17 +201,16 @@ impl<T> RwasmExecutor<T> {
             global_memory,
             ip,
             context,
+            #[cfg(feature = "tracing")]
             tracer,
             fuel_costs: Default::default(),
             global_variables: Default::default(),
             tables: Default::default(),
             call_stack: vec![],
             last_signature: None,
-            next_result: None,
-            stop_exec: false,
             syscall_handler: always_failing_syscall_handler,
             default_elements_segment: module_elements_section,
-            empty_elements_segments: dropped_elements,
+            empty_elements_segments,
             empty_data_segments,
         }
     }
@@ -206,15 +234,19 @@ impl<T> RwasmExecutor<T> {
         self.last_signature = None;
     }
 
-    pub fn reset_last_signature(&mut self) {
+    pub fn reset_pc(&mut self) {
+        let mut ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
+        ip.add(self.module.source_pc as usize);
+        self.ip = ip;
+        self.consumed_fuel = 0;
         self.last_signature = None;
     }
 
-    pub fn try_consume_fuel(&mut self, fuel: u64) -> Result<(), RwasmError> {
+    pub fn try_consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
         let consumed_fuel = self.consumed_fuel.checked_add(fuel).unwrap_or(u64::MAX);
         if let Some(fuel_limit) = self.config.fuel_limit {
             if consumed_fuel > fuel_limit {
-                return Err(RwasmError::OutOfFuel);
+                return Err(TrapCode::OutOfFuel);
             }
         }
         self.consumed_fuel = consumed_fuel;
@@ -246,11 +278,13 @@ impl<T> RwasmExecutor<T> {
         self.refunded_fuel
     }
 
-    pub fn tracer(&self) -> Option<&Tracer> {
+    #[cfg(feature = "tracing")]
+    pub fn tracer(&self) -> Option<&crate::Tracer> {
         self.tracer.as_ref()
     }
 
-    pub fn tracer_mut(&mut self) -> Option<&mut Tracer> {
+    #[cfg(feature = "tracing")]
+    pub fn tracer_mut(&mut self) -> Option<&mut crate::Tracer> {
         self.tracer.as_mut()
     }
 
@@ -263,20 +297,111 @@ impl<T> RwasmExecutor<T> {
     }
 
     pub fn run(&mut self) -> Result<i32, RwasmError> {
-        match run_the_loop(self) {
-            Ok(exit_code) => Ok(exit_code),
+        // let mut opcode_cost: HashMap<Opcode, u128> = HashMap::new();
+        let result = match self.run_the_loop(/*&mut opcode_cost*/) {
+            Ok(_) => Ok(0),
             Err(err) => match err {
-                RwasmError::ExecutionHalted(exit_code) => Ok(exit_code),
-                _ => Err(err),
+                TrapCode::ExecutionHalted => Ok(0),
+                err => Err(RwasmError::TrapCode(err)),
             },
+        };
+        // let mut opcode_cost = opcode_cost.iter().collect::<Vec<_>>();
+        // opcode_cost.sort_by(|a, b| b.1.cmp(a.1));
+        // for (k, v) in opcode_cost {
+        //     println!(" - {}={}", k, v);
+        // }
+        result
+    }
+
+    #[cfg(feature = "debug-print")]
+    fn debug_trace_opcode(&self, opcode: &crate::Opcode, _data: &crate::Instruction) {
+        let stack = self.value_stack.dump_stack(self.sp);
+        println!(
+            "{}:\t {:?} \tstack({}):{:?}",
+            self.ip.pc(),
+            opcode,
+            stack.len(),
+            stack
+                .iter()
+                .rev()
+                .take(10)
+                .map(|v| v.as_usize())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    // #[cfg(feature = "tracer")]
+    // if exec.tracer.is_some() {
+    //     use rwasm::engine::bytecode::InstrMeta;
+    //     let memory_size: u32 = exec.global_memory.current_pages().into();
+    //     let consumed_fuel = exec.fuel_consumed();
+    //     let stack = exec.value_stack.dump_stack(exec.sp);
+    //     exec.tracer.as_mut().unwrap().pre_opcode_state(
+    //         exec.ip.pc(),
+    //         instr,
+    //         stack,
+    //         &InstrMeta::new(0, 0, 0),
+    //         memory_size,
+    //         consumed_fuel,
+    //     );
+    // }
+
+    fn run_the_loop(
+        &mut self, /* opcode_cost: &mut HashMap<Opcode, u128> */
+    ) -> Result<(), TrapCode> {
+        loop {
+            // let time = time!();
+            let instr = self.ip.get();
+
+            // #[cfg(feature = "debug-print")]
+            // self.debug_trace_opcode(&opcode, &data);
+
+            let opcode = instr.opcode();
+            if opcode.is_stack_opcode() {
+                exec_stack_opcode(self, instr)?;
+            } else if opcode.is_arith_unsigned_opcode() {
+                exec_arith_unsigned_opcode(self, opcode)?;
+            } else if opcode.is_arith_signed_opcode() {
+                exec_arith_signed_opcode(self, opcode)?;
+            } else if opcode.is_memory_load_opcode() {
+                exec_memory_load_opcode(self, instr)?;
+            } else if opcode.is_memory_store_opcode() {
+                exec_memory_store_opcode(self, instr)?;
+            } else if opcode.is_compare_unary_opcode() {
+                exec_compare_unary_opcode(self, opcode)?;
+            } else if opcode.is_compare_binary_opcode() {
+                exec_compare_binary_opcode(self, opcode)?;
+            } else if opcode.is_control_flow_opcode() {
+                exec_control_flow_opcode(self, instr)?;
+            } else if opcode.is_bitwise_unary_opcode() {
+                exec_bitwise_unary_opcode(self, opcode)?;
+            } else if opcode.is_bitwise_binary_opcode() {
+                exec_bitwise_binary_opcode(self, opcode)?;
+            } else if opcode.is_convert_opcode() {
+                exec_convert_unary_opcode(self, opcode)?;
+            } else if opcode.is_system_opcode() {
+                exec_system_opcode(self, instr)?;
+            } else if opcode.is_float_opcode() {
+                // exec_fpu_opcode(self, instr)?;
+                unreachable!()
+            } else {
+                unreachable!()
+            }
+
+            // let time = (time!() - time).as_nanos();
+            // if !opcode_cost.contains_key(&opcode) {
+            //     opcode_cost.insert(opcode, time);
+            // } else {
+            //     *opcode_cost.get_mut(&opcode).unwrap() += time;
+            // }
         }
     }
 
     pub(crate) fn fetch_drop_keep(&self, offset: usize) -> DropKeep {
         let mut addr: InstructionPtr = self.ip;
         addr.add(offset);
-        match addr.data() {
-            OpcodeData::DropKeep(drop_keep) => *drop_keep,
+        match addr.get() {
+            Instruction::DropKeep(_, drop_keep) => drop_keep,
             _ => unreachable!("rwasm: can't extract drop keep"),
         }
     }
@@ -284,90 +409,10 @@ impl<T> RwasmExecutor<T> {
     pub(crate) fn fetch_table_index(&self, offset: usize) -> TableIdx {
         let mut addr: InstructionPtr = self.ip;
         addr.add(offset);
-        match addr.data() {
-            OpcodeData::TableIdx(table_idx) => *table_idx,
+        match addr.get() {
+            Instruction::TableIdx(_, table_idx) => table_idx,
             _ => unreachable!("rwasm: can't extract table index"),
         }
-    }
-
-    #[inline(always)]
-    pub(crate) fn execute_load_extend(
-        &mut self,
-        offset: AddressOffset,
-        load_extend: fn(
-            memory: &[u8],
-            address: UntypedValue,
-            offset: u32,
-        ) -> Result<UntypedValue, RwasmError>,
-    ) -> Result<(), RwasmError> {
-        self.sp.try_eval_top(|address| {
-            let memory = self.global_memory.data();
-            let value = load_extend(memory, address, offset.into_inner())?;
-            Ok(value)
-        })?;
-        self.ip.add(1);
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub(crate) fn execute_store_wrap(
-        &mut self,
-        offset: AddressOffset,
-        store_wrap: fn(
-            memory: &mut [u8],
-            address: UntypedValue,
-            offset: u32,
-            value: UntypedValue,
-        ) -> Result<(), RwasmError>,
-        len: u32,
-    ) -> Result<(), RwasmError> {
-        let (address, value) = self.sp.pop2();
-        let memory = self.global_memory.data_mut();
-        store_wrap(memory, address, offset.into_inner(), value)?;
-        self.ip.offset(0);
-        let address = u32::from(address);
-        let base_address = offset.into_inner() + address;
-        if let Some(tracer) = self.tracer.as_mut() {
-            tracer.memory_change(
-                base_address,
-                len,
-                &memory[base_address as usize..(base_address + len) as usize],
-            );
-        }
-        self.ip.add(1);
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub(crate) fn execute_unary(&mut self, f: fn(UntypedValue) -> UntypedValue) {
-        self.sp.eval_top(f);
-        self.ip.add(1);
-    }
-
-    #[inline(always)]
-    pub(crate) fn execute_binary(&mut self, f: fn(UntypedValue, UntypedValue) -> UntypedValue) {
-        self.sp.eval_top2(f);
-        self.ip.add(1);
-    }
-
-    #[inline(always)]
-    pub(crate) fn try_execute_unary(
-        &mut self,
-        f: fn(UntypedValue) -> Result<UntypedValue, RwasmError>,
-    ) -> Result<(), RwasmError> {
-        self.sp.try_eval_top(f)?;
-        self.ip.add(1);
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub(crate) fn try_execute_binary(
-        &mut self,
-        f: fn(UntypedValue, UntypedValue) -> Result<UntypedValue, RwasmError>,
-    ) -> Result<(), RwasmError> {
-        self.sp.try_eval_top2(f)?;
-        self.ip.add(1);
-        Ok(())
     }
 
     #[inline(always)]
@@ -376,12 +421,12 @@ impl<T> RwasmExecutor<T> {
         is_nested_call: bool,
         skip: usize,
         func_idx: u32,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         self.ip.add(skip);
         self.value_stack.sync_stack_ptr(self.sp);
         if is_nested_call {
             if self.call_stack.len() > N_MAX_RECURSION_DEPTH {
-                return Err(RwasmError::StackOverflow);
+                return Err(TrapCode::StackOverflow);
             }
             self.call_stack.push(self.ip);
         }

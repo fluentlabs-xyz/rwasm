@@ -22,6 +22,7 @@ pub const N_MAX_STACK_SIZE: usize = 4096;
 pub const N_MAX_TABLE_SIZE: usize = 1024;
 pub const N_MAX_RECURSION_DEPTH: usize = 1024;
 
+pub const N_MAX_ELEMENT_SEGMENTS: usize = 1024;
 pub const N_MAX_DATA_SEGMENTS: usize = 1024;
 
 pub const DEFAULT_TABLE_LIMIT: usize = 1024;

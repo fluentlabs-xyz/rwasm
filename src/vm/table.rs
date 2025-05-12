@@ -1,4 +1,4 @@
-use crate::types::{RwasmError, UntypedValue, N_MAX_TABLE_SIZE};
+use crate::types::{TrapCode, UntypedValue, N_MAX_TABLE_SIZE};
 use alloc::vec::Vec;
 
 /// A Wasm table entity.
@@ -65,11 +65,11 @@ impl TableEntity {
     /// # Errors
     ///
     /// If `index` is out of bounds.
-    pub fn set_untyped(&mut self, index: u32, value: UntypedValue) -> Result<(), RwasmError> {
+    pub fn set_untyped(&mut self, index: u32, value: UntypedValue) -> Result<(), TrapCode> {
         let untyped = self
             .elements
             .get_mut(index as usize)
-            .ok_or(RwasmError::TableOutOfBounds)?;
+            .ok_or(TrapCode::TableOutOfBounds)?;
         *untyped = value;
         Ok(())
     }
@@ -90,7 +90,7 @@ impl TableEntity {
     /// # Returns
     ///
     /// - `Ok(())` if the segment was successfully initialized.
-    /// - `Err(RwasmError::TableOutOfBounds)` if the source or destination ranges are out of bounds.
+    /// - `Err(TrapCode::TableOutOfBounds)` if the source or destination ranges are out of bounds.
     ///
     /// # Behavior
     ///
@@ -98,7 +98,7 @@ impl TableEntity {
     /// 2. Performs bounds-checking for both the `elements` table and the `element` slice:
     ///    - Ensures enough elements are available starting from `dst_index` and `src_index` for the
     ///      specified `len`.
-    ///    - If the bounds are exceeded, it returns `Err(RwasmError::TableOutOfBounds)`.
+    ///    - If the bounds are exceeded, it returns `Err(TrapCode::TableOutOfBounds)`.
     /// 3. If `len` is 0, the method returns early with `Ok(())` after performing the necessary
     ///    bounds check.
     /// 4. Copies the specified `len` values from `element[src_index..]` into
@@ -116,7 +116,7 @@ impl TableEntity {
         element: &[UntypedValue],
         src_index: u32,
         len: u32,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         // Convert parameters to indices.
         let dst_index = dst_index as usize;
         let src_index = src_index as usize;
@@ -126,11 +126,11 @@ impl TableEntity {
             .elements
             .get_mut(dst_index..)
             .and_then(|items| items.get_mut(..len))
-            .ok_or(RwasmError::TableOutOfBounds)?;
+            .ok_or(TrapCode::TableOutOfBounds)?;
         let src_items = element
             .get(src_index..)
             .and_then(|items| items.get(..len))
-            .ok_or(RwasmError::TableOutOfBounds)?;
+            .ok_or(TrapCode::TableOutOfBounds)?;
         if len == 0 {
             // Bail out early if nothing needs to be initialized.
             // The Wasm spec demands to still perform the bound check
@@ -157,7 +157,7 @@ impl TableEntity {
         src_table: &Self,
         src_index: u32,
         len: u32,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         // Turn parameters into proper slice indices.
         let src_index = src_index as usize;
         let dst_index = dst_index as usize;
@@ -167,12 +167,12 @@ impl TableEntity {
             .elements
             .get_mut(dst_index..)
             .and_then(|items| items.get_mut(..len))
-            .ok_or(RwasmError::TableOutOfBounds)?;
+            .ok_or(TrapCode::TableOutOfBounds)?;
         let src_items = src_table
             .elements
             .get(src_index..)
             .and_then(|items| items.get(..len))
-            .ok_or(RwasmError::TableOutOfBounds)?;
+            .ok_or(TrapCode::TableOutOfBounds)?;
         // Finally, copy elements in-place for the table.
         dst_items.copy_from_slice(src_items);
         Ok(())
@@ -188,13 +188,13 @@ impl TableEntity {
         dst_index: u32,
         src_index: u32,
         len: u32,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         // These accesses just perform the bound checks required by the Wasm spec.
         let max_offset = core::cmp::max(dst_index, src_index);
         max_offset
             .checked_add(len)
             .filter(|&offset| offset <= self.size())
-            .ok_or(RwasmError::TableOutOfBounds)?;
+            .ok_or(TrapCode::TableOutOfBounds)?;
         // Turn parameters into proper indices.
         let src_index = src_index as usize;
         let dst_index = dst_index as usize;
@@ -220,19 +220,14 @@ impl TableEntity {
     /// If `ctx` does not own `dst_table` or `src_table`.
     ///
     /// [`Store`]: [`crate::Store`]
-    pub fn fill_untyped(
-        &mut self,
-        dst: u32,
-        val: UntypedValue,
-        len: u32,
-    ) -> Result<(), RwasmError> {
+    pub fn fill_untyped(&mut self, dst: u32, val: UntypedValue, len: u32) -> Result<(), TrapCode> {
         let dst_index = dst as usize;
         let len = len as usize;
         let dst = self
             .elements
             .get_mut(dst_index..)
             .and_then(|elements| elements.get_mut(..len))
-            .ok_or(RwasmError::TableOutOfBounds)?;
+            .ok_or(TrapCode::TableOutOfBounds)?;
         dst.fill(val);
         Ok(())
     }

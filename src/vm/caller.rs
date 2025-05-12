@@ -1,5 +1,5 @@
 use crate::{
-    types::{RwasmError, UntypedValue},
+    types::{TrapCode, UntypedValue},
     vm::executor::RwasmExecutor,
 };
 use alloc::{vec, vec::Vec};
@@ -44,25 +44,26 @@ impl<'a, T> Caller<'a, T> {
         result
     }
 
-    pub fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), RwasmError> {
+    pub fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.vm.global_memory.read(offset, buffer)?;
         Ok(())
     }
 
-    pub fn memory_read_fixed<const N: usize>(&self, offset: usize) -> Result<[u8; N], RwasmError> {
+    pub fn memory_read_fixed<const N: usize>(&self, offset: usize) -> Result<[u8; N], TrapCode> {
         let mut buffer = [0u8; N];
         self.vm.global_memory.read(offset, &mut buffer)?;
         Ok(buffer)
     }
 
-    pub fn memory_read_vec(&self, offset: usize, length: usize) -> Result<Vec<u8>, RwasmError> {
+    pub fn memory_read_vec(&self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
         let mut buffer = vec![0u8; length];
         self.vm.global_memory.read(offset, &mut buffer)?;
         Ok(buffer)
     }
 
-    pub fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), RwasmError> {
+    pub fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
         self.vm.global_memory.write(offset, buffer)?;
+        #[cfg(feature = "tracing")]
         if let Some(tracer) = self.vm.tracer.as_mut() {
             tracer.memory_change(offset as u32, buffer.len() as u32, buffer);
         }

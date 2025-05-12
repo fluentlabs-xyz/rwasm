@@ -1,6 +1,6 @@
 use crate::types::{
     DropKeep,
-    RwasmError,
+    TrapCode,
     UntypedValue,
     DEFAULT_MAX_VALUE_STACK_HEIGHT,
     DEFAULT_MIN_VALUE_STACK_HEIGHT,
@@ -91,16 +91,15 @@ impl ValueStack {
         self.base_ptr().into_add(self.stack_ptr)
     }
 
-    pub fn stack_len(&mut self, sp: ValueStackPtr) -> usize {
-        let base = self.base_ptr();
-        sp.offset_from(base) as usize
+    pub fn stack_len(&self, sp: ValueStackPtr) -> usize {
+        (sp.ptr as usize - self.entries.as_ptr() as usize) / size_of::<UntypedValue>()
     }
 
     pub fn has_stack_overflowed(&mut self, sp: ValueStackPtr) -> bool {
         self.stack_len(sp) > self.maximum_len
     }
 
-    pub fn dump_stack(&mut self, sp: ValueStackPtr) -> Vec<UntypedValue> {
+    pub fn dump_stack(&self, sp: ValueStackPtr) -> Vec<UntypedValue> {
         let size = self.stack_len(sp);
         self.entries[0..size.min(self.entries.len())].to_vec()
     }
@@ -138,7 +137,7 @@ impl ValueStack {
         );
         assert!(
             initial_len <= maximum_len,
-            "initial value stack length is greater than maximum value stack length",
+            "the initial value stack length is greater than the maximum value stack length",
         );
         let entries = vec![UntypedValue::default(); initial_len];
         Self {
@@ -193,7 +192,7 @@ impl ValueStack {
         &mut self,
         max_stack_height: usize,
         len_locals: usize,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         self.reserve(max_stack_height)?;
         self.extend_zeros(len_locals);
         Ok(())
@@ -242,12 +241,12 @@ impl ValueStack {
     /// For this to be working we need a stack-depth analysis during Wasm
     /// compilation so that we are aware of all stack-depths for every
     /// functions.
-    pub fn reserve(&mut self, additional: usize) -> Result<(), RwasmError> {
+    pub fn reserve(&mut self, additional: usize) -> Result<(), TrapCode> {
         let new_len = self
             .len()
             .checked_add(additional)
             .filter(|&new_len| new_len <= self.maximum_len)
-            .ok_or_else(|| RwasmError::StackOverflow)?;
+            .ok_or_else(|| TrapCode::StackOverflow)?;
         if new_len > self.capacity() {
             // Note: By extending the new length, we effectively double
             // the current value stack length and add the additional flat amount
@@ -298,28 +297,21 @@ impl ValueStack {
 ///
 /// [`ValueStack`]: super::ValueStack
 #[derive(Debug, Copy, Clone)]
-// #[repr(transparent)]
+#[repr(transparent)]
 pub struct ValueStackPtr {
-    src: *mut UntypedValue,
     ptr: *mut UntypedValue,
-    // len: usize,
 }
 
 impl From<*mut UntypedValue> for ValueStackPtr {
     #[inline]
     fn from(ptr: *mut UntypedValue) -> Self {
-        Self {
-            src: ptr,
-            ptr,
-            // len: usize::MAX,
-        }
+        Self { ptr }
     }
 }
 
 impl ValueStackPtr {
     pub fn new(ptr: *mut UntypedValue, _len: usize) -> ValueStackPtr {
-        // Self { src: ptr, ptr, len }
-        Self { ptr, src: ptr }
+        Self { ptr }
     }
 
     /// Calculates the distance between two [`ValueStackPtr] in units of [`UntypedValue`].
@@ -419,12 +411,6 @@ impl ValueStackPtr {
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
-        // let diff = self.ptr as isize - self.src as isize;
-        // if diff < 0 {
-        //     unreachable!("STACK UNDERFLOW")
-        // } else if diff > self.len as isize {
-        //     unreachable!("STACK OVERFLOW")
-        // }
     }
 
     /// Decreases the [`ValueStackPtr`] of `self` by one.
@@ -434,9 +420,6 @@ impl ValueStackPtr {
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.sub(delta) };
-        if self.ptr < self.src {
-            unreachable!("STACK UNDERFLOW")
-        }
     }
 
     /// Pushes the `T` to the end of the [`ValueStack`].
@@ -581,9 +564,9 @@ impl ValueStackPtr {
     ///
     /// If the closure execution fails.
     #[inline]
-    pub fn try_eval_top<F>(&mut self, f: F) -> Result<(), RwasmError>
+    pub fn try_eval_top<F>(&mut self, f: F) -> Result<(), TrapCode>
     where
-        F: FnOnce(UntypedValue) -> Result<UntypedValue, RwasmError>,
+        F: FnOnce(UntypedValue) -> Result<UntypedValue, TrapCode>,
     {
         let last = self.into_sub(1);
         last.set(f(last.get())?);
@@ -596,9 +579,9 @@ impl ValueStackPtr {
     ///
     /// If the closure execution fails.
     #[inline]
-    pub fn try_eval_top2<F>(&mut self, f: F) -> Result<(), RwasmError>
+    pub fn try_eval_top2<F>(&mut self, f: F) -> Result<(), TrapCode>
     where
-        F: FnOnce(UntypedValue, UntypedValue) -> Result<UntypedValue, RwasmError>,
+        F: FnOnce(UntypedValue, UntypedValue) -> Result<UntypedValue, TrapCode>,
     {
         let rhs = self.pop();
         let last = self.into_sub(1);

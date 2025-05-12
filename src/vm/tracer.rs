@@ -155,7 +155,7 @@ impl Tracer {
 
     pub fn global_variable(&mut self, value: UntypedValue, index: u32) {
         self.global_variables.push(TracerGlobalVariable {
-            value: value.to_bits(),
+            value: value.to_bits() as u64,
             index,
         })
     }

@@ -1,4 +1,4 @@
-use crate::RwasmError;
+use crate::{RwasmError, TrapCode};
 use bincode::{Decode, Encode};
 
 /// A 32-bit encoded `f64` value.
@@ -186,12 +186,12 @@ impl ElementSegmentIdx {
 pub struct BranchTableTargets(u32);
 
 impl TryFrom<usize> for BranchTableTargets {
-    type Error = RwasmError;
+    type Error = TrapCode;
 
     fn try_from(index: usize) -> Result<Self, Self::Error> {
         match u32::try_from(index) {
             Ok(index) => Ok(Self(index)),
-            Err(_) => Err(RwasmError::BranchTableTargetsOutOfBounds),
+            Err(_) => Err(TrapCode::BranchTableTargetsOutOfBounds),
         }
     }
 }

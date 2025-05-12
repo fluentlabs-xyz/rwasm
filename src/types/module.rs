@@ -38,18 +38,12 @@ impl RwasmModule {
 
     pub fn new(sink: &[u8]) -> Self {
         let module: RwasmModule;
-        (module, _) = bincode::decode_from_slice(sink, bincode::config::legacy())
-            .unwrap_or_else(|_| unreachable!("rwasm: malformed rwasm binary"));
+        (module, _) =
+            bincode::decode_from_slice(sink, bincode::config::legacy()).unwrap_or_else(|e| {
+                println!("Error decoding module: {}", e);
+                unreachable!("rwasm: malformed rwasm binary")
+            });
         module
-    }
-
-    pub fn instantiate(&mut self) {
-        let source_pc = self
-            .func_section
-            .last()
-            .copied()
-            .expect("rwasm: empty function section");
-        self.source_pc = source_pc;
     }
 }
 

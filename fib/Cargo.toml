@@ -1,0 +1,22 @@
+[package]
+name = "fib"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+path = "lib.rs"
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = 3
+strip = true
+debug = false
+debug-assertions = false
+rpath = false
+codegen-units = 1
+
+[dev-dependencies]
+rwasm = { path = ".." }
+wasmi = { version = "=0.31.2" }

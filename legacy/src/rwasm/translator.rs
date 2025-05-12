@@ -309,7 +309,11 @@ impl<'parser> RwasmTranslator<'parser> {
                 }
             }
         } else {
-            ib.push_inst(Instruction::I64Const(value));
+            if let Ok(_) = i32::try_from(value.to_bits()) {
+                ib.push_inst(Instruction::I32Const(value));
+            } else {
+                ib.push_inst(Instruction::I64Const(value));
+            }
         }
     }
 
@@ -396,7 +400,7 @@ impl<'parser> RwasmTranslator<'parser> {
                 return Err(RwasmBuilderError::ImportedTablesAreDisabled);
             }
             instr_builder.push_inst(Instruction::I32Const(0.into()));
-            instr_builder.push_inst(Instruction::I64Const(table.minimum().into()));
+            instr_builder.push_inst(Instruction::I32Const(table.minimum().into()));
             instr_builder.push_inst(Instruction::TableGrow((table_index as u32).into()));
             instr_builder.push_inst(Instruction::Drop);
         }

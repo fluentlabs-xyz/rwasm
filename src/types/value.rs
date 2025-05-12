@@ -1,7 +1,8 @@
 use crate::{
-    types::{error::RwasmError, F32, F64},
+    types::{F32, F64},
     ExternRef,
     FuncRef,
+    TrapCode,
     UntypedValue,
 };
 use core::{f32, i32, i64, u32, u64};
@@ -104,17 +105,17 @@ pub trait LoadInto {
     /// # Errors
     ///
     /// Traps if the `memory` access is out of bounds.
-    fn load_into(&mut self, memory: &[u8], address: usize) -> Result<(), RwasmError>;
+    fn load_into(&mut self, memory: &[u8], address: usize) -> Result<(), TrapCode>;
 }
 
 impl<const N: usize> LoadInto for [u8; N] {
     #[inline]
-    fn load_into(&mut self, memory: &[u8], address: usize) -> Result<(), RwasmError> {
+    fn load_into(&mut self, memory: &[u8], address: usize) -> Result<(), TrapCode> {
         let slice: &Self = memory
             .get(address..)
             .and_then(|slice| slice.get(..N))
             .and_then(|slice| slice.try_into().ok())
-            .ok_or(RwasmError::MemoryOutOfBounds)?;
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
         *self = *slice;
         Ok(())
     }
@@ -127,17 +128,17 @@ pub trait StoreFrom {
     /// # Errors
     ///
     /// Traps if the `memory` access is out of bounds.
-    fn store_from(&self, memory: &mut [u8], address: usize) -> Result<(), RwasmError>;
+    fn store_from(&self, memory: &mut [u8], address: usize) -> Result<(), TrapCode>;
 }
 
 impl<const N: usize> StoreFrom for [u8; N] {
     #[inline]
-    fn store_from(&self, memory: &mut [u8], address: usize) -> Result<(), RwasmError> {
+    fn store_from(&self, memory: &mut [u8], address: usize) -> Result<(), TrapCode> {
         let slice: &mut Self = memory
             .get_mut(address..)
             .and_then(|slice| slice.get_mut(..N))
             .and_then(|slice| slice.try_into().ok())
-            .ok_or(RwasmError::MemoryOutOfBounds)?;
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
         *slice = *self;
         Ok(())
     }
@@ -227,13 +228,13 @@ pub trait Integer<T>: ArithmeticOps<T> {
     /// # Errors
     ///
     /// If `other` is equal to zero.
-    fn div(self, other: T) -> Result<T, RwasmError>;
+    fn div(self, other: T) -> Result<T, TrapCode>;
     /// Get division remainder.
     ///
     /// # Errors
     ///
     /// If `other` is equal to zero.
-    fn rem(self, other: T) -> Result<T, RwasmError>;
+    fn rem(self, other: T) -> Result<T, TrapCode>;
 }
 
 /// Float-point value.
@@ -308,14 +309,14 @@ impl WrapInto<F32> for F64 {
 
 macro_rules! impl_try_truncate_into {
     (@primitive $from: ident, $into: ident, $to_primitive:path, $rmin:literal, $rmax:literal) => {
-        impl TryTruncateInto<$into, RwasmError> for $from {
+        impl TryTruncateInto<$into, TrapCode> for $from {
             #[inline]
-            fn try_truncate_into(self) -> Result<$into, RwasmError> {
+            fn try_truncate_into(self) -> Result<$into, TrapCode> {
                 if self.is_nan() {
-                    return Err(RwasmError::BadConversionToInteger);
+                    return Err(TrapCode::BadConversionToInteger);
                 }
                 if self <= $rmin || self >= $rmax {
-                    return Err(RwasmError::IntegerOverflow);
+                    return Err(TrapCode::IntegerOverflow);
                 }
                 Ok(self as _)
             }
@@ -338,9 +339,9 @@ macro_rules! impl_try_truncate_into {
         }
     };
     (@wrapped $from:ident, $intermediate:ident, $into:ident) => {
-        impl TryTruncateInto<$into, RwasmError> for $from {
+        impl TryTruncateInto<$into, TrapCode> for $from {
             #[inline]
-            fn try_truncate_into(self) -> Result<$into, RwasmError> {
+            fn try_truncate_into(self) -> Result<$into, TrapCode> {
                 $intermediate::from(self).try_truncate_into()
             }
         }
@@ -639,19 +640,19 @@ macro_rules! impl_integer {
                 self.rotate_right(other as u32)
             }
             #[inline]
-            fn div(self, other: Self) -> Result<Self, RwasmError> {
+            fn div(self, other: Self) -> Result<Self, TrapCode> {
                 if other == 0 {
-                    return Err(RwasmError::IntegerDivisionByZero);
+                    return Err(TrapCode::IntegerDivisionByZero);
                 }
                 match self.overflowing_div(other) {
                     (result, false) => Ok(result),
-                    _ => Err(RwasmError::IntegerOverflow),
+                    _ => Err(TrapCode::IntegerOverflow),
                 }
             }
             #[inline]
-            fn rem(self, other: Self) -> Result<Self, RwasmError> {
+            fn rem(self, other: Self) -> Result<Self, TrapCode> {
                 if other == 0 {
-                    return Err(RwasmError::IntegerDivisionByZero);
+                    return Err(TrapCode::IntegerDivisionByZero);
                 }
                 Ok(self.wrapping_rem(other))
             }
@@ -812,9 +813,9 @@ fn wasm_float_max_regression_works() {
 }
 
 impl_float!(f32, f32, i32);
-impl_float!(f64, f64, i64);
+// impl_float!(f64, f64, i64);
 impl_float!(F32, f32, i32);
-impl_float!(F64, f64, i64);
+// impl_float!(F64, f64, i64);
 
 #[test]
 fn copysign_regression_works() {
@@ -921,9 +922,9 @@ impl WithType for UntypedValue {
     fn with_type(self, ty: ValueType) -> Self::Output {
         match ty {
             ValueType::I32 => Value::I32(self.into()),
-            ValueType::I64 => Value::I64(self.into()),
+            ValueType::I64 => unreachable!(),
             ValueType::F32 => Value::F32(self.into()),
-            ValueType::F64 => Value::F64(self.into()),
+            ValueType::F64 => unreachable!(),
             ValueType::FuncRef => Value::FuncRef(self.into()),
             ValueType::ExternRef => Value::ExternRef(self.into()),
         }
@@ -934,9 +935,9 @@ impl From<Value> for UntypedValue {
     fn from(value: Value) -> Self {
         match value {
             Value::I32(value) => value.into(),
-            Value::I64(value) => value.into(),
+            Value::I64(value) => unreachable!(),
             Value::F32(value) => value.into(),
-            Value::F64(value) => value.into(),
+            Value::F64(value) => unreachable!(),
             Value::FuncRef(value) => value.into(),
             Value::ExternRef(value) => value.into(),
         }

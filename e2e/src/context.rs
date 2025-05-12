@@ -13,7 +13,6 @@ use crate::handler::{
 };
 use anyhow::Result;
 use rwasm::{
-    make_instruction_table,
     Caller,
     ExecutorConfig,
     InstructionTable,

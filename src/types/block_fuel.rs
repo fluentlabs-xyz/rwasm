@@ -1,4 +1,4 @@
-use crate::RwasmError;
+use crate::{RwasmError, TrapCode};
 use bincode::{Decode, Encode};
 
 /// The accumulated fuel to execute a block via [`Instruction::ConsumeFuel`].
@@ -9,12 +9,12 @@ use bincode::{Decode, Encode};
 pub struct BlockFuel(u32);
 
 impl TryFrom<u64> for BlockFuel {
-    type Error = RwasmError;
+    type Error = TrapCode;
 
     fn try_from(index: u64) -> Result<Self, Self::Error> {
         match u32::try_from(index) {
             Ok(index) => Ok(Self(index)),
-            Err(_) => Err(RwasmError::BlockFuelOutOfBounds),
+            Err(_) => Err(TrapCode::BlockFuelOutOfBounds),
         }
     }
 }
@@ -31,12 +31,12 @@ impl BlockFuel {
     /// # Errors
     ///
     /// If the new fuel amount after this operation is out of bounds.
-    pub fn bump_by(&mut self, amount: u64) -> Result<(), RwasmError> {
+    pub fn bump_by(&mut self, amount: u64) -> Result<(), TrapCode> {
         let new_amount = self
             .to_u64()
             .checked_add(amount)
-            .ok_or(RwasmError::BlockFuelOutOfBounds)?;
-        self.0 = u32::try_from(new_amount).map_err(|_| RwasmError::BlockFuelOutOfBounds)?;
+            .ok_or(TrapCode::BlockFuelOutOfBounds)?;
+        self.0 = u32::try_from(new_amount).map_err(|_| TrapCode::BlockFuelOutOfBounds)?;
         Ok(())
     }
 
