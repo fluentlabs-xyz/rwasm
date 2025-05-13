@@ -39,4 +39,5 @@ std = [
     "bitvec/std",
     "rwasm-legacy/std",
 ]
+more-max-pages = []
 debug-print = []

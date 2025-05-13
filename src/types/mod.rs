@@ -39,7 +39,10 @@ pub const N_BYTES_PER_MEMORY_PAGE: u32 = 65536;
 
 /// We have a hard limit for max possible memory used
 /// that is equal to ~64mB
+#[cfg(not(feature = "more-max-pages"))]
 pub const N_MAX_MEMORY_PAGES: u32 = 1024;
+#[cfg(feature = "more-max-pages")]
+pub const N_MAX_MEMORY_PAGES: u32 = 1024 * 2;
 
 /// To optimize a proving process, we have to limit the max
 /// number of pages, tables, etc. We found 1024 is enough.
