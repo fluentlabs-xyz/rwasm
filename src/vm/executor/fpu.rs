@@ -1,4 +1,4 @@
-use crate::{Opcode, OpcodeData, , RwasmExecutor, UntypedValue};
+use crate::{Opcode, OpcodeData, RwasmExecutor, UntypedValue};
 
 #[cold]
 pub(crate) fn exec_fpu_opcode<T>(

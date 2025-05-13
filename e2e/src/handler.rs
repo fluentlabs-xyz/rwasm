@@ -1,4 +1,4 @@
-use rwasm::{Caller, RwasmError, SyscallHandler};
+use rwasm::{Caller, RwasmError, SyscallHandler, TrapCode};
 
 pub const ENTRYPOINT_FUNC_IDX: u32 = u32::MAX;
 
@@ -19,7 +19,7 @@ pub struct TestingContext {
 pub(crate) fn testing_context_syscall_handler(
     mut caller: Caller<TestingContext>,
     func_idx: u32,
-) -> Result<(), RwasmError> {
+) -> Result<(), TrapCode> {
     match func_idx {
         FUNC_PRINT => {
             println!("print");
@@ -31,8 +31,8 @@ pub(crate) fn testing_context_syscall_handler(
             Ok(())
         }
         FUNC_PRINT_I64 => {
-            let value = i64::from(caller.stack_pop());
-            println!("print: {value}");
+            // let value = i64::from(caller.stack_pop());
+            // println!("print: {value}");
             Ok(())
         }
         FUNC_PRINT_F32 => {
@@ -41,8 +41,8 @@ pub(crate) fn testing_context_syscall_handler(
             Ok(())
         }
         FUNC_PRINT_F64 => {
-            let value = f64::from(caller.stack_pop());
-            println!("print: {value}");
+            // let value = f64::from(caller.stack_pop());
+            // println!("print: {value}");
             Ok(())
         }
         FUNC_PRINT_I32_F32 => {
@@ -51,8 +51,8 @@ pub(crate) fn testing_context_syscall_handler(
             Ok(())
         }
         FUNC_PRINT_I64_F64 => {
-            let (v0, v1) = caller.stack_pop2();
-            println!("print: {:?} {:?}", i64::from(v0), f64::from(v1));
+            // let (v0, v1) = caller.stack_pop2();
+            // println!("print: {:?} {:?}", i64::from(v0), f64::from(v1));
             Ok(())
         }
         u32::MAX => {

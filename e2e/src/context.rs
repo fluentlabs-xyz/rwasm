@@ -24,10 +24,10 @@ use rwasm::{
 };
 use rwasm_legacy::{
     core::{ImportLinker, ImportLinkerEntity, ValueType},
+    engine::RwasmConfig,
     module::ImportName,
 };
 use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc, sync::Arc};
-use rwasm_legacy::engine::RwasmConfig;
 use wast::token::{Id, Span};
 
 type TestingRwasmExecutor = RwasmExecutor<TestingContext>;
@@ -206,7 +206,7 @@ impl TestContext<'_> {
         // extract all exports first to calculate rwasm config
         let rwasm_config = {
             if ENABLE_32_BIT_TRANSLATOR {
-                config.rwasm_config(RwasmConfig{
+                config.rwasm_config(RwasmConfig {
                     state_router: None,
                     entrypoint_name: None,
                     import_linker: None,
@@ -424,9 +424,9 @@ impl TestContext<'_> {
             let popped_value = caller.stack_pop();
             self.results[len_results - 1 - i] = match val_type {
                 ValueType::I32 => Value::I32(popped_value.into()),
-                ValueType::I64 => Value::I64(popped_value.into()),
+                // ValueType::I64 => Value::I64(popped_value.into()),
                 ValueType::F32 => Value::F32(popped_value.into()),
-                ValueType::F64 => Value::F64(popped_value.into()),
+                // ValueType::F64 => Value::F64(popped_value.into()),
                 ValueType::FuncRef => Value::FuncRef(popped_value.into()),
                 ValueType::ExternRef => Value::ExternRef(popped_value.into()),
                 _ => unreachable!("unsupported result type: {:?}", val_type),

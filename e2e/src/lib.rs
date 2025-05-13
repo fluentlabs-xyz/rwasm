@@ -50,7 +50,7 @@ macro_rules! define_spec_tests {
     };
 }
 
-pub(crate) const ENABLE_32_BIT_TRANSLATOR: bool = false;
+pub(crate) const ENABLE_32_BIT_TRANSLATOR: bool = true;
 
 define_spec_tests! {
     let runner = run::run_wasm_spec_test;
