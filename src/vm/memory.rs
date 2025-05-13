@@ -6,7 +6,7 @@ pub struct GlobalMemory {
     pub current_pages: Pages,
 }
 
-const MEMORY_MAX_PAGES: Pages = Pages::new_unchecked(N_MAX_MEMORY_PAGES);
+const MEMORY_MAX_PAGES: Pages = Pages::new_unchecked(N_MAX_MEMORY_PAGES * 2);
 
 impl GlobalMemory {
     pub fn new(initial_pages: Pages) -> Self {
