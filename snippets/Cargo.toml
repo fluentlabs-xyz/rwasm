@@ -1,0 +1,24 @@
+[package]
+name = "snippets"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+path = "lib.rs"
+
+[dev-dependencies]
+rand = "0.9.1"
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = 3
+strip = false
+debug = false
+debug-assertions = false
+rpath = false
+codegen-units = 1
+
+[dependencies]
+walrus = "0.23.3"
