@@ -15,6 +15,7 @@ use crate::{
         instr_ptr::InstructionPtr,
         table_entity::TableEntity,
     },
+    OpcodeMeta,
 };
 use core::cmp;
 
@@ -44,6 +45,23 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
                     .take(10)
                     .map(|v| v.as_usize())
                     .collect::<Vec<_>>()
+            );
+        }
+        if vm.tracer.is_some() {
+            let memory_size: u32 = vm.global_memory.current_pages().into();
+            let consumed_fuel = vm.fuel_consumed();
+            let stack = vm.value_stack.dump_stack(vm.sp);
+            vm.tracer.as_mut().unwrap().pre_opcode_state(
+                vm.ip.pc(),
+                instr,
+                stack,
+                &OpcodeMeta {
+                    index: 0,
+                    pos: 0,
+                    opcode: 0,
+                },
+                memory_size,
+                consumed_fuel,
             );
         }
         use Opcode::*;
@@ -289,42 +307,6 @@ wrap_function_result!(visit_table_set);
 wrap_function_result!(visit_table_copy);
 wrap_function_result!(visit_table_init);
 wrap_function_result!(visit_stack_alloc);
-
-// #[cfg(feature = "debug-print")]
-// {
-//     let stack = self
-//         .store
-//         .value_stack
-//         .dump_stack(exec.sp)
-//         .iter()
-//         .rev()
-//         .take(10)
-//         .map(|v| v.as_u64())
-//         .collect::<Vec<_>>();
-//     println!(
-//         "{:02}: {:?}, stack={:?} ({})",
-//         exec.ip.pc(),
-//         instr,
-//         stack,
-//         exec.value_stack.stack_len(exec.sp)
-//     );
-// }
-//
-// #[cfg(feature = "tracer")]
-// if exec.tracer.is_some() {
-//     use rwasm::engine::bytecode::InstrMeta;
-//     let memory_size: u32 = exec.global_memory.current_pages().into();
-//     let consumed_fuel = exec.fuel_consumed();
-//     let stack = exec.value_stack.dump_stack(exec.sp);
-//     exec.tracer.as_mut().unwrap().pre_opcode_state(
-//         exec.ip.pc(),
-//         instr,
-//         stack,
-//         &InstrMeta::new(0, 0, 0),
-//         memory_size,
-//         consumed_fuel,
-//     );
-// }
 
 #[inline(always)]
 pub(crate) fn visit_unreachable<T>(_vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
