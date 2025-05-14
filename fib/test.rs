@@ -1,3 +1,5 @@
+use sp1_core_executor::{ExecutionState, Executor, ExecutorMode, Program};
+
 #[test]
 fn test_rwasm() {
     use rwasm::{
@@ -51,4 +53,14 @@ fn test_rwasm() {
     let result: i32 = Caller::new(&mut vm).stack_pop_as();
     assert_eq!(result, 433494437);
     vm.reset(None);
+}
+
+#[test]
+fn test_riscv() {
+    let elf = include_bytes!("./keccak-elf");
+    let mut executor = Executor::new(Program::from(elf).unwrap(), Default::default());
+    executor.executor_mode = ExecutorMode::Simple;
+    executor.execute().unwrap();
+    println!("global clock: {}", executor.state.global_clk);
+    executor.state = ExecutionState::new(executor.program.pc_start);
 }
