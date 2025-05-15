@@ -1,4 +1,4 @@
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use rwasm_legacy::{
     engine::RwasmConfig,
     rwasm::{BinaryFormat, BinaryFormatWriter, RwasmModule},
