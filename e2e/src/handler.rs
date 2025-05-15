@@ -1,4 +1,4 @@
-use rwasm_executor::{Caller, RwasmError, SyscallHandler};
+use rwasm::{Caller, RwasmError, SyscallHandler};
 
 pub const ENTRYPOINT_FUNC_IDX: u32 = u32::MAX;
 
@@ -56,7 +56,7 @@ pub(crate) fn testing_context_syscall_handler(
             Ok(())
         }
         u32::MAX => {
-            // yeah dirty, but this is how we remember the program counter to reset,
+            // yeah, dirty, but this is how we remember the program counter to reset,
             // since we're 100% sure the function is called using `Call`
             // that we can safely deduct 1 from PC (for `ReturnCall` we need to deduct 2)
             caller.context_mut().program_counter = caller.vm().program_counter() - 1;

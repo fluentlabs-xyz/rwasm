@@ -1,29 +1,43 @@
-[workspace]
-members = [
-    "e2e",
-    "executor",
-    "rwasm",
-]
-exclude = []
-resolver = "2"
-
-[workspace.package]
+[package]
+name = "rwasm"
+edition = "2021"
 authors = [
     "Dmitry Savonin <dmitry@fluentlabs.xyz>",
 ]
 repository = "https://github.com/fluentlabs-xyz/rwasm"
-edition = "2021"
 readme = "README.md"
 license = "MIT"
 keywords = ["wasm", "webassembly", "interpreter", "vm"]
 categories = ["wasm", "no-std", "virtualization"]
 
-[workspace.dependencies]
-byteorder = { version = "1.5.0", default-features = false }
-hashbrown = "0.15.2"
-strum = { version = "0.27.1" }
-strum_macros = { version = "0.27.1" }
+[dependencies]
+wasmparser = { version = "0.100.1", package = "wasmparser-nostd", default-features = false }
+hashbrown = { version = "0.15.2", features = ["alloc"] }
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 paste = { version = "1.0", default-features = false }
-num_enum = { version = "0.7.3" }
+num_enum = { version = "0.7.3", default-features = false }
 bytes = { version = "1.10.1", default-features = false }
+downcast-rs = { version = "2.0.1", default-features = false, features = ["sync"] }
+bincode = { version = "2.0.1", default-features = false, features = ["alloc", "derive"] }
+num-traits = { version = "0.2", default-features = false }
+bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
+libm = "0.2.1"
+
+# an rwasm legacy dependency
+rwasm-legacy = { path = "./legacy", default-features = false }
+
+[dev-dependencies]
+rand = "0.9.1"
+
+[features]
+default = ["std"]
+std = [
+    "num_enum/std",
+    "bytes/std",
+    "bincode/std",
+    "num-traits/std",
+    "bitvec/std",
+    "rwasm-legacy/std",
+]
+more-max-pages = []
+debug-print = []

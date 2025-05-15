@@ -1,4 +1,4 @@
-use super::{TestDescriptor, TestError, TestProfile, TestSpan};
+use super::{TestDescriptor, TestError, TestProfile, TestSpan, ENABLE_32_BIT_TRANSLATOR};
 use crate::handler::{
     testing_context_syscall_handler,
     TestingContext,
@@ -13,65 +13,34 @@ use crate::handler::{
 };
 use anyhow::Result;
 use rwasm::{
-    core::{ImportLinker, ImportLinkerEntity, ValueType, F32, F64},
-    engine::{
-        bytecode::{BlockFuel, Instruction},
-        RwasmConfig,
-        StateRouterConfig,
-    },
-    func::FuncIdx,
-    module::{ImportName, Imported},
-    rwasm::{BinaryFormat, BinaryFormatWriter, RwasmModule},
-    value::split_i64_to_i32,
-    Config,
-    Engine,
-    Extern,
-    Func,
-    FuncType,
-    Global,
-    Linker,
-    Memory,
-    MemoryType,
-    Module,
-    Mutability,
-    Store,
-    Table,
-    TableType,
-    Value,
-};
-use rwasm_executor::{
     make_instruction_table,
     Caller,
     ExecutorConfig,
     InstructionTable,
     RwasmError,
     RwasmExecutor,
-    RwasmModule2,
+    RwasmModule as RwasmModule2,
+    RwasmModule,
+    Value,
+};
+use rwasm_legacy::{
+    core::{ImportLinker, ImportLinkerEntity, ValueType},
+    module::ImportName,
 };
 use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc, sync::Arc};
+use rwasm_legacy::engine::RwasmConfig;
 use wast::token::{Id, Span};
 
 type TestingRwasmExecutor = RwasmExecutor<TestingContext>;
 type Instance = Rc<RefCell<TestingRwasmExecutor>>;
 
-const TESTING_INSTRUCTION_TABLE: InstructionTable<TestingContext> = make_instruction_table();
-
 /// The context of a single Wasm test spec suite run.
 pub struct TestContext<'a> {
-    /// The wasmi config
-    config: Config,
-    /// The `wasmi` engine used for executing functions used during the test.
-    engine: Engine,
-    /// The linker for linking together Wasm test modules.
-    linker: Linker<()>,
-    /// The store to hold all runtime data during the test.
-    store: Store<()>,
     /// The list of all encountered Wasm modules belonging to the test.
     modules: Vec<RwasmModule>,
     /// The list of all instantiated modules.
     instances: HashMap<String, Instance>,
-    import_linker: ImportLinker,
-    extern_types: HashMap<String, FuncType>,
+    extern_types: HashMap<String, rwasm_legacy::FuncType>,
     extern_state: HashMap<String, u32>,
     /// The last touched module instance.
     last_instance: Option<Instance>,
@@ -87,19 +56,21 @@ pub struct TestContext<'a> {
 
 impl<'a> TestContext<'a> {
     /// Creates a new [`TestContext`] with the given [`TestDescriptor`].
-    pub fn new(descriptor: &'a TestDescriptor, config: Config) -> Self {
-        let engine = Engine::new(&config);
-        let mut linker = Linker::new(&engine);
-        let mut store = Store::new(&engine, ());
-        let default_memory = Memory::new(&mut store, MemoryType::new(1, Some(2)).unwrap()).unwrap();
-        let default_table = Table::new(
-            &mut store,
-            TableType::new(ValueType::FuncRef, 10, Some(20)),
-            Value::default(ValueType::FuncRef),
-        )
-        .unwrap();
+    pub fn new(descriptor: &'a TestDescriptor) -> Self {
+        TestContext {
+            modules: Vec::new(),
+            instances: HashMap::new(),
+            extern_types: Default::default(),
+            extern_state: Default::default(),
+            last_instance: None,
+            profile: TestProfile::default(),
+            results: Vec::new(),
+            descriptor,
+        }
+    }
 
-        let import_linker = ImportLinker::from([
+    pub fn import_linker() -> ImportLinker {
+        ImportLinker::from([
             (
                 ImportName::new("spectest", "print"),
                 ImportLinkerEntity {
@@ -123,7 +94,11 @@ impl<'a> TestContext<'a> {
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_I64,
                     fuel_procedure: &[],
-                    params: &[ValueType::I64],
+                    params: if ENABLE_32_BIT_TRANSLATOR {
+                        &[ValueType::I32; 2]
+                    } else {
+                        &[ValueType::I64]
+                    },
                     result: &[],
                 },
             ),
@@ -141,7 +116,11 @@ impl<'a> TestContext<'a> {
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_F64,
                     fuel_procedure: &[],
-                    params: &[ValueType::F64],
+                    params: if ENABLE_32_BIT_TRANSLATOR {
+                        &[ValueType::F32; 2]
+                    } else {
+                        &[ValueType::F64]
+                    },
                     result: &[],
                 },
             ),
@@ -159,27 +138,20 @@ impl<'a> TestContext<'a> {
                 ImportLinkerEntity {
                     func_idx: FUNC_PRINT_I64_F64,
                     fuel_procedure: &[],
-                    params: &[ValueType::I64, ValueType::F64],
+                    params: if ENABLE_32_BIT_TRANSLATOR {
+                        &[
+                            ValueType::I32,
+                            ValueType::I32,
+                            ValueType::F32,
+                            ValueType::F32,
+                        ]
+                    } else {
+                        &[ValueType::I64, ValueType::F64]
+                    },
                     result: &[],
                 },
             ),
-        ]);
-
-        TestContext {
-            config,
-            engine,
-            linker,
-            store,
-            modules: Vec::new(),
-            instances: HashMap::new(),
-            import_linker,
-            extern_types: Default::default(),
-            extern_state: Default::default(),
-            last_instance: None,
-            profile: TestProfile::default(),
-            results: Vec::new(),
-            descriptor,
-        }
+        ])
     }
 }
 
@@ -192,21 +164,6 @@ impl TestContext<'_> {
     /// Returns the [`TestDescriptor`] of the test context.
     pub fn spanned(&self, span: Span) -> TestSpan {
         self.descriptor.spanned(span)
-    }
-
-    /// Returns the [`Engine`] of the [`TestContext`].
-    fn engine(&self) -> &Engine {
-        &self.engine
-    }
-
-    /// Returns a shared reference to the underlying [`Store`].
-    pub fn store(&self) -> &Store<()> {
-        &self.store
-    }
-
-    /// Returns an exclusive reference to the underlying [`Store`].
-    pub fn store_mut(&mut self) -> &mut Store<()> {
-        &mut self.store
     }
 
     /// Returns an exclusive reference to the test profile.
@@ -223,8 +180,6 @@ impl TestContext<'_> {
         &mut self,
         mut module: wast::core::Module,
     ) -> Result<(), TestError> {
-        println!("\n --- creating module ---");
-        // println!("{:?}", module);
         let module_name = module.id.map(|id| id.name());
         let wasm = module.encode().unwrap_or_else(|error| {
             panic!(
@@ -234,9 +189,37 @@ impl TestContext<'_> {
             )
         });
 
+        let mut config = rwasm_legacy::Config::default();
+        config
+            .wasm_mutable_global(false)
+            .wasm_saturating_float_to_int(false)
+            .wasm_sign_extension(false)
+            .wasm_multi_value(false)
+            .wasm_mutable_global(true)
+            .wasm_saturating_float_to_int(true)
+            .wasm_sign_extension(true)
+            .wasm_multi_value(true)
+            .wasm_bulk_memory(true)
+            .wasm_reference_types(true)
+            .wasm_tail_call(true)
+            .wasm_extended_const(true);
+
         // extract all exports first to calculate rwasm config
         let rwasm_config = {
-            let wasm_module = Module::new(self.engine(), &wasm[..])?;
+            if ENABLE_32_BIT_TRANSLATOR {
+                config.rwasm_config(RwasmConfig{
+                    state_router: None,
+                    entrypoint_name: None,
+                    import_linker: None,
+                    wrap_import_functions: false,
+                    translate_drop_keep: false,
+                    allow_malformed_entrypoint_func_type: false,
+                    use_32bit_mode: true,
+                    builtins_consume_fuel: false,
+                });
+            }
+            let engine = rwasm_legacy::Engine::new(&config);
+            let wasm_module = rwasm_legacy::Module::new(&engine, &wasm[..])?;
             let mut states = Vec::<(String, u32)>::new();
             for (k, v) in wasm_module.exports.iter() {
                 let func_idx = v.into_func_idx();
@@ -251,44 +234,27 @@ impl TestContext<'_> {
                 self.extern_state.insert(k.to_string(), state_value);
                 states.push((k.to_string(), state_value));
             }
-            // println!("states={:?}", states);
-            RwasmConfig {
-                state_router: Some(StateRouterConfig {
+            rwasm_legacy::engine::RwasmConfig {
+                state_router: Some(rwasm_legacy::engine::StateRouterConfig {
                     states: states.into(),
-                    opcode: Instruction::Call(u32::MAX.into()),
+                    opcode: rwasm_legacy::engine::bytecode::Instruction::Call(u32::MAX.into()),
                 }),
                 entrypoint_name: None,
-                import_linker: Some(self.import_linker.clone()),
+                import_linker: Some(Self::import_linker()),
                 wrap_import_functions: true,
                 translate_drop_keep: false,
                 allow_malformed_entrypoint_func_type: true,
-                use_32bit_mode: self.config.get_i32_translator(),
+                use_32bit_mode: ENABLE_32_BIT_TRANSLATOR,
                 builtins_consume_fuel: false,
             }
         };
 
-        let mut config = Config::default();
-        config
-            .wasm_mutable_global(false)
-            .wasm_saturating_float_to_int(false)
-            .wasm_sign_extension(false)
-            .wasm_multi_value(false)
-            .wasm_mutable_global(true)
-            .wasm_saturating_float_to_int(true)
-            .wasm_sign_extension(true)
-            .wasm_multi_value(true)
-            .wasm_bulk_memory(true)
-            .wasm_reference_types(true)
-            .wasm_tail_call(true)
-            .wasm_extended_const(true);
         config.rwasm_config(rwasm_config);
-
-        let engine = Engine::new(&config);
-        let wasm_module = Module::new(&engine, &wasm[..])?;
-
-        let rwasm_module = RwasmModule::from_module(&wasm_module);
-        // encode and decode rwasm module (to tests encoding/decoding flow)
+        let engine = rwasm_legacy::Engine::new(&config);
+        let wasm_module = rwasm_legacy::Module::new(&engine, &wasm[..])?;
+        let rwasm_module = rwasm_legacy::rwasm::RwasmModule::from_module(&wasm_module);
         let mut encoded_rwasm_module = Vec::new();
+        use rwasm_legacy::rwasm::BinaryFormat;
         rwasm_module
             .write_binary_to_vec(&mut encoded_rwasm_module)
             .unwrap();
@@ -297,29 +263,14 @@ impl TestContext<'_> {
         println!();
         #[allow(unused)]
         fn trace_rwasm(rwasm_bytecode: &[u8]) {
-            let rwasm_module = RwasmModule::new(rwasm_bytecode).unwrap();
-            let mut func_length = 0usize;
-            let mut expected_func_length = rwasm_module
-                .func_section
-                .first()
-                .copied()
-                .unwrap_or(u32::MAX) as usize;
+            let rwasm_module = RwasmModule::new(rwasm_bytecode);
             let mut func_index = 0usize;
             println!("\n -- function #{} -- ", func_index);
             for (i, instr) in rwasm_module.code_section.instr.iter().enumerate() {
                 println!("{:02}: {:?}", i, instr);
-                func_length += 1;
-                if func_length == expected_func_length {
+                if rwasm_module.func_section.contains(&(i as u32 + 1)) {
                     func_index += 1;
-                    expected_func_length = rwasm_module
-                        .func_section
-                        .get(func_index)
-                        .copied()
-                        .unwrap_or(u32::MAX) as usize;
-                    if expected_func_length != u32::MAX as usize {
-                        println!("\n -- function #{} -- ", func_index);
-                    }
-                    func_length = 0;
+                    println!("\n -- function #{} -- ", func_index);
                 }
             }
             println!("\n")
@@ -335,13 +286,7 @@ impl TestContext<'_> {
         executor.set_syscall_handler(testing_context_syscall_handler);
         executor.context_mut().state = ENTRYPOINT_FUNC_IDX;
         println!(" --- entrypoint ---");
-        let exit_code = executor.run().map_err(|err| {
-            let trap_code = match err {
-                RwasmError::TrapCode(trap_code) => trap_code,
-                _ => unreachable!("not possible error: {:?}", err),
-            };
-            TestError::Wasmi(rwasm::Error::Trap(trap_code.into()))
-        })?;
+        let exit_code = executor.run().map_err(|err| TestError::Rwasm(err))?;
         assert_eq!(exit_code, 0);
         println!();
 
@@ -446,12 +391,12 @@ impl TestContext<'_> {
         let mut caller = Caller::new(&mut instance);
 
         let flat_args: Vec<Value>;
-        let args = if self.store.engine().config().get_i32_translator() {
+        let args = if ENABLE_32_BIT_TRANSLATOR {
             flat_args = args
                 .iter()
                 .cloned()
                 .flat_map(|v| match v {
-                    Value::I64(v) => split_i64_to_i32(v)
+                    Value::I64(v) => rwasm_legacy::value::split_i64_to_i32(v)
                         .into_iter()
                         .map(|v| Value::I32(v))
                         .collect(),
@@ -469,13 +414,7 @@ impl TestContext<'_> {
 
         // change function state for router
         instance.context_mut().state = func_state;
-        let exit_code = instance.run().map_err(|err| {
-            let trap_code = match err {
-                RwasmError::TrapCode(trap_code) => trap_code,
-                _ => unreachable!("not possible error: {:?}", err),
-            };
-            TestError::Wasmi(rwasm::Error::Trap(trap_code.into()))
-        })?;
+        let exit_code = instance.run().map_err(|err| TestError::Rwasm(err))?;
         // copy results
         let func_type = self.extern_types.get(func_name).unwrap();
         let len_results = func_type.results().len();
@@ -513,9 +452,5 @@ impl TestContext<'_> {
         // but by hardcoding this value we can mass most of the global unit tests
         // to cover other functionality
         Ok(Value::I64(42))
-    }
-
-    pub fn get_config(&self) -> &Config {
-        &self.config
     }
 }

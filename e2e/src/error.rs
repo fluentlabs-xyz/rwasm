@@ -1,11 +1,12 @@
-use rwasm::Error as WasmiError;
-use rwasm_executor::RwasmError;
+use rwasm::RwasmError;
+use rwasm_legacy::Error as WasmiError;
 use std::{error::Error, fmt, fmt::Display};
 
 /// Errors that may occur upon Wasm spec test suite execution.
 #[derive(Debug)]
 pub enum TestError {
     Wasmi(WasmiError),
+    Rwasm(RwasmError),
     InstanceNotRegistered {
         name: String,
     },
@@ -47,6 +48,7 @@ impl Display for TestError {
                 )
             }
             Self::Wasmi(wasmi_error) => Display::fmt(wasmi_error, f),
+            Self::Rwasm(rwasm_error) => Display::fmt(rwasm_error, f),
         }
     }
 }
