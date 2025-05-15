@@ -419,12 +419,7 @@ impl ValueStackPtr {
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
-        // let diff = self.ptr as isize - self.src as isize;
-        // if diff < 0 {
-        //     unreachable!("STACK UNDERFLOW")
-        // } else if diff > self.len as isize {
-        //     unreachable!("STACK OVERFLOW")
-        // }
+        debug_assert!(self.ptr >= self.src, "stack underflow");
     }
 
     /// Decreases the [`ValueStackPtr`] of `self` by one.
@@ -434,9 +429,7 @@ impl ValueStackPtr {
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.sub(delta) };
-        if self.ptr < self.src {
-            unreachable!("STACK UNDERFLOW")
-        }
+        debug_assert!(self.ptr >= self.src, "stack underflow");
     }
 
     /// Pushes the `T` to the end of the [`ValueStack`].

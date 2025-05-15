@@ -28,6 +28,7 @@ use crate::{
         tracer::Tracer,
         value_stack::{ValueStack, ValueStackPtr},
     },
+    Caller,
 };
 use alloc::{sync::Arc, vec, vec::Vec};
 use bitvec::{bitvec, prelude::BitVec};
@@ -185,6 +186,10 @@ impl<T> RwasmExecutor<T> {
             empty_elements_segments: dropped_elements,
             empty_data_segments,
         }
+    }
+
+    pub fn caller(&mut self) -> Caller<T> {
+        Caller::new(self)
     }
 
     pub fn set_syscall_handler(&mut self, handler: SyscallHandler<T>) {

@@ -22,3 +22,4 @@ codegen-units = 1
 
 [dependencies]
 walrus = "0.23.3"
+rwasm = { path = ".." }

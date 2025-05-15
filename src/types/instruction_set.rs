@@ -77,7 +77,7 @@ macro_rules! impl_opcode {
 
 impl InstructionSet {
     pub fn new() -> Self {
-        Self::default()
+        Self { instr: vec![] }
     }
 
     pub fn push(&mut self, opcode: Opcode, data: OpcodeData) -> u32 {

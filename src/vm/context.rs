@@ -84,4 +84,8 @@ impl<'a, T> Caller<'a, T> {
     pub fn context(&self) -> &T {
         self.vm.context()
     }
+
+    pub fn dump_stack(&mut self) -> Vec<UntypedValue> {
+        self.vm.value_stack.dump_stack(self.vm.sp)
+    }
 }

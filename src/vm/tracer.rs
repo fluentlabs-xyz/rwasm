@@ -1,4 +1,7 @@
-use crate::types::{Opcode, OpcodeMeta, TableIdx, UntypedValue};
+use crate::{
+    types::{Opcode, OpcodeMeta, TableIdx, UntypedValue},
+    OpcodeData,
+};
 use alloc::{collections::BTreeMap, string::String, vec::Vec};
 use core::{
     fmt::{Debug, Formatter},
@@ -30,6 +33,7 @@ pub struct TraceTableSizeState {
 pub struct TracerInstrState {
     pub program_counter: u32,
     pub opcode: Opcode,
+    pub value: OpcodeData,
     pub memory_changes: Vec<TracerMemoryState>,
     pub table_changes: Vec<TraceTableState>,
     pub table_size_changes: Vec<TraceTableSizeState>,
@@ -105,6 +109,7 @@ impl Tracer {
         &mut self,
         program_counter: u32,
         opcode: Opcode,
+        value: OpcodeData,
         stack: Vec<UntypedValue>,
         meta: &OpcodeMeta,
         memory_size: u32,
@@ -116,6 +121,7 @@ impl Tracer {
         let opcode_state = TracerInstrState {
             program_counter,
             opcode,
+            value,
             memory_changes,
             table_changes,
             table_size_changes,

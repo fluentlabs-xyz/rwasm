@@ -54,6 +54,7 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
             vm.tracer.as_mut().unwrap().pre_opcode_state(
                 vm.ip.pc(),
                 instr,
+                vm.ip.data().clone(),
                 stack,
                 &OpcodeMeta {
                     index: 0,

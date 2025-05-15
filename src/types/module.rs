@@ -36,6 +36,16 @@ impl RwasmModule {
         }
     }
 
+    pub fn with_one_function(code_section: InstructionSet) -> Self {
+        RwasmModule {
+            code_section,
+            memory_section: vec![],
+            element_section: vec![],
+            source_pc: 0,
+            func_section: vec![0],
+        }
+    }
+
     pub fn new(sink: &[u8]) -> Self {
         let module: RwasmModule;
         (module, _) = bincode::decode_from_slice(sink, bincode::config::legacy())
