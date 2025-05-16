@@ -43,7 +43,7 @@ pub const N_BYTES_PER_MEMORY_PAGE: u32 = 65536;
 pub const N_MAX_MEMORY_PAGES: u32 = 1024;
 /// Increased value needed for SVM for now
 #[cfg(feature = "more-max-pages")]
-pub const N_MAX_MEMORY_PAGES: u32 = 2048;
+pub const N_MAX_MEMORY_PAGES: u32 = 1024 * 10;
 
 /// To optimize a proving process, we have to limit the max
 /// number of pages, tables, etc. We found 1024 is enough.
