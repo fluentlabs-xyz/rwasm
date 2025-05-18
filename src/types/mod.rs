@@ -1,10 +1,12 @@
 mod address_offset;
 mod block_fuel;
 mod branch_offset;
+mod compiled_expr;
 mod drop_keep;
 mod error;
 mod fuel_costs;
 mod func_ref;
+mod global_variable;
 mod host_error;
 mod import_linker;
 mod import_name;
@@ -23,6 +25,7 @@ pub const N_MAX_TABLE_SIZE: usize = 1024;
 pub const N_MAX_RECURSION_DEPTH: usize = 1024;
 
 pub const N_MAX_DATA_SEGMENTS: usize = 1024;
+pub const N_MAX_TABLE_ELEMENTS: usize = 1024;
 
 pub const DEFAULT_TABLE_LIMIT: usize = 1024;
 pub const DEFAULT_MEMORY_LIMIT: usize = 10000;
@@ -53,15 +56,19 @@ pub const N_MAX_STACK_HEIGHT: usize = 4096;
 
 pub const DEFAULT_MEMORY_INDEX: u32 = 0;
 
+pub type FuncTypeIdx = u32;
+pub type MemoryIdx = u32;
 pub type CompiledFunc = u32;
 
 pub use address_offset::*;
 pub use block_fuel::*;
 pub use branch_offset::*;
+pub use compiled_expr::*;
 pub use drop_keep::*;
 pub use error::*;
 pub use fuel_costs::*;
 pub use func_ref::*;
+pub use global_variable::*;
 pub use host_error::*;
 pub use import_linker::*;
 pub use import_name::*;

@@ -110,6 +110,30 @@ impl<Context> Decode<Context> for RwasmModule {
     }
 }
 
+impl core::fmt::Display for RwasmModule {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "RwasmModule {{")?;
+        for (pos, (opcode, data)) in self.code_section.iter().enumerate() {
+            let pos = pos as u32;
+            if self.func_section.contains(&pos) {
+                if pos != self.func_section.first().copied().unwrap() {
+                    writeln!(f, " .function_end\n")?;
+                }
+                writeln!(f, " .function_begin #{}", pos)?;
+            }
+            write!(f, "  {:04x}: {}({})", pos, opcode, data)?;
+            if pos == self.source_pc {
+                write!(f, " <= SOURCE PC")?;
+            }
+            writeln!(f)?;
+        }
+        writeln!(f, " .function_end\n")?;
+        writeln!(f, " .ro_data: {:x?},", self.memory_section.as_slice())?;
+        writeln!(f, "}}")?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{instruction_set, types::RwasmModule};

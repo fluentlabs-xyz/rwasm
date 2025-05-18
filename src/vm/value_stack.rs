@@ -157,7 +157,7 @@ impl ValueStack {
     ///
     /// # Safety
     ///
-    /// This is safe since all wasmi bytecode has been validated
+    /// This is safe since all rwasm bytecode has been validated
     /// during translation and therefore cannot result in out of
     /// bounds accesses.
     ///
@@ -167,7 +167,7 @@ impl ValueStack {
     #[inline]
     fn get_release_unchecked_mut(&mut self, index: usize) -> &mut UntypedValue {
         debug_assert!(index < self.capacity());
-        // Safety: This is safe since all wasmi bytecode has been validated
+        // Safety: This is safe since all rwasm bytecode has been validated
         //         during translation and therefore cannot result in out of
         //         bounds accesses.
         unsafe { self.entries.get_unchecked_mut(index) }
@@ -326,7 +326,7 @@ impl ValueStackPtr {
     #[inline]
     pub fn offset_from(self, other: Self) -> isize {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         unsafe { self.ptr.offset_from(other.ptr) }
     }
@@ -336,7 +336,7 @@ impl ValueStackPtr {
     #[inline]
     fn get(self) -> UntypedValue {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         unsafe { *self.ptr }
     }
@@ -345,7 +345,7 @@ impl ValueStackPtr {
     #[inline]
     fn set(self, value: UntypedValue) {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         *unsafe { &mut *self.ptr } = value;
     }
@@ -416,7 +416,7 @@ impl ValueStackPtr {
     #[inline]
     fn inc_by(&mut self, delta: usize) {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
         debug_assert!(self.ptr >= self.src, "stack underflow");
@@ -426,7 +426,7 @@ impl ValueStackPtr {
     #[inline]
     fn dec_by(&mut self, delta: usize) {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.sub(delta) };
         debug_assert!(self.ptr >= self.src, "stack underflow");

@@ -207,7 +207,7 @@ pub const fn make_instruction_table<T>() -> InstructionTable<T> {
         tables[I64Extend8S as usize] = visit_i64_extend8_s;
         tables[I64Extend16S as usize] = visit_i64_extend16_s;
         tables[I64Extend32S as usize] = visit_i64_extend32_s;
-        tables[StackAlloc as usize] = visit_stack_alloc_wrapped;
+        tables[StackCheck as usize] = visit_stack_alloc_wrapped;
         tables
     }
 }

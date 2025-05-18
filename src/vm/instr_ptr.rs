@@ -42,7 +42,7 @@ impl InstructionPtr {
     #[inline(always)]
     pub fn offset(&mut self, by: isize) {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.offset(by) };
     }
@@ -50,7 +50,7 @@ impl InstructionPtr {
     #[inline(always)]
     pub fn add(&mut self, delta: usize) {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
     }
@@ -65,7 +65,7 @@ impl InstructionPtr {
     #[inline(always)]
     pub fn get(&self) -> Opcode {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         unsafe { &*self.ptr }.0
     }
@@ -73,7 +73,7 @@ impl InstructionPtr {
     #[inline(always)]
     pub fn data(&self) -> &OpcodeData {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         &unsafe { &*self.ptr }.1
     }

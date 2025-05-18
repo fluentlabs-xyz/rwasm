@@ -21,7 +21,7 @@ fn bench_wasmi(b: &mut Bencher) {
         let _result = instance
             .get_typed_func::<i32, i32>(&store, "main")
             .unwrap()
-            .call(&mut store, 43)
+            .call(&mut store, 47)
             .unwrap();
         // assert_eq!(result, 433494437);
     });
@@ -74,7 +74,7 @@ fn bench_rwasm(b: &mut Bencher) {
     b.iter(|| {
         let rwasm_module = RwasmModule::new(&encoded_rwasm_module);
         let mut vm = RwasmExecutor::new(Arc::new(rwasm_module), ExecutorConfig::default(), ());
-        Caller::new(&mut vm).stack_push(43);
+        Caller::new(&mut vm).stack_push(47);
         vm.run().unwrap();
         let _result: i32 = Caller::new(&mut vm).stack_pop_as();
         // assert_eq!(result, 433494437);
@@ -105,6 +105,6 @@ fn bench_native(b: &mut Bencher) {
             }
             a
         }
-        core::hint::black_box(main(core::hint::black_box(43)));
+        core::hint::black_box(main(core::hint::black_box(47)));
     });
 }

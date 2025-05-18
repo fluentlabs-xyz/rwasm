@@ -1612,7 +1612,7 @@ macro_rules! impl_encode_untyped_slice {
                             $(
                                 let untyped = <$tuple as Into<UntypedValue>>::into([< _self_ $tuple >]);
                                 if [< _origin_results_ $tuple >] == &ValueType::I64 {
-                                    let [low, high] = split_i64_to_i32(untyped.as_u64() as i64);
+                                    let (low, high) = split_i64_to_i32(untyped.as_u64() as i64);
                                     results[i] = UntypedValue::from(high);
                                     i += 1;
                                     results[i] = UntypedValue::from(low);
@@ -1649,6 +1649,10 @@ impl UntypedValue {
 
     pub fn as_i32(self) -> i32 {
         i32::from(self)
+    }
+
+    pub fn as_i64(self) -> i64 {
+        i64::from(self)
     }
 
     pub fn as_u64(self) -> u64 {

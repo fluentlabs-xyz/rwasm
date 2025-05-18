@@ -1,3 +1,22 @@
+mod config;
+mod control_flow;
+mod drop_keep;
+mod entrypoint;
+mod error;
+mod func_builder;
+mod instr_loc;
+mod labels;
+mod locals_registry;
+mod parser;
+mod segment_builder;
+#[cfg(test)]
+mod tests;
+mod translator;
+mod utils;
+mod value_stack;
+
+pub use self::{config::CompilationConfig, error::CompilationError};
+use alloc::{vec, vec::Vec};
 use rwasm_legacy::{
     engine::RwasmConfig,
     rwasm::{BinaryFormat, BinaryFormatWriter, RwasmModule},

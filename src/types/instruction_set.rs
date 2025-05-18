@@ -1,21 +1,24 @@
-use crate::types::{
-    AddressOffset,
-    BlockFuel,
-    BranchOffset,
-    BranchTableTargets,
-    CompiledFunc,
-    DataSegmentIdx,
-    DropKeep,
-    ElementSegmentIdx,
-    FuncIdx,
-    GlobalIdx,
-    LocalDepth,
-    Opcode,
-    OpcodeData,
-    SignatureIdx,
-    StackAlloc,
-    TableIdx,
-    UntypedValue,
+use crate::{
+    types::{
+        AddressOffset,
+        BlockFuel,
+        BranchOffset,
+        BranchTableTargets,
+        CompiledFunc,
+        DataSegmentIdx,
+        DropKeep,
+        ElementSegmentIdx,
+        FuncIdx,
+        GlobalIdx,
+        LocalDepth,
+        Opcode,
+        OpcodeData,
+        SignatureIdx,
+        StackAlloc,
+        TableIdx,
+        UntypedValue,
+    },
+    CompilationError,
 };
 use alloc::{vec, vec::Vec};
 use bincode::{
@@ -49,9 +52,7 @@ impl DerefMut for InstructionSet {
 
 impl Default for InstructionSet {
     fn default() -> Self {
-        Self {
-            instr: vec![(Opcode::Return, OpcodeData::DropKeep(DropKeep::default()))],
-        }
+        Self { instr: vec![] }
     }
 }
 
@@ -105,6 +106,10 @@ impl InstructionSet {
         if inject_return && !self.is_return_last() {
             self.op_return(DropKeep::default());
         }
+    }
+
+    pub fn last_nth_mut(&mut self, offset: usize) -> Option<&mut (Opcode, OpcodeData)> {
+        self.instr.iter_mut().rev().nth(offset)
     }
 
     impl_opcode!(LocalGet(LocalDepth));
@@ -309,7 +314,26 @@ impl InstructionSet {
     impl_opcode!(I64TruncSatF32U);
     impl_opcode!(I64TruncSatF64S);
     impl_opcode!(I64TruncSatF64U);
-    impl_opcode!(StackAlloc(StackAlloc));
+    impl_opcode!(StackCheck(StackAlloc));
+
+    /// Adds the given `delta` amount of fuel to the [`ConsumeFuel`] instruction `instr`.
+    ///
+    /// # Panics
+    ///
+    /// - If `instr` does not resolve to a [`ConsumeFuel`] instruction.
+    /// - If the amount of consumed fuel for `instr` overflows.
+    ///
+    /// [`ConsumeFuel`]: enum.Instruction.html#variant.ConsumeFuel
+    pub fn bump_fuel_consumption(
+        &mut self,
+        instr: u32,
+        delta: u64,
+    ) -> Result<(), CompilationError> {
+        match &mut self.instr[instr as usize] {
+            (Opcode::ConsumeFuel, OpcodeData::BlockFuel(fuel)) => fuel.bump_by(delta),
+            _ => unreachable!("instruction {:?} is not a `ConsumeFuel` instruction", instr),
+        }
+    }
 }
 
 #[macro_export]
@@ -430,7 +454,7 @@ fn decode_instruction_data<Context, D: Decoder<Context = Context>>(
         I32Const | I64Const | F32Const | F64Const => {
             OpcodeData::UntypedValue(Decode::decode(decoder)?)
         }
-        StackAlloc => OpcodeData::StackAlloc(Decode::decode(decoder)?),
+        StackCheck => OpcodeData::StackAlloc(Decode::decode(decoder)?),
         _ => OpcodeData::EmptyData,
     };
     Ok(instruction_data)
@@ -442,5 +466,14 @@ fn instruction_not_found_err(instr_value: u8) -> DecodeError {
         type_name: "Instruction",
         allowed: &RANGE,
         found: instr_value as u32,
+    }
+}
+
+impl core::fmt::Display for InstructionSet {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        for (i, instr) in self.instr.iter().enumerate() {
+            writeln!(f, " - {:0>4x}: {}({})", i, instr.0, instr.1)?;
+        }
+        Ok(())
     }
 }
