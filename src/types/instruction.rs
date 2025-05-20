@@ -18,8 +18,10 @@ use crate::{
     StackAlloc,
 };
 use alloc::{format, vec::Vec};
+use serde::{Deserialize, Serialize};
 use core::fmt::{Display, Formatter};
 
+#[derive(Serialize,Deserialize)]
 #[derive(
     Debug,
     Copy,
