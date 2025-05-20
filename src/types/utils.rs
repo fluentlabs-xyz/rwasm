@@ -1,3 +1,4 @@
+use super::Opcode;
 use crate::RwasmError;
 use bincode::{Decode, Encode};
 
@@ -213,4 +214,171 @@ impl BranchTableTargets {
 #[repr(transparent)]
 pub struct StackAlloc {
     pub max_stack_height: u32,
+}
+
+impl Opcode {
+    pub fn is_alu_instruction(self) -> bool {
+        match self {
+            Opcode::I32Eq
+            | Opcode::I32Eqz
+            | Opcode::I32Ne
+            | Opcode::I32LtS
+            | Opcode::I32LtU
+            | Opcode::I32GtU
+            | Opcode::I32GtS
+            | Opcode::I32LeS
+            | Opcode::I32LeU
+            | Opcode::I32GeS
+            | Opcode::I32GeU
+            | Opcode::I32Clz
+            | Opcode::I32Ctz
+            | Opcode::I32Popcnt
+            | Opcode::I32Add
+            | Opcode::I32Sub
+            | Opcode::I32Mul
+            | Opcode::I32DivS
+            | Opcode::I32DivU
+            | Opcode::I32RemS
+            | Opcode::I32RemU
+            | Opcode::I32And
+            | Opcode::I32Or
+            | Opcode::I32Xor
+            | Opcode::I32Shl
+            | Opcode::I32ShrS
+            | Opcode::I32ShrU
+            | Opcode::I32Rotl
+            | Opcode::I32Rotr => true,
+
+            _ => false,
+        }
+    }
+
+    pub fn is_memory_instruction(self) -> bool {
+        match self {
+            Opcode::I32Load8S
+            | Opcode::I32Load8U
+            | Opcode::I32Load16S
+            | Opcode::I32Load16U
+            | Opcode::I32Load
+            | Opcode::I32Store8
+            | Opcode::I32Store16
+            | Opcode::I32Store => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_memory_load_instruction(self) -> bool {
+        match self {
+            Opcode::I32Load8S
+            | Opcode::I32Load8U
+            | Opcode::I32Load16S
+            | Opcode::I32Load16U
+            | Opcode::I32Load => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_memory_store_instruction(self) -> bool {
+        match self {
+            Opcode::I32Store8 | Opcode::I32Store16 | Opcode::I32Store => true,
+
+            _ => false,
+        }
+    }
+
+    pub fn is_ecall_instruction(self) -> bool {
+        match self {
+            _ => false,
+        }
+    }
+
+    pub fn is_branch_instruction(self) -> bool {
+        match self {
+            Opcode::Br | Opcode::BrIfEqz | Opcode::BrIfNez => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_jump_instruction(self) -> bool {
+        match self {
+            _ => false,
+        }
+    }
+
+    pub fn is_halt(self) -> bool {
+        match self {
+            _ => false,
+        }
+    }
+
+    pub fn is_unary_instruction(self) -> bool {
+        match self {
+            Opcode::I32Clz | Opcode::I32Ctz | Opcode::I32Popcnt | Opcode::I32Eqz => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_binary_instruction(self) -> bool {
+        match self {
+            Opcode::I32Eq
+            | Opcode::I32Ne
+            | Opcode::I32LtS
+            | Opcode::I32LtU
+            | Opcode::I32GtU
+            | Opcode::I32GtS
+            | Opcode::I32LeS
+            | Opcode::I32LeU
+            | Opcode::I32GeS
+            | Opcode::I32GeU
+            | Opcode::I32Add
+            | Opcode::I32Sub
+            | Opcode::I32Mul
+            | Opcode::I32DivS
+            | Opcode::I32DivU
+            | Opcode::I32RemS
+            | Opcode::I32RemU
+            | Opcode::I32And
+            | Opcode::I32Or
+            | Opcode::I32Xor
+            | Opcode::I32Shl
+            | Opcode::I32ShrS
+            | Opcode::I32ShrU
+            | Opcode::I32Rotl
+            | Opcode::I32Rotr => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_nullary(&self) -> bool {
+        match self {
+            Opcode::Br | Opcode::I32Const => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_call_instruction(self) -> bool {
+        match self {
+            Opcode::Call
+            | Opcode::CallIndirect
+            | Opcode::CallInternal
+            | Opcode::ReturnCallIndirect
+            | Opcode::ReturnCallInternal
+            | Opcode::Return => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_const_instruction(self) -> bool {
+        match self {
+            Opcode::I32Const => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_local_instruction(self) -> bool {
+        match self {
+            Opcode::LocalGet | Opcode::LocalSet | Opcode::LocalTee => true,
+            _ => false,
+        }
+    }
 }

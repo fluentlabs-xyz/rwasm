@@ -50,16 +50,13 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
         if vm.tracer.is_some() {
             let memory_size: u32 = vm.global_memory.current_pages().into();
             let consumed_fuel = vm.fuel_consumed();
-            let stack = vm.value_stack.dump_stack(vm.sp);
+            
             vm.tracer.as_mut().unwrap().pre_opcode_state(
                 vm.ip.pc(),
+                vm.sp,
+                vm.vmstate.shard,
+                vm.vmstate.clk,
                 instr,
-                stack,
-                &OpcodeMeta {
-                    index: 0,
-                    pos: 0,
-                    opcode: 0,
-                },
                 memory_size,
                 consumed_fuel,
             );

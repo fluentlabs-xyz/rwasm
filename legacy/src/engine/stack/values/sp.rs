@@ -361,4 +361,10 @@ impl ValueStackPtr {
         drop_keep_impl(*self, drop_keep);
         self.dec_by(drop as usize);
     }
+
+    pub fn into_usize(&self)->usize{
+        unsafe {
+            (*self.ptr).as_usize()
+        }
+    }
 }

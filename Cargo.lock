@@ -310,6 +310,7 @@ dependencies = [
  "paste",
  "rand",
  "rwasm-legacy",
+ "serde",
  "tiny-keccak",
  "wasmparser-nostd",
 ]

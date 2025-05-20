@@ -22,7 +22,7 @@ bincode = { version = "2.0.1", default-features = false, features = ["alloc", "d
 num-traits = { version = "0.2", default-features = false }
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
 libm = "0.2.1"
-
+serde = {version = "*",features = ["derive"]}
 # an rwasm legacy dependency
 rwasm-legacy = { path = "./legacy", default-features = false }
 

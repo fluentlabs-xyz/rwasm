@@ -334,7 +334,7 @@ impl ValueStackPtr {
     /// Returns the [`UntypedValue`] at the current stack pointer.
     #[must_use]
     #[inline]
-    fn get(self) -> UntypedValue {
+    pub (crate) fn  get(self) -> UntypedValue {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
         //         Wasm validation and `wasmi` codegen to never run out
         //         of valid bounds using this method.
@@ -649,5 +649,11 @@ impl ValueStackPtr {
         }
         drop_keep_impl(*self, drop_keep);
         self.dec_by(drop as usize);
+    }
+     #[inline]
+    pub fn to_position(&self)->u32{
+       unsafe {
+            (*self.src).as_u32()
+       }
     }
 }
