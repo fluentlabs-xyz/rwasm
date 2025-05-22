@@ -1,14 +1,5 @@
 use crate::{
-    types::{
-        Opcode,
-        OpcodeData,
-        Pages,
-        RwasmError,
-        UntypedValue,
-        FUNC_REF_NULL,
-        FUNC_REF_OFFSET,
-        N_MAX_RECURSION_DEPTH,
-    },
+    types::{Opcode, OpcodeData, Pages, RwasmError, UntypedValue, N_MAX_RECURSION_DEPTH},
     vm::{
         context::Caller,
         executor::RwasmExecutor,
@@ -16,6 +7,7 @@ use crate::{
         table_entity::TableEntity,
     },
     OpcodeMeta,
+    NULL_FUNC_IDX,
 };
 use core::cmp;
 
@@ -35,9 +27,10 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
         {
             let stack = vm.value_stack.dump_stack(vm.sp);
             println!(
-                "{}:\t {:?} \tstack({}):{:?}",
+                "{}:\t {:?}({}) \tstack({}):{:?}",
                 vm.ip.pc(),
                 instr,
+                vm.ip.data(),
                 stack.len(),
                 stack
                     .iter()
@@ -265,7 +258,7 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
             I64Extend8S => visit_i64_extend8_s(vm),
             I64Extend16S => visit_i64_extend16_s(vm),
             I64Extend32S => visit_i64_extend32_s(vm),
-            StackAlloc => visit_stack_alloc_wrapped(vm),
+            StackCheck => visit_stack_alloc_wrapped(vm),
         }
     }
     vm.stop_exec = false;
@@ -539,7 +532,6 @@ pub(crate) fn visit_return_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result
     if func_idx == 0 {
         return Err(RwasmError::IndirectCallToNull.into());
     }
-    let func_idx = func_idx - FUNC_REF_OFFSET;
     vm.execute_call_internal(false, 3, func_idx)
 }
 
@@ -597,10 +589,9 @@ pub(crate) fn visit_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rw
         .get_untyped(func_index)
         .map(|v| v.as_u32())
         .ok_or(RwasmError::TableOutOfBounds)?;
-    if func_idx == FUNC_REF_NULL {
+    if func_idx == NULL_FUNC_IDX {
         return Err(RwasmError::IndirectCallToNull);
     }
-    let func_idx = func_idx - FUNC_REF_OFFSET;
     // call func
     vm.ip.add(2);
     vm.value_stack.sync_stack_ptr(vm.sp);
@@ -910,7 +901,9 @@ pub(crate) fn visit_table_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
         vm.try_consume_fuel(vm.fuel_costs.fuel_for_elements(delta as u64))?;
     }
     let table = vm.tables.entry(table_idx).or_insert_with(TableEntity::new);
+    println!("table_grow: {:?}", table);
     let result = table.grow_untyped(delta, init);
+    println!("table_grow: {:?}", table);
     vm.sp.push_as(result);
     if let Some(tracer) = vm.tracer.as_mut() {
         tracer.table_size_change(table_idx.to_u32(), init.into(), delta);
@@ -1044,7 +1037,9 @@ pub(crate) fn visit_table_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
         module_elements_section = &[];
     }
     let table = vm.tables.get_mut(&table_idx).expect("rwasm: missing table");
+    println!("table_init: {:?}", table);
     table.init_untyped(dst_index, module_elements_section, src_index, len)?;
+    println!("table_init: {:?}", table);
 
     vm.ip.add(2);
     Ok(())
@@ -1067,7 +1062,7 @@ pub(crate) fn visit_ref_func<T>(vm: &mut RwasmExecutor<T>) {
         OpcodeData::FuncIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
     };
-    vm.sp.push_as(func_idx.to_u32() + FUNC_REF_OFFSET);
+    vm.sp.push_as(func_idx.to_u32());
     vm.ip.add(1);
 }
 

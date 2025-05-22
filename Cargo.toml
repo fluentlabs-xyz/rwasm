@@ -22,22 +22,25 @@ bincode = { version = "2.0.1", default-features = false, features = ["alloc", "d
 num-traits = { version = "0.2", default-features = false }
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
 libm = "0.2.1"
+smallvec = "1.15.0"
 
-# an rwasm legacy dependency
-rwasm-legacy = { path = "./legacy", default-features = false }
+# a rwasm legacy dependency
+#rwasm-legacy = { path = "./legacy", default-features = false }
 
 [dev-dependencies]
 rand = "0.9.1"
+wat = "1.230.0"
 
 [features]
-default = ["std"]
+default = ["std", "debug-print"]
 std = [
     "num_enum/std",
     "bytes/std",
     "bincode/std",
     "num-traits/std",
     "bitvec/std",
-    "rwasm-legacy/std",
+    #    "rwasm-legacy/std",
 ]
 more-max-pages = []
+e2e = []
 debug-print = []

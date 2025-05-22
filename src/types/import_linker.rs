@@ -1,6 +1,7 @@
-use crate::{ImportName, ValueType};
+use crate::ImportName;
 use core::ops::{Deref, DerefMut};
 use hashbrown::HashMap;
+use wasmparser::{FuncType, ValType};
 
 #[derive(Debug, Default, Clone)]
 pub struct ImportLinker {
@@ -22,10 +23,10 @@ impl DerefMut for ImportLinker {
 
 #[derive(Debug, Clone)]
 pub struct ImportLinkerEntity {
-    pub func_idx: u32,
+    pub sys_func_idx: u32,
     pub block_fuel: u32,
-    pub params: &'static [ValueType],
-    pub result: &'static [ValueType],
+    pub params: &'static [ValType],
+    pub result: &'static [ValType],
 }
 
 impl<const N: usize> From<[(&'static str, &'static str, ImportLinkerEntity); N]> for ImportLinker {
@@ -46,19 +47,40 @@ impl<const N: usize> From<[(ImportName, ImportLinkerEntity); N]> for ImportLinke
     }
 }
 
+impl ImportLinkerEntity {
+    pub fn matches_func_type(&self, func_type: &FuncType) -> bool {
+        if func_type.params().len() != self.params.len()
+            || func_type.results().len() != self.result.len()
+        {
+            return false;
+        }
+        for (a, b) in func_type.params().iter().zip(self.params.iter()) {
+            if a != b {
+                return false;
+            }
+        }
+        for (a, b) in func_type.results().iter().zip(self.result.iter()) {
+            if a != b {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 impl ImportLinker {
     pub fn insert_function(
         &mut self,
         import_name: ImportName,
-        func_idx: u32,
+        sys_func_idx: u32,
         block_fuel: u32,
-        params: &'static [ValueType],
-        result: &'static [ValueType],
+        params: &'static [ValType],
+        result: &'static [ValType],
     ) {
         let last_value = self.func_by_name.insert(
             import_name,
             ImportLinkerEntity {
-                func_idx,
+                sys_func_idx,
                 block_fuel,
                 params,
                 result,

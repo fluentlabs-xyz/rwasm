@@ -18,7 +18,6 @@ use crate::{
     StackAlloc,
 };
 use alloc::{format, vec::Vec};
-use core::fmt::{Display, Formatter};
 
 #[derive(
     Debug,
@@ -232,11 +231,11 @@ pub enum Opcode {
     I64TruncSatF32U = 0xc3,
     I64TruncSatF64S = 0xc4,
     I64TruncSatF64U = 0xc5,
-    StackAlloc = 0xc6,
+    StackCheck = 0xc6,
 }
 
-impl Display for Opcode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+impl core::fmt::Display for Opcode {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let name = format!("{:?}", self);
         let name: Vec<_> = name.split('(').collect();
         write!(f, "{}", name[0])
@@ -270,6 +269,31 @@ impl OpcodeData {
             *old_offset = offset.into();
         } else {
             unreachable!("rwasm: opcode data is not a branch offset")
+        }
+    }
+}
+
+impl core::fmt::Display for OpcodeData {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            OpcodeData::EmptyData => write!(f, ""),
+            OpcodeData::LocalDepth(value) => write!(f, "{}", value.to_usize()),
+            OpcodeData::BranchOffset(value) => write!(f, "{}", value.to_i32()),
+            OpcodeData::BranchTableTargets(value) => write!(f, "{}", value.to_usize()),
+            OpcodeData::BlockFuel(value) => write!(f, "{}", value.to_u64()),
+            OpcodeData::DropKeep(value) => write!(f, "drop={}, keep={}", value.drop, value.keep),
+            OpcodeData::CompiledFunc(value) => write!(f, "{}", value),
+            OpcodeData::FuncIdx(value) => write!(f, "{}", value.to_u32()),
+            OpcodeData::SignatureIdx(value) => write!(f, "{}", value.to_u32()),
+            OpcodeData::GlobalIdx(value) => write!(f, "{}", value.to_u32()),
+            OpcodeData::AddressOffset(value) => write!(f, "{}", value.into_inner()),
+            OpcodeData::DataSegmentIdx(value) => write!(f, "{}", value.to_u32()),
+            OpcodeData::TableIdx(value) => write!(f, "{}", value.to_u32()),
+            OpcodeData::ElementSegmentIdx(value) => write!(f, "{}", value.to_u32()),
+            OpcodeData::UntypedValue(value) => write!(f, "{}", value.as_i64()),
+            OpcodeData::StackAlloc(value) => {
+                write!(f, "max_stack_height={}", value.max_stack_height)
+            }
         }
     }
 }

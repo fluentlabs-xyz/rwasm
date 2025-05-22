@@ -1,4 +1,4 @@
-use crate::RwasmError;
+use crate::CompilationError;
 use bincode::{Decode, Encode};
 
 /// A 32-bit encoded `f64` value.
@@ -45,6 +45,8 @@ impl FuncIdx {
         self.0
     }
 }
+
+pub const NULL_FUNC_IDX: u32 = 0u32;
 
 /// A table index.
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
@@ -186,12 +188,12 @@ impl ElementSegmentIdx {
 pub struct BranchTableTargets(u32);
 
 impl TryFrom<usize> for BranchTableTargets {
-    type Error = RwasmError;
+    type Error = CompilationError;
 
     fn try_from(index: usize) -> Result<Self, Self::Error> {
         match u32::try_from(index) {
             Ok(index) => Ok(Self(index)),
-            Err(_) => Err(RwasmError::BranchTableTargetsOutOfBounds),
+            Err(_) => Err(CompilationError::BranchTableTargetsOutOfBounds),
         }
     }
 }

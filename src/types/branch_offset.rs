@@ -1,4 +1,3 @@
-use crate::RwasmError;
 use bincode::{Decode, Encode};
 
 /// A signed offset for branch instructions.
@@ -29,15 +28,12 @@ impl BranchOffset {
     /// # Panics
     ///
     /// If the resulting [`BranchOffset`] is uninitialized, aka equal to 0.
-    pub fn from_src_to_dst(src: u32, dst: u32) -> Result<Self, RwasmError> {
-        fn make_err() -> RwasmError {
-            RwasmError::BranchOffsetOutOfBounds
-        }
+    pub fn from_src_to_dst(src: u32, dst: u32) -> Option<Self> {
         let src = i64::from(src);
         let dst = i64::from(dst);
-        let offset = dst.checked_sub(src).ok_or_else(make_err)?;
-        let offset = i32::try_from(offset).map_err(|_| make_err())?;
-        Ok(Self(offset))
+        let offset = dst.checked_sub(src)?;
+        let offset = i32::try_from(offset).ok()?;
+        Some(Self(offset))
     }
 
     /// Returns `true` if the [`BranchOffset`] has been initialized.

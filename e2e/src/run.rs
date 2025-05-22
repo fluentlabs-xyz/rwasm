@@ -1,5 +1,4 @@
 use super::{error::TestError, TestContext, TestDescriptor};
-use crate::ENABLE_32_BIT_TRANSLATOR;
 use anyhow::Result;
 use rwasm::{split_i64_to_i32, ExternRef, FuncRef, Value, F32, F64};
 use wast::{
@@ -200,17 +199,6 @@ fn execute_directives(wast: Wast, test_context: &mut TestContext) -> Result<()> 
 /// - If the trap message of the `error` is not as expected.
 fn assert_trap(test_context: &TestContext, span: Span, error: TestError, message: &str) {
     match error {
-        TestError::Wasmi(error) => {
-            assert!(
-                error.to_string().contains(message),
-                "{}: the directive trapped as expected but with an unexpected message\n\
-                    expected: {},\n\
-                    encountered: {}",
-                test_context.spanned(span),
-                message,
-                error,
-            );
-        }
         TestError::Rwasm(error) => {
             assert!(
                 error.to_string().contains(message),
@@ -233,18 +221,14 @@ fn assert_trap(test_context: &TestContext, span: Span, error: TestError, message
 
 /// Asserts that `results` match the `expected` values.
 fn assert_results(context: &TestContext, span: Span, results: &[Value], expected: &[WastRet]) {
-    if ENABLE_32_BIT_TRANSLATOR {
-        assert_eq!(
-            results.len(),
-            expected.len()
-                + expected
-                    .iter()
-                    .filter(|c| matches!(c, WastRet::Core(WastRetCore::I64(_))))
-                    .count()
-        );
-    } else {
-        assert_eq!(results.len(), expected.len());
-    }
+    assert_eq!(
+        results.len(),
+        expected.len()
+            + expected
+                .iter()
+                .filter(|c| matches!(c, WastRet::Core(WastRetCore::I64(_))))
+                .count()
+    );
 
     let expected = expected.iter().map(|expected| match expected {
         WastRet::Core(expected) => expected,
@@ -265,21 +249,18 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
             (Value::I64(result), WastRetCore::I64(expected)) => {
                 assert_eq!(result, expected, "in {}", context.spanned(span))
             }
-            // in rWASM we support only 64 bit globals, but technically both these types are having
-            // 64 bit representation, so there is no diff, and we can safely compare them
+            // in rWASM we support only 64-bit globals, but technically both these types are having
+            // 64-bit representation,
+            // so there is no diff, and we can safely compare them
             (Value::I32(result), WastRetCore::I64(expected)) => {
-                if ENABLE_32_BIT_TRANSLATOR {
-                    let low = result;
-                    let high = &results[i + shift + 1]
-                        .i32()
-                        .expect("Failed to find low part of i64");
-                    shift += 1;
-                    let [expected_low, expected_high] = split_i64_to_i32(*expected);
-                    assert_eq!(*high, expected_high, "in {}", context.spanned(span));
-                    assert_eq!(*low, expected_low, "in {}", context.spanned(span));
-                } else {
-                    assert_eq!(*result as i64, *expected, "in {}", context.spanned(span));
-                }
+                let low = result;
+                let high = &results[i + shift + 1]
+                    .i32()
+                    .expect("Failed to find the low part of i64");
+                shift += 1;
+                let (expected_low, expected_high) = split_i64_to_i32(*expected);
+                assert_eq!(*high, expected_high, "in {}", context.spanned(span));
+                assert_eq!(*low, expected_low, "in {}", context.spanned(span));
             }
             (Value::I64(result), WastRetCore::I32(expected)) => {
                 assert_eq!(*result, *expected as i64, "in {}", context.spanned(span))

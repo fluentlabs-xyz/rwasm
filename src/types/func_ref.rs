@@ -1,24 +1,24 @@
-use crate::{UntypedValue, FUNC_REF_NULL, FUNC_REF_OFFSET};
+use crate::{UntypedValue, NULL_FUNC_IDX};
 
 #[derive(Clone, Debug)]
 pub struct FuncRef(u32);
 
 impl FuncRef {
     pub fn new(func_idx: u32) -> Self {
-        Self(func_idx + FUNC_REF_OFFSET)
+        Self(func_idx)
     }
 
     pub fn null() -> Self {
-        Self(FUNC_REF_NULL)
+        Self(NULL_FUNC_IDX)
     }
 
     pub fn resolve_index(&self) -> u32 {
         assert!(!self.is_null(), "rwasm: resolve of null func ref");
-        self.0 - FUNC_REF_OFFSET
+        self.0
     }
 
     pub fn is_null(&self) -> bool {
-        self.0 == FUNC_REF_NULL
+        self.0 == NULL_FUNC_IDX
     }
 }
 

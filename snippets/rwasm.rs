@@ -109,7 +109,7 @@ pub fn trace_execution_logs(vm: &RwasmExecutor<()>) {
     }
 }
 
-fn exec_instrs(mut is: InstructionSet, inputs: Vec<u32>) -> Vec<u32> {
+fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Vec<u32> {
     is.op_return(DropKeep::none());
     let rwasm_module = RwasmModule::with_one_function(is);
     let mut vm = RwasmExecutor::new(
@@ -136,7 +136,7 @@ fn test_rwasm_i64_mul() {
 
     let test_case_u64 = |a: u64, b: u64| {
         let c = a.wrapping_mul(b);
-        let output = exec_instrs(
+        let output = run_vm_instr(
             is.clone(),
             vec![a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32],
         );

@@ -5,41 +5,7 @@ use crate::{
     UntypedValue,
 };
 use core::{f32, i32, i64, u32, u64};
-
-/// Type of a value.
-///
-/// See [`Value`] for details.
-///
-/// [`Value`]: enum.Value.html
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ValueType {
-    /// 32-bit signed or unsigned integer.
-    I32,
-    /// 64-bit signed or unsigned integer.
-    I64,
-    /// 32-bit IEEE 754-2008 floating point number.
-    F32,
-    /// 64-bit IEEE 754-2008 floating point number.
-    F64,
-    /// A nullable function reference.
-    FuncRef,
-    /// A nullable external reference.
-    ExternRef,
-}
-
-impl From<wasmparser::ValType> for ValueType {
-    fn from(value: wasmparser::ValType) -> Self {
-        match value {
-            wasmparser::ValType::I32 => Self::I32,
-            wasmparser::ValType::I64 => Self::I64,
-            wasmparser::ValType::F32 => Self::F32,
-            wasmparser::ValType::F64 => Self::F64,
-            wasmparser::ValType::V128 => unreachable!("rwasm: not supported v128 type"),
-            wasmparser::ValType::FuncRef => Self::FuncRef,
-            wasmparser::ValType::ExternRef => Self::ExternRef,
-        }
-    }
-}
+use wasmparser::ValType;
 
 /// Convert one type to another by wrapping.
 pub trait WrapInto<T> {
@@ -912,23 +878,23 @@ pub trait WithType {
     type Output;
 
     /// Converts `self` to [`Self::Output`] using `ty`.
-    fn with_type(self, ty: ValueType) -> Self::Output;
+    fn with_type(self, ty: ValType) -> Self::Output;
 }
 
-impl WithType for UntypedValue {
-    type Output = Value;
-
-    fn with_type(self, ty: ValueType) -> Self::Output {
-        match ty {
-            ValueType::I32 => Value::I32(self.into()),
-            ValueType::I64 => Value::I64(self.into()),
-            ValueType::F32 => Value::F32(self.into()),
-            ValueType::F64 => Value::F64(self.into()),
-            ValueType::FuncRef => Value::FuncRef(self.into()),
-            ValueType::ExternRef => Value::ExternRef(self.into()),
-        }
-    }
-}
+// impl WithType for UntypedValue {
+//     type Output = Value;
+//
+//     fn with_type(self, ty: ValType) -> Self::Output {
+//         match ty {
+//             ValType::I32 => Value::I32(self.into()),
+//             ValType::I64 => Value::I64(self.into()),
+//             ValType::F32 => Value::F32(self.into()),
+//             ValType::F64 => Value::F64(self.into()),
+//             ValType::FuncRef => Value::FuncRef(self.into()),
+//             ValType::ExternRef => Value::ExternRef(self.into()),
+//         }
+//     }
+// }
 
 impl From<Value> for UntypedValue {
     fn from(value: Value) -> Self {
@@ -968,29 +934,29 @@ pub enum Value {
 }
 
 impl Value {
-    /// Creates new default value of given type.
-    #[inline]
-    pub fn default(value_type: ValueType) -> Self {
-        match value_type {
-            ValueType::I32 => Self::I32(0),
-            ValueType::I64 => Self::I64(0),
-            ValueType::F32 => Self::F32(0f32.into()),
-            ValueType::F64 => Self::F64(0f64.into()),
-            ValueType::FuncRef => Self::FuncRef(FuncRef::null()),
-            ValueType::ExternRef => Self::ExternRef(ExternRef::null()),
-        }
-    }
+    // /// Creates new default value of given type.
+    // #[inline]
+    // pub fn default(value_type: ValType) -> Self {
+    //     match value_type {
+    //         ValType::I32 => Self::I32(0),
+    //         ValType::I64 => Self::I64(0),
+    //         ValType::F32 => Self::F32(0f32.into()),
+    //         ValType::F64 => Self::F64(0f64.into()),
+    //         ValType::FuncRef => Self::FuncRef(FuncRef::null()),
+    //         ValType::ExternRef => Self::ExternRef(ExternRef::null()),
+    //     }
+    // }
 
-    /// Get variable type for this value.
+    /// Get a variable type for this value.
     #[inline]
-    pub fn ty(&self) -> ValueType {
+    pub fn ty(&self) -> ValType {
         match *self {
-            Self::I32(_) => ValueType::I32,
-            Self::I64(_) => ValueType::I64,
-            Self::F32(_) => ValueType::F32,
-            Self::F64(_) => ValueType::F64,
-            Self::FuncRef(_) => ValueType::FuncRef,
-            Self::ExternRef(_) => ValueType::ExternRef,
+            Self::I32(_) => ValType::I32,
+            Self::I64(_) => ValType::I64,
+            Self::F32(_) => ValType::F32,
+            Self::F64(_) => ValType::F64,
+            Self::FuncRef(_) => ValType::FuncRef,
+            Self::ExternRef(_) => ValType::ExternRef,
         }
     }
 
@@ -1078,8 +1044,14 @@ impl From<FuncRef> for Value {
     }
 }
 
-pub fn split_i64_to_i32(value: i64) -> [i32; 2] {
-    let lower = (value & 0xFFFF_FFFF) as i32; // Extract lower 32 bits
-    let upper = (value >> 32) as i32; // Extract upper 32 bits
+pub fn split_i64_to_i32(value: i64) -> (i32, i32) {
+    let lower = (value & 0xFFFF_FFFF) as i32; // extract lower 32 bits
+    let upper = (value >> 32) as i32; // extract upper 32 bits
+    (lower, upper)
+}
+
+pub fn split_i64_to_i32_arr(value: i64) -> [i32; 2] {
+    let lower = (value & 0xFFFF_FFFF) as i32; // extract lower 32 bits
+    let upper = (value >> 32) as i32; // extract upper 32 bits
     [lower, upper]
 }

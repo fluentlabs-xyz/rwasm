@@ -1,6 +1,7 @@
 mod config;
 mod context;
 mod data_entity;
+mod error;
 mod executor;
 mod handler;
 mod instr_ptr;

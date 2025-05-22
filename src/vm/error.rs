@@ -1,0 +1,22 @@
+#[derive(Debug)]
+pub enum TrapCode {
+    MalformedBinary,
+    ExecutionHalted,
+    FloatsAreDisabled,
+    NotAllowedInFuelMode,
+    UnreachableCodeReached,
+    MemoryOutOfBounds,
+    TableOutOfBounds,
+    IndirectCallToNull,
+    IntegerDivisionByZero,
+    IntegerOverflow,
+    BadConversionToInteger,
+    StackOverflow,
+    BadSignature,
+    OutOfFuel,
+    GrowthOperationLimited,
+    UnresolvedFunction,
+    BranchOffsetOutOfBounds,
+    BlockFuelOutOfBounds,
+    BranchTableTargetsOutOfBounds,
+}
