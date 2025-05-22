@@ -9,7 +9,7 @@ use bincode::{
 };
 use serde::{Deserialize, Serialize};
 #[derive(Serialize,Deserialize)]
-#[derive(Default, Debug, PartialEq)]
+#[derive(Default, Debug, PartialEq,Clone)]
 pub struct RwasmModule {
     pub code_section: InstructionSet,
     pub memory_section: Vec<u8>,
