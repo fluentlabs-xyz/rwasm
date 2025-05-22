@@ -1,6 +1,7 @@
 use super::Opcode;
 use crate::RwasmError;
 use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 
 /// A 32-bit encoded `f64` value.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
@@ -25,6 +26,8 @@ impl F64Const32 {
 }
 
 /// A function index.
+#[cfg(feature = "std")]
+#[derive(Serialize,Deserialize)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
 pub struct FuncIdx(u32);
@@ -48,6 +51,8 @@ impl FuncIdx {
 }
 
 /// A table index.
+#[cfg(feature = "std")]
+#[derive(Serialize,Deserialize)]
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
 pub struct TableIdx(u32);
@@ -66,6 +71,8 @@ impl TableIdx {
 }
 
 /// An index of a unique function signature.
+#[cfg(feature = "std")]
+#[derive(Serialize,Deserialize)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
 pub struct SignatureIdx(u32);
@@ -90,6 +97,8 @@ impl SignatureIdx {
 /// The depth refers to the relative position of a local
 /// variable on the value stack with respect to the height
 /// of the value stack at the time of access.
+#[cfg(feature = "std")]
+#[derive(Serialize,Deserialize)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
 pub struct LocalDepth(u32);
@@ -114,6 +123,8 @@ impl LocalDepth {
 /// Refers to a global variable of a [`Store`].
 ///
 /// [`Store`]: [`crate::Store`]
+#[cfg(feature = "std")]
+#[derive(Serialize,Deserialize)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
 pub struct GlobalIdx(u32);
@@ -138,6 +149,8 @@ impl GlobalIdx {
 /// Refers to a data segment of a [`Store`].
 ///
 /// [`Store`]: [`crate::Store`]
+#[cfg(feature = "std")]
+#[derive(Serialize,Deserialize)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
 pub struct DataSegmentIdx(u32);
@@ -162,6 +175,8 @@ impl DataSegmentIdx {
 /// Refers to a data segment of a [`Store`].
 ///
 /// [`Store`]: [`crate::Store`]
+#[cfg(feature = "std")]
+#[derive(Serialize,Deserialize)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
 pub struct ElementSegmentIdx(u32);
@@ -182,6 +197,8 @@ impl ElementSegmentIdx {
 /// The number of branches of an [`Instruction::BrTable`].
 ///
 /// [`Instruction::BrTable`]: [`super::Instruction::BrTable`]
+#[cfg(feature = "std")]
+#[derive(Serialize,Deserialize)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
 pub struct BranchTableTargets(u32);
@@ -209,7 +226,8 @@ impl BranchTableTargets {
         self.0 as usize
     }
 }
-
+#[cfg(feature = "std")]
+#[derive(Serialize,Deserialize)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
 pub struct StackAlloc {

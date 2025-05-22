@@ -1,7 +1,10 @@
 use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use core::{fmt, fmt::Display};
 
 /// Defines how many stack values are going to be dropped and kept after branching.
+#[cfg(feature = "std")]
+#[derive(Serialize,Deserialize)]
 #[derive(Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 pub struct DropKeep {
     pub drop: u16,

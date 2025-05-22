@@ -7,7 +7,8 @@ use bincode::{
     Decode,
     Encode,
 };
-
+use serde::{Deserialize, Serialize};
+#[derive(Serialize,Deserialize)]
 #[derive(Default, Debug, PartialEq)]
 pub struct RwasmModule {
     pub code_section: InstructionSet,

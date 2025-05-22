@@ -1,9 +1,12 @@
 use crate::RwasmError;
 use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 
 /// The accumulated fuel to execute a block via [`Instruction::ConsumeFuel`].
 ///
 /// [`Instruction::ConsumeFuel`]: [`super::Instruction::ConsumeFuel`]
+#[cfg(feature = "std")]
+#[derive(Serialize,Deserialize)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
 pub struct BlockFuel(u32);

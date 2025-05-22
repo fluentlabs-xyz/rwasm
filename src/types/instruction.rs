@@ -244,7 +244,8 @@ impl Display for Opcode {
         write!(f, "{}", name[0])
     }
 }
-
+#[cfg(feature = "std")]
+#[derive(Serialize,Deserialize)]
 #[derive(Default, Clone, Copy, Debug, PartialEq, Ord, PartialOrd, Eq, Hash)]
 pub enum OpcodeData {
     #[default]
