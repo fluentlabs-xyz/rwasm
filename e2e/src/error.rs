@@ -1,11 +1,9 @@
 use rwasm::RwasmError;
-use rwasm_legacy::Error as WasmiError;
 use std::{error::Error, fmt, fmt::Display};
 
 /// Errors that may occur upon Wasm spec test suite execution.
 #[derive(Debug)]
 pub enum TestError {
-    Wasmi(WasmiError),
     Rwasm(RwasmError),
     InstanceNotRegistered {
         name: String,
@@ -47,7 +45,6 @@ impl Display for TestError {
                     "missing global variable exported as: {module_name:?}::{global_name}",
                 )
             }
-            Self::Wasmi(wasmi_error) => Display::fmt(wasmi_error, f),
             Self::Rwasm(rwasm_error) => Display::fmt(rwasm_error, f),
         }
     }
@@ -55,9 +52,9 @@ impl Display for TestError {
 
 impl<E> From<E> for TestError
 where
-    E: Into<WasmiError>,
+    E: Into<RwasmError>,
 {
     fn from(error: E) -> Self {
-        Self::Wasmi(error.into())
+        Self::Rwasm(error.into())
     }
 }
