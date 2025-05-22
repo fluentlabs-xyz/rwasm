@@ -11,7 +11,6 @@ use crate::{
     StoreFrom,
     TruncateSaturateInto,
     TryTruncateInto,
-    ValueType,
     WrapInto,
     F32,
     F64,
@@ -23,6 +22,7 @@ use core::{
     ops::{Neg, Shl, Shr},
 };
 use paste::paste;
+use wasmparser::ValType;
 
 /// An untyped value.
 ///
@@ -1399,10 +1399,7 @@ impl UntypedValue {
         <T as DecodeUntypedSlice>::decode_untyped_slice(slice)
     }
 
-    pub fn decode_slice_i32<T>(
-        slice: &[Self],
-        origin_params: &[ValueType],
-    ) -> Result<T, UntypedError>
+    pub fn decode_slice_i32<T>(slice: &[Self], origin_params: &[ValType]) -> Result<T, UntypedError>
     where
         T: DecodeUntypedSlice,
     {
@@ -1429,7 +1426,7 @@ impl UntypedValue {
     pub fn encode_slice_i32<T>(
         slice: &mut [Self],
         input: T,
-        origin_results: Vec<ValueType>,
+        origin_results: Vec<ValType>,
     ) -> Result<(), UntypedError>
     where
         T: EncodeUntypedSlice,
@@ -1454,7 +1451,7 @@ pub trait DecodeUntypedSlice: Sized {
 
     fn decode_untyped_slice_i32(
         params: &[UntypedValue],
-        origin_params: &[ValueType],
+        origin_params: &[ValType],
     ) -> Result<Self, UntypedError>;
 }
 
@@ -1470,7 +1467,7 @@ where
     #[inline]
     fn decode_untyped_slice_i32(
         results: &[UntypedValue],
-        origin_params: &[ValueType],
+        origin_params: &[ValType],
     ) -> Result<Self, UntypedError> {
         <(T1,) as DecodeUntypedSlice>::decode_untyped_slice_i32(results, origin_params).map(|t| t.0)
     }
@@ -1500,13 +1497,13 @@ macro_rules! impl_decode_untyped_slice {
             #[allow(non_snake_case)]
             #[inline]
             #[allow(unused_variables, unused_mut, unused_assignments)]
-            fn decode_untyped_slice_i32(results: &[UntypedValue], origin_params: &[ValueType]) -> Result<Self, UntypedError> {
+            fn decode_untyped_slice_i32(results: &[UntypedValue], origin_params: &[ValType]) -> Result<Self, UntypedError> {
                 let mut i = 0;
                 match origin_params {
                     &[ $($tuple),* ]   => Ok((
                     $(
                         {
-                            if $tuple == ValueType::I64 {
+                            if $tuple == ValType::I64 {
                                 if i + 1 >= results.len() {
                                     return Err(UntypedError::invalid_len());
                                 }
@@ -1553,7 +1550,7 @@ pub trait EncodeUntypedSlice {
     fn encode_untyped_slice_i32(
         self,
         results: &mut [UntypedValue],
-        origin_results: Vec<ValueType>,
+        origin_results: Vec<ValType>,
     ) -> Result<(), UntypedError>;
 }
 
@@ -1570,7 +1567,7 @@ where
     fn encode_untyped_slice_i32(
         self,
         results: &mut [UntypedValue],
-        origin_results: Vec<ValueType>,
+        origin_results: Vec<ValType>,
     ) -> Result<(), UntypedError> {
         <(T1,) as EncodeUntypedSlice>::encode_untyped_slice_i32((self,), results, origin_results)
     }
@@ -1604,14 +1601,14 @@ macro_rules! impl_encode_untyped_slice {
                 #[inline]
                 #[allow(unused_variables)]
                 #[allow(unused_mut)]
-                fn encode_untyped_slice_i32(self, results: &mut [UntypedValue], origin_results: Vec<ValueType>) -> Result<(), UntypedError> {
+                fn encode_untyped_slice_i32(self, results: &mut [UntypedValue], origin_results: Vec<ValType>) -> Result<(), UntypedError> {
                     let mut i = 0;
                     match origin_results.as_slice() {
                         [ $( [< _origin_results_ $tuple >] ,)* ] => {
                             let ( $( [< _self_ $tuple >] ,)* ) = self;
                             $(
                                 let untyped = <$tuple as Into<UntypedValue>>::into([< _self_ $tuple >]);
-                                if [< _origin_results_ $tuple >] == &ValueType::I64 {
+                                if [< _origin_results_ $tuple >] == &ValType::I64 {
                                     let (low, high) = split_i64_to_i32(untyped.as_u64() as i64);
                                     results[i] = UntypedValue::from(high);
                                     i += 1;

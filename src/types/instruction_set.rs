@@ -171,11 +171,7 @@ impl InstructionSet {
     impl_opcode!(TableGet(TableIdx));
     impl_opcode!(TableSet(TableIdx));
     impl_opcode!(TableCopy(TableIdx));
-    impl_opcode!(TableInit(TableIdx));
-    pub fn op_table_init_checked(&mut self, table_idx: TableIdx, elem_idx: ElementSegmentIdx) {
-        self.push(Opcode::TableInit, OpcodeData::ElementSegmentIdx(elem_idx));
-        self.push(Opcode::TableGet, OpcodeData::TableIdx(table_idx));
-    }
+    impl_opcode!(TableInit(ElementSegmentIdx));
     impl_opcode!(ElemDrop(ElementSegmentIdx));
     impl_opcode!(RefFunc(FuncIdx));
     impl_opcode!(I32Const(UntypedValue));

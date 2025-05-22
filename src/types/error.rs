@@ -1,9 +1,10 @@
-use crate::types::HostError;
+use crate::{types::HostError, CompilationError};
 use alloc::boxed::Box;
 use core::fmt::Formatter;
 
 #[derive(Debug)]
 pub enum RwasmError {
+    CompilationError(CompilationError),
     MalformedBinary,
     UnknownExternalFunction(u32),
     ExecutionHalted(i32),
@@ -25,6 +26,12 @@ pub enum RwasmError {
     BranchOffsetOutOfBounds,
     BlockFuelOutOfBounds,
     BranchTableTargetsOutOfBounds,
+}
+
+impl From<CompilationError> for RwasmError {
+    fn from(err: CompilationError) -> Self {
+        RwasmError::CompilationError(err)
+    }
 }
 
 impl core::fmt::Display for RwasmError {
@@ -55,6 +62,7 @@ impl core::fmt::Display for RwasmError {
             RwasmError::BranchTableTargetsOutOfBounds => {
                 write!(f, "branch table targets are out of bounds")
             }
+            _ => todo!(),
         }
     }
 }

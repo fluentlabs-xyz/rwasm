@@ -2,6 +2,7 @@ mod address_offset;
 mod block_fuel;
 mod branch_offset;
 mod compiled_expr;
+mod constructor_params;
 mod drop_keep;
 mod error;
 mod fuel_costs;
@@ -21,7 +22,7 @@ mod value;
 
 pub const N_DEFAULT_STACK_SIZE: usize = 4096;
 pub const N_MAX_STACK_SIZE: usize = 4096;
-pub const N_MAX_TABLE_SIZE: usize = 1024;
+pub const N_MAX_TABLE_SIZE: usize = 100;
 pub const N_MAX_RECURSION_DEPTH: usize = 1024;
 
 pub const N_MAX_DATA_SEGMENTS: usize = 1024;
@@ -32,9 +33,6 @@ pub const DEFAULT_MEMORY_LIMIT: usize = 10000;
 
 pub const DEFAULT_MIN_VALUE_STACK_HEIGHT: usize = 1024;
 pub const DEFAULT_MAX_VALUE_STACK_HEIGHT: usize = 1024;
-
-pub const FUNC_REF_NULL: u32 = 0;
-pub const FUNC_REF_OFFSET: u32 = 1000;
 
 /// This constant is driven by WebAssembly standard, default
 /// memory page size is 64kB
@@ -64,6 +62,7 @@ pub use address_offset::*;
 pub use block_fuel::*;
 pub use branch_offset::*;
 pub use compiled_expr::*;
+pub use constructor_params::*;
 pub use drop_keep::*;
 pub use error::*;
 pub use fuel_costs::*;

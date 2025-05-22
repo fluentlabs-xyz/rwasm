@@ -15,13 +15,12 @@ mod translator;
 mod utils;
 mod value_stack;
 
-pub use self::{config::CompilationConfig, error::CompilationError};
-use alloc::{vec, vec::Vec};
-use rwasm_legacy::{
-    engine::RwasmConfig,
-    rwasm::{BinaryFormat, BinaryFormatWriter, RwasmModule},
-    Error,
+pub use self::{
+    config::{CompilationConfig, StateRouterConfig},
+    error::CompilationError,
+    parser::ModuleParser,
 };
+use alloc::vec::Vec;
 
 pub struct RwasmCompilationResult {
     pub rwasm_bytecode: Vec<u8>,
@@ -30,20 +29,14 @@ pub struct RwasmCompilationResult {
 
 pub fn compile_wasm_to_rwasm(
     wasm_binary: &[u8],
-    rwasm_config: RwasmConfig,
-) -> Result<RwasmCompilationResult, Error> {
-    let mut config = RwasmModule::default_config(None);
-    config.rwasm_config(rwasm_config);
-    let (rwasm_module, constructor_params) =
-        RwasmModule::compile_and_retrieve_input(wasm_binary, &config)?;
-    let length = rwasm_module.encoded_length();
-    let mut rwasm_bytecode = vec![0u8; length];
-    let mut binary_format_writer = BinaryFormatWriter::new(&mut rwasm_bytecode);
-    rwasm_module
-        .write_binary(&mut binary_format_writer)
-        .expect("failed to encode rwasm bytecode");
+    compilation_config: CompilationConfig,
+) -> Result<RwasmCompilationResult, CompilationError> {
+    let mut parser = ModuleParser::new(compilation_config);
+    parser.parse(wasm_binary)?;
+    let (module, params) = parser.finalize()?;
+    let rwasm_bytecode = bincode::encode_to_vec(&module, bincode::config::legacy()).unwrap();
     Ok(RwasmCompilationResult {
         rwasm_bytecode,
-        constructor_params,
+        constructor_params: params.into(),
     })
 }

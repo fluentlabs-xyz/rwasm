@@ -1,4 +1,10 @@
-use crate::types::InstructionSet;
+use crate::{
+    types::InstructionSet,
+    CompilationConfig,
+    CompilationError,
+    ConstructorParams,
+    ModuleParser,
+};
 use alloc::{vec, vec::Vec};
 use bincode::{
     de::Decoder,
@@ -26,13 +32,22 @@ impl RwasmModule {
         }
     }
 
+    pub fn compile(
+        config: CompilationConfig,
+        wasm_binary: &[u8],
+    ) -> Result<(Self, ConstructorParams), CompilationError> {
+        let mut parser = ModuleParser::new(config);
+        parser.parse(wasm_binary)?;
+        parser.finalize()
+    }
+
     pub fn empty() -> Self {
         Self {
             code_section: InstructionSet::default(),
             memory_section: vec![],
             element_section: vec![],
             source_pc: 0,
-            func_section: vec![0],
+            func_section: vec![],
         }
     }
 
@@ -42,7 +57,7 @@ impl RwasmModule {
             memory_section: vec![],
             element_section: vec![],
             source_pc: 0,
-            func_section: vec![0],
+            func_section: vec![],
         }
     }
 
@@ -113,13 +128,15 @@ impl<Context> Decode<Context> for RwasmModule {
 impl core::fmt::Display for RwasmModule {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         writeln!(f, "RwasmModule {{")?;
+        let mut func_num = 0;
         for (pos, (opcode, data)) in self.code_section.iter().enumerate() {
             let pos = pos as u32;
             if self.func_section.contains(&pos) {
                 if pos != self.func_section.first().copied().unwrap() {
                     writeln!(f, " .function_end\n")?;
                 }
-                writeln!(f, " .function_begin #{}", pos)?;
+                writeln!(f, " .function_begin #{}", func_num)?;
+                func_num += 1;
             }
             write!(f, "  {:04x}: {}({})", pos, opcode, data)?;
             if pos == self.source_pc {
@@ -129,6 +146,7 @@ impl core::fmt::Display for RwasmModule {
         }
         writeln!(f, " .function_end\n")?;
         writeln!(f, " .ro_data: {:x?},", self.memory_section.as_slice())?;
+        writeln!(f, " .ro_elem: {:?},", self.element_section.as_slice())?;
         writeln!(f, "}}")?;
         Ok(())
     }

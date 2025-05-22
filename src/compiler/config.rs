@@ -6,10 +6,10 @@ pub struct StateRouterConfig {
     /// List of states to be router based on the state
     pub states: Box<[(Box<str>, u32)]>,
     /// Instruction that describes how we determine an input state
-    pub opcode: (Opcode, OpcodeData),
+    pub opcode: Option<(Opcode, OpcodeData)>,
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct CompilationConfig {
     /// State router is used to choose one of the function based on the index provided.
     /// P.S: this flag doesn't work if you have WASM's start entry point.
@@ -39,8 +39,25 @@ pub struct CompilationConfig {
 impl CompilationConfig {
     /// Returns the WebAssembly features configuration for the current instance.
     pub fn wasm_features(&self) -> WasmFeatures {
-        let mut wasm_features = WasmFeatures::default();
-        wasm_features.floats = self.enable_floating_point;
+        let wasm_features = WasmFeatures::default();
+        // TODO(dmitry123): "be careful with these flags"
+        // wasm_features.floats = self.enable_floating_point;
+
+        // let mut config = rwasm_legacy::Config::default();
+        // config
+        //     .wasm_mutable_global(false)
+        //     .wasm_saturating_float_to_int(false)
+        //     .wasm_sign_extension(false)
+        //     .wasm_multi_value(false)
+        //     .wasm_mutable_global(true)
+        //     .wasm_saturating_float_to_int(true)
+        //     .wasm_sign_extension(true)
+        //     .wasm_multi_value(true)
+        //     .wasm_bulk_memory(true)
+        //     .wasm_reference_types(true)
+        //     .wasm_tail_call(true)
+        //     .wasm_extended_const(true);
+
         wasm_features
     }
 

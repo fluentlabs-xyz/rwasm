@@ -22,6 +22,7 @@ use crate::{
     AddressOffset,
     BranchOffset,
     BranchTableTargets,
+    ConstructorParams,
     DataSegmentIdx,
     DropKeep,
     ElementSegmentIdx,
@@ -56,7 +57,7 @@ use wasmparser::{
 };
 
 /// Reusable allocations of a [`FuncTranslator`].
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct FuncTranslatorAllocations {
     /// A stack structure to manage control flow frames within the module.
     ///
@@ -84,6 +85,7 @@ pub struct FuncTranslatorAllocations {
     /// Module builder for rWASM
     pub(crate) segment_builder: SegmentBuilder,
 
+    pub(crate) original_func_types: Vec<FuncType>,
     pub(crate) func_types: Vec<FuncType>,
     pub(crate) imported_funcs: Vec<(ImportLinkerEntity, FuncTypeIdx)>,
     pub(crate) compiled_funcs: Vec<FuncTypeIdx>,
@@ -93,6 +95,31 @@ pub struct FuncTranslatorAllocations {
     pub(crate) exported_funcs: HashMap<Box<str>, FuncIdx>,
     pub(crate) start_func: Option<FuncIdx>,
     pub(crate) func_offsets: Vec<u32>,
+    pub(crate) constructor_params: ConstructorParams,
+}
+
+impl Default for FuncTranslatorAllocations {
+    fn default() -> Self {
+        Self {
+            control_frames: Default::default(),
+            labels: Default::default(),
+            instruction_set: Default::default(),
+            br_table_branches: Default::default(),
+            stack_types: vec![],
+            segment_builder: Default::default(),
+            original_func_types: vec![],
+            func_types: vec![],
+            imported_funcs: vec![],
+            compiled_funcs: vec![],
+            tables: vec![],
+            memories: vec![],
+            globals: vec![],
+            exported_funcs: Default::default(),
+            start_func: None,
+            func_offsets: vec![],
+            constructor_params: Default::default(),
+        }
+    }
 }
 
 impl FuncTranslatorAllocations {
@@ -110,19 +137,25 @@ impl FuncTranslatorAllocations {
     }
 
     pub(crate) fn resolve_func_params_len_type_by_block(&self, block_type: BlockType) -> usize {
-        let func_index = match block_type {
-            BlockType::FuncType(func_index) => func_index,
+        let func_type_index = match block_type {
+            BlockType::FuncType(func_type_index) => func_type_index,
             BlockType::Empty | BlockType::Type(_) => return 0,
         };
-        self.resolve_func_type_ref(func_index, |func_type| func_type.params().len())
+        self.resolve_func_type_ref(func_type_index, |func_type| func_type.params().len())
     }
 
     pub(crate) fn resolve_func_results_len_type_by_block(&self, block_type: BlockType) -> usize {
-        let func_index = match block_type {
-            BlockType::FuncType(func_index) => func_index,
-            BlockType::Empty | BlockType::Type(_) => return 0,
+        let func_type_index = match block_type {
+            BlockType::FuncType(func_type_index) => func_type_index,
+            BlockType::Type(ty) => {
+                return match ty {
+                    ValType::I64 => 2,
+                    _ => 1,
+                }
+            }
+            BlockType::Empty => return 0,
         };
-        self.resolve_func_type_ref(func_index, |func_type| func_type.results().len())
+        self.resolve_func_type_ref(func_type_index, |func_type| func_type.results().len())
     }
 
     pub(crate) fn resolve_func_type_ref<R, F: FnOnce(&FuncType) -> R>(
@@ -205,7 +238,8 @@ impl InstructionTranslator {
 
     /// Registers the `block` control frame surrounding the entire function body.
     fn init_func_body_block(&mut self, func_idx: FuncIdx) {
-        let block_type = BlockType::FuncType(func_idx.to_u32());
+        let func_type_idx = self.alloc.resolve_func_type_index(func_idx);
+        let block_type = BlockType::FuncType(func_type_idx);
         let end_label = self.alloc.labels.new_label();
         let consume_fuel = self
             .is_fuel_metering_enabled()
@@ -213,8 +247,11 @@ impl InstructionTranslator {
         let block_frame = BlockControlFrame::new(block_type, end_label, 0, consume_fuel);
         self.alloc.control_frames.push_frame(block_frame);
         let func_type_idx = self.alloc.resolve_func_type_index(func_idx);
-        let func_type = self.alloc.func_types.get(func_type_idx as usize).unwrap();
-        // TODO(dmitry123): "use original params here?"
+        let func_type = self
+            .alloc
+            .original_func_types
+            .get(func_type_idx as usize)
+            .unwrap();
         self.alloc.stack_types.extend(func_type.params());
         let func_params_len = func_type.params().len();
         for _ in 0..func_params_len {
@@ -351,12 +388,6 @@ impl InstructionTranslator {
     pub fn prepare(&mut self, func_idx: FuncIdx) -> Result<(), CompilationError> {
         self.alloc.reset();
         let func_offset = self.alloc.instruction_set.len() as u32;
-        // if func offsets are empty, then let's reserve the first element under the entrypoint,
-        // but since we don't know the length of entrypoint yet then we will have to
-        // recalculate all offsets later
-        if self.alloc.func_offsets.is_empty() {
-            self.alloc.func_offsets.push(0);
-        }
         self.alloc.func_offsets.push(func_offset);
         self.init_func_body_block(func_idx);
         Ok(())
@@ -370,35 +401,41 @@ impl InstructionTranslator {
                 .1
                 .update_branch_offset(offset?);
         }
+        let last_func_offset = self.alloc.func_offsets.last().copied().unwrap() as usize;
         // update max stack height in `StackAlloc` opcode
-        let mut iter = self.alloc.instruction_set.instr.iter_mut().take(3);
-        loop {
-            let opcode = iter.next().unwrap();
+        let mut iter = self
+            .alloc
+            .instruction_set
+            .instr
+            .iter_mut()
+            .skip(last_func_offset)
+            .take(3);
+        while let Some(opcode) = iter.next() {
             match opcode {
                 (Opcode::ConsumeFuel, _) | (Opcode::SignatureCheck, _) => {}
                 (Opcode::StackCheck, OpcodeData::StackAlloc(stack_alloc)) => {
                     stack_alloc.max_stack_height = self.stack_height.max_stack_height();
                     break;
                 }
-                _ => unreachable!("rwasm: not allowed opcode"),
+                _ => unreachable!(),
             }
         }
         Ok(())
     }
 
-    pub(crate) fn resolve_global_type(&self, _global_index: u32) -> GlobalType {
-        todo!()
+    pub(crate) fn resolve_global_type(&self, global_index: u32) -> &GlobalType {
+        self.alloc
+            .globals
+            .get(global_index as usize)
+            .map(|v| &v.global_type)
+            .unwrap()
     }
 
-    pub(crate) fn resolve_memory_type(&self, _memory_index: u32) -> MemoryType {
-        todo!()
+    pub(crate) fn resolve_memory_type(&self, memory_index: u32) -> &MemoryType {
+        self.alloc.memories.get(memory_index as usize).unwrap()
     }
 
     pub(crate) fn resolve_table_type(&self, _table_index: u32) -> TableType {
-        todo!()
-    }
-
-    pub(crate) fn get_compiled_func(&self, _function_index: u32) -> Option<u32> {
         todo!()
     }
 
@@ -577,8 +614,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     type Output = Result<(), CompilationError>;
 
     fn visit_unreachable(&mut self) -> Self::Output {
-        self.alloc.instruction_set.op_unreachable();
-        Ok(())
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.alloc.instruction_set.op_unreachable();
+            builder.reachable = false;
+            Ok(())
+        })
     }
 
     fn visit_nop(&mut self) -> Self::Output {
@@ -731,6 +772,14 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                     self.alloc.stack_types.push(*param);
                 });
             }
+            BlockType::Type(val_type) => {
+                if val_type == ValType::I64 {
+                    self.stack_height.push_n(2);
+                } else {
+                    self.stack_height.push();
+                }
+                self.alloc.stack_types.push(val_type);
+            }
             _ => {}
         }
         self.alloc.control_frames.push_frame(if_frame);
@@ -801,8 +850,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         let frame = self.alloc.control_frames.pop_frame();
         match frame.block_type() {
             BlockType::FuncType(func_type_idx) => {
-                let func_type = self.alloc.func_types.get(func_type_idx as usize).unwrap();
-                func_type.params().iter().for_each(|param| {
+                let func_type = self
+                    .alloc
+                    .original_func_types
+                    .get(func_type_idx as usize)
+                    .unwrap();
+                func_type.results().iter().for_each(|param| {
                     if *param == ValType::I64 {
                         self.stack_height.push_n(2);
                     } else {
@@ -810,6 +863,14 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                     }
                     self.alloc.stack_types.push(*param);
                 });
+            }
+            BlockType::Type(val_type) => {
+                if val_type == ValType::I64 {
+                    self.stack_height.push_n(2);
+                } else {
+                    self.stack_height.push();
+                }
+                self.alloc.stack_types.push(val_type);
             }
             _ => {}
         }
@@ -1016,20 +1077,23 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.bump_fuel_consumption(builder.fuel_costs().call)?;
             let func_type_idx = builder.alloc.resolve_func_type_index(function_index);
             builder.adjust_value_stack_for_call(func_type_idx);
-            match builder.get_compiled_func(function_index) {
-                Some(compiled_func) => {
-                    // Case: We are calling an internal function and can optimize
-                    //       this case by using the special instruction for it.
-                    builder
-                        .alloc
-                        .instruction_set
-                        .op_call_internal(compiled_func);
-                }
-                None => {
-                    // Case: We are calling an imported function and must use the
-                    //       general calling operator for it.
-                    builder.alloc.instruction_set.op_call(function_index);
-                }
+            let imported_funcs_len = builder.alloc.imported_funcs.len() as u32;
+            if function_index >= imported_funcs_len {
+                // Case: We are calling an internal function and can optimize
+                //       this case by using the special instruction for it.
+                builder
+                    .alloc
+                    .instruction_set
+                    .op_call_internal(function_index);
+            } else {
+                let (import_linker_entity, _) =
+                    &builder.alloc.imported_funcs[function_index as usize];
+                // Case: We are calling an imported function and must use the
+                //       general calling operator for it.
+                builder
+                    .alloc
+                    .instruction_set
+                    .op_call(import_linker_entity.sys_func_idx);
             }
             Ok(())
         })
@@ -1176,21 +1240,21 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_global_get(&mut self, global_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
-            builder.stack_height.push();
-            let global_type = builder.resolve_global_type(global_index);
+            let global_type = builder.resolve_global_type(global_index).clone();
             builder.alloc.stack_types.push(global_type.content_type);
             if global_type.content_type == ValType::I64 {
                 builder
                     .alloc
                     .instruction_set
                     .op_global_get(global_index * 2 + 1);
+                builder.stack_height.push_n(2);
             } else {
                 builder
                     .alloc
                     .instruction_set
                     .op_global_get(global_index * 2);
+                builder.stack_height.push();
             }
-            builder.stack_height.push();
             Ok(())
         })
     }
@@ -1198,7 +1262,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_global_set(&mut self, global_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
-            let global_type = builder.resolve_global_type(global_index);
+            let global_type = builder.resolve_global_type(global_index).clone();
             debug_assert!(global_type.mutable);
             builder.stack_height.pop1();
             builder.alloc.stack_types.pop();
@@ -1588,7 +1652,11 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_ref_func(&mut self, function_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.instruction_set.op_ref_func(function_index);
+            // We do +1 here because 0 offset is reserved for `null` value and an entrypoint
+            builder
+                .alloc
+                .instruction_set
+                .op_ref_func(function_index + 1);
             builder.stack_height.push();
             builder.alloc.stack_types.push(ValType::FuncRef);
             Ok(())

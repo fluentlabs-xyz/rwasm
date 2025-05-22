@@ -10,12 +10,13 @@ use crate::{
     TableIdx,
     UntypedValue,
     DEFAULT_MEMORY_INDEX,
+    NULL_FUNC_IDX,
     N_BYTES_PER_MEMORY_PAGE,
     N_MAX_MEMORY_PAGES,
 };
 use alloc::vec::Vec;
 use hashbrown::HashMap;
-use wasmparser::ValType;
+use wasmparser::{TableType, ValType};
 
 #[derive(Debug, Default)]
 pub struct SegmentBuilder {
@@ -86,6 +87,18 @@ impl SegmentBuilder {
         }
         // increase the total number of pages allocated
         self.total_allocated_pages = next_pages;
+        Ok(())
+    }
+
+    pub fn emit_table_segment(
+        &mut self,
+        table_index: TableIdx,
+        table_type: &TableType,
+    ) -> Result<(), CompilationError> {
+        self.entrypoint_bytecode.op_ref_func(NULL_FUNC_IDX);
+        self.entrypoint_bytecode.op_i32_const(table_type.initial);
+        self.entrypoint_bytecode.op_table_grow(table_index);
+        self.entrypoint_bytecode.op_drop();
         Ok(())
     }
 
@@ -176,7 +189,7 @@ impl SegmentBuilder {
             .insert(segment_idx, (segment_offset, segment_length));
     }
 
-    pub fn add_start_function(&mut self, func_idx: CompiledFunc) {
+    pub fn emit_start_function(&mut self, func_idx: CompiledFunc) {
         // for the start section we must always invoke even if there is a main function,
         // otherwise it might be super misleading for devs
         self.entrypoint_bytecode.op_call_internal(func_idx);

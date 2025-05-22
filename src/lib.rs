@@ -11,11 +11,7 @@ extern crate alloc;
 extern crate core;
 
 pub use compiler::*;
+use libm as _;
 pub use types::*;
 pub use vm::*;
-
-pub mod legacy {
-    pub use rwasm_legacy::*;
-}
-
-use libm as _;
+pub use wasmparser::{FuncType, ValType};

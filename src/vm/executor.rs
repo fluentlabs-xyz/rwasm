@@ -11,7 +11,6 @@ use crate::{
         SignatureIdx,
         TableIdx,
         UntypedValue,
-        FUNC_REF_OFFSET,
         N_DEFAULT_STACK_SIZE,
         N_MAX_DATA_SEGMENTS,
         N_MAX_RECURSION_DEPTH,
@@ -160,7 +159,7 @@ impl<T> RwasmExecutor<T> {
             .element_section
             .iter()
             .copied()
-            .map(|v| UntypedValue::from(v + FUNC_REF_OFFSET))
+            .map(|v| UntypedValue::from(v))
             .collect::<Vec<_>>();
 
         Self {

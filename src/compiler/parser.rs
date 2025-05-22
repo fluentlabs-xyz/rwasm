@@ -3,6 +3,7 @@ use crate::{
     CompilationConfig,
     CompilationError,
     CompiledExpr,
+    ConstructorParams,
     DataSegmentIdx,
     DropKeep,
     ElementSegmentIdx,
@@ -11,8 +12,6 @@ use crate::{
     GlobalIdx,
     GlobalVariable,
     ImportName,
-    Opcode,
-    OpcodeData,
     RwasmModule,
     TableIdx,
     UntypedValue,
@@ -22,6 +21,7 @@ use core::ops::Range;
 use std::mem::{replace, take};
 use wasmparser::{
     BinaryReaderError,
+    CustomSectionReader,
     DataKind,
     DataSectionReader,
     ElementItems,
@@ -30,6 +30,7 @@ use wasmparser::{
     Encoding,
     ExportSectionReader,
     ExternalKind,
+    FuncType,
     FunctionBody,
     FunctionSectionReader,
     GlobalSectionReader,
@@ -41,6 +42,7 @@ use wasmparser::{
     Type,
     TypeRef,
     TypeSectionReader,
+    ValType,
     Validator,
 };
 
@@ -60,7 +62,7 @@ impl ModuleParser {
         Self {
             validator: Validator::new_with_features(config.wasm_features()),
             compiled_funcs: 0,
-            allocations: Default::default(),
+            allocations: ReusableAllocations::default(),
             config,
         }
     }
@@ -74,12 +76,34 @@ impl ModuleParser {
         Ok(())
     }
 
-    pub fn finalize(mut self) -> Result<RwasmModule, CompilationError> {
+    pub fn parse_function_exports(
+        config: CompilationConfig,
+        wasm_binary: &[u8],
+    ) -> Result<Vec<(Box<str>, FuncIdx, FuncType)>, CompilationError> {
+        let mut result = Vec::default();
+        let mut parser = ModuleParser::new(config);
+        parser.parse(wasm_binary)?;
+        for (k, v) in &parser.allocations.translation.exported_funcs {
+            let func_type_idx = parser.allocations.translation.resolve_func_type_index(*v);
+            let func_type =
+                parser.allocations.translation.func_types[func_type_idx as usize].clone();
+            result.push((k.clone(), *v, func_type));
+            print!(
+                "{}: func_idx={}, func_type_idx={}\n",
+                k,
+                v.to_u32(),
+                func_type_idx
+            );
+        }
+        Ok(result)
+    }
+
+    pub fn finalize(mut self) -> Result<(RwasmModule, ConstructorParams), CompilationError> {
         if let Some(start_func) = self.allocations.translation.start_func {
             self.allocations
                 .translation
                 .segment_builder
-                .add_start_function(start_func.to_u32());
+                .emit_start_function(start_func.to_u32());
         } else if let Some(entrypoint_name) = self.config.entrypoint_name.as_ref() {
             let func_idx = self
                 .allocations
@@ -90,7 +114,7 @@ impl ModuleParser {
             self.allocations
                 .translation
                 .segment_builder
-                .add_start_function(func_idx.to_u32());
+                .emit_start_function(func_idx.to_u32());
         } else if self.config.state_router.is_none() {
             // if there is no state router, then such an application can't be executed; then why do
             // we need to compile it?
@@ -115,30 +139,13 @@ impl ModuleParser {
         code_section.extend(self.allocations.translation.instruction_set.iter());
 
         let mut func_section = self.allocations.translation.func_offsets;
-        for offset in func_section.iter_mut().skip(1) {
+        for offset in func_section.iter_mut() {
             // make sure each function offset is adjusted by an entrypoint length
             // since entrypoint is always the first function in our bytecode
             *offset += entrypoint_length;
         }
 
-        // we store source pc here to keep compatibility with the oldest version of rWasm
-        // where entrypoint was the last function inside function offsets (can be removed later)
-        let source_pc = func_section.first().copied().unwrap();
-        debug_assert_eq!(source_pc, 0);
-
-        // now we can rewrite all calls internal offset
-        for x in code_section.iter_mut() {
-            match x {
-                (Opcode::CallInternal, OpcodeData::CompiledFunc(compiled_func)) => {
-                    // +1 because of the entrypoint
-                    *compiled_func += 1;
-                    // *compiled_func += func_section.get(*compiled_func as usize + 1).unwrap();
-                }
-                _ => {}
-            }
-        }
-
-        Ok(RwasmModule {
+        let module = RwasmModule {
             code_section,
             memory_section: self
                 .allocations
@@ -150,9 +157,15 @@ impl ModuleParser {
                 .translation
                 .segment_builder
                 .global_element_section,
-            source_pc,
+            // we store source pc here to keep compatibility with the oldest version of rWasm
+            // where entrypoint was the last function inside function offsets
+            // (the start offset can be removed later)
+            source_pc: 0,
             func_section,
-        })
+        };
+        let constructor_params = self.allocations.translation.constructor_params;
+
+        Ok((module, constructor_params))
     }
 
     pub fn emit_state_router(&mut self) -> Result<(), CompilationError> {
@@ -162,11 +175,13 @@ impl ModuleParser {
             return Ok(());
         };
         // push state on the stack
-        self.allocations
-            .translation
-            .segment_builder
-            .entrypoint_bytecode
-            .push(state_router.opcode.0, state_router.opcode.1);
+        if let Some(opcode) = &state_router.opcode {
+            self.allocations
+                .translation
+                .segment_builder
+                .entrypoint_bytecode
+                .push(opcode.0, opcode.1);
+        }
         // translate state router
         for (entrypoint_name, state_value) in state_router.states.iter() {
             let func_idx = self
@@ -244,7 +259,7 @@ impl ModuleParser {
             Payload::ElementSection(section) => self.process_element(section),
             Payload::DataCountSection { count, range } => self.process_data_count(count, range),
             Payload::DataSection(section) => self.process_data(section),
-            Payload::CustomSection { .. } => Ok(()),
+            Payload::CustomSection(section) => self.process_custom_section(section),
             Payload::CodeSectionStart { count, range, .. } => self.process_code_start(count, range),
             Payload::CodeSectionEntry(func_body) => self.process_code_entry(func_body),
             Payload::UnknownSection { id, range, .. } => self.process_unknown(id, range),
@@ -313,7 +328,35 @@ impl ModuleParser {
             let func_type = match func_type? {
                 Type::Func(func_type) => func_type,
             };
-            self.allocations.translation.func_types.push(func_type);
+            let mut adjusted_params = Vec::new();
+            let mut adjusted_results = Vec::new();
+            for x in func_type.params() {
+                match x {
+                    ValType::I64 => {
+                        adjusted_params.push(ValType::I32);
+                        adjusted_params.push(ValType::I32);
+                    }
+                    _ => adjusted_params.push(*x),
+                }
+            }
+            for x in func_type.results() {
+                match x {
+                    ValType::I64 => {
+                        adjusted_results.push(ValType::I32);
+                        adjusted_results.push(ValType::I32);
+                    }
+                    _ => adjusted_results.push(*x),
+                }
+            }
+            let adjusted_func_type = FuncType::new(adjusted_params, adjusted_results);
+            self.allocations
+                .translation
+                .original_func_types
+                .push(func_type);
+            self.allocations
+                .translation
+                .func_types
+                .push(adjusted_func_type);
         }
         Ok(())
     }
@@ -395,11 +438,14 @@ impl ModuleParser {
         self.validator.function_section(&section)?;
         for func_type_index in section.into_iter() {
             let func_type_index = func_type_index?;
+            let func_idx = self.allocations.translation.compiled_funcs.len();
+            println!("func_idx={func_idx}, func_type_index: {func_type_index}");
             self.allocations
                 .translation
                 .compiled_funcs
                 .push(func_type_index);
         }
+        println!();
         Ok(())
     }
 
@@ -414,8 +460,13 @@ impl ModuleParser {
     /// If a table declaration fails to validate.
     fn process_tables(&mut self, section: TableSectionReader) -> Result<(), CompilationError> {
         self.validator.table_section(&section)?;
-        for table_type in section.into_iter() {
+        for (table_idx, table_type) in section.into_iter().enumerate() {
             let table_type = table_type?;
+            let table_idx = TableIdx::from(table_idx as u32);
+            self.allocations
+                .translation
+                .segment_builder
+                .emit_table_segment(table_idx, &table_type)?;
             self.allocations.translation.tables.push(table_type);
         }
         Ok(())
@@ -549,8 +600,9 @@ impl ModuleParser {
                     .map(|v| {
                         let compiled_expr = CompiledExpr::new(v?);
                         compiled_expr
-                            .eval_const()
-                            .map(UntypedValue::as_u32)
+                            .funcref()
+                            .map(FuncIdx::to_u32)
+                            .or_else(|| compiled_expr.eval_const().map(UntypedValue::as_u32))
                             .ok_or(CompilationError::ConstEvaluationFailed)
                     })
                     .collect::<Result<Vec<_>, _>>()?,
@@ -647,6 +699,17 @@ impl ModuleParser {
         Ok(())
     }
 
+    fn process_custom_section(
+        &mut self,
+        reader: CustomSectionReader,
+    ) -> Result<(), CompilationError> {
+        self.allocations
+            .translation
+            .constructor_params
+            .try_parse(reader);
+        Ok(())
+    }
+
     /// Process module code section start.
     ///
     /// # Note
@@ -691,6 +754,7 @@ impl ModuleParser {
     /// If the function body fails to validate.
     fn process_code_entry(&mut self, func_body: FunctionBody) -> Result<(), CompilationError> {
         let func_idx = self.next_func();
+        println!("\nfunc_idx={}", func_idx.to_u32());
         let allocations = take(&mut self.allocations);
         let validator = self.validator.code_section_entry(&func_body)?;
         let func_validator = validator.into_validator(allocations.validation);

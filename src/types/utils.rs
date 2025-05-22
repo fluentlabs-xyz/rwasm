@@ -46,6 +46,8 @@ impl FuncIdx {
     }
 }
 
+pub const NULL_FUNC_IDX: u32 = 0u32;
+
 /// A table index.
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]

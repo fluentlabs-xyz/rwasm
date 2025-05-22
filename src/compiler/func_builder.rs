@@ -121,6 +121,8 @@ impl<'a> FuncBuilder<'a> {
     fn translate_operators(&mut self) -> Result<usize, CompilationError> {
         let mut reader = self.func_body.get_operators_reader()?;
         while !reader.eof() {
+            let operator = reader.clone().read()?;
+            println!(" - {:?}", operator);
             self.pos = reader.original_position();
             reader.visit_operator(self)??;
         }
