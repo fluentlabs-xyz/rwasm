@@ -20,8 +20,24 @@ use crate::{
 use core::cmp;
 
 pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmError> {
+    
+   
+    while !vm.stop_exec {
+        match execute_instruction(vm){
+            Ok(_) => continue,
+            Err(err) => return Err(err),
+        }
+    }
+    vm.stop_exec = false;
+    vm.next_result
+        .take()
+        .unwrap_or_else(|| unreachable!("rwasm: next result without reason?"))
+}
+
+
+pub fn execute_instruction<T>(vm:&mut RwasmExecutor<T>)->Result<(), RwasmError> {
     let floats_enabled = vm.config.floats_enabled;
-    macro_rules! float_wrapper {
+     macro_rules! float_wrapper {
         ($expr:expr) => {{
             if !floats_enabled {
                 return Err(RwasmError::FloatsAreDisabled);
@@ -29,7 +45,7 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
             $expr
         }};
     }
-    while !vm.stop_exec {
+
         let instr = vm.ip.get();
         #[cfg(feature = "debug-print")]
         {
@@ -61,7 +77,7 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
             );
         }
         use Opcode::*;
-        match instr {
+      let res =  match instr {
             Unreachable => visit_unreachable_wrapped(vm),
             LocalGet => visit_local_get(vm),
             LocalSet => visit_local_set(vm),
@@ -261,13 +277,9 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
             I64Extend16S => visit_i64_extend16_s(vm),
             I64Extend32S => visit_i64_extend32_s(vm),
             StackCheck => visit_stack_alloc_wrapped(vm),
-        }
+        };
+    return Ok(res);
     }
-    vm.stop_exec = false;
-    vm.next_result
-        .take()
-        .unwrap_or_else(|| unreachable!("rwasm: next result without reason?"))
-}
 
 macro_rules! wrap_function_result {
     ($fn_name:ident) => {
