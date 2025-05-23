@@ -6,8 +6,21 @@ use serde::{Deserialize, Serialize};
 /// This defines how much the instruction pointer is offset
 /// upon taking the respective branch.
 #[cfg(feature = "std")]
-#[derive(Serialize,Deserialize)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Hash,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
+)]
 pub struct BranchOffset(i32);
 
 impl From<i32> for BranchOffset {

@@ -20,8 +20,9 @@ use crate::{
 use alloc::{format, vec::Vec};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize,Deserialize)]
 #[derive(
+    Serialize,
+    Deserialize,
     Debug,
     Copy,
     Clone,
@@ -244,8 +245,9 @@ impl core::fmt::Display for Opcode {
     }
 }
 #[cfg(feature = "std")]
-#[derive(Serialize,Deserialize)]
-#[derive(Default, Clone, Copy, Debug, PartialEq, Ord, PartialOrd, Eq, Hash)]
+#[derive(
+    Serialize, Deserialize, Default, Clone, Copy, Debug, PartialEq, Ord, PartialOrd, Eq, Hash,
+)]
 pub enum OpcodeData {
     #[default]
     EmptyData,

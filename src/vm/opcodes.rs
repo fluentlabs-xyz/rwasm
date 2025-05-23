@@ -50,7 +50,7 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
         if vm.tracer.is_some() {
             let memory_size: u32 = vm.global_memory.current_pages().into();
             let consumed_fuel = vm.fuel_consumed();
-            
+
             vm.tracer.as_mut().unwrap().pre_opcode_state(
                 vm.ip.pc(),
                 vm.sp,
@@ -58,7 +58,6 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
                 vm.vmstate.clk,
                 instr,
                 vm.ip.data().clone(),
-                
             );
         }
         use Opcode::*;

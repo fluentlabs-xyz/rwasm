@@ -6,8 +6,21 @@ use serde::{Deserialize, Serialize};
 ///
 /// [`Instruction::ConsumeFuel`]: [`super::Instruction::ConsumeFuel`]
 #[cfg(feature = "std")]
-#[derive(Serialize,Deserialize)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Hash,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
+)]
 #[repr(transparent)]
 pub struct BlockFuel(u32);
 

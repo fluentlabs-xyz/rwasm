@@ -1,6 +1,4 @@
-use core::f32::consts::E;
-use std::collections::btree_map::Entry;
-
+use super::event::memory::{MemoryReadRecord, MemoryRecord};
 use crate::{
     types::{
         AddressOffset,
@@ -35,11 +33,9 @@ use crate::{
 };
 use alloc::{sync::Arc, vec, vec::Vec};
 use bitvec::{bitvec, prelude::BitVec};
+use core::f32::consts::E;
 use hashbrown::HashMap;
-
-use super::event::memory::{MemoryReadRecord, MemoryRecord};
-
-
+use std::collections::btree_map::Entry;
 
 /// The `RwasmExecutor` struct represents the state and functionality required to execute
 /// WebAssembly (WASM) instructions within an embedded WASM runtime environment.
@@ -127,15 +123,13 @@ pub struct RwasmExecutor<T> {
     pub(crate) next_result: Option<Result<i32, RwasmError>>,
     pub(crate) stop_exec: bool,
     pub(crate) syscall_handler: SyscallHandler<T>,
-    pub(crate) vmstate:VMState,
+    pub(crate) vmstate: VMState,
 }
-#[derive(Default,Clone)]
-pub struct VMState{
-    pub clk:u32,
-    pub shard:u32,
+#[derive(Default, Clone)]
+pub struct VMState {
+    pub clk: u32,
+    pub shard: u32,
 }
-
-
 
 impl<T> RwasmExecutor<T> {
     pub fn parse(
@@ -200,7 +194,7 @@ impl<T> RwasmExecutor<T> {
             default_elements_segment: module_elements_section,
             empty_elements_segments: dropped_elements,
             empty_data_segments,
-            vmstate:VMState::default(),
+            vmstate: VMState::default(),
         }
     }
 
@@ -361,7 +355,6 @@ impl<T> RwasmExecutor<T> {
 
     #[inline(always)]
     pub(crate) fn execute_unary(&mut self, f: fn(UntypedValue) -> UntypedValue) {
-        
         self.sp.eval_top(f);
         self.ip.add(1);
     }
@@ -418,6 +411,4 @@ impl<T> RwasmExecutor<T> {
         self.ip.add(instr_ref as usize);
         Ok(())
     }
-    
-   
 }

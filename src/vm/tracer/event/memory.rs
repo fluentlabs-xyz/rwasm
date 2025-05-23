@@ -1,14 +1,12 @@
-use serde::{Deserialize, Serialize};
-
 use crate::Opcode;
+use serde::{Deserialize, Serialize};
 
 /// Memory Record.
 ///
 /// This object encapsulates the information needed to prove a memory access operation. This
 /// includes the shard, timestamp, and value of the memory address.
 #[cfg(feature = "std")]
-#[derive(Serialize, Deserialize)]
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
 pub struct MemoryRecord {
     /// The shard number.
     pub shard: u32,
@@ -43,8 +41,7 @@ pub enum MemoryAccessPosition {
 /// includes the value, shard, timestamp, and previous shard and timestamp.
 #[allow(clippy::manual_non_exhaustive)]
 #[cfg(feature = "std")]
-#[derive(Serialize, Deserialize)]
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
 pub struct MemoryReadRecord {
     /// The value.
     pub value: u32,
@@ -157,7 +154,13 @@ impl MemoryReadRecord {
         prev_timestamp: u32,
     ) -> Self {
         assert!(shard > prev_shard || ((shard == prev_shard) && (timestamp > prev_timestamp)));
-        Self { value, shard, timestamp, prev_shard, prev_timestamp }
+        Self {
+            value,
+            shard,
+            timestamp,
+            prev_shard,
+            prev_timestamp,
+        }
     }
 }
 
@@ -173,7 +176,14 @@ impl MemoryWriteRecord {
         prev_timestamp: u32,
     ) -> Self {
         assert!(shard > prev_shard || ((shard == prev_shard) && (timestamp > prev_timestamp)),);
-        Self { value, shard, timestamp, prev_value, prev_shard, prev_timestamp }
+        Self {
+            value,
+            shard,
+            timestamp,
+            prev_value,
+            prev_shard,
+            prev_timestamp,
+        }
     }
 }
 
@@ -192,7 +202,13 @@ impl MemoryInitializeFinalizeEvent {
     /// Creates a new [``MemoryInitializeFinalizeEvent``] for an initialization.
     #[must_use]
     pub const fn initialize(addr: u32, value: u32, used: bool) -> Self {
-        Self { addr, value, shard: 1, timestamp: 1, used: if used { 1 } else { 0 } }
+        Self {
+            addr,
+            value,
+            shard: 1,
+            timestamp: 1,
+            used: if used { 1 } else { 0 },
+        }
     }
 
     /// Creates a new [``MemoryInitializeFinalizeEvent``] for a finalization.
@@ -236,7 +252,6 @@ pub struct MemoryLocalEvent {
 }
 #[derive(Debug, Copy, Clone, Default)]
 pub struct MemoryAccessRecord {
-
     /// The memory access of the `a` register.
     pub a: Option<MemoryRecordEnum>,
     /// The memory access of the `b` register.
@@ -246,4 +261,3 @@ pub struct MemoryAccessRecord {
     /// The memory access of the `memory` register.
     pub memory: Option<MemoryRecordEnum>,
 }
-

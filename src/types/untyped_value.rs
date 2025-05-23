@@ -18,19 +18,32 @@ use crate::{
 };
 use alloc::{format, vec::Vec};
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
 use core::{
     fmt::{self, Display, Formatter},
     ops::{Neg, Shl, Shr},
 };
 use paste::paste;
+use serde::{Deserialize, Serialize};
 
 /// An untyped value.
 ///
 /// Provides a dense and simple interface to all functional Wasm operations.
 #[cfg(feature = "std")]
-#[derive(Serialize,Deserialize)]
-#[derive(Debug, Copy, Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord, Encode, Decode)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    Default,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
+)]
 #[repr(transparent)]
 pub struct UntypedValue {
     /// This inner value is required to have enough bits to represent

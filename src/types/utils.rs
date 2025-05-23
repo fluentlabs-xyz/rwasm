@@ -27,8 +27,21 @@ impl F64Const32 {
 
 /// A function index.
 #[cfg(feature = "std")]
-#[derive(Serialize,Deserialize)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Hash,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
+)]
 #[repr(transparent)]
 pub struct FuncIdx(u32);
 
@@ -52,8 +65,21 @@ impl FuncIdx {
 
 /// A table index.
 #[cfg(feature = "std")]
-#[derive(Serialize,Deserialize)]
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Default,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
+)]
 #[repr(transparent)]
 pub struct TableIdx(u32);
 
@@ -72,8 +98,21 @@ impl TableIdx {
 
 /// An index of a unique function signature.
 #[cfg(feature = "std")]
-#[derive(Serialize,Deserialize)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Hash,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
+)]
 #[repr(transparent)]
 pub struct SignatureIdx(u32);
 
@@ -98,8 +137,21 @@ impl SignatureIdx {
 /// variable on the value stack with respect to the height
 /// of the value stack at the time of access.
 #[cfg(feature = "std")]
-#[derive(Serialize,Deserialize)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Hash,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
+)]
 #[repr(transparent)]
 pub struct LocalDepth(u32);
 
@@ -124,8 +176,21 @@ impl LocalDepth {
 ///
 /// [`Store`]: [`crate::Store`]
 #[cfg(feature = "std")]
-#[derive(Serialize,Deserialize)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Hash,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
+)]
 #[repr(transparent)]
 pub struct GlobalIdx(u32);
 
@@ -150,8 +215,21 @@ impl GlobalIdx {
 ///
 /// [`Store`]: [`crate::Store`]
 #[cfg(feature = "std")]
-#[derive(Serialize,Deserialize)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Hash,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
+)]
 #[repr(transparent)]
 pub struct DataSegmentIdx(u32);
 
@@ -176,8 +254,21 @@ impl DataSegmentIdx {
 ///
 /// [`Store`]: [`crate::Store`]
 #[cfg(feature = "std")]
-#[derive(Serialize,Deserialize)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Hash,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
+)]
 #[repr(transparent)]
 pub struct ElementSegmentIdx(u32);
 
@@ -198,8 +289,21 @@ impl ElementSegmentIdx {
 ///
 /// [`Instruction::BrTable`]: [`super::Instruction::BrTable`]
 #[cfg(feature = "std")]
-#[derive(Serialize,Deserialize)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Hash,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
+)]
 #[repr(transparent)]
 pub struct BranchTableTargets(u32);
 
@@ -227,8 +331,21 @@ impl BranchTableTargets {
     }
 }
 #[cfg(feature = "std")]
-#[derive(Serialize,Deserialize)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Hash,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
+)]
 #[repr(transparent)]
 pub struct StackAlloc {
     pub max_stack_height: u32,
