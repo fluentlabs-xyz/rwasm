@@ -1,6 +1,8 @@
+use crate::CompilationError;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use core::{fmt, fmt::Display};
+
 
 /// Defines how many stack values are going to be dropped and kept after branching.
 #[cfg(feature = "std")]
@@ -17,28 +19,6 @@ impl fmt::Debug for DropKeep {
             .field("drop", &self.drop())
             .field("keep", &self.keep())
             .finish()
-    }
-}
-
-/// An error that may occur upon operating on [`DropKeep`].
-#[derive(Debug, Copy, Clone)]
-pub enum DropKeepError {
-    /// The number of kept elements exceeds the engine's limits.
-    KeepOutOfBounds,
-    /// The number of dropped elements exceeds the engine's limits.
-    DropOutOfBounds,
-}
-
-impl Display for DropKeepError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DropKeepError::KeepOutOfBounds => {
-                write!(f, "number of kept elements exceeds engine limits")
-            }
-            DropKeepError::DropOutOfBounds => {
-                write!(f, "number of dropped elements exceeds engine limits")
-            }
-        }
     }
 }
 
@@ -73,9 +53,9 @@ impl DropKeep {
     /// - If `keep` is larger than `drop`.
     /// - If `keep` is out of bounds. (max 4095)
     /// - If `drop` is out of bounds. (delta to keep max 4095)
-    pub fn new(drop: usize, keep: usize) -> Result<Self, DropKeepError> {
-        let keep = u16::try_from(keep).map_err(|_| DropKeepError::KeepOutOfBounds)?;
-        let drop = u16::try_from(drop).map_err(|_| DropKeepError::KeepOutOfBounds)?;
+    pub fn new(drop: usize, keep: usize) -> Result<Self, CompilationError> {
+        let keep = u16::try_from(keep).map_err(|_| CompilationError::DropKeepOutOfBounds)?;
+        let drop = u16::try_from(drop).map_err(|_| CompilationError::DropKeepOutOfBounds)?;
         // Now we can cast `drop` and `keep` to `u16` values safely.
         Ok(Self { drop, keep })
     }

@@ -1,6 +1,7 @@
 use crate::{ImportName, ValueType};
 use core::ops::{Deref, DerefMut};
 use hashbrown::HashMap;
+use wasmparser::{FuncType, ValType};
 
 #[derive(Debug, Default, Clone)]
 pub struct ImportLinker {
@@ -22,7 +23,7 @@ impl DerefMut for ImportLinker {
 
 #[derive(Debug, Clone)]
 pub struct ImportLinkerEntity {
-    pub func_idx: u32,
+    pub sys_func_idx: u32,
     pub block_fuel: u32,
     pub params: &'static [ValueType],
     pub result: &'static [ValueType],
@@ -46,11 +47,43 @@ impl<const N: usize> From<[(ImportName, ImportLinkerEntity); N]> for ImportLinke
     }
 }
 
+impl ImportLinkerEntity {
+    pub fn matches_func_type(&self, func_type: &FuncType) -> bool {
+        if func_type.params().len() != self.params.len()
+            || func_type.results().len() != self.result.len()
+        {
+            return false;
+        }
+        fn match_type(a: ValType, b: ValueType) -> bool {
+            match (a, b) {
+                (ValType::I32, ValueType::I32)
+                | (ValType::I64, ValueType::I64)
+                | (ValType::F32, ValueType::F32)
+                | (ValType::F64, ValueType::F64)
+                | (ValType::FuncRef, ValueType::FuncRef)
+                | (ValType::ExternRef, ValueType::ExternRef) => true,
+                _ => false,
+            }
+        }
+        for (a, b) in func_type.params().iter().zip(self.params.iter()) {
+            if !match_type(*a, *b) {
+                return false;
+            }
+        }
+        for (a, b) in func_type.results().iter().zip(self.result.iter()) {
+            if !match_type(*a, *b) {
+                return false;
+            }
+        }
+        false
+    }
+}
+
 impl ImportLinker {
     pub fn insert_function(
         &mut self,
         import_name: ImportName,
-        func_idx: u32,
+        sys_func_idx: u32,
         block_fuel: u32,
         params: &'static [ValueType],
         result: &'static [ValueType],
@@ -58,7 +91,7 @@ impl ImportLinker {
         let last_value = self.func_by_name.insert(
             import_name,
             ImportLinkerEntity {
-                func_idx,
+                sys_func_idx,
                 block_fuel,
                 params,
                 result,

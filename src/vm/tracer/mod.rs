@@ -1,8 +1,9 @@
-use crate::types::{Opcode, OpcodeMeta, TableIdx, UntypedValue};
+use crate::{types::{Opcode, OpcodeMeta, TableIdx}, OpcodeData, UntypedValue};
 use alloc::{string::String, vec::Vec};
 use downcast_rs::Downcast;
 use event::{memory::{MemoryRecord, MemoryRecordEnum}, opcode_stack_read, opcode_stack_write};
 use hashbrown::{hash_map::Entry, HashMap};
+
 
 
 use core::{
@@ -40,12 +41,11 @@ pub struct TraceTableSizeState {
 pub struct TracerInstrState {
     pub program_counter: u32,
     pub opcode: Opcode,
+    pub value: OpcodeData,
     pub memory_changes: Vec<TracerMemoryState>,
     pub table_changes: Vec<TraceTableState>,
     pub table_size_changes: Vec<TraceTableSizeState>,
     pub next_table_idx: Option<TableIdx>,
-    pub memory_size: u32,
-    pub consumed_fuel: u64,
     pub call_id: u32,
 }
 
@@ -116,24 +116,23 @@ impl Tracer {
         sp:ValueStackPtr,
         shard:u32,
         clk:u32,
-        ins:Opcode,
+        opcode: Opcode,
+        value: OpcodeData,
+
         
-        memory_size: u32,
-        consumed_fuel: u64,
     ) {
         let memory_changes = take(&mut self.memory_changes);
         let table_changes = take(&mut self.table_changes);
         let table_size_changes = take(&mut self.table_size_changes);
-        self.record_mr(ins,sp.to_position(),shard,clk);
+        self.record_mr(opcode,sp.to_position(),shard,clk);
         let opcode_state = TracerInstrState {
             program_counter,
-            opcode:ins,
+            opcode,
+            value,
             memory_changes,
             table_changes,
             table_size_changes,
             next_table_idx: None,
-            memory_size,
-            consumed_fuel,
             call_id: 0,
         };
         self.logs.push(opcode_state.clone());

@@ -37,6 +37,16 @@ impl RwasmModule {
         }
     }
 
+    pub fn with_one_function(code_section: InstructionSet) -> Self {
+        RwasmModule {
+            code_section,
+            memory_section: vec![],
+            element_section: vec![],
+            source_pc: 0,
+            func_section: vec![0],
+        }
+    }
+
     pub fn new(sink: &[u8]) -> Self {
         let module: RwasmModule;
         (module, _) = bincode::decode_from_slice(sink, bincode::config::legacy())
@@ -98,6 +108,30 @@ impl<Context> Decode<Context> for RwasmModule {
             source_pc,
             func_section: func_segments,
         })
+    }
+}
+
+impl core::fmt::Display for RwasmModule {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "RwasmModule {{")?;
+        for (pos, (opcode, data)) in self.code_section.iter().enumerate() {
+            let pos = pos as u32;
+            if self.func_section.contains(&pos) {
+                if pos != self.func_section.first().copied().unwrap() {
+                    writeln!(f, " .function_end\n")?;
+                }
+                writeln!(f, " .function_begin #{}", pos)?;
+            }
+            write!(f, "  {:04x}: {}({})", pos, opcode, data)?;
+            if pos == self.source_pc {
+                write!(f, " <= SOURCE PC")?;
+            }
+            writeln!(f)?;
+        }
+        writeln!(f, " .function_end\n")?;
+        writeln!(f, " .ro_data: {:x?},", self.memory_section.as_slice())?;
+        writeln!(f, "}}")?;
+        Ok(())
     }
 }
 

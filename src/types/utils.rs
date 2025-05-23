@@ -1,5 +1,5 @@
 use super::Opcode;
-use crate::RwasmError;
+use crate::CompilationError;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -204,12 +204,12 @@ impl ElementSegmentIdx {
 pub struct BranchTableTargets(u32);
 
 impl TryFrom<usize> for BranchTableTargets {
-    type Error = RwasmError;
+    type Error = CompilationError;
 
     fn try_from(index: usize) -> Result<Self, Self::Error> {
         match u32::try_from(index) {
             Ok(index) => Ok(Self(index)),
-            Err(_) => Err(RwasmError::BranchTableTargetsOutOfBounds),
+            Err(_) => Err(CompilationError::BranchTableTargetsOutOfBounds),
         }
     }
 }

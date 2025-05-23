@@ -57,8 +57,8 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
                 vm.vmstate.shard,
                 vm.vmstate.clk,
                 instr,
-                memory_size,
-                consumed_fuel,
+                vm.ip.data().clone(),
+                
             );
         }
         use Opcode::*;
@@ -261,7 +261,7 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
             I64Extend8S => visit_i64_extend8_s(vm),
             I64Extend16S => visit_i64_extend16_s(vm),
             I64Extend32S => visit_i64_extend32_s(vm),
-            StackAlloc => visit_stack_alloc_wrapped(vm),
+            StackCheck => visit_stack_alloc_wrapped(vm),
         }
     }
     vm.stop_exec = false;

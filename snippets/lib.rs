@@ -1,6 +1,7 @@
 #![allow(clippy::needless_range_loop)]
 
 mod extractor;
+mod rwasm;
 #[cfg(test)]
 mod test;
 
