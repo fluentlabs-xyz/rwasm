@@ -1,4 +1,7 @@
-use crate::types::{RwasmError, UntypedValue, N_MAX_TABLE_SIZE};
+use crate::{
+    types::{RwasmError, UntypedValue},
+    N_MAX_TABLE_ELEMENTS,
+};
 use alloc::vec::Vec;
 
 /// A Wasm table entity.
@@ -14,7 +17,7 @@ impl TableEntity {
     ///
     /// If `init` does not match the [`TableType`] element type.
     pub fn new() -> Self {
-        let elements = Vec::with_capacity(N_MAX_TABLE_SIZE);
+        let elements = Vec::with_capacity(N_MAX_TABLE_ELEMENTS);
         Self { elements }
     }
 

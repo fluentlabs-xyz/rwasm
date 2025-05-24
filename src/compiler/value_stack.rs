@@ -43,7 +43,7 @@ impl ValueStackHeight {
 
     /// Pushes an `amount` of values to the emulated value stack.
     pub fn push_n(&mut self, amount: u32) {
-        println!("push_n: {} height={}", amount, self.height);
+        // println!("push_n: {} height={}", amount, self.height);
         self.height += amount;
         self.update_max_height();
     }
@@ -53,9 +53,14 @@ impl ValueStackHeight {
         self.push_n(1)
     }
 
+    /// Pushes a value to the emulated value stack.
+    pub fn push2(&mut self) {
+        self.push_n(2)
+    }
+
     /// Pops an `amount` of elements from the emulated value stack.
     pub fn pop_n(&mut self, amount: u32) {
-        println!("pop_n: {} height={}", amount, self.height);
+        // println!("pop_n: {} height={}", amount, self.height);
         debug_assert!(amount <= self.height);
         self.height -= amount;
     }
@@ -73,6 +78,11 @@ impl ValueStackHeight {
     /// Pops 3 elements from the emulated value stack.
     pub fn pop3(&mut self) {
         self.pop_n(3)
+    }
+
+    /// Pops 4 elements from the emulated value stack.
+    pub fn pop4(&mut self) {
+        self.pop_n(4)
     }
 
     /// Shrinks the emulated value stack to the given height.

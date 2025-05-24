@@ -1659,4 +1659,12 @@ impl UntypedValue {
     pub fn as_usize(self) -> usize {
         self.as_u64() as usize
     }
+
+    pub fn as_f32(self) -> F32 {
+        F32::from(self)
+    }
+
+    pub fn as_f64(self) -> F64 {
+        F64::from(self)
+    }
 }

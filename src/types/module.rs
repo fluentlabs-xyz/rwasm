@@ -135,8 +135,8 @@ impl core::fmt::Display for RwasmModule {
                 if pos != self.func_section.first().copied().unwrap() {
                     writeln!(f, " .function_end\n")?;
                 }
-                writeln!(f, " .function_begin #{}", func_num)?;
                 func_num += 1;
+                writeln!(f, " .function_begin #{}", func_num)?;
             }
             write!(f, "  {:04x}: {}({})", pos, opcode, data)?;
             if pos == self.source_pc {

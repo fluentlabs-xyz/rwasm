@@ -27,7 +27,7 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
         {
             let stack = vm.value_stack.dump_stack(vm.sp);
             println!(
-                "{}:\t {:?}({}) \tstack({}):{:?}",
+                "{:04x}:\t {:?}({}) \tstack({}):{:?}",
                 vm.ip.pc(),
                 instr,
                 vm.ip.data(),
@@ -485,7 +485,7 @@ pub(crate) fn visit_return_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result
     let instr_ref = vm
         .module
         .func_section
-        .get(func_idx as usize)
+        .get(func_idx as usize - 1)
         .copied()
         .expect("rwasm: unknown internal function");
     vm.sp = vm.value_stack.stack_ptr();
@@ -550,7 +550,7 @@ pub(crate) fn visit_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rw
     let instr_ref = vm
         .module
         .func_section
-        .get(func_idx as usize)
+        .get(func_idx as usize - 1)
         .copied()
         .expect("rwasm: unknown internal function");
     vm.sp = vm.value_stack.stack_ptr();
@@ -602,7 +602,7 @@ pub(crate) fn visit_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rw
     let instr_ref = vm
         .module
         .func_section
-        .get(func_idx as usize)
+        .get(func_idx as usize - 1)
         .copied()
         .expect("rwasm: unknown internal function");
     vm.sp = vm.value_stack.stack_ptr();
@@ -901,9 +901,9 @@ pub(crate) fn visit_table_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
         vm.try_consume_fuel(vm.fuel_costs.fuel_for_elements(delta as u64))?;
     }
     let table = vm.tables.entry(table_idx).or_insert_with(TableEntity::new);
-    println!("table_grow: {:?}", table);
+    // println!("table_grow: {:?}", table);
     let result = table.grow_untyped(delta, init);
-    println!("table_grow: {:?}", table);
+    // println!("table_grow: {:?}", table);
     vm.sp.push_as(result);
     if let Some(tracer) = vm.tracer.as_mut() {
         tracer.table_size_change(table_idx.to_u32(), init.into(), delta);
@@ -1012,6 +1012,11 @@ pub(crate) fn visit_table_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
     let src_index = u32::from(s);
     let dst_index = u32::from(d);
 
+    println!(
+        "src_index: {}, dst_index: {}, len: {}",
+        src_index, dst_index, len
+    );
+
     if vm.config.fuel_enabled {
         vm.try_consume_fuel(vm.fuel_costs.fuel_for_elements(len as u64))?;
     }
@@ -1037,7 +1042,7 @@ pub(crate) fn visit_table_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
         module_elements_section = &[];
     }
     let table = vm.tables.get_mut(&table_idx).expect("rwasm: missing table");
-    println!("table_init: {:?}", table);
+    println!("table_init: {:?} index={}", table, table_idx.to_u32());
     table.init_untyped(dst_index, module_elements_section, src_index, len)?;
     println!("table_init: {:?}", table);
 

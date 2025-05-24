@@ -34,6 +34,7 @@ use crate::{
     InstructionSet,
     Opcode,
     OpcodeData,
+    SignatureIdx,
     DEFAULT_MEMORY_INDEX,
     F32,
     N_MAX_MEMORY_PAGES,
@@ -183,6 +184,50 @@ impl FuncTranslatorAllocations {
                 .unwrap()
         }
     }
+
+    pub(crate) fn resolve_func_type_signature(&self, func_type_idx: FuncTypeIdx) -> SignatureIdx {
+        let func_type = &self.func_types[func_type_idx as usize];
+        for (i, x) in self.func_types.iter().enumerate() {
+            if x == func_type {
+                return i as SignatureIdx;
+            }
+        }
+        unreachable!()
+    }
+
+    pub(crate) fn emit_function_call(
+        &mut self,
+        function_index: u32,
+        is_entrypoint: bool,
+        is_return_call: bool,
+    ) {
+        let is = if is_entrypoint {
+            &mut self.segment_builder.entrypoint_bytecode
+        } else {
+            &mut self.instruction_set
+        };
+        let imported_funcs_len = self.imported_funcs.len() as u32;
+        if function_index >= imported_funcs_len {
+            // Case: We are calling an internal function and can optimize
+            //       this case by using the special instruction for it.
+            if is_return_call {
+                is.op_return_call_internal(function_index - imported_funcs_len + 1);
+                is.op_return(DropKeep::none());
+            } else {
+                is.op_call_internal(function_index - imported_funcs_len + 1);
+            }
+        } else {
+            let (import_linker_entity, _) = &self.imported_funcs[function_index as usize];
+            // Case: We are calling an imported function and must use the
+            //       general calling operator for it.
+            if is_return_call {
+                is.op_return_call(import_linker_entity.sys_func_idx);
+                is.op_return(DropKeep::none());
+            } else {
+                is.op_call(import_linker_entity.sys_func_idx);
+            }
+        }
+    }
 }
 
 /// Reusable heap allocations for function validation and translation.
@@ -247,16 +292,15 @@ impl InstructionTranslator {
         let block_frame = BlockControlFrame::new(block_type, end_label, 0, consume_fuel);
         self.alloc.control_frames.push_frame(block_frame);
         let func_type_idx = self.alloc.resolve_func_type_index(func_idx);
-        let func_type = self
+        let original_func_types = self
             .alloc
             .original_func_types
             .get(func_type_idx as usize)
             .unwrap();
-        self.alloc.stack_types.extend(func_type.params());
+        self.alloc.stack_types.extend(original_func_types.params());
+        let func_type = self.alloc.func_types.get(func_type_idx as usize).unwrap();
         let func_params_len = func_type.params().len();
-        for _ in 0..func_params_len {
-            self.locals.register_locals(1);
-        }
+        self.locals.register_locals(func_params_len as u32);
     }
 
     /// Resolve the label at the current instruction position.
@@ -435,8 +479,8 @@ impl InstructionTranslator {
         self.alloc.memories.get(memory_index as usize).unwrap()
     }
 
-    pub(crate) fn resolve_table_type(&self, _table_index: u32) -> TableType {
-        todo!()
+    pub(crate) fn resolve_table_type(&self, table_index: u32) -> &TableType {
+        self.alloc.tables.get(table_index as usize).unwrap()
     }
 
     /// Returns the target at the given `depth` together with its [`DropKeep`].
@@ -530,6 +574,29 @@ impl InstructionTranslator {
         .map_err(Into::into)
     }
 
+    /// Computes how many values should be dropped and kept for the return call.
+    ///
+    /// # Panics
+    ///
+    /// If underflow of the value stack is detected.
+    fn drop_keep_return_call(&self, callee_type: &FuncType) -> Result<DropKeep, CompilationError> {
+        debug_assert!(self.is_reachable());
+        // For return calls we need to adjust the `keep` value to
+        // be equal to the number of parameters the callee expects.
+        let keep = callee_type.params().len() as u32;
+        // Find out how many values we need to drop.
+        let max_depth = self.max_depth();
+        let height_diff = self.height_diff(max_depth);
+        assert!(
+            keep <= height_diff,
+            "tried to keep {keep} values while having \
+            only {height_diff} values available on the frame",
+        );
+        let len_params_locals = self.locals.len_registered();
+        let drop = height_diff - keep + len_params_locals;
+        DropKeep::new(drop as usize, keep as usize).map_err(Into::into)
+    }
+
     /// Returns the maximum control stack depth at the current position in the code.
     fn max_depth(&self) -> u32 {
         self.alloc
@@ -580,14 +647,17 @@ impl InstructionTranslator {
     /// Adjusts the emulated value stack given the [`rwasm_legacy::FuncType`] of the call.
     fn adjust_value_stack_for_call(&mut self, func_type_idx: FuncTypeIdx) {
         let func_type = self.alloc.func_types.get(func_type_idx as usize).unwrap();
-        let params = func_type.params();
-        self.stack_height.pop_n(params.len() as u32);
-        for _ in params {
+        self.stack_height.pop_n(func_type.params().len() as u32);
+        self.stack_height.push_n(func_type.results().len() as u32);
+        let func_type = self
+            .alloc
+            .original_func_types
+            .get(func_type_idx as usize)
+            .unwrap();
+        for _ in func_type.params() {
             self.alloc.stack_types.pop();
         }
-        let results = func_type.results();
-        self.stack_height.push_n(results.len() as u32);
-        for result in results {
+        for result in func_type.results() {
             self.alloc.stack_types.push(*result);
         }
     }
@@ -757,7 +827,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             match self.alloc.stack_types.pop() {
                 Some(ValType::I64) => old_stack_height -= 2,
                 Some(_) => old_stack_height -= 1,
-                None => panic!("Stack corrupted in else block"),
+                None => panic!("stack corrupted in else block"),
             }
         }
         match if_frame.block_type() {
@@ -771,14 +841,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                     }
                     self.alloc.stack_types.push(*param);
                 });
-            }
-            BlockType::Type(val_type) => {
-                if val_type == ValType::I64 {
-                    self.stack_height.push_n(2);
-                } else {
-                    self.stack_height.push();
-                }
-                self.alloc.stack_types.push(val_type);
             }
             _ => {}
         }
@@ -1077,24 +1139,9 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.bump_fuel_consumption(builder.fuel_costs().call)?;
             let func_type_idx = builder.alloc.resolve_func_type_index(function_index);
             builder.adjust_value_stack_for_call(func_type_idx);
-            let imported_funcs_len = builder.alloc.imported_funcs.len() as u32;
-            if function_index >= imported_funcs_len {
-                // Case: We are calling an internal function and can optimize
-                //       this case by using the special instruction for it.
-                builder
-                    .alloc
-                    .instruction_set
-                    .op_call_internal(function_index);
-            } else {
-                let (import_linker_entity, _) =
-                    &builder.alloc.imported_funcs[function_index as usize];
-                // Case: We are calling an imported function and must use the
-                //       general calling operator for it.
-                builder
-                    .alloc
-                    .instruction_set
-                    .op_call(import_linker_entity.sys_func_idx);
-            }
+            builder
+                .alloc
+                .emit_function_call(function_index, false, false);
             Ok(())
         })
     }
@@ -1110,25 +1157,65 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.alloc.stack_types.pop();
             builder.adjust_value_stack_for_call(func_type_index as FuncTypeIdx);
+            let signature_idx = builder.alloc.resolve_func_type_signature(func_type_index);
             builder
                 .alloc
                 .instruction_set
-                .op_call_indirect(func_type_index);
+                .op_call_indirect(signature_idx);
             builder.alloc.instruction_set.op_table_get(table_index);
             Ok(())
         })
     }
 
-    fn visit_return_call(&mut self, _function_index: u32) -> Self::Output {
-        unimplemented!()
+    fn visit_return_call(&mut self, function_index: u32) -> Self::Output {
+        self.translate_if_reachable(|builder| {
+            let func_type_idx = builder.alloc.resolve_func_type_index(function_index);
+            let func_type = &builder.alloc.func_types[func_type_idx as usize];
+            let drop_keep = builder.drop_keep_return_call(&func_type)?;
+            builder.bump_fuel_consumption(builder.fuel_costs().call)?;
+            builder.bump_fuel_consumption(builder.fuel_costs().fuel_for_drop_keep(drop_keep))?;
+            translate_drop_keep(
+                &mut builder.alloc.instruction_set,
+                drop_keep,
+                &mut builder.stack_height,
+            );
+            builder
+                .alloc
+                .emit_function_call(function_index, false, true);
+            builder.reachable = false;
+            Ok(())
+        })
     }
 
     fn visit_return_call_indirect(
         &mut self,
-        _func_type_index: u32,
-        _table_index: u32,
+        func_type_index: u32,
+        table_index: u32,
     ) -> Self::Output {
-        unimplemented!()
+        self.translate_if_reachable(|builder| {
+            let func_type = &builder.alloc.func_types[func_type_index as usize];
+            builder.stack_height.pop1();
+            builder.alloc.stack_types.pop();
+            let mut drop_keep = builder.drop_keep_return_call(&func_type)?;
+            // TODO(dmitry123): "why? is there a bug in [drop_keep_return_call]?"
+            drop_keep.keep += 1;
+            builder.bump_fuel_consumption(builder.fuel_costs().call)?;
+            builder.bump_fuel_consumption(builder.fuel_costs().fuel_for_drop_keep(drop_keep))?;
+            translate_drop_keep(
+                &mut builder.alloc.instruction_set,
+                drop_keep,
+                &mut builder.stack_height,
+            );
+            let signature_idx = builder.alloc.resolve_func_type_signature(func_type_index);
+            builder
+                .alloc
+                .instruction_set
+                .op_return_call_indirect(signature_idx);
+            builder.alloc.instruction_set.op_return(DropKeep::none());
+            builder.alloc.instruction_set.op_table_get(table_index);
+            builder.reachable = false;
+            Ok(())
+        })
     }
 
     fn visit_delegate(&mut self, _relative_depth: u32) -> Self::Output {
@@ -1247,6 +1334,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                     .alloc
                     .instruction_set
                     .op_global_get(global_index * 2 + 1);
+                builder
+                    .alloc
+                    .instruction_set
+                    .op_global_get(global_index * 2);
                 builder.stack_height.push_n(2);
             } else {
                 builder
@@ -1264,17 +1355,17 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
             let global_type = builder.resolve_global_type(global_index).clone();
             debug_assert!(global_type.mutable);
-            builder.stack_height.pop1();
             builder.alloc.stack_types.pop();
             builder
                 .alloc
                 .instruction_set
                 .op_global_set(global_index * 2);
+            builder.stack_height.pop1();
             if global_type.content_type == ValType::I64 {
                 builder
                     .alloc
                     .instruction_set
-                    .op_local_set(global_index * 2 + 1);
+                    .op_global_set(global_index * 2 + 1);
                 builder.stack_height.pop1();
             }
             Ok(())
@@ -1563,28 +1654,26 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .maximum
                 .and_then(|v| u32::try_from(v).ok())
                 .unwrap_or(N_MAX_MEMORY_PAGES);
+
+            builder.stack_height.push();
+            builder.stack_height.push();
+            builder.stack_height.pop1();
+            builder.stack_height.push();
+            builder.stack_height.pop1();
+            builder.stack_height.pop1();
+            builder.stack_height.pop1();
+            builder.stack_height.push();
+
             builder.alloc.instruction_set.op_local_get(1);
-            builder.stack_height.push();
             builder.alloc.instruction_set.op_memory_size();
-            builder.stack_height.push();
             builder.alloc.instruction_set.op_i32_add();
-            builder.stack_height.pop2();
-            builder.stack_height.push();
             builder.alloc.instruction_set.op_i32_const(max_pages);
-            builder.stack_height.push();
             builder.alloc.instruction_set.op_i32_gt_s();
-            builder.stack_height.pop2();
-            builder.stack_height.push();
             builder.alloc.instruction_set.op_br_if_eqz(4);
-            builder.stack_height.pop1();
             builder.alloc.instruction_set.op_drop();
-            builder.stack_height.pop1();
             builder.alloc.instruction_set.op_i32_const(u32::MAX);
-            builder.stack_height.push();
             builder.alloc.instruction_set.op_br(2);
             builder.alloc.instruction_set.op_memory_grow();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
             Ok(())
         })
     }
@@ -1710,19 +1799,22 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i64_eqz(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.instruction_set.op_i32_eqz();
+
+            builder.stack_height.pop1();
+            builder.stack_height.push();
+            builder.stack_height.push();
+            builder.stack_height.pop1();
+            builder.stack_height.push();
+            builder.stack_height.pop1();
             builder.stack_height.pop2();
             builder.stack_height.push();
+
+            builder.alloc.instruction_set.op_i32_eqz();
             builder.alloc.instruction_set.op_local_get(2);
-            builder.stack_height.push();
             builder.alloc.instruction_set.op_i32_eqz();
-            builder.stack_height.pop2();
-            builder.stack_height.push();
             builder.alloc.instruction_set.op_local_set(2);
-            builder.stack_height.pop2();
-            builder.alloc.instruction_set.op_i32_add();
-            builder.stack_height.pop2();
-            builder.stack_height.push();
+            builder.alloc.instruction_set.op_i32_and();
+
             builder.alloc.stack_types.pop();
             builder.alloc.stack_types.push(ValType::I32);
             Ok(())
@@ -1977,6 +2069,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.instruction_set.op_drop();
             builder.alloc.instruction_set.op_drop();
             builder.alloc.instruction_set.op_drop();
+
             Ok(())
         })
     }
@@ -2015,6 +2108,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.instruction_set.op_drop();
             builder.alloc.instruction_set.op_drop();
             builder.alloc.instruction_set.op_drop();
+
             Ok(())
         })
     }
@@ -2053,6 +2147,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.instruction_set.op_drop();
             builder.alloc.instruction_set.op_drop();
             builder.alloc.instruction_set.op_drop();
+
             Ok(())
         })
     }
@@ -2237,11 +2332,11 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i64_popcnt(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.instruction_set.op_i32_popcnt();
             builder.stack_height.push();
+            builder.stack_height.pop1();
+            builder.alloc.instruction_set.op_i32_popcnt();
             builder.alloc.instruction_set.op_local_get(2);
             builder.alloc.instruction_set.op_i32_popcnt();
-            builder.stack_height.pop1();
             builder.alloc.instruction_set.op_local_set(2);
             builder.alloc.instruction_set.op_i32_add();
             builder.alloc.instruction_set.op_i32_const(0);
@@ -2312,6 +2407,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.instruction_set.op_drop();
             builder.alloc.instruction_set.op_drop();
             builder.alloc.instruction_set.op_drop();
+
             Ok(())
         })
     }
@@ -2325,16 +2421,18 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
             builder.stack_height.push();
             builder.stack_height.push();
-            builder.stack_height.pop1();
+            builder.stack_height.pop2();
             builder.stack_height.push();
             builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
+            builder.stack_height.push();
+            builder.stack_height.pop2();
             builder.stack_height.push();
             builder.stack_height.push();
-            builder.stack_height.pop1();
             builder.stack_height.push();
-            builder.stack_height.pop1();
+            builder.stack_height.pop2();
+            builder.stack_height.push();
+            builder.stack_height.push();
+            builder.stack_height.pop2();
             builder.stack_height.push();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
@@ -2344,22 +2442,21 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
             builder.alloc.instruction_set.op_local_get(4);
             builder.alloc.instruction_set.op_local_get(3);
+            builder.alloc.instruction_set.op_i32_sub();
+            builder.alloc.instruction_set.op_local_get(5);
+            builder.alloc.instruction_set.op_local_get(4);
             builder.alloc.instruction_set.op_i32_lt_u();
             builder.alloc.instruction_set.op_local_get(5);
             builder.alloc.instruction_set.op_local_get(4);
             builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_local_set(5);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_sub();
             builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_br_if_eqz(3);
-            builder.alloc.instruction_set.op_i32_const(1);
             builder.alloc.instruction_set.op_i32_sub();
+            builder.alloc.instruction_set.op_local_set(5);
+            builder.alloc.instruction_set.op_drop();
             builder.alloc.instruction_set.op_local_set(4);
             builder.alloc.instruction_set.op_drop();
             builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
+
             Ok(())
         })
     }
@@ -2372,290 +2469,82 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop();
             builder.alloc.stack_types.push(ValType::I64);
 
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
+            builder.stack_height.pop4();
+            builder.stack_height.push_n(10);
+            builder.stack_height.pop_n(8);
 
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(0x0000ffff);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_const(16);
-            builder.alloc.instruction_set.op_i32_shr_u();
-
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_const(0x0000ffff);
-            builder.alloc.instruction_set.op_i32_and();
+            builder.alloc.instruction_set.op_i32_const(0); // (local i32)
+            builder.alloc.instruction_set.op_i32_const(0); // (local i32)
+            builder.alloc.instruction_set.op_i32_const(0); // (local i32)
+            builder.alloc.instruction_set.op_local_get(4); // local.get 3
+            builder.alloc.instruction_set.op_local_get(6); // local.get 2
+            builder.alloc.instruction_set.op_i32_add(); // i32.add
+            builder.alloc.instruction_set.op_local_get(7); // local.get 1
+            builder.alloc.instruction_set.op_local_get(9); // local.get 0
+            builder.alloc.instruction_set.op_i32_add(); // i32.add
+            builder.alloc.instruction_set.op_i32_mul(); // i32.mul
+            builder.alloc.instruction_set.op_local_get(5); // local.get 3
+            builder.alloc.instruction_set.op_local_get(8); // local.get 1
+            builder.alloc.instruction_set.op_i32_mul(); // i32.mul
+            builder.alloc.instruction_set.op_local_get(7); // local.get 2
+            builder.alloc.instruction_set.op_i32_const(65535); // i32.const 65535
+            builder.alloc.instruction_set.op_i32_and(); // i32.and
+            builder.alloc.instruction_set.op_local_tee(9); // local.tee 1
+            builder.alloc.instruction_set.op_local_get(10); // local.get 0
+            builder.alloc.instruction_set.op_i32_const(65535); // i32.const 65535
+            builder.alloc.instruction_set.op_i32_and(); // i32.and
+            builder.alloc.instruction_set.op_local_tee(8); // local.tee 3
+            builder.alloc.instruction_set.op_i32_mul(); // i32.mul
+            builder.alloc.instruction_set.op_local_tee(6); // local.tee 4
+            builder.alloc.instruction_set.op_local_get(8); // local.get 2
+            builder.alloc.instruction_set.op_i32_const(16); // i32.const 16
+            builder.alloc.instruction_set.op_i32_shr_u(); // i32.shr_u
+            builder.alloc.instruction_set.op_local_tee(6); // local.tee 5
+            builder.alloc.instruction_set.op_local_get(8); // local.get 3
+            builder.alloc.instruction_set.op_i32_mul(); // i32.mul
+            builder.alloc.instruction_set.op_local_tee(8); // local.tee 3
+            builder.alloc.instruction_set.op_local_get(10); // local.get 1
+            builder.alloc.instruction_set.op_local_get(12); // local.get 0
+            builder.alloc.instruction_set.op_i32_const(16); // i32.const 16
+            builder.alloc.instruction_set.op_i32_shr_u(); // i32.shr_u
+            builder.alloc.instruction_set.op_local_tee(7); // local.tee 6
+            builder.alloc.instruction_set.op_i32_mul(); // i32.mul
+            builder.alloc.instruction_set.op_i32_add(); // i32.add
+            builder.alloc.instruction_set.op_local_tee(11); // local.tee 0
+            builder.alloc.instruction_set.op_i32_const(16); // i32.const 16
+            builder.alloc.instruction_set.op_i32_shl(); // i32.shl
+            builder.alloc.instruction_set.op_i32_add(); // i32.add
+            builder.alloc.instruction_set.op_local_tee(8); // local.tee 2
+            builder.alloc.instruction_set.op_i32_add(); // i32.add
+            builder.alloc.instruction_set.op_i32_sub(); // i32.sub
+            builder.alloc.instruction_set.op_local_get(6); // local.get 2
+            builder.alloc.instruction_set.op_local_get(5); // local.get 4
+            builder.alloc.instruction_set.op_i32_lt_u(); // i32.lt_u
+            builder.alloc.instruction_set.op_i32_add(); // i32.add
+            builder.alloc.instruction_set.op_local_get(3); // local.get 5
+            builder.alloc.instruction_set.op_local_get(3); // local.get 6
+            builder.alloc.instruction_set.op_i32_mul(); // i32.mul
+            builder.alloc.instruction_set.op_local_tee(8); // local.tee 1
+            builder.alloc.instruction_set.op_local_get(9); // local.get 0
+            builder.alloc.instruction_set.op_i32_const(16); // i32.const 16
+            builder.alloc.instruction_set.op_i32_shr_u(); // i32.shr_u
+            builder.alloc.instruction_set.op_local_get(10); // local.get 0
+            builder.alloc.instruction_set.op_local_get(8); // local.get 3
+            builder.alloc.instruction_set.op_i32_lt_u(); // i32.lt_u
+            builder.alloc.instruction_set.op_i32_const(16); // i32.const 16
+            builder.alloc.instruction_set.op_i32_shl(); // i32.shl
+            builder.alloc.instruction_set.op_i32_or(); // i32.or
+            builder.alloc.instruction_set.op_i32_add(); // i32.add
+            builder.alloc.instruction_set.op_local_tee(9); // local.tee 0
+            builder.alloc.instruction_set.op_i32_add(); // i32.add
+            builder.alloc.instruction_set.op_local_get(8); // local.get 0
+            builder.alloc.instruction_set.op_local_get(8); // local.get 1
+            builder.alloc.instruction_set.op_i32_lt_u(); // i32.lt_u
+            builder.alloc.instruction_set.op_i32_add(); // i32.add
             builder.alloc.instruction_set.op_local_get(6);
-            builder.alloc.instruction_set.op_i32_const(16);
-            builder.alloc.instruction_set.op_i32_shr_u();
-
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(6);
-            builder.alloc.instruction_set.op_i32_const(0x0000ffff);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_local_get(7);
-            builder.alloc.instruction_set.op_i32_const(16);
-            builder.alloc.instruction_set.op_i32_shr_u();
-
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(7);
-            builder.alloc.instruction_set.op_i32_const(0x0000ffff);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_local_get(8);
-            builder.alloc.instruction_set.op_i32_const(16);
-            builder.alloc.instruction_set.op_i32_shr_u();
-
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            //a0 * b0
-            builder.alloc.instruction_set.op_local_get(8);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_mul();
-
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            //a1 * b0 + a0 * b1
-            builder.alloc.instruction_set.op_local_get(9);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_mul();
-            builder.alloc.instruction_set.op_local_get(9);
-            builder.alloc.instruction_set.op_local_get(7);
-            builder.alloc.instruction_set.op_i32_mul();
-
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-
-            //carry for c3
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_or();
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_i32_clz();
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_i32_clz();
-            builder.alloc.instruction_set.op_i32_gt_u();
-            builder.alloc.instruction_set.op_br_if_eqz(3);
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_br(2);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_local_set(1);
-
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            //a2 * b0 + a1 * b1 + a1 * b2
-            builder.alloc.instruction_set.op_local_get(11);
-            builder.alloc.instruction_set.op_local_get(6);
-            builder.alloc.instruction_set.op_i32_mul();
-            builder.alloc.instruction_set.op_local_get(11);
-            builder.alloc.instruction_set.op_local_get(8);
-            builder.alloc.instruction_set.op_i32_mul();
-            builder.alloc.instruction_set.op_local_get(11);
-            builder.alloc.instruction_set.op_local_get(10);
-            builder.alloc.instruction_set.op_i32_mul();
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_i32_add();
-
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            //a3 * b0 + a2 * b1 + a1 * b2 + a0 * b3
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_set(3);
-            builder.alloc.instruction_set.op_local_set(1);
-
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(12);
-            builder.alloc.instruction_set.op_local_get(6);
-            builder.alloc.instruction_set.op_i32_mul();
-            builder.alloc.instruction_set.op_local_get(12);
-            builder.alloc.instruction_set.op_local_get(8);
-            builder.alloc.instruction_set.op_i32_mul();
-            builder.alloc.instruction_set.op_local_get(12);
-            builder.alloc.instruction_set.op_local_get(10);
-            builder.alloc.instruction_set.op_i32_mul();
-            builder.alloc.instruction_set.op_local_get(12);
-            builder.alloc.instruction_set.op_local_get(12);
-            builder.alloc.instruction_set.op_i32_mul();
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_i32_add();
-
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
+            // TODO(dmitry123): "how efficiently make drop=7 keep=2?"
             builder.alloc.instruction_set.op_local_set(8);
-            builder.alloc.instruction_set.op_local_set(8);
-            builder.alloc.instruction_set.op_local_set(8);
-            builder.alloc.instruction_set.op_local_set(8);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-
-            //Calculate first i32 with carry
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(16);
-            builder.alloc.instruction_set.op_i32_shl();
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_const(16);
-            builder.alloc.instruction_set.op_i32_shl();
-            builder.alloc.instruction_set.op_i32_or();
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_i32_clz();
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_i32_clz();
-            builder.alloc.instruction_set.op_i32_gt_u();
-            builder.alloc.instruction_set.op_br_if_eqz(3);
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_br(2);
-            builder.alloc.instruction_set.op_i32_const(0);
-
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.push();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_const(16);
-            builder.alloc.instruction_set.op_i32_shr_u();
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_const(16);
-            builder.alloc.instruction_set.op_i32_shl();
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_i32_add();
-
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_set(8);
-            builder.alloc.instruction_set.op_local_set(8);
-
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_drop();
+            builder.alloc.instruction_set.op_local_set(6);
             builder.alloc.instruction_set.op_drop();
             builder.alloc.instruction_set.op_drop();
             builder.alloc.instruction_set.op_drop();

@@ -32,7 +32,7 @@ rand = "0.9.1"
 wat = "1.230.0"
 
 [features]
-default = ["std", "debug-print"]
+default = ["std"]
 std = [
     "num_enum/std",
     "bytes/std",

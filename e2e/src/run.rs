@@ -297,7 +297,7 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
             }
             (Value::ExternRef(externref), WastRetCore::RefExtern(expected)) => {
                 let value = externref.resolve_index();
-                assert_eq!(value, *expected);
+                assert_eq!(value, *expected + 1);
             }
             (result, expected) => panic!(
                 "{}: encountered mismatch in evaluation. expected {:?} but found {:?}",
@@ -410,7 +410,10 @@ fn value(value: &wast::core::WastArgCore) -> Option<Value> {
         wast::core::WastArgCore::F64(arg) => Value::F64(F64::from_bits(arg.bits)),
         wast::core::WastArgCore::RefNull(HeapType::Func) => Value::FuncRef(FuncRef::null()),
         wast::core::WastArgCore::RefNull(HeapType::Extern) => Value::ExternRef(ExternRef::null()),
-        wast::core::WastArgCore::RefExtern(value) => Value::ExternRef(ExternRef::new(*value)),
+        wast::core::WastArgCore::RefExtern(value) => {
+            // We add +1 here because 0 is reserved for null
+            Value::ExternRef(ExternRef::new(*value + 1))
+        }
         _ => return None,
     })
 }

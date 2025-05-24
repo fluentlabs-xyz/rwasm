@@ -392,7 +392,7 @@ impl<T> RwasmExecutor<T> {
         let instr_ref = self
             .module
             .func_section
-            .get(func_idx as usize)
+            .get(func_idx as usize - 1)
             .copied()
             .expect("rwasm: unknown internal function");
         self.sp = self.value_stack.stack_ptr();

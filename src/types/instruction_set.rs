@@ -91,11 +91,14 @@ impl InstructionSet {
         self.instr.clear();
     }
 
-    fn is_return_last(&self) -> bool {
+    pub fn is_return_last(&self) -> bool {
         self.instr
             .last()
             .map(|instr| match instr.0 {
-                Opcode::Return => true,
+                Opcode::Return
+                | Opcode::ReturnCall
+                | Opcode::ReturnCallInternal
+                | Opcode::ReturnCallIndirect => true,
                 _ => false,
             })
             .unwrap_or_default()

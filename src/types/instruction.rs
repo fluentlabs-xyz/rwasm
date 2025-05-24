@@ -284,7 +284,7 @@ impl core::fmt::Display for OpcodeData {
             OpcodeData::DropKeep(value) => write!(f, "drop={}, keep={}", value.drop, value.keep),
             OpcodeData::CompiledFunc(value) => write!(f, "{}", value),
             OpcodeData::FuncIdx(value) => write!(f, "{}", value.to_u32()),
-            OpcodeData::SignatureIdx(value) => write!(f, "{}", value.to_u32()),
+            OpcodeData::SignatureIdx(value) => write!(f, "{}", value),
             OpcodeData::GlobalIdx(value) => write!(f, "{}", value.to_u32()),
             OpcodeData::AddressOffset(value) => write!(f, "{}", value.into_inner()),
             OpcodeData::DataSegmentIdx(value) => write!(f, "{}", value.to_u32()),

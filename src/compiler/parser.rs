@@ -5,9 +5,9 @@ use crate::{
     CompiledExpr,
     ConstructorParams,
     DataSegmentIdx,
-    DropKeep,
     ElementSegmentIdx,
     FuncIdx,
+    FuncRef,
     FuncTypeIdx,
     GlobalIdx,
     GlobalVariable,
@@ -20,7 +20,6 @@ use crate::{
 use core::ops::Range;
 use std::mem::{replace, take};
 use wasmparser::{
-    BinaryReaderError,
     CustomSectionReader,
     DataKind,
     DataSectionReader,
@@ -70,8 +69,22 @@ impl ModuleParser {
     pub fn parse(&mut self, wasm_binary: &[u8]) -> Result<(), CompilationError> {
         let parser = Parser::new(0);
         let payloads = parser.parse_all(wasm_binary).collect::<Vec<_>>();
+        let mut func_bodies = Vec::new();
         for payload in payloads {
-            self.process_payload(payload)?;
+            match payload? {
+                Payload::CodeSectionEntry(func_body) => {
+                    func_bodies.push(func_body);
+                }
+                Payload::End(offset) => {
+                    for func_body in take(&mut func_bodies) {
+                        self.process_code_entry(func_body)?;
+                    }
+                    self.process_end(offset)?;
+                }
+                payload => {
+                    self.process_payload(payload)?;
+                }
+            }
         }
         Ok(())
     }
@@ -100,10 +113,11 @@ impl ModuleParser {
 
     pub fn finalize(mut self) -> Result<(RwasmModule, ConstructorParams), CompilationError> {
         if let Some(start_func) = self.allocations.translation.start_func {
+            // for the start section we must always invoke even if there is a main function,
+            // otherwise it might be super misleading for devs
             self.allocations
                 .translation
-                .segment_builder
-                .emit_start_function(start_func.to_u32());
+                .emit_function_call(start_func.to_u32(), true, false);
         } else if let Some(entrypoint_name) = self.config.entrypoint_name.as_ref() {
             let func_idx = self
                 .allocations
@@ -113,8 +127,7 @@ impl ModuleParser {
                 .ok_or(CompilationError::MissingEntrypoint)?;
             self.allocations
                 .translation
-                .segment_builder
-                .emit_start_function(func_idx.to_u32());
+                .emit_function_call(func_idx.to_u32(), true, true);
         } else if self.config.state_router.is_none() {
             // if there is no state router, then such an application can't be executed; then why do
             // we need to compile it?
@@ -127,7 +140,7 @@ impl ModuleParser {
             .translation
             .segment_builder
             .entrypoint_bytecode
-            .op_return(DropKeep::none());
+            .finalize(true);
 
         // merge the entrypoint with our code section
         let mut code_section = self
@@ -217,8 +230,9 @@ impl ModuleParser {
             // it's super important to drop the original state from the stack
             // because input params might be passed though the stack
             entrypoint_bytecode.op_drop();
-            entrypoint_bytecode.op_call_internal(func_idx.to_u32());
-            entrypoint_bytecode.op_return(DropKeep::none());
+            self.allocations
+                .translation
+                .emit_function_call(func_idx.to_u32(), true, true);
         }
         // drop input state from the stack
         self.allocations
@@ -236,11 +250,8 @@ impl ModuleParser {
     /// - If Wasm validation of the payload fails.
     /// - If some unsupported Wasm proposal definition is encountered.
     /// - If `rwasm` limits are exceeded.
-    fn process_payload(
-        &mut self,
-        payload: Result<Payload, BinaryReaderError>,
-    ) -> Result<bool, CompilationError> {
-        match payload? {
+    fn process_payload(&mut self, payload: Payload) -> Result<bool, CompilationError> {
+        match payload {
             Payload::Version {
                 num,
                 encoding,
@@ -377,6 +388,19 @@ impl ModuleParser {
             let import = import?;
             let func_type_index = match import.ty {
                 TypeRef::Func(func_type_index) => func_type_index,
+                TypeRef::Global(global_type) => {
+                    let Some(default_value) = self.config.default_imported_global_value else {
+                        return Err(CompilationError::NotSupportedImportType);
+                    };
+                    let global_index = self.allocations.translation.globals.len() as u32;
+                    let global_variable = GlobalVariable::new(global_type, default_value);
+                    self.allocations
+                        .translation
+                        .segment_builder
+                        .add_global_variable(global_index.into(), &global_variable)?;
+                    self.allocations.translation.globals.push(global_variable);
+                    continue;
+                }
                 _ => return Err(CompilationError::NotSupportedImportType),
             };
             let import_name = ImportName::new(import.module, import.name);
@@ -438,14 +462,14 @@ impl ModuleParser {
         self.validator.function_section(&section)?;
         for func_type_index in section.into_iter() {
             let func_type_index = func_type_index?;
-            let func_idx = self.allocations.translation.compiled_funcs.len();
-            println!("func_idx={func_idx}, func_type_index: {func_type_index}");
+            // let func_idx = self.allocations.translation.compiled_funcs.len();
+            // println!("func_idx={func_idx}, func_type_index: {func_type_index}");
             self.allocations
                 .translation
                 .compiled_funcs
                 .push(func_type_index);
         }
-        println!();
+        // println!();
         Ok(())
     }
 
@@ -523,10 +547,8 @@ impl ModuleParser {
         for global in section.into_iter() {
             let global = global?;
             let init_expr = CompiledExpr::new(global.init_expr);
-            let global_variable = GlobalVariable {
-                global_type: global.ty,
-                init_expr,
-            };
+            let default_value = self.eval_const(init_expr)?;
+            let global_variable = GlobalVariable::new(global.ty, default_value);
             let global_idx = GlobalIdx::from(self.allocations.translation.globals.len() as u32);
             self.allocations
                 .translation
@@ -550,6 +572,8 @@ impl ModuleParser {
         self.validator.export_section(&section)?;
         for export in section.into_iter() {
             let export = export?;
+            #[cfg(feature = "debug-print")]
+            println!("export: func_idx={} {}", export.index, export.name);
             match export.kind {
                 ExternalKind::Func => {
                     let function_name: Box<str> = export.name.into();
@@ -601,14 +625,14 @@ impl ModuleParser {
                         let compiled_expr = CompiledExpr::new(v?);
                         compiled_expr
                             .funcref()
-                            .map(FuncIdx::to_u32)
+                            .map(|v| v.to_u32() + 1)
                             .or_else(|| compiled_expr.eval_const().map(UntypedValue::as_u32))
                             .ok_or(CompilationError::ConstEvaluationFailed)
                     })
                     .collect::<Result<Vec<_>, _>>()?,
                 ElementItems::Functions(section) => section
                     .into_iter()
-                    .map(|v| v.map_err(CompilationError::from))
+                    .map(|v| v.map(|v| v + 1).map_err(CompilationError::from))
                     .collect::<Result<Vec<_>, _>>()?,
             };
 
@@ -618,9 +642,7 @@ impl ModuleParser {
                     offset_expr,
                 } => {
                     let compiled_expr = CompiledExpr::new(offset_expr);
-                    let element_offset = compiled_expr
-                        .eval_const()
-                        .ok_or(CompilationError::ConstEvaluationFailed)?;
+                    let element_offset = self.eval_const(compiled_expr)?;
                     let table_index = TableIdx::from(table_index);
                     self.allocations
                         .translation
@@ -632,11 +654,16 @@ impl ModuleParser {
                             element_items_vec,
                         );
                 }
-                ElementKind::Passive | ElementKind::Declared => self
+                ElementKind::Passive => self
                     .allocations
                     .translation
                     .segment_builder
                     .add_passive_elements(element_segment_idx, element_items_vec),
+                ElementKind::Declared => self
+                    .allocations
+                    .translation
+                    .segment_builder
+                    .add_passive_elements(element_segment_idx, []),
             };
         }
         Ok(())
@@ -681,9 +708,7 @@ impl ModuleParser {
                         return Err(CompilationError::NonDefaultMemoryIndex);
                     }
                     let compiled_expr = CompiledExpr::new(offset_expr);
-                    let data_offset = compiled_expr
-                        .eval_const()
-                        .ok_or(CompilationError::ConstEvaluationFailed)?;
+                    let data_offset = self.eval_const(compiled_expr)?;
                     self.allocations
                         .translation
                         .segment_builder
@@ -697,6 +722,21 @@ impl ModuleParser {
             };
         }
         Ok(())
+    }
+
+    fn eval_const(&self, compiled_expr: CompiledExpr) -> Result<UntypedValue, CompilationError> {
+        compiled_expr
+            .eval_with_context(
+                |global_index| {
+                    self.allocations
+                        .translation
+                        .globals
+                        .get(global_index as usize)
+                        .and_then(GlobalVariable::value)
+                },
+                |function_index| Some(FuncRef::new(function_index + 1)),
+            )
+            .ok_or(CompilationError::ConstEvaluationFailed)
     }
 
     fn process_custom_section(
@@ -754,6 +794,7 @@ impl ModuleParser {
     /// If the function body fails to validate.
     fn process_code_entry(&mut self, func_body: FunctionBody) -> Result<(), CompilationError> {
         let func_idx = self.next_func();
+        #[cfg(feature = "debug-print")]
         println!("\nfunc_idx={}", func_idx.to_u32());
         let allocations = take(&mut self.allocations);
         let validator = self.validator.code_section_entry(&func_body)?;

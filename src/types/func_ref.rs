@@ -1,7 +1,7 @@
 use crate::{UntypedValue, NULL_FUNC_IDX};
 
 #[derive(Clone, Debug)]
-pub struct FuncRef(u32);
+pub struct FuncRef(pub u32);
 
 impl FuncRef {
     pub fn new(func_idx: u32) -> Self {
@@ -13,7 +13,6 @@ impl FuncRef {
     }
 
     pub fn resolve_index(&self) -> u32 {
-        assert!(!self.is_null(), "rwasm: resolve of null func ref");
         self.0
     }
 

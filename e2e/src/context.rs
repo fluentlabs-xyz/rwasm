@@ -23,6 +23,7 @@ use rwasm::{
     ImportLinker,
     ImportLinkerEntity,
     ImportName,
+    InstructionSet,
     InstructionTable,
     ModuleParser,
     Opcode,
@@ -184,7 +185,8 @@ impl TestContext<'_> {
             .with_wrap_import_functions(true)
             .with_allow_malformed_entrypoint_func_type(true)
             .with_builtins_consume_fuel(false)
-            .with_enable_floating_point(true);
+            .with_enable_floating_point(true)
+            .with_default_imported_global_value(666.into());
 
         // extract all exports first to calculate rwasm config
         let mut states = Vec::<(Box<str>, u32)>::new();

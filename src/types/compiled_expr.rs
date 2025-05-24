@@ -372,8 +372,8 @@ impl CompiledExpr {
     /// This is useful for evaluation of [`CompiledExpr`] during bytecode execution.
     pub fn eval_with_context<G, F>(&self, global_get: G, func_get: F) -> Option<UntypedValue>
     where
-        G: Fn(u32) -> Value,
-        F: Fn(u32) -> FuncRef,
+        G: Fn(u32) -> Option<Value>,
+        F: Fn(u32) -> Option<FuncRef>,
     {
         /// Context that wraps closures representing partial evaluation contexts.
         struct WrappedEvalContext<G, F> {
@@ -384,15 +384,15 @@ impl CompiledExpr {
         }
         impl<G, F> EvalContext for WrappedEvalContext<G, F>
         where
-            G: Fn(u32) -> Value,
-            F: Fn(u32) -> FuncRef,
+            G: Fn(u32) -> Option<Value>,
+            F: Fn(u32) -> Option<FuncRef>,
         {
             fn get_global(&self, index: u32) -> Option<Value> {
-                Some((self.global_get)(index))
+                (self.global_get)(index)
             }
 
             fn get_func(&self, index: u32) -> Option<FuncRef> {
-                Some((self.func_get)(index))
+                (self.func_get)(index)
             }
         }
         self.eval(&WrappedEvalContext::<G, F> {

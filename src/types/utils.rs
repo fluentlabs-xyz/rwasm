@@ -66,24 +66,6 @@ impl TableIdx {
     }
 }
 
-/// An index of a unique function signature.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
-#[repr(transparent)]
-pub struct SignatureIdx(u32);
-
-impl From<u32> for SignatureIdx {
-    fn from(index: u32) -> Self {
-        Self(index)
-    }
-}
-
-impl SignatureIdx {
-    /// Returns the index value as `u32`.
-    pub fn to_u32(self) -> u32 {
-        self.0
-    }
-}
-
 /// A local variable depth access index.
 ///
 /// # Note

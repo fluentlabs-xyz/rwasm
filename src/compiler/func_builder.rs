@@ -98,10 +98,14 @@ impl<'a> FuncBuilder<'a> {
 
     fn translate_signature_check(&mut self) {
         let func_type_idx = self.translator.alloc.resolve_func_type_index(self.func_idx);
+        let signature_index = self
+            .translator
+            .alloc
+            .resolve_func_type_signature(func_type_idx);
         self.translator
             .alloc
             .instruction_set
-            .op_signature_check(func_type_idx);
+            .op_signature_check(signature_index);
     }
 
     fn translate_stack_alloc(&mut self) {
@@ -121,8 +125,8 @@ impl<'a> FuncBuilder<'a> {
     fn translate_operators(&mut self) -> Result<usize, CompilationError> {
         let mut reader = self.func_body.get_operators_reader()?;
         while !reader.eof() {
-            let operator = reader.clone().read()?;
-            println!(" - {:?}", operator);
+            // let operator = reader.clone().read()?;
+            // println!(" - {:?}", operator);
             self.pos = reader.original_position();
             reader.visit_operator(self)??;
         }

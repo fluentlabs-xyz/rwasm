@@ -7,9 +7,9 @@ edition = "2021"
 rwasm = { path = ".." }
 #rwasm-legacy = { path = "../legacy" }
 anyhow = "1.0.71"
-wast = "=62.0.0"
+wast = "=64.0"
 
 [features]
-default = ["e2e", "debug-print"]
+default = ["e2e"]
 e2e = ["rwasm/e2e"]
 debug-print = ["rwasm/debug-print"]

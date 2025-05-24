@@ -55,6 +55,7 @@ pub const N_MAX_STACK_HEIGHT: usize = 4096;
 pub const DEFAULT_MEMORY_INDEX: u32 = 0;
 
 pub type FuncTypeIdx = u32;
+pub type SignatureIdx = u32;
 pub type MemoryIdx = u32;
 pub type CompiledFunc = u32;
 

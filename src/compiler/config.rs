@@ -1,4 +1,4 @@
-use crate::{ImportLinker, Opcode, OpcodeData};
+use crate::{ImportLinker, Opcode, OpcodeData, UntypedValue};
 use wasmparser::WasmFeatures;
 
 #[derive(Debug, Clone)]
@@ -34,6 +34,9 @@ pub struct CompilationConfig {
     /// only for running WebAssembly testing suite to make sure rWasm fully satisfies WebAssembly
     /// standards.
     pub enable_floating_point: bool,
+    /// We don't support imported global, but you can set a default value for these values instead.
+    /// Thus is required by testing suite.
+    pub default_imported_global_value: Option<UntypedValue>,
 }
 
 impl CompilationConfig {
@@ -96,6 +99,14 @@ impl CompilationConfig {
 
     pub fn with_enable_floating_point(mut self, enable_floating_point: bool) -> Self {
         self.enable_floating_point = enable_floating_point;
+        self
+    }
+
+    pub fn with_default_imported_global_value(
+        mut self,
+        default_imported_global_value: UntypedValue,
+    ) -> Self {
+        self.default_imported_global_value = Some(default_imported_global_value);
         self
     }
 }

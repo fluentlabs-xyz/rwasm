@@ -1,7 +1,6 @@
 use crate::{
     split_i64_to_i32,
     CompilationError,
-    CompiledFunc,
     DataSegmentIdx,
     ElementSegmentIdx,
     GlobalIdx,
@@ -35,31 +34,26 @@ impl SegmentBuilder {
         global_variable: &GlobalVariable,
     ) -> Result<(), CompilationError> {
         let global_type = global_variable.global_type.content_type;
-        if let Some(value) = global_variable.init_expr.eval_const() {
-            match global_type {
-                ValType::I32 => self.entrypoint_bytecode.op_i32_const(value),
-                ValType::I64 => {
-                    let (lower, upper) = split_i64_to_i32(value.as_i64());
-                    self.entrypoint_bytecode.op_i32_const(lower);
-                    self.entrypoint_bytecode.op_i32_const(upper)
-                }
-                ValType::F32 => self.entrypoint_bytecode.op_f32_const(value),
-                ValType::F64 => self.entrypoint_bytecode.op_i64_const(value),
-                // ValType::FuncRef => {}
-                // ValType::ExternRef => {}
-                _ => return Err(CompilationError::NotSupportedGlobalType),
-            };
-        } else if let Some(value) = global_variable.init_expr.funcref() {
-            self.entrypoint_bytecode.op_ref_func(value);
-        } else if let Some(index) = global_variable.init_expr.global() {
-            if global_type == ValType::I64 {
-                self.entrypoint_bytecode
-                    .op_global_get(index.to_u32() * 2 + 1);
+        match global_type {
+            ValType::I32 => self
+                .entrypoint_bytecode
+                .op_i32_const(global_variable.default_value),
+            ValType::I64 => {
+                let (lower, upper) = split_i64_to_i32(global_variable.default_value.as_i64());
+                self.entrypoint_bytecode.op_i32_const(lower);
+                self.entrypoint_bytecode.op_i32_const(upper)
             }
-            self.entrypoint_bytecode.op_global_get(index.to_u32() * 2);
-        } else {
-            return Err(CompilationError::NotSupportedGlobalType);
-        }
+            ValType::F32 => self
+                .entrypoint_bytecode
+                .op_f32_const(global_variable.default_value),
+            ValType::F64 => self
+                .entrypoint_bytecode
+                .op_i64_const(global_variable.default_value),
+            ValType::FuncRef | ValType::ExternRef => self
+                .entrypoint_bytecode
+                .op_ref_func(global_variable.default_value.as_u32()),
+            _ => return Err(CompilationError::NotSupportedGlobalType),
+        };
         self.entrypoint_bytecode
             .op_global_set(global_idx.to_u32() * 2);
         if global_type == ValType::I64 {
@@ -187,11 +181,5 @@ impl SegmentBuilder {
         // store passive section info
         self.element_sections
             .insert(segment_idx, (segment_offset, segment_length));
-    }
-
-    pub fn emit_start_function(&mut self, func_idx: CompiledFunc) {
-        // for the start section we must always invoke even if there is a main function,
-        // otherwise it might be super misleading for devs
-        self.entrypoint_bytecode.op_call_internal(func_idx);
     }
 }
