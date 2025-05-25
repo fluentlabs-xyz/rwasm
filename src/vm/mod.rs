@@ -22,3 +22,4 @@ pub use memory::*;
 pub use table_entity::*;
 pub use tracer::*;
 pub use value_stack::*;
+pub use opcodes::execute_instruction;
