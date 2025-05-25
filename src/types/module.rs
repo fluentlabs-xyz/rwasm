@@ -24,8 +24,8 @@ use hashbrown::HashSet;
 /// It's compiled from Wasm
 #[derive(Default, Debug, PartialEq)]
 pub struct RwasmModule {
-    /// The main instruction set (bytecode)
-    /// for this module that includes an entrypoint and all required functions.
+    /// The main instruction set (bytecode) for this module that includes an entrypoint
+    /// and all required functions.
     ///
     /// The source program counter offset is always 0.
     pub code_section: InstructionSet,
