@@ -38,8 +38,7 @@ jobs:
 
       - name: Run tests
         run: |
-          cargo test --no-fail-fast
-          cargo test --no-fail-fast --manifest-path=./e2e/Cargo.toml
+          make test-specific-cases
 
   lint:
     name: Lint
