@@ -10,7 +10,7 @@ Current results:
 
 PS:
 
-1. Risc-V is slow because of tracing
+1. SP1's RISC-V is slow because of tracing
 2. Wasmi is slow because of Wasm validation rules
 
 Tested on Apple M3 MAX
