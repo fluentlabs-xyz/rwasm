@@ -36,14 +36,9 @@ jobs:
       - name: Setup cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
-
       - name: Run tests
         run: |
+          rustup target add wasm32-unknown-unknown
           make test-specific-cases
 
   lint:

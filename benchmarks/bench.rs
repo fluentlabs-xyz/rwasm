@@ -1,6 +1,6 @@
 extern crate test;
 
-use rwasm::Caller;
+use rwasm::{Caller, CompilationConfig};
 use sp1_core_executor::{ExecutionState, Executor, ExecutorMode, Program};
 use test::Bencher;
 
@@ -29,48 +29,17 @@ fn bench_wasmi(b: &mut Bencher) {
 
 #[bench]
 fn bench_rwasm(b: &mut Bencher) {
-    use rwasm::{
-        legacy::{engine::RwasmConfig, Config, Engine, Module},
-        ExecutorConfig,
-        RwasmExecutor,
-        RwasmModule,
-    };
+    use rwasm::{ExecutorConfig, RwasmExecutor, RwasmModule};
     use std::sync::Arc;
 
     let wasm = include_bytes!("./lib.wasm");
 
-    let mut config = Config::default();
-    config
-        .wasm_mutable_global(false)
-        .wasm_saturating_float_to_int(false)
-        .wasm_sign_extension(false)
-        .wasm_multi_value(false)
-        .wasm_mutable_global(true)
-        .wasm_saturating_float_to_int(true)
-        .wasm_sign_extension(true)
-        .wasm_multi_value(true)
-        .wasm_bulk_memory(true)
-        .wasm_reference_types(true)
-        .wasm_tail_call(true)
-        .wasm_extended_const(true);
-    config.rwasm_config(RwasmConfig {
-        state_router: None,
-        entrypoint_name: Some("main".to_string()),
-        import_linker: None,
-        wrap_import_functions: true,
-        translate_drop_keep: false,
-        allow_malformed_entrypoint_func_type: true,
-        use_32bit_mode: false,
-        builtins_consume_fuel: false,
-    });
-    let engine = Engine::new(&config);
-    let wasm_module = Module::new(&engine, &wasm[..]).unwrap();
-    let rwasm_module = rwasm::legacy::rwasm::RwasmModule::from_module(&wasm_module);
-    let mut encoded_rwasm_module = Vec::new();
-    use rwasm::legacy::rwasm::BinaryFormat;
-    rwasm_module
-        .write_binary_to_vec(&mut encoded_rwasm_module)
-        .unwrap();
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("main".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+    let (rwasm_module, _) = RwasmModule::compile(config, wasm).unwrap();
+    let encoded_rwasm_module = rwasm_module.serialize();
+
     b.iter(|| {
         let rwasm_module = RwasmModule::new(&encoded_rwasm_module);
         let mut vm = RwasmExecutor::new(Arc::new(rwasm_module), ExecutorConfig::default(), ());

@@ -76,6 +76,11 @@ impl RwasmModule {
             .expect("rwasm: empty function section");
         self.source_pc = source_pc;
     }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        bincode::encode_to_vec(self, bincode::config::legacy())
+            .unwrap_or_else(|_| unreachable!("rwasm: failed to serialize module"))
+    }
 }
 
 /// Rwasm magic bytes 0xef52
