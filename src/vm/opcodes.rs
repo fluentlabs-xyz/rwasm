@@ -474,7 +474,7 @@ pub(crate) fn visit_return_if_nez<T>(vm: &mut RwasmExecutor<T>) {
 
 #[inline(always)]
 pub(crate) fn visit_return_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
-    let func_idx = match vm.ip.data() {
+    let instr_ref = match vm.ip.data() {
         OpcodeData::CompiledFunc(func_idx) => *func_idx,
         _ => unreachable!("rwasm: missing instr data"),
     };
@@ -482,12 +482,6 @@ pub(crate) fn visit_return_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result
     vm.sp.drop_keep(drop_keep);
     vm.ip.add(2);
     vm.value_stack.sync_stack_ptr(vm.sp);
-    let instr_ref = vm
-        .module
-        .func_section
-        .get(func_idx as usize - 1)
-        .copied()
-        .expect("rwasm: unknown internal function");
     vm.sp = vm.value_stack.stack_ptr();
     vm.ip = InstructionPtr::new(vm.module.code_section.instr.as_ptr());
     vm.ip.add(instr_ref as usize);
@@ -521,7 +515,7 @@ pub(crate) fn visit_return_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result
     let func_index: u32 = vm.sp.pop_as();
     vm.sp.drop_keep(drop_keep);
     vm.last_signature = Some(signature_idx);
-    let func_idx: u32 = vm
+    let instr_ref: u32 = vm
         .tables
         .get(&table)
         .expect("rwasm: unresolved table index")
@@ -529,15 +523,15 @@ pub(crate) fn visit_return_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result
         .ok_or(RwasmError::TableOutOfBounds)?
         .try_into()
         .unwrap();
-    if func_idx == 0 {
+    if instr_ref == 0 {
         return Err(RwasmError::IndirectCallToNull.into());
     }
-    vm.execute_call_internal(false, 3, func_idx)
+    vm.execute_call_internal(false, 3, instr_ref)
 }
 
 #[inline(always)]
 pub(crate) fn visit_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
-    let func_idx = match vm.ip.data() {
+    let instr_ref = match vm.ip.data() {
         OpcodeData::CompiledFunc(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
     };
@@ -547,12 +541,6 @@ pub(crate) fn visit_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rw
         return Err(RwasmError::StackOverflow);
     }
     vm.call_stack.push(vm.ip);
-    let instr_ref = vm
-        .module
-        .func_section
-        .get(func_idx as usize - 1)
-        .copied()
-        .expect("rwasm: unknown internal function");
     vm.sp = vm.value_stack.stack_ptr();
     vm.ip = InstructionPtr::new(vm.module.code_section.instr.as_ptr());
     vm.ip.add(instr_ref as usize);
@@ -582,14 +570,14 @@ pub(crate) fn visit_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rw
     let table = vm.fetch_table_index(1);
     let func_index: u32 = vm.sp.pop_as();
     vm.last_signature = Some(signature_idx);
-    let func_idx = vm
+    let instr_ref = vm
         .tables
         .get(&table)
         .expect("rwasm: unresolved table index")
         .get_untyped(func_index)
         .map(|v| v.as_u32())
         .ok_or(RwasmError::TableOutOfBounds)?;
-    if func_idx == NULL_FUNC_IDX {
+    if instr_ref == NULL_FUNC_IDX {
         return Err(RwasmError::IndirectCallToNull);
     }
     // call func
@@ -599,12 +587,6 @@ pub(crate) fn visit_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rw
         return Err(RwasmError::StackOverflow);
     }
     vm.call_stack.push(vm.ip);
-    let instr_ref = vm
-        .module
-        .func_section
-        .get(func_idx as usize - 1)
-        .copied()
-        .expect("rwasm: unknown internal function");
     vm.sp = vm.value_stack.stack_ptr();
     vm.ip = InstructionPtr::new(vm.module.code_section.instr.as_ptr());
     vm.ip.add(instr_ref as usize);
@@ -847,7 +829,7 @@ pub(crate) fn visit_memory_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
         .get_mut(dst_offset..)
         .and_then(|memory| memory.get_mut(..n))
         .ok_or(RwasmError::MemoryOutOfBounds)?;
-    let mut memory_section = vm.module.memory_section.as_slice();
+    let mut memory_section = vm.module.data_section.as_slice();
     if is_empty_data_segment {
         memory_section = &[];
     }
@@ -1064,10 +1046,10 @@ pub(crate) fn visit_element_drop<T>(vm: &mut RwasmExecutor<T>) {
 #[inline(always)]
 pub(crate) fn visit_ref_func<T>(vm: &mut RwasmExecutor<T>) {
     let func_idx = match vm.ip.data() {
-        OpcodeData::FuncIdx(value) => *value,
+        OpcodeData::CompiledFunc(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
     };
-    vm.sp.push_as(func_idx.to_u32());
+    vm.sp.push_as(func_idx);
     vm.ip.add(1);
 }
 

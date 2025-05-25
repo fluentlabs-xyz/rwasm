@@ -140,8 +140,7 @@ impl<T> RwasmExecutor<T> {
         let sp = value_stack.stack_ptr();
 
         // assign sp to the position inside a code section
-        let mut ip = InstructionPtr::new(module.code_section.instr.as_ptr());
-        ip.add(module.source_pc as usize);
+        let ip = InstructionPtr::new(module.code_section.instr.as_ptr());
 
         // create global memory
         let global_memory = GlobalMemory::new(Pages::default());
@@ -156,7 +155,7 @@ impl<T> RwasmExecutor<T> {
         };
 
         let module_elements_section = module
-            .element_section
+            .elem_section
             .iter()
             .copied()
             .map(|v| UntypedValue::from(v))
@@ -201,7 +200,7 @@ impl<T> RwasmExecutor<T> {
 
     pub fn reset(&mut self, pc: Option<usize>) {
         let mut ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
-        ip.add(pc.unwrap_or(self.module.source_pc as usize));
+        ip.add(pc.unwrap_or(0));
         self.ip = ip;
         self.consumed_fuel = 0;
         self.value_stack.drain();
@@ -379,7 +378,7 @@ impl<T> RwasmExecutor<T> {
         &mut self,
         is_nested_call: bool,
         skip: usize,
-        func_idx: u32,
+        instr_ref: u32,
     ) -> Result<(), RwasmError> {
         self.ip.add(skip);
         self.value_stack.sync_stack_ptr(self.sp);
@@ -389,12 +388,6 @@ impl<T> RwasmExecutor<T> {
             }
             self.call_stack.push(self.ip);
         }
-        let instr_ref = self
-            .module
-            .func_section
-            .get(func_idx as usize - 1)
-            .copied()
-            .expect("rwasm: unknown internal function");
         self.sp = self.value_stack.stack_ptr();
         self.ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
         self.ip.add(instr_ref as usize);

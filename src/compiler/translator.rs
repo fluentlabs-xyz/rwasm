@@ -86,6 +86,8 @@ pub struct FuncTranslatorAllocations {
     /// Module builder for rWASM
     pub(crate) segment_builder: SegmentBuilder,
 
+    pub(crate) func_call_locs: Vec<(InstrLoc, bool)>,
+
     pub(crate) original_func_types: Vec<FuncType>,
     pub(crate) func_types: Vec<FuncType>,
     pub(crate) imported_funcs: Vec<(ImportLinkerEntity, FuncTypeIdx)>,
@@ -108,6 +110,7 @@ impl Default for FuncTranslatorAllocations {
             br_table_branches: Default::default(),
             stack_types: vec![],
             segment_builder: Default::default(),
+            func_call_locs: vec![],
             original_func_types: vec![],
             func_types: vec![],
             imported_funcs: vec![],
@@ -214,7 +217,9 @@ impl FuncTranslatorAllocations {
                 is.op_return_call_internal(function_index - imported_funcs_len + 1);
                 is.op_return(DropKeep::none());
             } else {
-                is.op_call_internal(function_index - imported_funcs_len + 1);
+                let func_loc = is.op_call_internal(function_index - imported_funcs_len + 1);
+                self.func_call_locs
+                    .push((InstrLoc::from_u32(func_loc), is_entrypoint));
             }
         } else {
             let (import_linker_entity, _) = &self.imported_funcs[function_index as usize];

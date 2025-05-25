@@ -176,7 +176,7 @@ impl InstructionSet {
     impl_opcode!(TableCopy(TableIdx));
     impl_opcode!(TableInit(ElementSegmentIdx));
     impl_opcode!(ElemDrop(ElementSegmentIdx));
-    impl_opcode!(RefFunc(FuncIdx));
+    impl_opcode!(RefFunc(CompiledFunc));
     impl_opcode!(I32Const(UntypedValue));
     impl_opcode!(I64Const(UntypedValue));
     impl_opcode!(F32Const(UntypedValue));
@@ -435,8 +435,10 @@ fn decode_instruction_data<Context, D: Decoder<Context = Context>>(
         BrTable => OpcodeData::BranchTableTargets(Decode::decode(decoder)?),
         ConsumeFuel => OpcodeData::BlockFuel(Decode::decode(decoder)?),
         Return | ReturnIfNez => OpcodeData::DropKeep(Decode::decode(decoder)?),
-        ReturnCallInternal | CallInternal => OpcodeData::CompiledFunc(Decode::decode(decoder)?),
-        ReturnCall | Call | RefFunc => OpcodeData::FuncIdx(Decode::decode(decoder)?),
+        ReturnCallInternal | CallInternal | RefFunc => {
+            OpcodeData::CompiledFunc(Decode::decode(decoder)?)
+        }
+        ReturnCall | Call => OpcodeData::FuncIdx(Decode::decode(decoder)?),
         ReturnCallIndirect | CallIndirect | SignatureCheck => {
             OpcodeData::SignatureIdx(Decode::decode(decoder)?)
         }

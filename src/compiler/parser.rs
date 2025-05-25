@@ -12,6 +12,7 @@ use crate::{
     GlobalIdx,
     GlobalVariable,
     ImportName,
+    OpcodeData,
     RwasmModule,
     TableIdx,
     UntypedValue,
@@ -151,30 +152,40 @@ impl ModuleParser {
         let entrypoint_length = code_section.len() as u32;
         code_section.extend(self.allocations.translation.instruction_set.iter());
 
-        let mut func_section = self.allocations.translation.func_offsets;
-        for offset in func_section.iter_mut() {
-            // make sure each function offset is adjusted by an entrypoint length
-            // since entrypoint is always the first function in our bytecode
-            *offset += entrypoint_length;
+        // TODO(dmitry123): "optimize it"
+        for instr in code_section.iter_mut() {
+            match instr {
+                (_, OpcodeData::CompiledFunc(func_idx)) => {
+                    if *func_idx > 0 {
+                        *func_idx = self.allocations.translation.func_offsets
+                            [*func_idx as usize - 1]
+                            + entrypoint_length;
+                    }
+                }
+                _ => continue,
+            }
+        }
+
+        let mut element_section = self
+            .allocations
+            .translation
+            .segment_builder
+            .global_element_section;
+        for elem in element_section.iter_mut() {
+            if *elem > 0 {
+                *elem = self.allocations.translation.func_offsets[*elem as usize - 1]
+                    + entrypoint_length;
+            }
         }
 
         let module = RwasmModule {
             code_section,
-            memory_section: self
+            data_section: self
                 .allocations
                 .translation
                 .segment_builder
                 .global_memory_section,
-            element_section: self
-                .allocations
-                .translation
-                .segment_builder
-                .global_element_section,
-            // we store source pc here to keep compatibility with the oldest version of rWasm
-            // where entrypoint was the last function inside function offsets
-            // (the start offset can be removed later)
-            source_pc: 0,
-            func_section,
+            elem_section: element_section,
         };
         let constructor_params = self.allocations.translation.constructor_params;
 
