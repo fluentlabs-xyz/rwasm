@@ -206,15 +206,14 @@ impl TestContext<'_> {
 
         let mut executor = TestingRwasmExecutor::new(
             rwasm_module.into(),
-            ExecutorConfig::new().floats_enabled(true),
+            ExecutorConfig::new(),
             TestingContext::default(),
         );
         executor.set_syscall_handler(testing_context_syscall_handler);
         executor.context_mut().state = ENTRYPOINT_FUNC_IDX;
         #[cfg(feature = "debug-print")]
         println!(" --- entrypoint ---");
-        let exit_code = executor.run()?;
-        assert_eq!(exit_code, 0);
+        executor.run()?;
         #[cfg(feature = "debug-print")]
         println!();
 

@@ -1,6 +1,5 @@
 mod config;
 mod context;
-mod data_entity;
 mod executor;
 mod handler;
 mod instr_ptr;
@@ -11,7 +10,6 @@ mod value_stack;
 
 pub use config::*;
 pub use context::*;
-pub use data_entity::*;
 pub use executor::*;
 pub use handler::*;
 pub use instr_ptr::*;

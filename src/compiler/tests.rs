@@ -10,8 +10,7 @@ fn test_fib() {
     println!("{}", rwasm_module);
     let mut vm = RwasmExecutor::new(rwasm_module.into(), ExecutorConfig::new(), ());
     vm.caller().stack_push(43);
-    let exit_code = vm.run().unwrap();
-    assert_eq!(exit_code, 0);
+    vm.run().unwrap();
     let result = vm.caller().stack_pop();
     assert_eq!(result.as_i64(), 433494437);
 }
@@ -35,6 +34,5 @@ fn test_block() {
     println!("{}", rwasm_module);
     let mut vm = RwasmExecutor::new(rwasm_module.into(), ExecutorConfig::new(), ());
     println!("\nfunc:");
-    let exit_code = vm.run().unwrap();
-    assert_eq!(exit_code, 0);
+    vm.run().unwrap();
 }

@@ -174,6 +174,7 @@ impl UntypedValue {
         Ok(value)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn load_typed<U>(memory: &[u8], raw_address: u32, offset: u32) -> Result<U, TrapCode>
     where
         U: LittleEndianConvert,
@@ -362,6 +363,7 @@ impl UntypedValue {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn store_typed<U>(
         memory: &mut [u8],
         raw_address: u32,

@@ -1,3 +1,5 @@
+#[cfg(feature = "fpu")]
+use crate::F32;
 use crate::{
     compiler::{
         control_flow::{
@@ -34,10 +36,10 @@ use crate::{
     Opcode,
     SignatureIdx,
     DEFAULT_MEMORY_INDEX,
-    F32,
     N_MAX_MEMORY_PAGES,
     N_MAX_TABLE_ELEMENTS,
 };
+use alloc::{boxed::Box, vec, vec::Vec};
 use hashbrown::HashMap;
 use wasmparser::{
     BlockType,
@@ -1399,11 +1401,21 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_f32_load(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::F32, Opcode::F32Load)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_load(memarg, ValType::F32, Opcode::F32Load)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_load(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::F64, Opcode::F64Load)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_load(memarg, ValType::F64, Opcode::F64Load)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_load8_s(&mut self, memarg: MemArg) -> Self::Output {
@@ -1568,19 +1580,39 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_f32_store(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::F32, Opcode::F32Store)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_store(memarg, ValType::F32, Opcode::F32Store)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_store(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::F64, Opcode::F64Store)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_store(memarg, ValType::F64, Opcode::F64Store)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_store8(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::I32, Opcode::I32Store8)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_store(memarg, ValType::I32, Opcode::I32Store8)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_store16(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::I32, Opcode::I32Store16)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_store(memarg, ValType::I32, Opcode::I32Store16)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i64_store8(&mut self, memarg: MemArg) -> Self::Output {
@@ -1696,28 +1728,38 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_f32_const(&mut self, value: Ieee32) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.push1();
-            builder.alloc.stack_types.push(ValType::F32);
-            builder
-                .alloc
-                .instruction_set
-                .op_i32_const(F32::from(value.bits()));
-            Ok(())
-        })
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_if_reachable(|builder| {
+                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+                builder.stack_height.push1();
+                builder.alloc.stack_types.push(ValType::F32);
+                builder
+                    .alloc
+                    .instruction_set
+                    .op_i32_const(F32::from(value.bits()));
+                Ok(())
+            })
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_const(&mut self, value: Ieee64) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.push_type(ValType::F64);
-            builder.alloc.stack_types.push(ValType::F64);
-            let (expected_low, expected_high) = split_i64_to_i32(value.bits() as i64);
-            builder.alloc.instruction_set.op_i32_const(expected_low);
-            builder.alloc.instruction_set.op_i32_const(expected_high);
-            Ok(())
-        })
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_if_reachable(|builder| {
+                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+                builder.stack_height.push_type(ValType::F64);
+                builder.alloc.stack_types.push(ValType::F64);
+                let (expected_low, expected_high) = split_i64_to_i32(value.bits() as i64);
+                builder.alloc.instruction_set.op_i32_const(expected_low);
+                builder.alloc.instruction_set.op_i32_const(expected_high);
+                Ok(())
+            })
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_ref_null(&mut self, _ty: ValType) -> Self::Output {
@@ -2149,51 +2191,111 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_f32_eq(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::F32, Opcode::F32Eq)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_cmp(ValType::F32, Opcode::F32Eq)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_ne(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::F32, Opcode::F32Ne)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_cmp(ValType::F32, Opcode::F32Ne)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_lt(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::F32, Opcode::F32Lt)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_cmp(ValType::F32, Opcode::F32Lt)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_gt(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::F32, Opcode::F32Gt)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_cmp(ValType::F32, Opcode::F32Gt)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_le(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::F32, Opcode::F32Le)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_cmp(ValType::F32, Opcode::F32Le)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_ge(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::F32, Opcode::F32Ge)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_cmp(ValType::F32, Opcode::F32Ge)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_eq(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::F64, Opcode::F64Eq)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_cmp(ValType::F64, Opcode::F64Eq)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_ne(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::F64, Opcode::F64Ne)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_cmp(ValType::F64, Opcode::F64Ne)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_lt(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::F64, Opcode::F64Lt)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_cmp(ValType::F64, Opcode::F64Lt)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_gt(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::F64, Opcode::F64Gt)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_cmp(ValType::F64, Opcode::F64Gt)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_le(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::F64, Opcode::F64Le)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_cmp(ValType::F64, Opcode::F64Le)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_ge(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::F64, Opcode::F64Ge)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_cmp(ValType::F64, Opcode::F64Ge)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_clz(&mut self) -> Self::Output {
@@ -3683,115 +3785,255 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_f32_abs(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F32, Opcode::F32Abs)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F32, Opcode::F32Abs)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_neg(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F32, Opcode::F32Neg)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F32, Opcode::F32Neg)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_ceil(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F32, Opcode::F32Ceil)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F32, Opcode::F32Ceil)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_floor(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F32, Opcode::F32Floor)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F32, Opcode::F32Floor)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_trunc(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F32, Opcode::F32Trunc)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F32, Opcode::F32Trunc)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_nearest(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F32, Opcode::F32Nearest)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F32, Opcode::F32Nearest)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_sqrt(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F32, Opcode::F32Sqrt)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F32, Opcode::F32Sqrt)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_add(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F32, Opcode::F32Add)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F32, Opcode::F32Add)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_sub(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F32, Opcode::F32Sub)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F32, Opcode::F32Sub)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_mul(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F32, Opcode::F32Mul)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F32, Opcode::F32Mul)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_div(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F32, Opcode::F32Div)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F32, Opcode::F32Div)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_min(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F32, Opcode::F32Min)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F32, Opcode::F32Min)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_max(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F32, Opcode::F32Max)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F32, Opcode::F32Max)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_copysign(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F32, Opcode::F32Copysign)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F32, Opcode::F32Copysign)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_abs(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F64, Opcode::F64Abs)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F64, Opcode::F64Abs)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_neg(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F64, Opcode::F64Neg)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F64, Opcode::F64Neg)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_ceil(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F64, Opcode::F64Ceil)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F64, Opcode::F64Ceil)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_floor(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F64, Opcode::F64Floor)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F64, Opcode::F64Floor)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_trunc(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F64, Opcode::F64Trunc)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F64, Opcode::F64Trunc)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_nearest(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F64, Opcode::F64Nearest)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F64, Opcode::F64Nearest)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_sqrt(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::F64, Opcode::F64Sqrt)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_unary_operation(ValType::F64, Opcode::F64Sqrt)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_add(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F64, Opcode::F64Add)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F64, Opcode::F64Add)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_sub(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F64, Opcode::F64Sub)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F64, Opcode::F64Sub)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_mul(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F64, Opcode::F64Mul)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F64, Opcode::F64Mul)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_div(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F64, Opcode::F64Div)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F64, Opcode::F64Div)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_min(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F64, Opcode::F64Min)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F64, Opcode::F64Min)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_max(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F64, Opcode::F64Max)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F64, Opcode::F64Max)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_copysign(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::F64, Opcode::F64Copysign)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_binary_operation(ValType::F64, Opcode::F64Copysign)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_wrap_i64(&mut self) -> Self::Output {
@@ -3807,19 +4049,39 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i32_trunc_f32_s(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F32, ValType::I32, Opcode::I32TruncF32S)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F32, ValType::I32, Opcode::I32TruncF32S)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_trunc_f32_u(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F32, ValType::I32, Opcode::I32TruncF32U)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F32, ValType::I32, Opcode::I32TruncF32U)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_trunc_f64_s(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F64, ValType::I32, Opcode::I32TruncF64S)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F64, ValType::I32, Opcode::I32TruncF64S)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_trunc_f64_u(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F64, ValType::I32, Opcode::I32TruncF64U)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F64, ValType::I32, Opcode::I32TruncF64U)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i64_extend_i32_s(&mut self) -> Self::Output {
@@ -3855,75 +4117,165 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_trunc_f32_s(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F32, ValType::I64, Opcode::I64TruncF32S)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F32, ValType::I64, Opcode::I64TruncF32S)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i64_trunc_f32_u(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F32, ValType::I64, Opcode::I64TruncF32U)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F32, ValType::I64, Opcode::I64TruncF32U)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i64_trunc_f64_s(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F64, ValType::I64, Opcode::I64TruncF64S)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F64, ValType::I64, Opcode::I64TruncF64S)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i64_trunc_f64_u(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F64, ValType::I64, Opcode::I64TruncF64U)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F64, ValType::I64, Opcode::I64TruncF64U)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_convert_i32_s(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::I32, ValType::F32, Opcode::F32ConvertI32S)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::I32, ValType::F32, Opcode::F32ConvertI32S)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_convert_i32_u(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::I32, ValType::F32, Opcode::F32ConvertI32U)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::I32, ValType::F32, Opcode::F32ConvertI32U)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_convert_i64_s(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::I64, ValType::F32, Opcode::F32ConvertI64S)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::I64, ValType::F32, Opcode::F32ConvertI64S)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_convert_i64_u(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::I64, ValType::F32, Opcode::F32ConvertI64U)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::I64, ValType::F32, Opcode::F32ConvertI64U)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_demote_f64(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F64, ValType::F32, Opcode::F32DemoteF64)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F64, ValType::F32, Opcode::F32DemoteF64)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_convert_i32_s(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::I32, ValType::F64, Opcode::F64ConvertI32S)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::I32, ValType::F64, Opcode::F64ConvertI32S)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_convert_i32_u(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::I32, ValType::F64, Opcode::F64ConvertI32U)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::I32, ValType::F64, Opcode::F64ConvertI32U)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_convert_i64_s(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::I64, ValType::F64, Opcode::F64ConvertI64S)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::I64, ValType::F64, Opcode::F64ConvertI64S)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_convert_i64_u(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::I64, ValType::F64, Opcode::F64ConvertI64U)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::I64, ValType::F64, Opcode::F64ConvertI64U)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_promote_f32(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F32, ValType::F64, Opcode::F64PromoteF32)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F32, ValType::F64, Opcode::F64PromoteF32)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_reinterpret_f32(&mut self) -> Self::Output {
-        self.visit_reinterpret(ValType::F32, ValType::I32)
+        #[cfg(feature = "fpu")]
+        {
+            self.visit_reinterpret(ValType::F32, ValType::I32)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i64_reinterpret_f64(&mut self) -> Self::Output {
-        self.visit_reinterpret(ValType::F64, ValType::I64)
+        #[cfg(feature = "fpu")]
+        {
+            self.visit_reinterpret(ValType::F64, ValType::I64)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f32_reinterpret_i32(&mut self) -> Self::Output {
-        self.visit_reinterpret(ValType::I32, ValType::F32)
+        #[cfg(feature = "fpu")]
+        {
+            self.visit_reinterpret(ValType::I32, ValType::F32)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_f64_reinterpret_i64(&mut self) -> Self::Output {
-        self.visit_reinterpret(ValType::I64, ValType::F64)
+        #[cfg(feature = "fpu")]
+        {
+            self.visit_reinterpret(ValType::I64, ValType::F64)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_extend8_s(&mut self) -> Self::Output {
@@ -4006,91 +4358,103 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i32_trunc_sat_f32_s(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F32, ValType::I32, Opcode::I32TruncSatF32S)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F32, ValType::I32, Opcode::I32TruncSatF32S)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_trunc_sat_f32_u(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F32, ValType::I32, Opcode::I32TruncSatF32U)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F32, ValType::I32, Opcode::I32TruncSatF32U)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_trunc_sat_f64_s(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F64, ValType::I32, Opcode::I32TruncSatF64S)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F64, ValType::I32, Opcode::I32TruncSatF64S)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_trunc_sat_f64_u(&mut self) -> Self::Output {
-        self.translate_conversion(ValType::F64, ValType::I32, Opcode::I32TruncSatF64U)
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_conversion(ValType::F64, ValType::I32, Opcode::I32TruncSatF64U)
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i64_trunc_sat_f32_s(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-            builder.alloc.instruction_set.op_i64_trunc_sat_f32_s();
-            // builder.alloc.instruction_set.op_local_get(1);
-            // builder.alloc.instruction_set.op_i64_const(32);
-            // builder.alloc.instruction_set.op_i64_shr_u();
-            // builder.alloc.instruction_set.op_i32_wrap_i64();
-            // builder.alloc.instruction_set.op_local_get(2);
-            // builder.alloc.instruction_set.op_i32_wrap_i64();
-            // builder.alloc.instruction_set.op_local_set(2);
-            builder.stack_height.pop1();
-            builder.stack_height.push2();
-            Ok(())
-        })
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_if_reachable(|builder| {
+                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+                builder.alloc.stack_types.pop().unwrap();
+                builder.alloc.stack_types.push(ValType::I64);
+                builder.alloc.instruction_set.op_i64_trunc_sat_f32_s();
+                builder.stack_height.pop1();
+                builder.stack_height.push2();
+                Ok(())
+            })
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i64_trunc_sat_f32_u(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-            builder.alloc.instruction_set.op_i64_trunc_sat_f32_u();
-            // builder.alloc.instruction_set.op_local_get(1);
-            // builder.alloc.instruction_set.op_i32_const(32);
-            // builder.alloc.instruction_set.op_i64_shr_u();
-            // builder.alloc.instruction_set.op_i32_wrap_i64();
-            // builder.alloc.instruction_set.op_local_get(2);
-            // builder.alloc.instruction_set.op_i32_wrap_i64();
-            // builder.alloc.instruction_set.op_local_set(2);
-            builder.stack_height.pop1();
-            builder.stack_height.push2();
-            Ok(())
-        })
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_if_reachable(|builder| {
+                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+                builder.alloc.stack_types.pop().unwrap();
+                builder.alloc.stack_types.push(ValType::I64);
+                builder.alloc.instruction_set.op_i64_trunc_sat_f32_u();
+                builder.stack_height.pop1();
+                builder.stack_height.push2();
+                Ok(())
+            })
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i64_trunc_sat_f64_s(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-            builder.alloc.instruction_set.op_i64_trunc_sat_f64_s();
-            // builder.alloc.instruction_set.op_local_get(1);
-            // builder.alloc.instruction_set.op_i32_const(32);
-            // builder.alloc.instruction_set.op_i64_shr_u();
-            // builder.alloc.instruction_set.op_i32_wrap_i64();
-            // builder.alloc.instruction_set.op_local_get(2);
-            // builder.alloc.instruction_set.op_i32_wrap_i64();
-            // builder.alloc.instruction_set.op_local_set(2);
-            Ok(())
-        })
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_if_reachable(|builder| {
+                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+                builder.alloc.stack_types.pop().unwrap();
+                builder.alloc.stack_types.push(ValType::I64);
+                builder.alloc.instruction_set.op_i64_trunc_sat_f64_s();
+                Ok(())
+            })
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i64_trunc_sat_f64_u(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-            builder.alloc.instruction_set.op_i64_trunc_sat_f64_u();
-            // builder.alloc.instruction_set.op_local_get(1);
-            // builder.alloc.instruction_set.op_i32_const(32);
-            // builder.alloc.instruction_set.op_i64_shr_u();
-            // builder.alloc.instruction_set.op_i32_wrap_i64();
-            // builder.alloc.instruction_set.op_local_get(2);
-            // builder.alloc.instruction_set.op_i32_wrap_i64();
-            // builder.alloc.instruction_set.op_local_set(2);
-            Ok(())
-        })
+        #[cfg(feature = "fpu")]
+        {
+            self.translate_if_reachable(|builder| {
+                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+                builder.alloc.stack_types.pop().unwrap();
+                builder.alloc.stack_types.push(ValType::I64);
+                builder.alloc.instruction_set.op_i64_trunc_sat_f64_u();
+                Ok(())
+            })
+        }
+        #[cfg(not(feature = "fpu"))]
+        Err(CompilationError::FloatsAreNotSupported)
     }
 
     /// MemoryInit opcode reads 3 elements from the stack (dst, src, len), where:
@@ -6206,6 +6570,7 @@ impl InstructionTranslator {
     /// - `i64.reinterpret_f64`
     /// - `f32.reinterpret_i32`
     /// - `f64.reinterpret_i64`
+    #[allow(dead_code)]
     fn translate_conversion(
         &mut self,
         input_type: ValType,
@@ -6230,6 +6595,7 @@ impl InstructionTranslator {
     ///
     /// The `rwasm` translation simply ignores reinterpret instructions since
     /// `rwasm` bytecode in itself is untyped.
+    #[allow(dead_code)]
     fn visit_reinterpret(
         &mut self,
         input_type: ValType,

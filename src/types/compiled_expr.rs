@@ -7,6 +7,7 @@
 //! [`s1vm`]: https://github.com/Neopallium/s1vm
 
 use crate::{ExternRef, FuncIdx, FuncRef, GlobalIdx, UntypedValue, Value, F32, F64};
+use alloc::boxed::Box;
 use smallvec::SmallVec;
 use wasmparser::ConstExpr;
 

@@ -36,5 +36,6 @@ std = [
     "bitvec/std",
 ]
 more-max-pages = []
-e2e = []
+tracing = []
 debug-print = []
+fpu = []

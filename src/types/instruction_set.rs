@@ -17,6 +17,7 @@ use crate::{
     },
     CompilationError,
     SysFuncIdx,
+    TrapCode,
 };
 use alloc::{vec, vec::Vec};
 use bincode::{
@@ -108,6 +109,8 @@ impl InstructionSet {
         self.instr.iter_mut().rev().nth(offset)
     }
 
+    impl_opcode!(Unreachable);
+    impl_opcode!(Trap(TrapCode));
     impl_opcode!(LocalGet(LocalDepth));
     impl_opcode!(LocalSet(LocalDepth));
     impl_opcode!(LocalTee(LocalDepth));
@@ -115,7 +118,6 @@ impl InstructionSet {
     impl_opcode!(BrIfEqz(BranchOffset));
     impl_opcode!(BrIfNez(BranchOffset));
     impl_opcode!(BrTable(BranchTableTargets));
-    impl_opcode!(Unreachable);
     impl_opcode!(ConsumeFuel(BlockFuel));
     impl_opcode!(Return);
     impl_opcode!(ReturnCallInternal(CompiledFunc));
@@ -187,75 +189,145 @@ impl InstructionSet {
     impl_opcode!(I32Extend8S);
     impl_opcode!(I32Extend16S);
 
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Load(AddressOffset));
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Load(AddressOffset));
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Store(AddressOffset));
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Store(AddressOffset));
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Eq);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Ne);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Lt);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Gt);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Le);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Ge);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Eq);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Ne);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Lt);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Gt);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Le);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Ge);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Abs);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Neg);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Ceil);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Floor);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Trunc);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Nearest);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Sqrt);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Add);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Sub);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Mul);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Div);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Min);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Max);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32Copysign);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Abs);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Neg);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Ceil);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Floor);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Trunc);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Nearest);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Sqrt);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Add);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Sub);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Mul);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Div);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Min);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Max);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64Copysign);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I32TruncF32S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I32TruncF32U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I32TruncF64S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I32TruncF64U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I64TruncF32S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I64TruncF32U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I64TruncF64S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I64TruncF64U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32ConvertI32S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32ConvertI32U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32ConvertI64S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32ConvertI64U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F32DemoteF64);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64ConvertI32S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64ConvertI32U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64ConvertI64S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64ConvertI64U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(F64PromoteF32);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I32TruncSatF32S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I32TruncSatF32U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I32TruncSatF64S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I32TruncSatF64U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I64TruncSatF32S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I64TruncSatF32U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I64TruncSatF64S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I64TruncSatF64U);
 
     /// Adds the given `delta` amount of fuel to the [`ConsumeFuel`] instruction `instr`.
@@ -319,8 +391,6 @@ impl Encode for InstructionSet {
         Encode::encode(&length, encoder)?;
         for instr in &self.instr {
             Encode::encode(instr, encoder)?;
-            // let discriminant = core::mem::discriminant(instr);
-            // encode_instruction_data(&instr.1, encoder)?;
         }
         Ok(())
     }
@@ -328,6 +398,7 @@ impl Encode for InstructionSet {
 
 impl<Context> Decode<Context> for InstructionSet {
     fn decode<D: Decoder<Context = Context>>(decoder: &mut D) -> Result<Self, DecodeError> {
+        #[allow(dead_code)]
         fn instruction_not_found_err(instr_value: u8) -> DecodeError {
             static RANGE: AllowedEnumVariants = AllowedEnumVariants::Range { min: 0, max: 0xc6 };
             DecodeError::UnexpectedVariant {

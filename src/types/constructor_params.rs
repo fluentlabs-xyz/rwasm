@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use wasmparser::CustomSectionReader;
 
 /// A constant string that represents the name of a custom section.

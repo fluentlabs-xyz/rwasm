@@ -18,8 +18,11 @@ use crate::{
     UntypedValue,
     DEFAULT_MEMORY_INDEX,
 };
-use core::ops::Range;
-use std::mem::{replace, take};
+use alloc::{boxed::Box, vec::Vec};
+use core::{
+    mem::{replace, take},
+    ops::Range,
+};
 use wasmparser::{
     CustomSectionReader,
     DataKind,
@@ -102,6 +105,7 @@ impl ModuleParser {
             let func_type =
                 parser.allocations.translation.func_types[func_type_idx as usize].clone();
             result.push((k.clone(), *v, func_type));
+            #[cfg(feature = "debug-print")]
             print!("{}: func_idx={}, func_type_idx={}\n", k, v, func_type_idx);
         }
         Ok(result)

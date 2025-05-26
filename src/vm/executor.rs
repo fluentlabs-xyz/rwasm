@@ -1,5 +1,10 @@
+mod alu;
+#[cfg(feature = "fpu")]
 mod fpu;
+mod memory;
 mod opcodes;
+mod stack;
+mod table;
 
 use crate::{
     types::{
@@ -23,7 +28,6 @@ use crate::{
         instr_ptr::InstructionPtr,
         memory::GlobalMemory,
         table_entity::TableEntity,
-        tracer::Tracer,
         value_stack::{ValueStack, ValueStackPtr},
     },
     Caller,
@@ -106,7 +110,8 @@ pub struct RwasmExecutor<T> {
     pub(crate) global_memory: GlobalMemory,
     pub(crate) ip: InstructionPtr,
     pub(crate) context: T,
-    pub(crate) tracer: Option<Tracer>,
+    #[cfg(feature = "tracing")]
+    pub(crate) tracer: Option<crate::vm::Tracer>,
     pub(crate) fuel_costs: FuelCosts,
     // rwasm modified segments
     pub(crate) tables: HashMap<TableIdx, TableEntity>,
@@ -118,8 +123,6 @@ pub struct RwasmExecutor<T> {
     pub(crate) call_stack: Vec<InstructionPtr>,
     // the last used signature (needed for indirect calls type checks)
     pub(crate) last_signature: Option<SignatureIdx>,
-    pub(crate) next_result: Option<Result<i32, TrapCode>>,
-    pub(crate) stop_exec: bool,
     pub(crate) syscall_handler: SyscallHandler<T>,
 }
 
@@ -150,8 +153,9 @@ impl<T> RwasmExecutor<T> {
         let dropped_elements = bitvec![0; N_MAX_TABLE_SIZE];
         let empty_data_segments = bitvec![0; N_MAX_DATA_SEGMENTS];
 
+        #[cfg(feature = "tracing")]
         let tracer = if config.trace_enabled {
-            Some(Tracer::default())
+            Some(crate::vm::Tracer::default())
         } else {
             None
         };
@@ -173,14 +177,13 @@ impl<T> RwasmExecutor<T> {
             global_memory,
             ip,
             context,
+            #[cfg(feature = "tracing")]
             tracer,
             fuel_costs: Default::default(),
             global_variables: Default::default(),
             tables: Default::default(),
             call_stack: vec![],
             last_signature: None,
-            next_result: None,
-            stop_exec: false,
             syscall_handler: always_failing_syscall_handler,
             default_elements_segment: module_elements_section,
             empty_elements_segments: dropped_elements,
@@ -251,11 +254,13 @@ impl<T> RwasmExecutor<T> {
         self.refunded_fuel
     }
 
-    pub fn tracer(&self) -> Option<&Tracer> {
+    #[cfg(feature = "tracing")]
+    pub fn tracer(&self) -> Option<&crate::vm::Tracer> {
         self.tracer.as_ref()
     }
 
-    pub fn tracer_mut(&mut self) -> Option<&mut Tracer> {
+    #[cfg(feature = "tracing")]
+    pub fn tracer_mut(&mut self) -> Option<&mut crate::vm::Tracer> {
         self.tracer.as_mut()
     }
 
@@ -267,8 +272,14 @@ impl<T> RwasmExecutor<T> {
         &mut self.context
     }
 
-    pub fn run(&mut self) -> Result<i32, TrapCode> {
-        run_the_loop(self)
+    pub fn run(&mut self) -> Result<(), TrapCode> {
+        match run_the_loop(self) {
+            Ok(_) => Ok(()),
+            Err(err) => match err {
+                TrapCode::ExecutionHalted => Ok(()),
+                _ => Err(err),
+            },
+        }
     }
 
     pub(crate) fn fetch_table_index(&self, offset: usize) -> TableIdx {
@@ -299,6 +310,7 @@ impl<T> RwasmExecutor<T> {
         Ok(())
     }
 
+    #[allow(unused_variables)]
     #[inline(always)]
     pub(crate) fn execute_store_wrap(
         &mut self,
@@ -314,9 +326,9 @@ impl<T> RwasmExecutor<T> {
         let (address, value) = self.sp.pop2();
         let memory = self.global_memory.data_mut();
         store_wrap(memory, address, offset.into_inner(), value)?;
-        let address = u32::from(address);
-        let base_address = offset.into_inner() + address;
+        #[cfg(feature = "tracing")]
         if let Some(tracer) = self.tracer.as_mut() {
+            let base_address = offset.into_inner() + u32::from(address);
             tracer.memory_change(
                 base_address,
                 len,

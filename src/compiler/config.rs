@@ -1,4 +1,5 @@
 use crate::{ImportLinker, Opcode, UntypedValue};
+use alloc::boxed::Box;
 use wasmparser::WasmFeatures;
 
 #[derive(Debug, Clone)]
