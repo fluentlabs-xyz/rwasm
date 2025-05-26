@@ -54,7 +54,7 @@ pub struct TracerFunctionMeta {
 #[derive(Default, Clone)]
 pub struct TracerGlobalVariable {
     pub index: u32,
-    pub value: u64,
+    pub value: u32,
 }
 
 #[derive(Default, Clone)]

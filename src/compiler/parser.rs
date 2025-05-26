@@ -15,7 +15,6 @@ use crate::{
     Opcode,
     RwasmModule,
     TableIdx,
-    UntypedValue,
     DEFAULT_MEMORY_INDEX,
 };
 use alloc::{boxed::Box, vec::Vec};
@@ -636,7 +635,7 @@ impl ModuleParser {
                         compiled_expr
                             .funcref()
                             .map(|v| v + 1)
-                            .or_else(|| compiled_expr.eval_const().map(UntypedValue::as_u32))
+                            .or_else(|| compiled_expr.eval_const().map(|v| v as i32 as u32))
                             .ok_or(CompilationError::ConstEvaluationFailed)
                     })
                     .collect::<Result<Vec<_>, _>>()?,
@@ -652,7 +651,9 @@ impl ModuleParser {
                     offset_expr,
                 } => {
                     let compiled_expr = CompiledExpr::new(offset_expr);
-                    let element_offset = self.eval_const(compiled_expr)?;
+                    // We can fail-fast here because we already that know that there an overflow
+                    let element_offset = u32::try_from(self.eval_const(compiled_expr)?)
+                        .map_err(|_| CompilationError::TableOutOfBounds)?;
                     let table_index = TableIdx::from(table_index);
                     self.allocations
                         .translation
@@ -718,7 +719,9 @@ impl ModuleParser {
                         return Err(CompilationError::NonDefaultMemoryIndex);
                     }
                     let compiled_expr = CompiledExpr::new(offset_expr);
-                    let data_offset = self.eval_const(compiled_expr)?;
+                    // We can fail-fast here because we already that know that there an overflow
+                    let data_offset = u32::try_from(self.eval_const(compiled_expr)?)
+                        .map_err(|_| CompilationError::MemoryOutOfBounds)?;
                     self.allocations
                         .translation
                         .segment_builder
@@ -734,7 +737,7 @@ impl ModuleParser {
         Ok(())
     }
 
-    fn eval_const(&self, compiled_expr: CompiledExpr) -> Result<UntypedValue, CompilationError> {
+    fn eval_const(&self, compiled_expr: CompiledExpr) -> Result<i64, CompilationError> {
         compiled_expr
             .eval_with_context(
                 |global_index| {

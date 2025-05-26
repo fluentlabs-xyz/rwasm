@@ -7,7 +7,6 @@ use crate::{
     GlobalVariable,
     InstructionSet,
     TableIdx,
-    UntypedValue,
     DEFAULT_MEMORY_INDEX,
     NULL_FUNC_IDX,
     N_BYTES_PER_MEMORY_PAGE,
@@ -39,13 +38,13 @@ impl SegmentBuilder {
                 .entrypoint_bytecode
                 .op_i32_const(global_variable.default_value),
             ValType::I64 | ValType::F64 => {
-                let (lower, upper) = split_i64_to_i32(global_variable.default_value.as_i64());
+                let (lower, upper) = split_i64_to_i32(global_variable.default_value);
                 self.entrypoint_bytecode.op_i32_const(lower);
                 self.entrypoint_bytecode.op_i32_const(upper)
             }
             ValType::FuncRef | ValType::ExternRef => self
                 .entrypoint_bytecode
-                .op_ref_func(global_variable.default_value.as_u32()),
+                .op_ref_func(global_variable.default_value as u32),
             _ => return Err(CompilationError::NotSupportedGlobalType),
         };
         self.entrypoint_bytecode.op_global_set(global_idx * 2);
@@ -88,16 +87,10 @@ impl SegmentBuilder {
         Ok(())
     }
 
-    pub fn add_active_memory(
-        &mut self,
-        segment_idx: DataSegmentIdx,
-        offset: UntypedValue,
-        bytes: &[u8],
-    ) {
+    pub fn add_active_memory(&mut self, segment_idx: DataSegmentIdx, offset: u32, bytes: &[u8]) {
         // don't allow growing default memory if there are no enough pages allocated
         let has_memory_overflow = || -> Option<bool> {
             let max_affected_page = offset
-                .as_u32()
                 .checked_add(bytes.len() as u32)?
                 .checked_add(N_BYTES_PER_MEMORY_PAGE - 1)?
                 .checked_div(N_BYTES_PER_MEMORY_PAGE)?;
@@ -121,7 +114,7 @@ impl SegmentBuilder {
         self.entrypoint_bytecode.op_data_drop(segment_idx + 1);
         // store passive section info
         self.memory_sections
-            .insert(segment_idx, (offset.as_u32(), bytes.len() as u32));
+            .insert(segment_idx, (offset, bytes.len() as u32));
     }
 
     pub fn add_passive_memory(&mut self, segment_idx: DataSegmentIdx, bytes: &[u8]) {
@@ -137,7 +130,7 @@ impl SegmentBuilder {
     pub fn add_active_elements<T: IntoIterator<Item = u32>>(
         &mut self,
         segment_idx: ElementSegmentIdx,
-        offset: UntypedValue,
+        offset: u32,
         table_idx: TableIdx,
         elements: T,
     ) {
@@ -155,7 +148,7 @@ impl SegmentBuilder {
         self.entrypoint_bytecode.op_elem_drop(segment_idx + 1);
         // store active section info
         self.element_sections
-            .insert(segment_idx, (offset.as_u32(), segment_length as u32));
+            .insert(segment_idx, (offset, segment_length as u32));
     }
 
     pub fn add_passive_elements<T: IntoIterator<Item = u32>>(

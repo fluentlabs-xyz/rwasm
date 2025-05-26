@@ -6,7 +6,7 @@
 //!
 //! [`s1vm`]: https://github.com/Neopallium/s1vm
 
-use crate::{ExternRef, FuncIdx, FuncRef, GlobalIdx, UntypedValue, Value, F32, F64};
+use crate::{ExternRef, FuncIdx, FuncRef, GlobalIdx, Value, F32, F64};
 use alloc::boxed::Box;
 use smallvec::SmallVec;
 use wasmparser::ConstExpr;
@@ -14,7 +14,7 @@ use wasmparser::ConstExpr;
 /// Types that allow evluation given an evaluation context.
 pub trait Eval {
     /// Evaluates `self` given an [`EvalContext`].
-    fn eval(&self, ctx: &dyn EvalContext) -> Option<UntypedValue>;
+    fn eval(&self, ctx: &dyn EvalContext) -> Option<i64>;
 }
 
 /// A [`CompiledExpr`] evaluation context.
@@ -76,11 +76,11 @@ impl Clone for Op {
 #[derive(Debug, Clone)]
 pub struct ConstOp {
     /// The underlying precomputed untyped value.
-    value: UntypedValue,
+    value: i64,
 }
 
 impl Eval for ConstOp {
-    fn eval(&self, _ctx: &dyn EvalContext) -> Option<UntypedValue> {
+    fn eval(&self, _ctx: &dyn EvalContext) -> Option<i64> {
         Some(self.value)
     }
 }
@@ -94,8 +94,15 @@ pub struct GlobalOp {
 }
 
 impl Eval for GlobalOp {
-    fn eval(&self, ctx: &dyn EvalContext) -> Option<UntypedValue> {
-        ctx.get_global(self.global_index).map(UntypedValue::from)
+    fn eval(&self, ctx: &dyn EvalContext) -> Option<i64> {
+        ctx.get_global(self.global_index).map(|v| match v {
+            Value::I32(value) => value as i64,
+            Value::I64(value) => value,
+            Value::F32(value) => value.to_bits() as u64 as i64,
+            Value::F64(value) => value.to_bits() as i64,
+            Value::FuncRef(value) => value.0 as i32 as i64,
+            Value::ExternRef(value) => value.0 as i32 as i64,
+        })
     }
 }
 
@@ -108,8 +115,8 @@ pub struct FuncRefOp {
 }
 
 impl Eval for FuncRefOp {
-    fn eval(&self, ctx: &dyn EvalContext) -> Option<UntypedValue> {
-        ctx.get_func(self.function_index).map(Into::into)
+    fn eval(&self, ctx: &dyn EvalContext) -> Option<i64> {
+        ctx.get_func(self.function_index).map(|v| v.0 as i64)
     }
 }
 
@@ -126,7 +133,7 @@ impl Eval for FuncRefOp {
 #[allow(clippy::type_complexity)]
 pub struct ExprOp {
     /// The underlying closure that implements the expression.
-    expr: Box<dyn Fn(&dyn EvalContext) -> Option<UntypedValue> + Send + Sync>,
+    expr: Box<dyn Fn(&dyn EvalContext) -> Option<i64> + Send + Sync>,
 }
 
 impl core::fmt::Debug for ExprOp {
@@ -136,7 +143,7 @@ impl core::fmt::Debug for ExprOp {
 }
 
 impl Eval for ExprOp {
-    fn eval(&self, ctx: &dyn EvalContext) -> Option<UntypedValue> {
+    fn eval(&self, ctx: &dyn EvalContext) -> Option<i64> {
         (self.expr)(ctx)
     }
 }
@@ -147,9 +154,16 @@ impl Op {
     where
         T: Into<Value>,
     {
-        Self::Const(ConstOp {
-            value: value.into().into(),
-        })
+        let value: Value = value.into();
+        let value = match value.into() {
+            Value::I32(value) => value as i64,
+            Value::I64(value) => value,
+            Value::F32(value) => value.to_bits() as i32 as i64,
+            Value::F64(value) => value.to_bits() as i64,
+            Value::FuncRef(value) => value.0 as i64,
+            Value::ExternRef(value) => value.0 as i64,
+        };
+        Self::Const(ConstOp { value })
     }
 
     /// Creates a new global operator with the given index.
@@ -165,7 +179,7 @@ impl Op {
     /// Creates a new expression operator for the given `expr`.
     pub fn expr<T>(expr: T) -> Self
     where
-        T: Fn(&dyn EvalContext) -> Option<UntypedValue> + Send + Sync + 'static,
+        T: Fn(&dyn EvalContext) -> Option<i64> + Send + Sync + 'static,
     {
         Self::Expr(ExprOp {
             expr: Box::new(expr),
@@ -174,7 +188,7 @@ impl Op {
 }
 
 impl Eval for Op {
-    fn eval(&self, ctx: &dyn EvalContext) -> Option<UntypedValue> {
+    fn eval(&self, ctx: &dyn EvalContext) -> Option<i64> {
         match self {
             Op::Const(op) => op.eval(ctx),
             Op::Global(op) => op.eval(ctx),
@@ -196,14 +210,14 @@ pub struct CompiledExpr {
 }
 
 impl Eval for CompiledExpr {
-    fn eval(&self, ctx: &dyn EvalContext) -> Option<UntypedValue> {
+    fn eval(&self, ctx: &dyn EvalContext) -> Option<i64> {
         self.op.eval(ctx)
     }
 }
 
 macro_rules! def_expr {
     ($lhs:ident, $rhs:ident, $expr:expr) => {{
-        Op::expr(move |ctx: &dyn EvalContext| -> Option<UntypedValue> {
+        Op::expr(move |ctx: &dyn EvalContext| -> Option<i64> {
             let lhs = $lhs.eval(ctx)?;
             let rhs = $rhs.eval(ctx)?;
             Some($expr(lhs, rhs))
@@ -220,7 +234,7 @@ impl CompiledExpr {
         }
     }
 
-    pub fn from_const(value: UntypedValue) -> Self {
+    pub fn from_const(value: i64) -> Self {
         Self {
             op: Op::Const(ConstOp { value }),
         }
@@ -236,10 +250,7 @@ impl CompiledExpr {
         /// A buffer required for translation of Wasm const expressions.
         type TranslationBuffer = SmallVec<[Op; 3]>;
         /// Convenience function to create the various expression operators.
-        fn expr_op(
-            stack: &mut TranslationBuffer,
-            expr: fn(UntypedValue, UntypedValue) -> UntypedValue,
-        ) {
+        fn expr_op(stack: &mut TranslationBuffer, expr: fn(i64, i64) -> i64) {
             let rhs = stack
                 .pop()
                 .expect("must have rhs operator on the stack due to Wasm validation");
@@ -302,12 +313,24 @@ impl CompiledExpr {
                 wasmparser::Operator::RefFunc { function_index } => {
                     stack.push(Op::funcref(function_index));
                 }
-                wasmparser::Operator::I32Add => expr_op(&mut stack, UntypedValue::i32_add),
-                wasmparser::Operator::I32Sub => expr_op(&mut stack, UntypedValue::i32_sub),
-                wasmparser::Operator::I32Mul => expr_op(&mut stack, UntypedValue::i32_mul),
-                wasmparser::Operator::I64Add => expr_op(&mut stack, UntypedValue::i64_add),
-                wasmparser::Operator::I64Sub => expr_op(&mut stack, UntypedValue::i64_sub),
-                wasmparser::Operator::I64Mul => expr_op(&mut stack, UntypedValue::i64_mul),
+                wasmparser::Operator::I32Add => expr_op(&mut stack, |lhs, rhs| {
+                    i32::wrapping_add(lhs as i32, rhs as i32) as i64
+                }),
+                wasmparser::Operator::I32Sub => expr_op(&mut stack, |lhs, rhs| {
+                    i32::wrapping_sub(lhs as i32, rhs as i32) as i64
+                }),
+                wasmparser::Operator::I32Mul => expr_op(&mut stack, |lhs, rhs| {
+                    i32::wrapping_mul(lhs as i32, rhs as i32) as i64
+                }),
+                wasmparser::Operator::I64Add => {
+                    expr_op(&mut stack, |lhs, rhs| lhs.wrapping_add(rhs))
+                }
+                wasmparser::Operator::I64Sub => {
+                    expr_op(&mut stack, |lhs, rhs| lhs.wrapping_sub(rhs))
+                }
+                wasmparser::Operator::I64Mul => {
+                    expr_op(&mut stack, |lhs, rhs| lhs.wrapping_mul(rhs))
+                }
                 wasmparser::Operator::End => break,
                 op => panic!("encountered invalid Wasm const expression operator: {op:?}"),
             };
@@ -359,7 +382,7 @@ impl CompiledExpr {
     ///
     /// This is useful for evaluations during Wasm translation to
     /// perform optimizations on the translated bytecode.
-    pub fn eval_const(&self) -> Option<UntypedValue> {
+    pub fn eval_const(&self) -> Option<i64> {
         self.eval(&EmptyEvalContext)
     }
 
@@ -371,7 +394,7 @@ impl CompiledExpr {
     /// # Note
     ///
     /// This is useful for evaluation of [`CompiledExpr`] during bytecode execution.
-    pub fn eval_with_context<G, F>(&self, global_get: G, func_get: F) -> Option<UntypedValue>
+    pub fn eval_with_context<G, F>(&self, global_get: G, func_get: F) -> Option<i64>
     where
         G: Fn(u32) -> Option<Value>,
         F: Fn(u32) -> Option<FuncRef>,

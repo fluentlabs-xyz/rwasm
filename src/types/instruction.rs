@@ -289,4 +289,9 @@ mod tests {
         let data = bincode::encode_to_vec(&opcode, bincode::config::legacy()).unwrap();
         println!("{:?}", data);
     }
+
+    #[test]
+    fn test_opcode_size() {
+        assert_eq!(size_of::<Opcode>(), 8);
+    }
 }

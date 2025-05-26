@@ -20,6 +20,8 @@ pub enum CompilationError {
     MissingEntrypoint,
     MalformedFuncType,
     FloatsAreNotSupported,
+    MemoryOutOfBounds,
+    TableOutOfBounds,
 }
 
 impl From<BinaryReaderError> for CompilationError {
@@ -54,6 +56,8 @@ impl core::fmt::Display for CompilationError {
             CompilationError::MissingEntrypoint => write!(f, "missing entrypoint"),
             CompilationError::MalformedFuncType => write!(f, "malformed func type"),
             CompilationError::FloatsAreNotSupported => write!(f, "floats are not supported"),
+            CompilationError::MemoryOutOfBounds => write!(f, "out of bounds memory access"),
+            CompilationError::TableOutOfBounds => write!(f, "out of bounds table access"),
         }
     }
 }

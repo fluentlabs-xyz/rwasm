@@ -32,7 +32,7 @@ use wasmparser::ValType;
 pub struct UntypedValue {
     /// This inner value is required to have enough bits to represent
     /// all fundamental WebAssembly types `i32`, `i64`, `f32` and `f64`.
-    bits: u64,
+    bits: u32,
 }
 
 impl Display for UntypedValue {
@@ -43,11 +43,11 @@ impl Display for UntypedValue {
 }
 
 impl UntypedValue {
-    pub fn from_bits(bits: u64) -> Self {
+    pub fn from_bits(bits: u32) -> Self {
         Self { bits }
     }
     /// Returns the underlying bits of the [`UntypedValue`].
-    pub fn to_bits(self) -> u64 {
+    pub fn to_bits(self) -> u32 {
         self.bits
     }
 }

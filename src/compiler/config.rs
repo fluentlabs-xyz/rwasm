@@ -1,4 +1,4 @@
-use crate::{ImportLinker, Opcode, UntypedValue};
+use crate::{ImportLinker, Opcode};
 use alloc::boxed::Box;
 use wasmparser::WasmFeatures;
 
@@ -37,7 +37,7 @@ pub struct CompilationConfig {
     pub enable_floating_point: bool,
     /// We don't support imported global, but you can set a default value for these values instead.
     /// Thus is required by testing suite.
-    pub default_imported_global_value: Option<UntypedValue>,
+    pub default_imported_global_value: Option<i64>,
 }
 
 impl CompilationConfig {
@@ -105,7 +105,7 @@ impl CompilationConfig {
 
     pub fn with_default_imported_global_value(
         mut self,
-        default_imported_global_value: UntypedValue,
+        default_imported_global_value: i64,
     ) -> Self {
         self.default_imported_global_value = Some(default_imported_global_value);
         self
