@@ -1,8 +1,8 @@
 use crate::{
+    AddressOffset,
     ArithmeticOps,
     ExtendInto,
     Float,
-    OpcodeData,
     RwasmExecutor,
     TrapCode,
     TruncateSaturateInto,
@@ -51,47 +51,44 @@ pub(crate) fn visit_i64_trunc_f32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), 
 }
 
 #[inline(always)]
-pub(crate) fn visit_f32_load<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
-    let offset = match vm.ip.data() {
-        OpcodeData::AddressOffset(value) => *value,
-        _ => unreachable!("rwasm: missing instr data"),
-    };
-    vm.execute_load_extend(offset, UntypedValue::f32_load)
+pub(crate) fn visit_f32_load<T>(
+    vm: &mut RwasmExecutor<T>,
+    address_offset: AddressOffset,
+) -> Result<(), TrapCode> {
+    vm.execute_load_extend(address_offset, UntypedValue::f32_load)
 }
 
 #[inline(always)]
-pub(crate) fn visit_f64_load<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
-    let offset = match vm.ip.data() {
-        OpcodeData::AddressOffset(value) => *value,
-        _ => unreachable!("rwasm: missing instr data"),
-    };
+pub(crate) fn visit_f64_load<T>(
+    vm: &mut RwasmExecutor<T>,
+    address_offset: AddressOffset,
+) -> Result<(), TrapCode> {
     let address = vm.sp.pop_i32();
     let memory = vm.global_memory.data();
-    let value = UntypedValue::load_typed::<F64>(memory, address as u32, offset.into_inner())?;
+    let value =
+        UntypedValue::load_typed::<F64>(memory, address as u32, address_offset.into_inner())?;
     vm.sp.push_f64(value);
     vm.ip.add(1);
     Ok(())
 }
 
 #[inline(always)]
-pub(crate) fn visit_f32_store<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
-    let offset = match vm.ip.data() {
-        OpcodeData::AddressOffset(value) => *value,
-        _ => unreachable!("rwasm: missing instr data"),
-    };
-    vm.execute_store_wrap(offset, UntypedValue::f32_store, 4)
+pub(crate) fn visit_f32_store<T>(
+    vm: &mut RwasmExecutor<T>,
+    address_offset: AddressOffset,
+) -> Result<(), TrapCode> {
+    vm.execute_store_wrap(address_offset, UntypedValue::f32_store, 4)
 }
 
 #[inline(always)]
-pub(crate) fn visit_f64_store<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
-    let offset = match vm.ip.data() {
-        OpcodeData::AddressOffset(value) => *value,
-        _ => unreachable!("rwasm: missing instr data"),
-    };
+pub(crate) fn visit_f64_store<T>(
+    vm: &mut RwasmExecutor<T>,
+    address_offset: AddressOffset,
+) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f64();
     let address = vm.sp.pop_i32();
     let memory = vm.global_memory.data_mut();
-    UntypedValue::store_typed(memory, address as u32, offset.into_inner(), value)?;
+    UntypedValue::store_typed(memory, address as u32, address_offset.into_inner(), value)?;
     vm.ip.add(1);
     Ok(())
 }

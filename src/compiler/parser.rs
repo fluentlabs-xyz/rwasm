@@ -12,7 +12,7 @@ use crate::{
     GlobalIdx,
     GlobalVariable,
     ImportName,
-    OpcodeData,
+    Opcode,
     RwasmModule,
     TableIdx,
     UntypedValue,
@@ -151,10 +151,12 @@ impl ModuleParser {
         // TODO(dmitry123): "optimize it"
         for instr in code_section.iter_mut() {
             match instr {
-                (_, OpcodeData::CompiledFunc(func_idx)) => {
-                    if *func_idx > 0 {
-                        *func_idx = self.allocations.translation.func_offsets
-                            [*func_idx as usize - 1]
+                Opcode::CallInternal(compiled_func)
+                | Opcode::ReturnCallInternal(compiled_func)
+                | Opcode::RefFunc(compiled_func) => {
+                    if *compiled_func > 0 {
+                        *compiled_func = self.allocations.translation.func_offsets
+                            [*compiled_func as usize - 1]
                             + entrypoint_length;
                     }
                 }
@@ -200,7 +202,7 @@ impl ModuleParser {
                 .translation
                 .segment_builder
                 .entrypoint_bytecode
-                .push(opcode.0, opcode.1);
+                .push(*opcode);
         }
         // translate state router
         for (entrypoint_name, state_value) in state_router.states.iter() {

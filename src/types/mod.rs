@@ -63,6 +63,7 @@ pub type CompiledFunc = u32;
 pub type LocalDepth = u32;
 pub type BranchTableTargets = u32;
 pub type MaxStackHeight = u32;
+pub type SysFuncIdx = u32;
 
 pub use address_offset::*;
 pub use block_fuel::*;

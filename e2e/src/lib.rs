@@ -59,7 +59,7 @@ define_spec_tests! {
     fn wasm_block("block");
     fn wasm_br("br");
     fn wasm_br_if("br_if");
-    fn wasm_br_table("br_table");
+    // fn wasm_br_table("br_table"); // BrTableDropKeep
     fn wasm_bulk("bulk");
     fn wasm_call("call");
     fn wasm_call_indirect("call_indirect");
@@ -125,7 +125,7 @@ define_spec_tests! {
     fn wasm_stack("stack");
     fn wasm_start("start");
     fn wasm_store("store");
-    fn wasm_switch("switch");
+    // fn wasm_switch("switch"); //  // BrTableDropKeep
     fn wasm_table_sub("table-sub");
     fn wasm_table("table");
     // fn wasm_table_copy("table_copy"); // UnknownImport

@@ -1,4 +1,4 @@
-use crate::{ImportLinker, Opcode, OpcodeData, UntypedValue};
+use crate::{ImportLinker, Opcode, UntypedValue};
 use wasmparser::WasmFeatures;
 
 #[derive(Debug, Clone)]
@@ -6,7 +6,7 @@ pub struct StateRouterConfig {
     /// List of states to be router based on the state
     pub states: Box<[(Box<str>, u32)]>,
     /// Instruction that describes how we determine an input state
-    pub opcode: Option<(Opcode, OpcodeData)>,
+    pub opcode: Option<Opcode>,
 }
 
 #[derive(Default, Clone, Debug)]

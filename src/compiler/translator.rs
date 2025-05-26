@@ -32,7 +32,6 @@ use crate::{
     ImportLinkerEntity,
     InstructionSet,
     Opcode,
-    OpcodeData,
     SignatureIdx,
     DEFAULT_MEMORY_INDEX,
     F32,
@@ -430,9 +429,7 @@ impl InstructionTranslator {
     pub fn finish(&mut self) -> Result<(), CompilationError> {
         // update branch offsets in `Branch` opcodes
         for (user, offset) in self.alloc.labels.resolved_users() {
-            self.alloc.instruction_set.instr[user.into_usize()]
-                .1
-                .update_branch_offset(offset?);
+            self.alloc.instruction_set.instr[user.into_usize()].update_branch_offset(offset?);
         }
         let last_func_offset = self.alloc.func_offsets.last().copied().unwrap() as usize;
         // update max stack height in `StackAlloc` opcode
@@ -445,9 +442,9 @@ impl InstructionTranslator {
             .take(3);
         while let Some(opcode) = iter.next() {
             match opcode {
-                (Opcode::ConsumeFuel, _) | (Opcode::SignatureCheck, _) => {}
-                (Opcode::StackCheck, OpcodeData::MaxStackHeight(stack_alloc)) => {
-                    *stack_alloc = self.stack_height.max_stack_height();
+                Opcode::ConsumeFuel(_) | Opcode::SignatureCheck(_) => {}
+                Opcode::StackCheck(max_stack_height) => {
+                    *max_stack_height = self.stack_height.max_stack_height();
                     break;
                 }
                 _ => unreachable!(),
@@ -986,7 +983,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                             .alloc
                             .instruction_set
                             .last_nth_mut(drop_keep_length)
-                            .map(|v| &mut v.1)
                             .unwrap()
                             .update_branch_offset(drop_keep_length as i32 + 2);
                         let offset = builder.branch_offset(end_label)?;
@@ -1007,7 +1003,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                         .alloc
                         .instruction_set
                         .last_nth_mut(drop_keep_length)
-                        .map(|v| &mut v.1)
                         .unwrap()
                         .update_branch_offset(drop_keep_length as i32 + 2);
                     builder.alloc.instruction_set.op_return();
@@ -1108,7 +1103,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.instruction_set.op_br_table(len_targets);
             encode_br_table_target(&mut builder.alloc.br_table_branches, default_branch);
             for branch in builder.alloc.br_table_branches.drain(..) {
-                builder.alloc.instruction_set.push(branch.0, branch.1);
+                builder.alloc.instruction_set.push(branch);
             }
             builder.bump_fuel_consumption(max_drop_keep_fuel)?;
             builder.reachable = false;
@@ -1209,7 +1204,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .alloc
                 .instruction_set
                 .op_return_call_indirect(signature_idx);
-            builder.alloc.instruction_set.op_return();
             builder.alloc.instruction_set.op_table_get(table_index);
             builder.reachable = false;
             Ok(())
@@ -5722,7 +5716,7 @@ impl InstructionTranslator {
         &mut self,
         memarg: MemArg,
         loaded_type: ValType,
-        opcode: Opcode,
+        opcode: fn(AddressOffset) -> Opcode,
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
@@ -5732,10 +5726,7 @@ impl InstructionTranslator {
             builder.stack_height.push_type(loaded_type);
             builder.alloc.stack_types.push(loaded_type);
             let offset = AddressOffset::from(memarg.offset as u32);
-            builder
-                .alloc
-                .instruction_set
-                .push(opcode, OpcodeData::AddressOffset(offset));
+            builder.alloc.instruction_set.push(opcode(offset));
             Ok(())
         })
     }
@@ -5759,7 +5750,7 @@ impl InstructionTranslator {
         &mut self,
         memarg: MemArg,
         stored_value: ValType,
-        opcode: Opcode,
+        opcode: fn(AddressOffset) -> Opcode,
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
@@ -5770,10 +5761,7 @@ impl InstructionTranslator {
             let addr_type = builder.alloc.stack_types.pop().unwrap();
             builder.stack_height.pop_type(addr_type);
             let offset = AddressOffset::from(memarg.offset as u32);
-            builder
-                .alloc
-                .instruction_set
-                .push(opcode, OpcodeData::AddressOffset(offset));
+            builder.alloc.instruction_set.push(opcode(offset));
             Ok(())
         })
     }
@@ -5793,10 +5781,7 @@ impl InstructionTranslator {
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder
-                .alloc
-                .instruction_set
-                .push(inst, OpcodeData::EmptyData);
+            builder.alloc.instruction_set.push(inst);
             Ok(())
         })
     }
@@ -5818,16 +5803,10 @@ impl InstructionTranslator {
             builder.stack_height.pop1();
             builder.stack_height.pop1();
             builder.alloc.instruction_set.op_local_get(3);
-            builder
-                .alloc
-                .instruction_set
-                .push(opcode, OpcodeData::EmptyData);
+            builder.alloc.instruction_set.push(opcode);
             builder.alloc.instruction_set.op_local_set(2);
             builder.alloc.instruction_set.op_local_get(3);
-            builder
-                .alloc
-                .instruction_set
-                .push(opcode, OpcodeData::EmptyData);
+            builder.alloc.instruction_set.push(opcode);
             builder.alloc.instruction_set.op_local_set(2);
             additional_translator(builder)?;
             Ok(())
@@ -5861,10 +5840,7 @@ impl InstructionTranslator {
             let popped_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(popped_type, input_type);
             builder.alloc.stack_types.push(ValType::I32);
-            builder
-                .alloc
-                .instruction_set
-                .push(opcode, OpcodeData::EmptyData);
+            builder.alloc.instruction_set.push(opcode);
             Ok(())
         })
     }
@@ -5892,10 +5868,7 @@ impl InstructionTranslator {
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder
-                .alloc
-                .instruction_set
-                .push(opcode, OpcodeData::EmptyData);
+            builder.alloc.instruction_set.push(opcode);
             Ok(())
         })
     }
@@ -5934,10 +5907,7 @@ impl InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.push(value_type);
-            builder
-                .alloc
-                .instruction_set
-                .push(opcode, OpcodeData::EmptyData);
+            builder.alloc.instruction_set.push(opcode);
             Ok(())
         })
     }
@@ -6249,10 +6219,7 @@ impl InstructionTranslator {
             builder.alloc.stack_types.push(output_type);
             builder.stack_height.pop_type(input_type);
             builder.stack_height.push_type(output_type);
-            builder
-                .alloc
-                .instruction_set
-                .push(opcode, OpcodeData::EmptyData);
+            builder.alloc.instruction_set.push(opcode);
             Ok(())
         })
     }

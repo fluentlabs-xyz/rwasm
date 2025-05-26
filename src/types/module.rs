@@ -4,7 +4,7 @@ use crate::{
     CompilationError,
     ConstructorParams,
     ModuleParser,
-    OpcodeData,
+    Opcode,
 };
 use alloc::{vec, vec::Vec};
 use bincode::{
@@ -132,21 +132,23 @@ impl core::fmt::Display for RwasmModule {
         let mut func_section = HashSet::new();
         for instr in self.code_section.iter() {
             match instr {
-                (_, OpcodeData::CompiledFunc(compiled_func)) => {
+                Opcode::CallInternal(compiled_func)
+                | Opcode::ReturnCallInternal(compiled_func)
+                | Opcode::RefFunc(compiled_func) => {
                     func_section.insert(*compiled_func);
                 }
                 _ => continue,
             }
         }
         writeln!(f, " .function_begin_{} (#{})", 0, func_num)?;
-        for (pos, (opcode, data)) in self.code_section.iter().enumerate() {
+        for (pos, opcode) in self.code_section.iter().enumerate() {
             let pos = pos as u32;
             if func_section.contains(&pos) {
                 writeln!(f, " .function_end\n")?;
                 func_num += 1;
                 writeln!(f, " .function_begin_{} (#{})", pos, func_num)?;
             }
-            write!(f, "  {:04x}: {}({})", pos, opcode, data)?;
+            write!(f, "  {:04x}: {}", pos, opcode)?;
             writeln!(f)?;
         }
         writeln!(f, " .function_end\n")?;

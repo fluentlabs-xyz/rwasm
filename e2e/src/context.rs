@@ -23,7 +23,6 @@ use rwasm::{
     ImportName,
     ModuleParser,
     Opcode,
-    OpcodeData,
     RwasmExecutor,
     RwasmModule,
     StateRouterConfig,
@@ -190,11 +189,17 @@ impl TestContext<'_> {
         }
         let config = config.with_state_router(StateRouterConfig {
             states: states.into(),
-            opcode: Some((Opcode::Call, OpcodeData::FuncIdx(u32::MAX.into()))),
+            opcode: Some(Opcode::Call(u32::MAX)),
         });
 
         let (rwasm_module, _) =
             RwasmModule::compile(config, &wasm[..]).map_err(|err| TestError::Rwasm(err.into()))?;
+
+        {
+            let buffer = rwasm_module.serialize();
+            let parsed_module = RwasmModule::new(&buffer);
+            assert_eq!(rwasm_module, parsed_module);
+        }
 
         #[cfg(feature = "debug-print")]
         println!("{}", rwasm_module);

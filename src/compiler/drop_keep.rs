@@ -95,7 +95,7 @@ pub fn translate_drop_keep(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Opcode, OpcodeData};
+    use crate::Opcode;
 
     #[test]
     fn test_drop_keep_translation() {
@@ -122,18 +122,18 @@ mod tests {
             let mut stack = input.clone();
             for instr in instr_builder.instr {
                 match instr {
-                    (Opcode::LocalSet, OpcodeData::LocalDepth(index)) => {
+                    Opcode::LocalSet(index) => {
                         let last = stack.last().unwrap();
                         let len = stack.len();
                         *stack.get_mut(len - 1 - index as usize).unwrap() = *last;
                         stack.pop();
                     }
-                    (Opcode::LocalGet, OpcodeData::LocalDepth(index)) => {
+                    Opcode::LocalGet(index) => {
                         let len = stack.len();
                         let item = *stack.get(len - index as usize).unwrap();
                         stack.push(item);
                     }
-                    (Opcode::Drop, _) => {
+                    Opcode::Drop => {
                         stack.pop();
                     }
                     _ => unreachable!("unknown opcode: {:?}", instr),

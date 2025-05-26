@@ -7,7 +7,6 @@ use crate::{
         CompiledFunc,
         DataSegmentIdx,
         ElementSegmentIdx,
-        FuncIdx,
         GlobalIdx,
         LocalDepth,
         SignatureIdx,
@@ -15,69 +14,60 @@ use crate::{
         UntypedValue,
     },
     MaxStackHeight,
+    SysFuncIdx,
 };
 use alloc::{format, vec::Vec};
+use bincode::{Decode, Encode};
 
-#[derive(
-    Debug,
-    Copy,
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    num_enum::IntoPrimitive,
-    num_enum::TryFromPrimitive,
-)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(u8)]
 pub enum Opcode {
     Unreachable = 0x00,
-    LocalGet = 0x01,
-    LocalSet = 0x02,
-    LocalTee = 0x03,
-    Br = 0x04,
-    BrIfEqz = 0x05,
-    BrIfNez = 0x06,
-    BrTable = 0x09,
-    ConsumeFuel = 0x0a,
+    LocalGet(LocalDepth) = 0x01,
+    LocalSet(LocalDepth) = 0x02,
+    LocalTee(LocalDepth) = 0x03,
+    Br(BranchOffset) = 0x04,
+    BrIfEqz(BranchOffset) = 0x05,
+    BrIfNez(BranchOffset) = 0x06,
+    BrTable(BranchTableTargets) = 0x09,
+    ConsumeFuel(BlockFuel) = 0x0a,
     Return = 0x0b,
-    ReturnCallInternal = 0x0d,
-    ReturnCall = 0x0e,
-    ReturnCallIndirect = 0x0f,
-    CallInternal = 0x10,
-    Call = 0x11,
-    CallIndirect = 0x12,
-    SignatureCheck = 0x13,
-    StackCheck = 0xc6,
+    ReturnCallInternal(CompiledFunc) = 0x0d,
+    ReturnCall(SysFuncIdx) = 0x0e,
+    ReturnCallIndirect(SignatureIdx) = 0x0f,
+    CallInternal(CompiledFunc) = 0x10,
+    Call(SysFuncIdx) = 0x11,
+    CallIndirect(SignatureIdx) = 0x12,
+    SignatureCheck(SignatureIdx) = 0x13,
+    StackCheck(MaxStackHeight) = 0xc6,
     Drop = 0x14,
     Select = 0x15,
-    GlobalGet = 0x16,
-    GlobalSet = 0x17,
-    I32Load = 0x18,
-    I32Load8S = 0x1c,
-    I32Load8U = 0x1d,
-    I32Load16S = 0x1e,
-    I32Load16U = 0x1f,
-    I32Store = 0x26,
-    I32Store8 = 0x2a,
-    I32Store16 = 0x2b,
+    GlobalGet(GlobalIdx) = 0x16,
+    GlobalSet(GlobalIdx) = 0x17,
+    I32Load(AddressOffset) = 0x18,
+    I32Load8S(AddressOffset) = 0x1c,
+    I32Load8U(AddressOffset) = 0x1d,
+    I32Load16S(AddressOffset) = 0x1e,
+    I32Load16U(AddressOffset) = 0x1f,
+    I32Store(AddressOffset) = 0x26,
+    I32Store8(AddressOffset) = 0x2a,
+    I32Store16(AddressOffset) = 0x2b,
     MemorySize = 0x2f,
     MemoryGrow = 0x30,
     MemoryFill = 0x31,
     MemoryCopy = 0x32,
-    MemoryInit = 0x33,
-    DataDrop = 0x34,
-    TableSize = 0x35,
-    TableGrow = 0x36,
-    TableFill = 0x37,
-    TableGet = 0x38,
-    TableSet = 0x39,
-    TableCopy = 0x3a,
-    TableInit = 0x3b,
-    ElemDrop = 0x3c,
-    RefFunc = 0x3d,
-    I32Const = 0x3e,
+    MemoryInit(DataSegmentIdx) = 0x33,
+    DataDrop(DataSegmentIdx) = 0x34,
+    TableSize(TableIdx) = 0x35,
+    TableGrow(TableIdx) = 0x36,
+    TableFill(TableIdx) = 0x37,
+    TableGet(TableIdx) = 0x38,
+    TableSet(TableIdx) = 0x39,
+    TableCopy(TableIdx) = 0x3a,
+    TableInit(ElementSegmentIdx) = 0x3b,
+    ElemDrop(ElementSegmentIdx) = 0x3c,
+    RefFunc(CompiledFunc) = 0x3d,
+    I32Const(UntypedValue) = 0x3e,
     I32Eqz = 0x42,
     I32Eq = 0x43,
     I32Ne = 0x44,
@@ -112,10 +102,10 @@ pub enum Opcode {
     I32Extend16S = 0xba,
 
     // fpu
-    F32Load = 0x1a,
-    F64Load = 0x1b,
-    F32Store = 0x28,
-    F64Store = 0x29,
+    F32Load(AddressOffset) = 0x1a,
+    F64Load(AddressOffset) = 0x1b,
+    F32Store(AddressOffset) = 0x28,
+    F64Store(AddressOffset) = 0x29,
     F32Eq = 0x58,
     F32Ne = 0x59,
     F32Lt = 0x5a,
@@ -192,56 +182,13 @@ impl core::fmt::Display for Opcode {
     }
 }
 
-#[derive(Default, Clone, Copy, Debug, PartialEq, Ord, PartialOrd, Eq, Hash)]
-pub enum OpcodeData {
-    #[default]
-    EmptyData,
-    LocalDepth(LocalDepth),
-    BranchOffset(BranchOffset),
-    BranchTableTargets(BranchTableTargets),
-    BlockFuel(BlockFuel),
-    CompiledFunc(CompiledFunc),
-    FuncIdx(FuncIdx),
-    SignatureIdx(SignatureIdx),
-    GlobalIdx(GlobalIdx),
-    AddressOffset(AddressOffset),
-    DataSegmentIdx(DataSegmentIdx),
-    TableIdx(TableIdx),
-    ElementSegmentIdx(ElementSegmentIdx),
-    UntypedValue(UntypedValue),
-    MaxStackHeight(MaxStackHeight),
-}
-
-impl OpcodeData {
-    pub fn update_branch_offset<I: Into<BranchOffset>>(&mut self, offset: I) {
-        if let OpcodeData::BranchOffset(old_offset) = self {
-            *old_offset = offset.into();
-        } else {
-            unreachable!("rwasm: opcode data is not a branch offset")
-        }
-    }
-}
-
-impl core::fmt::Display for OpcodeData {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl Opcode {
+    pub fn update_branch_offset<I: Into<BranchOffset>>(&mut self, new_offset: I) {
         match self {
-            OpcodeData::EmptyData => write!(f, ""),
-            OpcodeData::LocalDepth(value) => write!(f, "{}", value),
-            OpcodeData::BranchOffset(value) => write!(f, "{}", value.to_i32()),
-            OpcodeData::BranchTableTargets(value) => write!(f, "{}", value),
-            OpcodeData::BlockFuel(value) => write!(f, "{}", value.to_u64()),
-            OpcodeData::CompiledFunc(value) => write!(f, "{}", value),
-            OpcodeData::FuncIdx(value) => write!(f, "{}", value),
-            OpcodeData::SignatureIdx(value) => write!(f, "{}", value),
-            OpcodeData::GlobalIdx(value) => write!(f, "{}", value),
-            OpcodeData::AddressOffset(value) => write!(f, "{}", value.into_inner()),
-            OpcodeData::DataSegmentIdx(value) => write!(f, "{}", value),
-            OpcodeData::TableIdx(value) => write!(f, "{}", value),
-            OpcodeData::ElementSegmentIdx(value) => write!(f, "{}", value),
-            OpcodeData::UntypedValue(value) => write!(f, "{}", value.as_i64()),
-            OpcodeData::MaxStackHeight(value) => {
-                write!(f, "max_stack_height={}", value)
+            Opcode::Br(offset) | Opcode::BrIfEqz(offset) | Opcode::BrIfNez(offset) => {
+                *offset = new_offset.into();
             }
+            _ => unreachable!(),
         }
     }
 }
@@ -251,4 +198,16 @@ pub struct OpcodeMeta {
     pub index: usize,
     pub pos: usize,
     pub opcode: u8,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_opcode_encoding() {
+        let opcode = Opcode::LocalGet(7);
+        let data = bincode::encode_to_vec(&opcode, bincode::config::legacy()).unwrap();
+        println!("{:?}", data);
+    }
 }

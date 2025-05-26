@@ -5,7 +5,6 @@ use crate::{
     types::{
         AddressOffset,
         GlobalIdx,
-        OpcodeData,
         Pages,
         RwasmModule,
         SignatureIdx,
@@ -29,6 +28,7 @@ use crate::{
     },
     Caller,
     FuelCosts,
+    Opcode,
     TrapCode,
 };
 use alloc::{sync::Arc, vec, vec::Vec};
@@ -274,8 +274,8 @@ impl<T> RwasmExecutor<T> {
     pub(crate) fn fetch_table_index(&self, offset: usize) -> TableIdx {
         let mut addr: InstructionPtr = self.ip;
         addr.add(offset);
-        match addr.data() {
-            OpcodeData::TableIdx(table_idx) => *table_idx,
+        match addr.get() {
+            Opcode::TableGet(table_idx) => table_idx,
             _ => unreachable!("rwasm: can't extract table index"),
         }
     }
