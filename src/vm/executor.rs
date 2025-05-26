@@ -303,7 +303,7 @@ impl<T> RwasmExecutor<T> {
     ) -> Result<(), TrapCode> {
         self.sp.try_eval_top(|address| {
             let memory = self.global_memory.data();
-            let value = load_extend(memory, address, offset.into_inner())?;
+            let value = load_extend(memory, address, offset)?;
             Ok(value)
         })?;
         self.ip.add(1);
@@ -325,10 +325,10 @@ impl<T> RwasmExecutor<T> {
     ) -> Result<(), TrapCode> {
         let (address, value) = self.sp.pop2();
         let memory = self.global_memory.data_mut();
-        store_wrap(memory, address, offset.into_inner(), value)?;
+        store_wrap(memory, address, offset, value)?;
         #[cfg(feature = "tracing")]
         if let Some(tracer) = self.tracer.as_mut() {
-            let base_address = offset.into_inner() + u32::from(address);
+            let base_address = offset + u32::from(address);
             tracer.memory_change(
                 base_address,
                 len,

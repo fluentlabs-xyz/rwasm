@@ -1,3 +1,9 @@
+mod i64_alu;
+mod i64_bitwise;
+mod i64_compare;
+mod i64_conv;
+mod i64_memory;
+
 use crate::{
     types::{
         AddressOffset,
@@ -185,7 +191,6 @@ impl InstructionSet {
     impl_opcode!(I32ShrU);
     impl_opcode!(I32Rotl);
     impl_opcode!(I32Rotr);
-    impl_opcode!(I32WrapI64);
     impl_opcode!(I32Extend8S);
     impl_opcode!(I32Extend16S);
 

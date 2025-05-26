@@ -24,7 +24,7 @@ fn bench_wasmi(b: &mut Bencher) {
             .call(&mut store, 43)
             .unwrap();
         core::hint::black_box(result);
-        // assert_eq!(result, 433494437);
+        assert_eq!(result, 433494437);
     });
 }
 
@@ -48,7 +48,7 @@ fn bench_rwasm(b: &mut Bencher) {
         vm.run().unwrap();
         let result: i32 = Caller::new(&mut vm).stack_pop_as();
         core::hint::black_box(result);
-        // assert_eq!(result, 433494437);
+        assert_eq!(result, 433494437);
         // vm.reset_pc();
     });
 }

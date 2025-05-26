@@ -1,4 +1,3 @@
-mod address_offset;
 mod block_fuel;
 mod branch_offset;
 mod compiled_expr;
@@ -64,8 +63,8 @@ pub type LocalDepth = u32;
 pub type BranchTableTargets = u32;
 pub type MaxStackHeight = u32;
 pub type SysFuncIdx = u32;
+pub type AddressOffset = u32;
 
-pub use address_offset::*;
 pub use block_fuel::*;
 pub use branch_offset::*;
 pub use compiled_expr::*;

@@ -66,8 +66,7 @@ pub(crate) fn visit_f64_load<T>(
 ) -> Result<(), TrapCode> {
     let address = vm.sp.pop_i32();
     let memory = vm.global_memory.data();
-    let value =
-        UntypedValue::load_typed::<F64>(memory, address as u32, address_offset.into_inner())?;
+    let value = UntypedValue::load_typed::<F64>(memory, address as u32, address_offset)?;
     vm.sp.push_f64(value);
     vm.ip.add(1);
     Ok(())
@@ -89,7 +88,7 @@ pub(crate) fn visit_f64_store<T>(
     let value = vm.sp.pop_f64();
     let address = vm.sp.pop_i32();
     let memory = vm.global_memory.data_mut();
-    UntypedValue::store_typed(memory, address as u32, address_offset.into_inner(), value)?;
+    UntypedValue::store_typed(memory, address as u32, address_offset, value)?;
     vm.ip.add(1);
     Ok(())
 }

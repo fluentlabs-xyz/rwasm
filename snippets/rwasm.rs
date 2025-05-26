@@ -1,220 +1,4 @@
-use rwasm::{split_i64_to_i32, InstructionSet, MaxStackHeight, RwasmExecutor};
-
-pub fn emit_i64_const(is: &mut InstructionSet, value: i64) {
-    is.op_stack_check(MaxStackHeight {
-        max_stack_height: 10,
-    });
-    let (lo, hi) = split_i64_to_i32(value);
-    is.op_i32_const(lo); // (local i32)
-    is.op_i32_const(hi); // (local i32)
-}
-
-pub fn emit_i64_mul(is: &mut InstructionSet) {
-    is.op_stack_check(MaxStackHeight {
-        max_stack_height: 20,
-    });
-    is.op_i32_const(0); // (local i32)
-    is.op_i32_const(0); // (local i32)
-    is.op_i32_const(0); // (local i32)
-    is.op_local_get(4); // local.get 3
-    is.op_local_get(6); // local.get 2
-    is.op_i32_add(); // i32.add
-    is.op_local_get(7); // local.get 1
-    is.op_local_get(9); // local.get 0
-    is.op_i32_add(); // i32.add
-    is.op_i32_mul(); // i32.mul
-    is.op_local_get(5); // local.get 3
-    is.op_local_get(8); // local.get 1
-    is.op_i32_mul(); // i32.mul
-    is.op_local_get(7); // local.get 2
-    is.op_i32_const(65535); // i32.const 65535
-    is.op_i32_and(); // i32.and
-    is.op_local_tee(9); // local.tee 1
-    is.op_local_get(10); // local.get 0
-    is.op_i32_const(65535); // i32.const 65535
-    is.op_i32_and(); // i32.and
-    is.op_local_tee(8); // local.tee 3
-    is.op_i32_mul(); // i32.mul
-    is.op_local_tee(6); // local.tee 4
-    is.op_local_get(8); // local.get 2
-    is.op_i32_const(16); // i32.const 16
-    is.op_i32_shr_u(); // i32.shr_u
-    is.op_local_tee(6); // local.tee 5
-    is.op_local_get(8); // local.get 3
-    is.op_i32_mul(); // i32.mul
-    is.op_local_tee(8); // local.tee 3
-    is.op_local_get(10); // local.get 1
-    is.op_local_get(12); // local.get 0
-    is.op_i32_const(16); // i32.const 16
-    is.op_i32_shr_u(); // i32.shr_u
-    is.op_local_tee(7); // local.tee 6
-    is.op_i32_mul(); // i32.mul
-    is.op_i32_add(); // i32.add
-    is.op_local_tee(11); // local.tee 0
-    is.op_i32_const(16); // i32.const 16
-    is.op_i32_shl(); // i32.shl
-    is.op_i32_add(); // i32.add
-    is.op_local_tee(8); // local.tee 2
-    is.op_i32_add(); // i32.add
-    is.op_i32_sub(); // i32.sub
-    is.op_local_get(6); // local.get 2
-    is.op_local_get(5); // local.get 4
-    is.op_i32_lt_u(); // i32.lt_u
-    is.op_i32_add(); // i32.add
-    is.op_local_get(3); // local.get 5
-    is.op_local_get(3); // local.get 6
-    is.op_i32_mul(); // i32.mul
-    is.op_local_tee(8); // local.tee 1
-    is.op_local_get(9); // local.get 0
-    is.op_i32_const(16); // i32.const 16
-    is.op_i32_shr_u(); // i32.shr_u
-    is.op_local_get(10); // local.get 0
-    is.op_local_get(8); // local.get 3
-    is.op_i32_lt_u(); // i32.lt_u
-    is.op_i32_const(16); // i32.const 16
-    is.op_i32_shl(); // i32.shl
-    is.op_i32_or(); // i32.or
-    is.op_i32_add(); // i32.add
-    is.op_local_tee(9); // local.tee 0
-    is.op_i32_add(); // i32.add
-    is.op_local_get(8); // local.get 0
-    is.op_local_get(8); // local.get 1
-    is.op_i32_lt_u(); // i32.lt_u
-    is.op_i32_add(); // i32.add
-    is.op_local_get(6);
-    // TODO(dmitry123): "how efficiently make drop=7 keep=2?"
-    is.op_local_set(8);
-    is.op_local_set(6);
-    is.op_drop();
-    is.op_drop();
-    is.op_drop();
-    is.op_drop();
-    is.op_drop();
-}
-
-pub fn emit_i64_eqz(is: &mut InstructionSet) {
-    is.op_stack_check(MaxStackHeight {
-        max_stack_height: 2,
-    });
-    is.op_i32_eqz();
-    is.op_local_get(2);
-    is.op_i32_eqz();
-    is.op_local_set(2);
-    is.op_i32_and();
-}
-
-pub fn emit_i64_sub(is: &mut InstructionSet) {
-    is.op_stack_check(MaxStackHeight {
-        max_stack_height: 4,
-    });
-
-    // is.op_local_get(4);
-    // is.op_local_get(3);
-    // is.op_i32_lt_u();
-    // is.op_local_get(5);
-    // is.op_local_get(4);
-    // is.op_i32_sub();
-    // is.op_local_set(5);
-    // is.op_local_get(4);
-    // is.op_local_get(3);
-    // is.op_i32_sub();
-    // is.op_local_get(2);
-    // is.op_br_if_eqz(3);
-    // is.op_i32_const(1);
-    // is.op_i32_sub();
-    // is.op_local_set(4);
-    // is.op_drop();
-    // is.op_drop();
-    // is.op_drop();
-
-    // TODO(dmitry123): "looks optimizable"
-    // [a_lo, a_hi, b_lo, b_hi]
-    is.op_local_get(4);
-    // [a_lo, a_hi, b_lo, b_hi, a_lo]
-    is.op_local_get(3);
-    // [a_lo, a_hi, b_lo, b_hi, a_lo, b_lo]
-    is.op_i32_sub();
-    // [a_lo, a_hi, b_lo, b_hi, a_lo-b_lo]
-    is.op_local_get(5);
-    // [a_lo, a_hi, b_lo, b_hi, a_lo-b_lo, a_lo]
-    is.op_local_get(4);
-    // [a_lo, a_hi, b_lo, b_hi, a_lo-b_lo, a_lo, b_lo]
-    is.op_i32_lt_u();
-    // [a_lo, a_hi, b_lo, b_hi, a_lo-b_lo, a_lo<b_lo]
-    is.op_local_get(5);
-    // [a_lo, a_hi, b_lo, b_hi, a_lo-b_lo, a_lo<b_lo, a_hi]
-    is.op_local_get(4);
-    // [a_lo, a_hi, b_lo, b_hi, a_lo-b_lo, a_lo<b_lo, a_hi, b_hi]
-    is.op_i32_sub();
-    // [a_lo, a_hi, b_lo, b_hi, a_lo-b_lo, a_lo<b_lo, a_hi-b_hi]
-    is.op_local_get(2);
-    // [a_lo, a_hi, b_lo, b_hi, a_lo-b_lo, a_lo<b_lo, a_hi-b_hi, a_lo<b_lo]
-    is.op_i32_sub();
-    // [a_lo, a_hi, b_lo, b_hi, a_lo-b_lo, a_lo<b_lo, a_hi-b_hi-a_lo<b_lo]
-    is.op_local_set(5);
-    // [a_lo, a_hi-b_hi-a_lo<b_lo, b_lo, b_hi, a_lo-b_lo, a_lo<b_lo]
-    is.op_drop();
-    // [a_lo, a_hi-b_hi-a_lo<b_lo, b_lo, b_hi, a_lo-b_lo]
-    is.op_local_set(4);
-    // [a_lo-b_lo, a_hi-b_hi-a_lo<b_lo, b_lo, b_hi]
-    is.op_drop();
-    is.op_drop();
-}
-
-pub fn emit_i64_le_u(is: &mut InstructionSet) {
-    is.op_stack_check(MaxStackHeight {
-        max_stack_height: 4,
-    });
-    is.op_local_get(3);
-    is.op_local_get(2);
-    is.op_i32_eq();
-    is.op_br_if_nez(5);
-    is.op_local_get(3);
-    is.op_local_get(2);
-    is.op_i32_le_u();
-    is.op_br(4);
-    is.op_local_get(4);
-    is.op_local_get(3);
-    is.op_i32_le_u();
-    is.op_local_set(4);
-    is.op_drop();
-    is.op_drop();
-    is.op_drop();
-}
-
-pub fn emit_i64_add(is: &mut InstructionSet) {
-    is.op_stack_check(MaxStackHeight {
-        max_stack_height: 4,
-    });
-    is.op_local_get(4);
-    is.op_local_get(3);
-    is.op_i32_or();
-    is.op_i32_const(-1);
-    is.op_i32_xor();
-    is.op_i32_clz();
-    is.op_local_get(5);
-    is.op_local_get(4);
-    is.op_i32_add();
-    is.op_local_get(1);
-    is.op_local_set(6);
-    is.op_i32_const(-1);
-    is.op_i32_xor();
-    is.op_i32_clz();
-    is.op_local_get(5);
-    is.op_local_get(4);
-    is.op_i32_add();
-    is.op_local_get(3);
-    is.op_local_get(3);
-    is.op_i32_gt_u();
-    is.op_br_if_eqz(3);
-    is.op_i32_const(1);
-    is.op_i32_add();
-    is.op_local_set(5);
-    is.op_drop();
-    is.op_drop();
-    is.op_drop();
-    is.op_drop();
-}
+use rwasm::RwasmExecutor;
 
 #[allow(unused)]
 pub fn trace_execution_logs(vm: &RwasmExecutor<()>) {
@@ -225,10 +9,9 @@ pub fn trace_execution_logs(vm: &RwasmExecutor<()>) {
     println!("execution trace ({} steps):", logs.len());
     for log in logs.iter().rev().take(100_000).rev() {
         println!(
-            " - pc={} opcode={:?}({:?}) gas={} stack={:?}",
+            " - pc={} opcode={} gas={} stack={:?}",
             log.program_counter,
             log.opcode,
-            log.value,
             log.consumed_fuel,
             log.stack
                 .iter()
@@ -243,18 +26,10 @@ pub fn trace_execution_logs(vm: &RwasmExecutor<()>) {
 
 #[cfg(test)]
 mod tests {
-    use crate::rwasm::{
-        emit_i64_add,
-        emit_i64_const,
-        emit_i64_eqz,
-        emit_i64_le_u,
-        emit_i64_mul,
-        emit_i64_sub,
-    };
-    use rwasm::{DropKeep, ExecutorConfig, InstructionSet, RwasmExecutor, RwasmModule};
+    use rwasm::{ExecutorConfig, InstructionSet, RwasmExecutor, RwasmModule};
 
     fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Vec<u32> {
-        is.op_return(DropKeep::none());
+        is.op_return();
         let rwasm_module = RwasmModule::with_one_function(is);
         let mut vm = RwasmExecutor::new(
             rwasm_module.into(),
@@ -264,8 +39,7 @@ mod tests {
         for i in inputs {
             vm.caller().stack_push(i);
         }
-        let exit_code = vm.run().unwrap();
-        assert_eq!(exit_code, 0);
+        vm.run().unwrap();
         vm.caller()
             .dump_stack()
             .iter()
@@ -294,7 +68,7 @@ mod tests {
     fn test_i64_const() {
         let test_case_u64 = |a: i64| {
             let mut is = InstructionSet::new();
-            emit_i64_const(&mut is, a);
+            is.op_i64_const(a);
             let output = run_vm_instr(is.clone(), vec![]);
             assert_eq!(output.len(), 2);
             let r = (output[1] as u64) << 32 | output[0] as u64;
@@ -330,7 +104,7 @@ mod tests {
     #[test]
     fn test_i64_mul() {
         let mut is = InstructionSet::new();
-        emit_i64_mul(&mut is);
+        is.op_i64_mul();
 
         let test_case_u64 = |a: u64, b: u64| {
             let c = a.wrapping_mul(b);
@@ -388,7 +162,7 @@ mod tests {
     #[test]
     fn test_i64_eqz() {
         let mut is = InstructionSet::new();
-        emit_i64_eqz(&mut is);
+        is.op_i64_eqz();
 
         let test_case_u64 = |a: u64| {
             let c = (a == 0) as u64;
@@ -427,7 +201,7 @@ mod tests {
     #[test]
     fn test_i64_sub() {
         let mut is = InstructionSet::new();
-        emit_i64_sub(&mut is);
+        is.op_i64_sub();
 
         let test_case_u64 = |a: u64, b: u64| {
             let c = a.wrapping_sub(b);
@@ -464,7 +238,7 @@ mod tests {
     #[test]
     fn test_i64_le_u() {
         let mut is = InstructionSet::new();
-        emit_i64_le_u(&mut is);
+        is.op_i64_le_u();
 
         let test_case_u64 = |a: u64, b: u64| {
             let c = (a <= b) as u64;
@@ -507,7 +281,7 @@ mod tests {
     #[test]
     fn test_i64_add() {
         let mut is = InstructionSet::new();
-        emit_i64_add(&mut is);
+        is.op_i64_add();
 
         let test_case_u64 = |a: u64, b: u64| {
             let c = a.wrapping_add(b);

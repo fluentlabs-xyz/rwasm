@@ -21,7 +21,6 @@ use crate::{
         utils::RelativeDepth,
         value_stack::ValueStackHeight,
     },
-    split_i64_to_i32,
     AddressOffset,
     BranchOffset,
     BranchTableTargets,
@@ -1376,7 +1375,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(builder.fuel_costs().store)?;
-            builder.alloc.stack_types.pop().unwrap();
+            let popped_type = builder.alloc.stack_types.pop().unwrap();
+            debug_assert_eq!(popped_type, ValType::I32);
             builder.alloc.stack_types.push(ValType::I64);
             builder.stack_height.push1();
             builder.stack_height.pop1();
@@ -1386,16 +1386,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.pop1();
             let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_local_get(1);
-            builder
-                .alloc
-                .instruction_set
-                .op_i32_load(AddressOffset::from(
-                    offset.into_inner().checked_add(4).unwrap_or(u32::MAX),
-                ));
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_load(offset);
-            builder.alloc.instruction_set.op_local_set(2);
+            builder.alloc.instruction_set.op_i64_load(offset);
             Ok(())
         })
     }
@@ -1448,13 +1439,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder
                 .alloc
                 .instruction_set
-                .op_i32_load8_s(memarg.offset as u32);
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_clz();
-            builder.alloc.instruction_set.op_br_if_eqz(3);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_br(2);
-            builder.alloc.instruction_set.op_i32_const(-1);
+                .op_i64_load8_s(memarg.offset as u32);
             Ok(())
         })
     }
@@ -1467,8 +1452,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.push(ValType::I64);
             let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_i32_load8_u(offset);
-            builder.alloc.instruction_set.op_i32_const(0);
+            builder.alloc.instruction_set.op_i64_load8_u(offset);
             Ok(())
         })
     }
@@ -1485,13 +1469,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.push1();
-            builder.alloc.instruction_set.op_i32_load16_s(offset);
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_clz();
-            builder.alloc.instruction_set.op_br_if_eqz(3);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_br(2);
-            builder.alloc.instruction_set.op_i32_const(-1);
+            builder.alloc.instruction_set.op_i64_load16_s(offset);
             Ok(())
         })
     }
@@ -1504,8 +1482,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.push(ValType::I64);
             let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_i32_load16_u(offset);
-            builder.alloc.instruction_set.op_i32_const(0);
+            builder.alloc.instruction_set.op_i64_load16_u(offset);
             Ok(())
         })
     }
@@ -1524,13 +1501,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder
                 .alloc
                 .instruction_set
-                .op_i32_load(memarg.offset as u32);
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_clz();
-            builder.alloc.instruction_set.op_br_if_eqz(3);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_br(2);
-            builder.alloc.instruction_set.op_i32_const(-1);
+                .op_i64_load32_s(memarg.offset as u32);
             Ok(())
         })
     }
@@ -1545,8 +1516,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.push(ValType::I64);
             let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_i32_load(offset);
-            builder.alloc.instruction_set.op_i32_const(0);
+            builder.alloc.instruction_set.op_i64_load32_u(offset);
             Ok(())
         })
     }
@@ -1567,14 +1537,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop2();
             builder.stack_height.pop1();
             builder.stack_height.pop2();
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder
-                .alloc
-                .instruction_set
-                .op_i32_store(offset.into_inner().checked_add(4).unwrap_or(u32::MAX));
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_i32_store(offset);
+            builder.alloc.instruction_set.op_i64_store(offset);
             Ok(())
         })
     }
@@ -1623,8 +1586,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_i32_store8(offset);
+            builder.alloc.instruction_set.op_i64_store8(offset);
             Ok(())
         })
     }
@@ -1637,8 +1599,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_i32_store16(offset);
+            builder.alloc.instruction_set.op_i64_store16(offset);
             Ok(())
         })
     }
@@ -1651,8 +1612,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_i32_store(offset);
+            builder.alloc.instruction_set.op_i64_store32(offset);
             Ok(())
         })
     }
@@ -1720,9 +1680,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.alloc.stack_types.push(ValType::I64);
-            let (expected_low, expected_high) = split_i64_to_i32(value);
-            builder.alloc.instruction_set.op_i32_const(expected_low);
-            builder.alloc.instruction_set.op_i32_const(expected_high);
+            builder.alloc.instruction_set.op_i64_const(value);
             Ok(())
         })
     }
@@ -1752,9 +1710,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 builder.bump_fuel_consumption(builder.fuel_costs().base)?;
                 builder.stack_height.push_type(ValType::F64);
                 builder.alloc.stack_types.push(ValType::F64);
-                let (expected_low, expected_high) = split_i64_to_i32(value.bits() as i64);
-                builder.alloc.instruction_set.op_i32_const(expected_low);
-                builder.alloc.instruction_set.op_i32_const(expected_high);
+                builder
+                    .alloc
+                    .instruction_set
+                    .op_i64_const(value.bits() as i64);
                 Ok(())
             })
         }
@@ -1847,11 +1806,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop2();
             builder.stack_height.push1();
 
-            builder.alloc.instruction_set.op_i32_eqz();
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_eqz();
-            builder.alloc.instruction_set.op_local_set(2);
-            builder.alloc.instruction_set.op_i32_and();
+            builder.alloc.instruction_set.op_i64_eqz();
 
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.push(ValType::I32);
@@ -1861,7 +1816,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_i64_eq(&mut self) -> Self::Output {
         self.translate_expressed_binary_operation(Opcode::I32Eq, |builder| {
-            builder.alloc.instruction_set.op_i32_and();
+            builder.alloc.instruction_set.op_i64_eq();
             builder.stack_height.pop2();
             builder.stack_height.push1();
             builder.alloc.stack_types.pop().unwrap();
@@ -1873,7 +1828,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_i64_ne(&mut self) -> Self::Output {
         self.translate_expressed_binary_operation(Opcode::I32Ne, |builder| {
-            builder.alloc.instruction_set.op_i32_or();
+            builder.alloc.instruction_set.op_i64_ne();
             builder.stack_height.pop2();
             builder.stack_height.push1();
             builder.alloc.stack_types.pop().unwrap();
@@ -1902,21 +1857,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.pop_n(4);
 
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_nez(5);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_lt_s();
-            builder.alloc.instruction_set.op_br(4);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_lt_u();
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
+            builder.alloc.instruction_set.op_i64_lt_s();
             Ok(())
         })
     }
@@ -1940,21 +1881,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.pop_n(4);
 
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_nez(5);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_lt_u();
-            builder.alloc.instruction_set.op_br(4);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_lt_u();
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
+            builder.alloc.instruction_set.op_i64_lt_u();
             Ok(())
         })
     }
@@ -1978,21 +1905,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.pop_n(4);
 
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_nez(5);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_gt_s();
-            builder.alloc.instruction_set.op_br(4);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_gt_u();
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
+            builder.alloc.instruction_set.op_i64_gt_s();
             Ok(())
         })
     }
@@ -2016,21 +1929,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.pop_n(4);
 
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_nez(5);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_gt_u();
-            builder.alloc.instruction_set.op_br(4);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_gt_u();
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
+            builder.alloc.instruction_set.op_i64_gt_u();
             Ok(())
         })
     }
@@ -2054,21 +1953,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.pop_n(4);
 
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_nez(5);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_le_s();
-            builder.alloc.instruction_set.op_br(4);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_le_u();
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
+            builder.alloc.instruction_set.op_i64_le_s();
             Ok(())
         })
     }
@@ -2092,22 +1977,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.pop_n(4);
 
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_nez(5);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_le_u();
-            builder.alloc.instruction_set.op_br(4);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_le_u();
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
+            builder.alloc.instruction_set.op_i64_le_u();
             Ok(())
         })
     }
@@ -2131,22 +2001,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.pop_n(4);
 
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_nez(5);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_ge_s();
-            builder.alloc.instruction_set.op_br(4);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_ge_u();
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
+            builder.alloc.instruction_set.op_i64_ge_s();
             Ok(())
         })
     }
@@ -2170,22 +2025,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.pop_n(4);
 
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_nez(5);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_ge_u();
-            builder.alloc.instruction_set.op_br(4);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_ge_u();
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
+            builder.alloc.instruction_set.op_i64_ge_u();
             Ok(())
         })
     }
@@ -2383,16 +2223,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.stack_height.push1();
 
-            builder.alloc.instruction_set.op_i32_clz();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_eqz(4);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_clz();
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_set(1);
-            builder.alloc.instruction_set.op_i32_const(0);
+            builder.alloc.instruction_set.op_i64_clz();
             Ok(())
         })
     }
@@ -2410,19 +2241,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.stack_height.push1();
 
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_ctz();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_eqz(5);
-            builder.alloc.instruction_set.op_local_set(2);
-            builder.alloc.instruction_set.op_i32_ctz();
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_br(3);
-            builder.alloc.instruction_set.op_local_set(2);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_i32_const(0);
+            builder.alloc.instruction_set.op_i64_ctz();
             Ok(())
         })
     }
@@ -2432,12 +2251,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.stack_height.push1();
             builder.stack_height.pop1();
-            builder.alloc.instruction_set.op_i32_popcnt();
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_popcnt();
-            builder.alloc.instruction_set.op_local_set(2);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_i32_const(0);
+            builder.alloc.instruction_set.op_i64_popcnt();
             Ok(())
         })
     }
@@ -2477,35 +2291,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.stack_height.pop1();
 
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_or();
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_i32_clz();
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_local_set(6);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_i32_clz();
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_gt_u();
-            builder.alloc.instruction_set.op_br_if_eqz(3);
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_set(5);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
+            builder.alloc.instruction_set.op_i64_add();
             Ok(())
         })
     }
@@ -2538,23 +2324,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.stack_height.pop1();
 
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_lt_u();
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_local_set(5);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
+            builder.alloc.instruction_set.op_i64_sub();
             Ok(())
         })
     }
@@ -2571,84 +2341,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push_n(10);
             builder.stack_height.pop_n(8);
 
-            builder.alloc.instruction_set.op_i32_const(0); // (local i32)
-            builder.alloc.instruction_set.op_i32_const(0); // (local i32)
-            builder.alloc.instruction_set.op_i32_const(0); // (local i32)
-            builder.alloc.instruction_set.op_local_get(4); // local.get 3
-            builder.alloc.instruction_set.op_local_get(6); // local.get 2
-            builder.alloc.instruction_set.op_i32_add(); // i32.add
-            builder.alloc.instruction_set.op_local_get(7); // local.get 1
-            builder.alloc.instruction_set.op_local_get(9); // local.get 0
-            builder.alloc.instruction_set.op_i32_add(); // i32.add
-            builder.alloc.instruction_set.op_i32_mul(); // i32.mul
-            builder.alloc.instruction_set.op_local_get(5); // local.get 3
-            builder.alloc.instruction_set.op_local_get(8); // local.get 1
-            builder.alloc.instruction_set.op_i32_mul(); // i32.mul
-            builder.alloc.instruction_set.op_local_get(7); // local.get 2
-            builder.alloc.instruction_set.op_i32_const(65535); // i32.const 65535
-            builder.alloc.instruction_set.op_i32_and(); // i32.and
-            builder.alloc.instruction_set.op_local_tee(9); // local.tee 1
-            builder.alloc.instruction_set.op_local_get(10); // local.get 0
-            builder.alloc.instruction_set.op_i32_const(65535); // i32.const 65535
-            builder.alloc.instruction_set.op_i32_and(); // i32.and
-            builder.alloc.instruction_set.op_local_tee(8); // local.tee 3
-            builder.alloc.instruction_set.op_i32_mul(); // i32.mul
-            builder.alloc.instruction_set.op_local_tee(6); // local.tee 4
-            builder.alloc.instruction_set.op_local_get(8); // local.get 2
-            builder.alloc.instruction_set.op_i32_const(16); // i32.const 16
-            builder.alloc.instruction_set.op_i32_shr_u(); // i32.shr_u
-            builder.alloc.instruction_set.op_local_tee(6); // local.tee 5
-            builder.alloc.instruction_set.op_local_get(8); // local.get 3
-            builder.alloc.instruction_set.op_i32_mul(); // i32.mul
-            builder.alloc.instruction_set.op_local_tee(8); // local.tee 3
-            builder.alloc.instruction_set.op_local_get(10); // local.get 1
-            builder.alloc.instruction_set.op_local_get(12); // local.get 0
-            builder.alloc.instruction_set.op_i32_const(16); // i32.const 16
-            builder.alloc.instruction_set.op_i32_shr_u(); // i32.shr_u
-            builder.alloc.instruction_set.op_local_tee(7); // local.tee 6
-            builder.alloc.instruction_set.op_i32_mul(); // i32.mul
-            builder.alloc.instruction_set.op_i32_add(); // i32.add
-            builder.alloc.instruction_set.op_local_tee(11); // local.tee 0
-            builder.alloc.instruction_set.op_i32_const(16); // i32.const 16
-            builder.alloc.instruction_set.op_i32_shl(); // i32.shl
-            builder.alloc.instruction_set.op_i32_add(); // i32.add
-            builder.alloc.instruction_set.op_local_tee(8); // local.tee 2
-            builder.alloc.instruction_set.op_i32_add(); // i32.add
-            builder.alloc.instruction_set.op_i32_sub(); // i32.sub
-            builder.alloc.instruction_set.op_local_get(6); // local.get 2
-            builder.alloc.instruction_set.op_local_get(5); // local.get 4
-            builder.alloc.instruction_set.op_i32_lt_u(); // i32.lt_u
-            builder.alloc.instruction_set.op_i32_add(); // i32.add
-            builder.alloc.instruction_set.op_local_get(3); // local.get 5
-            builder.alloc.instruction_set.op_local_get(3); // local.get 6
-            builder.alloc.instruction_set.op_i32_mul(); // i32.mul
-            builder.alloc.instruction_set.op_local_tee(8); // local.tee 1
-            builder.alloc.instruction_set.op_local_get(9); // local.get 0
-            builder.alloc.instruction_set.op_i32_const(16); // i32.const 16
-            builder.alloc.instruction_set.op_i32_shr_u(); // i32.shr_u
-            builder.alloc.instruction_set.op_local_get(10); // local.get 0
-            builder.alloc.instruction_set.op_local_get(8); // local.get 3
-            builder.alloc.instruction_set.op_i32_lt_u(); // i32.lt_u
-            builder.alloc.instruction_set.op_i32_const(16); // i32.const 16
-            builder.alloc.instruction_set.op_i32_shl(); // i32.shl
-            builder.alloc.instruction_set.op_i32_or(); // i32.or
-            builder.alloc.instruction_set.op_i32_add(); // i32.add
-            builder.alloc.instruction_set.op_local_tee(9); // local.tee 0
-            builder.alloc.instruction_set.op_i32_add(); // i32.add
-            builder.alloc.instruction_set.op_local_get(8); // local.get 0
-            builder.alloc.instruction_set.op_local_get(8); // local.get 1
-            builder.alloc.instruction_set.op_i32_lt_u(); // i32.lt_u
-            builder.alloc.instruction_set.op_i32_add(); // i32.add
-            builder.alloc.instruction_set.op_local_get(6);
-            // TODO(dmitry123): "how efficiently make drop=7 keep=2?"
-            builder.alloc.instruction_set.op_local_set(8);
-            builder.alloc.instruction_set.op_local_set(6);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
+            builder.alloc.instruction_set.op_i64_mul();
             Ok(())
         })
     }
@@ -3172,21 +2865,45 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_and(&mut self) -> Self::Output {
-        self.translate_expressed_binary_operation(Opcode::I32And, |builder| {
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.stack_height.push1();
+            builder.stack_height.pop1();
+            builder.stack_height.pop1();
+            builder.stack_height.push1();
+            builder.stack_height.pop1();
+            builder.stack_height.pop1();
+            builder.alloc.instruction_set.op_i64_and();
             builder.alloc.stack_types.pop().unwrap();
             Ok(())
         })
     }
 
     fn visit_i64_or(&mut self) -> Self::Output {
-        self.translate_expressed_binary_operation(Opcode::I32Or, |builder| {
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.stack_height.push1();
+            builder.stack_height.pop1();
+            builder.stack_height.pop1();
+            builder.stack_height.push1();
+            builder.stack_height.pop1();
+            builder.stack_height.pop1();
+            builder.alloc.instruction_set.op_i64_or();
             builder.alloc.stack_types.pop().unwrap();
             Ok(())
         })
     }
 
     fn visit_i64_xor(&mut self) -> Self::Output {
-        self.translate_expressed_binary_operation(Opcode::I32Xor, |builder| {
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.stack_height.push1();
+            builder.stack_height.pop1();
+            builder.stack_height.pop1();
+            builder.stack_height.push1();
+            builder.stack_height.pop1();
+            builder.stack_height.pop1();
+            builder.alloc.instruction_set.op_i64_xor();
             builder.alloc.stack_types.pop().unwrap();
             Ok(())
         })
@@ -3205,13 +2922,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.pop1();
 
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(63);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_local_set(2);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_br_if_eqz(32);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
@@ -3225,39 +2935,15 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.pop1();
 
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(31);
-            builder.alloc.instruction_set.op_i32_gt_u();
-            builder.alloc.instruction_set.op_br_if_eqz(10);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shl();
-            builder.alloc.instruction_set.op_local_set(3);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_br(19);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
 
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_shl();
-            builder.alloc.instruction_set.op_local_set(4);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_shl();
-            builder.alloc.instruction_set.op_local_set(3);
 
             builder.stack_height.push1();
             builder.stack_height.push1();
@@ -3272,19 +2958,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.stack_height.pop1();
 
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(31);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shr_u();
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_or();
-            builder.alloc.instruction_set.op_local_set(3);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
+            builder.alloc.instruction_set.op_i64_shl();
             Ok(())
         })
     }
@@ -3301,14 +2975,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(63);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_local_set(2);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_br_if_eqz(34);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
@@ -3323,43 +2989,14 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(31);
-            builder.alloc.instruction_set.op_i32_gt_u();
-            builder.alloc.instruction_set.op_br_if_eqz(12);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shr_s();
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_const(31);
-            builder.alloc.instruction_set.op_i32_shr_s();
-            builder.alloc.instruction_set.op_local_set(3);
-            builder.alloc.instruction_set.op_br(19);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_shr_s();
-            builder.alloc.instruction_set.op_local_set(3);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_shr_s();
-            builder.alloc.instruction_set.op_local_set(4);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
@@ -3373,19 +3010,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.stack_height.pop1();
 
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(31);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shl();
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_or();
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
+            builder.alloc.instruction_set.op_i64_shr_s();
             Ok(())
         })
     }
@@ -3401,14 +3026,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(63);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_local_set(2);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_br_if_eqz(32);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
@@ -3421,41 +3038,14 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(31);
-            builder.alloc.instruction_set.op_i32_gt_u();
-            builder.alloc.instruction_set.op_br_if_eqz(10);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shr_u();
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_local_set(3);
-            builder.alloc.instruction_set.op_br(19);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_shr_u();
-            builder.alloc.instruction_set.op_local_set(3);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_shr_u();
-            builder.alloc.instruction_set.op_local_set(4);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
@@ -3469,19 +3059,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.stack_height.pop1();
 
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(31);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shl();
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_or();
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
+            builder.alloc.instruction_set.op_i64_shr_u();
             Ok(())
         })
     }
@@ -3498,139 +3076,58 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(63);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_local_set(2);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_br_if_eqz(32 + 10 + 2 + 6);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(31);
-            builder.alloc.instruction_set.op_i32_gt_u();
-            builder.alloc.instruction_set.op_br_if_eqz(26);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shl();
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(64);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shr_u();
-            builder.alloc.instruction_set.op_i32_or();
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_const(64);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shr_u();
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shl();
-            builder.alloc.instruction_set.op_i32_or();
-
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_set(5);
-            builder.alloc.instruction_set.op_local_set(3);
-            builder.alloc.instruction_set.op_br(19 + 2);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_shl();
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shr_u();
-            builder.alloc.instruction_set.op_i32_or();
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shr_u();
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_shl();
-            builder.alloc.instruction_set.op_i32_or();
-
+            builder.stack_height.pop1();
+            builder.stack_height.pop1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
 
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_local_set(4);
-
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
+            builder.alloc.instruction_set.op_i64_rotl();
             Ok(())
         })
     }
@@ -3647,139 +3144,58 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(63);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_local_set(2);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_br_if_eqz(32 + 10 + 2 + 6);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(31);
-            builder.alloc.instruction_set.op_i32_gt_u();
-            builder.alloc.instruction_set.op_br_if_eqz(26);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shr_u();
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(64);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shl();
-            builder.alloc.instruction_set.op_i32_or();
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_const(64);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shl();
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shr_u();
-            builder.alloc.instruction_set.op_i32_or();
-
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_set(5);
-            builder.alloc.instruction_set.op_local_set(3);
-            builder.alloc.instruction_set.op_br(19 + 2);
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_shr_u();
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shl();
-            builder.alloc.instruction_set.op_i32_or();
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_const(32);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_sub();
-            builder.alloc.instruction_set.op_i32_shl();
-
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_local_get(5);
-            builder.alloc.instruction_set.op_i32_shr_u();
-            builder.alloc.instruction_set.op_i32_or();
-
+            builder.stack_height.pop1();
+            builder.stack_height.pop1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
 
-            builder.alloc.instruction_set.op_local_set(4);
-            builder.alloc.instruction_set.op_local_set(4);
-
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
+            builder.alloc.instruction_set.op_i64_rotr();
             Ok(())
         })
     }
@@ -4042,7 +3458,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let popped_value = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(popped_value, ValType::I64);
             builder.alloc.stack_types.push(ValType::I32);
-            builder.alloc.instruction_set.op_drop();
+            builder.alloc.instruction_set.op_i32_wrap_i64();
             builder.stack_height.pop1();
             Ok(())
         })
@@ -4088,18 +3504,11 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.alloc.stack_types.pop().unwrap();
-
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_clz();
-            builder.alloc.instruction_set.op_br_if_eqz(3);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_br(2);
-            builder.alloc.instruction_set.op_i32_const(-1);
             builder.alloc.stack_types.push(ValType::I64);
-
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.push1();
+            builder.alloc.instruction_set.op_i64_extend_i32_s();
             Ok(())
         })
     }
@@ -4108,10 +3517,9 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
             builder.alloc.stack_types.pop().unwrap();
-
-            builder.alloc.instruction_set.op_i32_const(0);
             builder.alloc.stack_types.push(ValType::I64);
             builder.stack_height.push1();
+            builder.alloc.instruction_set.op_i64_extend_i32_u();
             Ok(())
         })
     }
@@ -4289,23 +3697,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i64_extend8_s(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_i32_extend8_s();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_const(i32::MIN);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_br_if_eqz(3);
-            builder.alloc.instruction_set.op_i32_const(-1_i32);
-            builder.alloc.instruction_set.op_br(2);
-            builder.alloc.instruction_set.op_i32_const(0);
-
             builder.stack_height.pop1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
             builder.stack_height.push1();
-
+            builder.alloc.instruction_set.op_i64_extend8_s();
             Ok(())
         })
     }
@@ -4313,23 +3711,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i64_extend16_s(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_i32_extend16_s();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_const(i32::MIN);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_br_if_eqz(3);
-            builder.alloc.instruction_set.op_i32_const(-1_i32);
-            builder.alloc.instruction_set.op_br(2);
-            builder.alloc.instruction_set.op_i32_const(0);
-
             builder.stack_height.pop1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
             builder.stack_height.push1();
-
+            builder.alloc.instruction_set.op_i64_extend16_s();
             Ok(())
         })
     }
@@ -4337,22 +3725,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i64_extend32_s(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_const(i32::MIN);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_br_if_eqz(3);
-            builder.alloc.instruction_set.op_i32_const(-1_i32);
-            builder.alloc.instruction_set.op_br(2);
-            builder.alloc.instruction_set.op_i32_const(0);
-
             builder.stack_height.pop1();
             builder.stack_height.push1();
             builder.stack_height.push1();
             builder.stack_height.pop1();
             builder.stack_height.pop1();
             builder.stack_height.push1();
-
+            builder.alloc.instruction_set.op_i64_extend32_s();
             Ok(())
         })
     }
@@ -6276,55 +5655,6 @@ impl InstructionTranslator {
         })
     }
 
-    /// Translates a 64-bit unsigned integer division operation into a sequence of WebAssembly
-    /// (Wasm) instructions.
-    ///
-    /// This function implements the logic for dividing two 64-bit integers (treated as unsigned) by
-    /// breaking them into 32-bit components and simulating the division operation. The function
-    /// generates the corresponding WebAssembly operations using an instruction builder
-    /// (`inst_builder`) and maintains the stack height for proper stack-based Wasm semantics.
-    ///
-    /// # Implementation Details
-    /// - The function works with the high (`hi`) and low (`lo`) 32-bit parts of two 64-bit
-    ///   integers.
-    /// - It simulates bitwise shifts, arithmetic operations, and comparisons to calculate the
-    ///   quotient and remainder.
-    /// - The function uses a counter to iterate through the 64 bits of the dividend, updating
-    ///   relevant intermediate results for the quotient and remainder at each step.
-    ///
-    /// # Stack Usage
-    /// The function involves meticulous stack operations:
-    /// - Push and pop operations are tracked using `self.stack_height` to manage the stack state.
-    /// - Custom stack height tracking ensures adherence to Wasm stack rules during dynamic
-    ///   instruction generation.
-    ///
-    /// # Generated Operations
-    /// - Loads local variables using `op_local_get`.
-    /// - Executes arithmetic and logical operations such as `op_i32_add`, `op_i32_sub`,
-    ///   `op_i32_or`, `op_i32_shl`, and `op_i32_shr_u`.
-    /// - Performs conditional branching using `op_br_if_nez` and `op_br_if_eqz`.
-    /// - Updates locals with `op_local_set` and `op_local_tee`.
-    /// - Handles division-related edge cases such as carry propagation and overflow checks.
-    ///
-    /// # Example Workflow
-    /// 1. Decompose the high and low 32-bit parts of the two 64-bit operands.
-    /// 2. Simulate division through a loop where each iteration:
-    ///    - Shifts bits and updates intermediate results.
-    ///    - Computes carries and propagates bit results for the quotient and remainder.
-    /// 3. Rebuild the final results from the calculated quotient and remainder.
-    ///
-    /// # Errors
-    /// - The function assumes correct initialization of local variables and proper input setup for
-    ///   the operands.
-    /// - Overflow, division by zero, or other exceptional arithmetic conditions should be handled
-    ///   as part of higher-level logic or exception management.
-    ///
-    /// # Notes
-    /// - This implementation is tailored for environments where 64-bit integer operations are not
-    ///   natively available in Wasm, making it necessary to simulate these operations through
-    ///   32-bit arithmetic.
-    /// - The function might be updated in future versions for optimizations or support of
-    ///   additional architectures.
     fn translate_i64_div_u(&mut self) {
         self.stack_height.push1();
         self.stack_height.push1();
