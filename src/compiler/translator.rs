@@ -189,8 +189,8 @@ impl FuncTranslatorAllocations {
     }
 
     pub(crate) fn resolve_func_type_signature(&self, func_type_idx: FuncTypeIdx) -> SignatureIdx {
-        let func_type = &self.func_types[func_type_idx as usize];
-        for (i, x) in self.func_types.iter().enumerate() {
+        let func_type = &self.original_func_types[func_type_idx as usize];
+        for (i, x) in self.original_func_types.iter().enumerate() {
             if x == func_type {
                 return i as SignatureIdx;
             }
