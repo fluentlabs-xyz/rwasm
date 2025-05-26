@@ -3,8 +3,8 @@ use crate::{
     ExtendInto,
     Float,
     OpcodeData,
-    RwasmError,
     RwasmExecutor,
+    TrapCode,
     TruncateSaturateInto,
     TryTruncateInto,
     UntypedValue,
@@ -12,43 +12,46 @@ use crate::{
     F32,
     F64,
 };
-use std::ops::Neg;
+use core::ops::Neg;
 
 #[inline(always)]
-pub(crate) fn visit_i32_trunc_f64_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i32_trunc_f64_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f64();
-    let res = <F64 as TryTruncateInto<i32, RwasmError>>::try_truncate_into(value)?;
+    let res = <F64 as TryTruncateInto<i32, TrapCode>>::try_truncate_into(value)?;
     vm.sp.push_i32(res);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_i32_trunc_f64_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i32_trunc_f64_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f64();
-    let res = <F64 as TryTruncateInto<u32, RwasmError>>::try_truncate_into(value)?;
+    let res = <F64 as TryTruncateInto<u32, TrapCode>>::try_truncate_into(value)?;
     vm.sp.push_i32(res as i32);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_i64_trunc_f32_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i64_trunc_f32_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f32();
-    let res = <F32 as TryTruncateInto<i64, RwasmError>>::try_truncate_into(value)?;
+    let res = <F32 as TryTruncateInto<i64, TrapCode>>::try_truncate_into(value)?;
     vm.sp.push_i64(res);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_i64_trunc_f32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i64_trunc_f32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f32();
-    let res = <F32 as TryTruncateInto<u64, RwasmError>>::try_truncate_into(value)?;
+    let res = <F32 as TryTruncateInto<u64, TrapCode>>::try_truncate_into(value)?;
     vm.sp.push_i64(res as i64);
     vm.ip.add(1);
     Ok(())
 }
 
 #[inline(always)]
-pub(crate) fn visit_f32_load<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_load<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let offset = match vm.ip.data() {
         OpcodeData::AddressOffset(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -57,7 +60,7 @@ pub(crate) fn visit_f32_load<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmEr
 }
 
 #[inline(always)]
-pub(crate) fn visit_f64_load<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_load<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let offset = match vm.ip.data() {
         OpcodeData::AddressOffset(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -71,7 +74,7 @@ pub(crate) fn visit_f64_load<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmEr
 }
 
 #[inline(always)]
-pub(crate) fn visit_f32_store<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_store<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let offset = match vm.ip.data() {
         OpcodeData::AddressOffset(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -80,7 +83,7 @@ pub(crate) fn visit_f32_store<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmE
 }
 
 #[inline(always)]
-pub(crate) fn visit_f64_store<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_store<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let offset = match vm.ip.data() {
         OpcodeData::AddressOffset(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -94,18 +97,18 @@ pub(crate) fn visit_f64_store<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmE
 }
 
 #[inline(always)]
-pub(crate) fn visit_i32_trunc_f32_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i32_trunc_f32_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f32();
-    let res = <F32 as TryTruncateInto<i32, RwasmError>>::try_truncate_into(value)?;
+    let res = <F32 as TryTruncateInto<i32, TrapCode>>::try_truncate_into(value)?;
     vm.sp.push_i32(res);
     vm.ip.add(1);
     Ok(())
 }
 
 #[inline(always)]
-pub(crate) fn visit_i32_trunc_f32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i32_trunc_f32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f32();
-    let res = <F32 as TryTruncateInto<u32, RwasmError>>::try_truncate_into(value)?;
+    let res = <F32 as TryTruncateInto<u32, TrapCode>>::try_truncate_into(value)?;
     vm.sp.push_i32(res as i32);
     vm.ip.add(1);
     Ok(())
@@ -115,7 +118,7 @@ pub(crate) fn visit_i32_trunc_f32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), 
 fn execute_unary_32x32<T, O, I>(
     vm: &mut RwasmExecutor<T>,
     f: fn(F32) -> F32,
-) -> Result<(), RwasmError> {
+) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f32();
     let output_bits = f(value);
     vm.sp.push_f32(output_bits);
@@ -124,75 +127,87 @@ fn execute_unary_32x32<T, O, I>(
 }
 
 #[inline(always)]
-pub(crate) fn visit_f32_abs<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_abs<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_32x32::<T, F32, F32>(vm, <F32 as Float<F32>>::abs)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f32_neg<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_neg<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_32x32::<T, F32, F32>(vm, <F32 as Neg>::neg)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f32_ceil<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_ceil<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_32x32::<T, F32, F32>(vm, <F32 as Float<F32>>::ceil)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f32_floor<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_floor<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_32x32::<T, F32, F32>(vm, <F32 as Float<F32>>::floor)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f32_trunc<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_trunc<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_32x32::<T, F32, F32>(vm, <F32 as Float<F32>>::trunc)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f32_nearest<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_nearest<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_32x32::<T, F32, F32>(vm, <F32 as Float<F32>>::nearest)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f32_sqrt<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_sqrt<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_32x32::<T, F32, F32>(vm, <F32 as Float<F32>>::sqrt)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f32_convert_i32_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_convert_i32_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_i32();
     let output_bits: F32 = value.extend_into();
     vm.sp.push_i32(output_bits.to_bits() as i32);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_f32_convert_i32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_convert_i32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_i32() as u32;
     let output_bits: F32 = value.extend_into();
     vm.sp.push_i32(output_bits.to_bits() as i32);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_i32_trunc_sat_f32_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i32_trunc_sat_f32_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f32();
     let output_bits: i32 = value.truncate_saturate_into();
     vm.sp.push_i32(output_bits);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_i32_trunc_sat_f32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i32_trunc_sat_f32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f32();
     let output_bits: u32 = value.truncate_saturate_into();
     vm.sp.push_i32(output_bits as i32);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_i64_trunc_f64_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i64_trunc_f64_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f64();
     let res: i64 = value.try_truncate_into()?;
     vm.sp.push_i64(res);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_i64_trunc_f64_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i64_trunc_f64_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f64();
     let res: u64 = value.try_truncate_into()?;
     vm.sp.push_i64(res as i64);
@@ -200,7 +215,7 @@ pub(crate) fn visit_i64_trunc_f64_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), 
     Ok(())
 }
 
-fn execute_unary_64x64<T>(vm: &mut RwasmExecutor<T>, f: fn(F64) -> F64) -> Result<(), RwasmError> {
+fn execute_unary_64x64<T>(vm: &mut RwasmExecutor<T>, f: fn(F64) -> F64) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f64();
     let output_bits = f(value);
     vm.sp.push_f64(output_bits);
@@ -209,139 +224,159 @@ fn execute_unary_64x64<T>(vm: &mut RwasmExecutor<T>, f: fn(F64) -> F64) -> Resul
 }
 
 #[inline(always)]
-pub(crate) fn visit_f64_abs<T>(exec: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_abs<T>(exec: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_64x64::<T>(exec, <F64 as Float<F64>>::abs)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_neg<T>(exec: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_neg<T>(exec: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_64x64::<T>(exec, <F64 as Neg>::neg)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_ceil<T>(exec: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_ceil<T>(exec: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_64x64::<T>(exec, <F64 as Float<F64>>::ceil)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_floor<T>(exec: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_floor<T>(exec: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_64x64::<T>(exec, <F64 as Float<F64>>::floor)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_trunc<T>(exec: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_trunc<T>(exec: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_64x64::<T>(exec, <F64 as Float<F64>>::trunc)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_nearest<T>(exec: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_nearest<T>(exec: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_64x64::<T>(exec, <F64 as Float<F64>>::nearest)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_sqrt<T>(exec: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_sqrt<T>(exec: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_unary_64x64::<T>(exec, <F64 as Float<F64>>::sqrt)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_convert_i64_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_convert_i64_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_i64();
     let output_bits: F64 = value.extend_into();
     vm.sp.push_f64(output_bits);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_convert_i64_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_convert_i64_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_i64() as u64;
     let output_bits: F64 = value.extend_into();
     vm.sp.push_f64(output_bits);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_i64_trunc_sat_f64_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i64_trunc_sat_f64_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f64();
     let output_bits: i64 = value.truncate_saturate_into();
     vm.sp.push_i64(output_bits);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_i64_trunc_sat_f64_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i64_trunc_sat_f64_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f64();
     let output_bits: u64 = value.truncate_saturate_into();
     vm.sp.push_i64(output_bits as i64);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_f32_convert_i64_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_convert_i64_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_i64();
     let output_bits: F32 = value.wrap_into();
     vm.sp.push_f32(output_bits);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_f32_convert_i64_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_convert_i64_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_i64() as u64;
     let output_bits: F32 = value.wrap_into();
     vm.sp.push_f32(output_bits);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_f32_demote_f64<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f32_demote_f64<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f64();
     let output_bits: F32 = value.wrap_into();
     vm.sp.push_f32(output_bits);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_i32_trunc_sat_f64_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i32_trunc_sat_f64_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f64();
     let output_bits: i32 = value.truncate_saturate_into();
     vm.sp.push_i32(output_bits);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_i32_trunc_sat_f64_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i32_trunc_sat_f64_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f64();
     let output_bits: u32 = value.truncate_saturate_into();
     vm.sp.push_i32(output_bits as i32);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_convert_i32_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_convert_i32_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_i32();
     let output_bits: F64 = value.extend_into();
     vm.sp.push_f64(output_bits.into());
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_convert_i32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_convert_i32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_i32() as u32;
     let output_bits: F64 = value.extend_into();
     vm.sp.push_f64(output_bits.into());
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_promote_f32<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_promote_f32<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f32();
     let output_bits: F64 = value.extend_into();
     vm.sp.push_f64(output_bits.into());
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_i64_trunc_sat_f32_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i64_trunc_sat_f32_s<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f32();
     let output_bits: i64 = value.truncate_saturate_into();
     vm.sp.push_i64(output_bits);
     vm.ip.add(1);
     Ok(())
 }
+
 #[inline(always)]
-pub(crate) fn visit_i64_trunc_sat_f32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_i64_trunc_sat_f32_u<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let value = vm.sp.pop_f32();
     let output_bits: u64 = value.truncate_saturate_into();
     vm.sp.push_i64(output_bits as i64);
@@ -353,7 +388,7 @@ macro_rules! impl_visit_binary_f32 {
     ( $( fn $visit_ident:ident($untyped_ident:ident); )* ) => {
         $(
             #[inline(always)]
-            pub(crate) fn $visit_ident<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+            pub(crate) fn $visit_ident<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
                 vm.sp.eval_top2(UntypedValue::$untyped_ident);
                 vm.ip.add(1);
                 Ok(())
@@ -383,7 +418,7 @@ impl_visit_binary_f32! {
 fn execute_binary_cmp<T>(
     vm: &mut RwasmExecutor<T>,
     f: fn(F64, F64) -> bool,
-) -> Result<(), RwasmError> {
+) -> Result<(), TrapCode> {
     let rhs = vm.sp.pop_f64();
     let lhs = vm.sp.pop_f64();
     let result = f(lhs, rhs);
@@ -399,32 +434,37 @@ macro_rules! op {
 }
 
 #[inline(always)]
-pub(crate) fn visit_f64_eq<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_eq<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_binary_cmp::<T>(vm, op!(==))
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_ne<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_ne<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_binary_cmp::<T>(vm, op!(!=))
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_lt<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_lt<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_binary_cmp::<T>(vm, op!(<))
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_gt<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_gt<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_binary_cmp::<T>(vm, op!(>))
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_le<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_le<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_binary_cmp::<T>(vm, op!(<=))
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_ge<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_ge<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_binary_cmp::<T>(vm, op!(>=))
 }
 
 #[inline(always)]
-fn execute_binary<T>(vm: &mut RwasmExecutor<T>, f: fn(F64, F64) -> F64) -> Result<(), RwasmError> {
+fn execute_binary<T>(vm: &mut RwasmExecutor<T>, f: fn(F64, F64) -> F64) -> Result<(), TrapCode> {
     let rhs = vm.sp.pop_f64();
     let lhs = vm.sp.pop_f64();
     let result = f(lhs, rhs);
@@ -434,30 +474,36 @@ fn execute_binary<T>(vm: &mut RwasmExecutor<T>, f: fn(F64, F64) -> F64) -> Resul
 }
 
 #[inline(always)]
-pub(crate) fn visit_f64_add<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_add<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_binary::<T>(vm, <F64 as ArithmeticOps<F64>>::add)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_sub<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_sub<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_binary::<T>(vm, <F64 as ArithmeticOps<F64>>::sub)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_mul<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_mul<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_binary::<T>(vm, <F64 as ArithmeticOps<F64>>::mul)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_div<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_div<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_binary::<T>(vm, <F64 as Float<F64>>::div)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_min<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_min<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_binary::<T>(vm, <F64 as Float<F64>>::min)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_max<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_max<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_binary::<T>(vm, <F64 as Float<F64>>::max)
 }
+
 #[inline(always)]
-pub(crate) fn visit_f64_copysign<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_f64_copysign<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     execute_binary::<T>(vm, <F64 as Float<F64>>::copysign)
 }

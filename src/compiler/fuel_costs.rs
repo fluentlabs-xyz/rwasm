@@ -1,4 +1,4 @@
-use crate::types::{DropKeep, UntypedValue};
+use crate::{compiler::drop_keep::DropKeep, types::UntypedValue};
 use core::num::NonZeroU64;
 
 /// Type storing all kinds of fuel costs of instructions.

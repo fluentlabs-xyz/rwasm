@@ -2,6 +2,7 @@ mod config;
 mod control_flow;
 mod drop_keep;
 mod error;
+mod fuel_costs;
 mod func_builder;
 mod instr_loc;
 mod labels;
@@ -17,6 +18,7 @@ mod value_stack;
 pub use self::{
     config::{CompilationConfig, StateRouterConfig},
     error::CompilationError,
+    fuel_costs::FuelCosts,
     parser::ModuleParser,
 };
 use alloc::vec::Vec;

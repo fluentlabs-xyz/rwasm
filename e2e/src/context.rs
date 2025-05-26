@@ -184,7 +184,7 @@ impl TestContext<'_> {
         let exports = ModuleParser::parse_function_exports(config.clone(), &wasm[..])?;
         for (k, func_idx, func_type) in exports.into_iter() {
             self.extern_types.insert(k.to_string(), func_type);
-            let state_value = 10_000 + func_idx.to_u32();
+            let state_value = 10_000 + func_idx;
             self.extern_state.insert(k.to_string(), state_value);
             states.push((k.into(), state_value));
         }
@@ -196,6 +196,7 @@ impl TestContext<'_> {
         let (rwasm_module, _) =
             RwasmModule::compile(config, &wasm[..]).map_err(|err| TestError::Rwasm(err.into()))?;
 
+        #[cfg(feature = "debug-print")]
         println!("{}", rwasm_module);
 
         let mut executor = TestingRwasmExecutor::new(
@@ -205,9 +206,11 @@ impl TestContext<'_> {
         );
         executor.set_syscall_handler(testing_context_syscall_handler);
         executor.context_mut().state = ENTRYPOINT_FUNC_IDX;
+        #[cfg(feature = "debug-print")]
         println!(" --- entrypoint ---");
-        let exit_code = executor.run().map_err(|err| TestError::Rwasm(err))?;
+        let exit_code = executor.run()?;
         assert_eq!(exit_code, 0);
+        #[cfg(feature = "debug-print")]
         println!();
 
         let instance = Rc::new(RefCell::new(executor));
@@ -290,6 +293,7 @@ impl TestContext<'_> {
         func_name: &str,
         args: &[Value],
     ) -> Result<&[Value], TestError> {
+        #[cfg(feature = "debug-print")]
         println!("\n --- {} ---", func_name);
 
         let instance = self.instance_by_name_or_last(module_name)?;
@@ -333,7 +337,7 @@ impl TestContext<'_> {
 
         // change function state for router
         instance.context_mut().state = func_state;
-        let _exit_code = instance.run().map_err(|err| TestError::Rwasm(err))?;
+        let _exit_code = instance.run()?;
         // copy results
         let func_type = self.extern_types.get(func_name).unwrap();
         let len_results = func_type.results().len();

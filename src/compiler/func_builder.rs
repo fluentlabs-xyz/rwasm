@@ -2,7 +2,6 @@ use crate::{
     compiler::translator::{FuncTranslatorAllocations, InstructionTranslator, ReusableAllocations},
     CompilationError,
     FuncIdx,
-    StackAlloc,
 };
 use core::mem::take;
 use wasmparser::{
@@ -109,14 +108,12 @@ impl<'a> FuncBuilder<'a> {
     }
 
     fn translate_stack_alloc(&mut self) {
+        // we use `u32::MAX` here because we replace it with
+        // the final calculated value later
         self.translator
             .alloc
             .instruction_set
-            .op_stack_check(StackAlloc {
-                // we use `u32::MAX` here because we replace it with
-                // the final calculated value later
-                max_stack_height: u32::MAX,
-            });
+            .op_stack_check(u32::MAX);
     }
 
     /// Translates the Wasm operators of the Wasm function.

@@ -6,9 +6,9 @@ use crate::{
     Integer,
     LittleEndianConvert,
     LoadInto,
-    RwasmError,
     SignExtendFrom,
     StoreFrom,
+    TrapCode,
     TruncateSaturateInto,
     TryTruncateInto,
     WrapInto,
@@ -145,11 +145,11 @@ macro_rules! op {
 /// # Errors
 ///
 /// If the resulting effective address overflows.
-fn effective_address(address: u32, offset: u32) -> Result<usize, RwasmError> {
+fn effective_address(address: u32, offset: u32) -> Result<usize, TrapCode> {
     offset
         .checked_add(address)
         .map(|address| address as usize)
-        .ok_or(RwasmError::MemoryOutOfBounds)
+        .ok_or(TrapCode::MemoryOutOfBounds)
 }
 
 impl UntypedValue {
@@ -159,7 +159,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    fn load_extend<T, U>(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError>
+    fn load_extend<T, U>(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode>
     where
         T: Into<Self>,
         U: LittleEndianConvert + ExtendInto<T>,
@@ -174,11 +174,7 @@ impl UntypedValue {
         Ok(value)
     }
 
-    pub(crate) fn load_typed<U>(
-        memory: &[u8],
-        raw_address: u32,
-        offset: u32,
-    ) -> Result<U, RwasmError>
+    pub(crate) fn load_typed<U>(memory: &[u8], raw_address: u32, offset: u32) -> Result<U, TrapCode>
     where
         U: LittleEndianConvert,
     {
@@ -195,7 +191,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub(crate) fn load<T>(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError>
+    pub(crate) fn load<T>(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode>
     where
         T: LittleEndianConvert + ExtendInto<T> + Into<Self>,
     {
@@ -208,7 +204,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i32_load(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn i32_load(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load::<i32>(memory, address, offset)
     }
 
@@ -218,7 +214,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn i64_load(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load::<i64>(memory, address, offset)
     }
 
@@ -228,7 +224,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn f32_load(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn f32_load(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load::<F32>(memory, address, offset)
     }
 
@@ -238,7 +234,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn f64_load(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn f64_load(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load::<F64>(memory, address, offset)
     }
 
@@ -248,7 +244,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i32_load8_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn i32_load8_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load_extend::<i32, i8>(memory, address, offset)
     }
 
@@ -258,7 +254,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i32_load8_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn i32_load8_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load_extend::<i32, u8>(memory, address, offset)
     }
 
@@ -268,7 +264,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i32_load16_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn i32_load16_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load_extend::<i32, i16>(memory, address, offset)
     }
 
@@ -278,7 +274,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i32_load16_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn i32_load16_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load_extend::<i32, u16>(memory, address, offset)
     }
 
@@ -288,7 +284,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load8_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn i64_load8_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load_extend::<i64, i8>(memory, address, offset)
     }
 
@@ -298,7 +294,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load8_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn i64_load8_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load_extend::<i64, u8>(memory, address, offset)
     }
 
@@ -308,7 +304,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load16_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn i64_load16_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load_extend::<i64, i16>(memory, address, offset)
     }
 
@@ -318,7 +314,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load16_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn i64_load16_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load_extend::<i64, u16>(memory, address, offset)
     }
 
@@ -328,7 +324,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load32_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn i64_load32_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load_extend::<i64, i32>(memory, address, offset)
     }
 
@@ -338,7 +334,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load32_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError> {
+    pub fn i64_load32_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
         Self::load_extend::<i64, u32>(memory, address, offset)
     }
 
@@ -353,7 +349,7 @@ impl UntypedValue {
         address: Self,
         offset: u32,
         value: Self,
-    ) -> Result<(), RwasmError>
+    ) -> Result<(), TrapCode>
     where
         T: From<Self> + WrapInto<U>,
         U: LittleEndianConvert,
@@ -371,7 +367,7 @@ impl UntypedValue {
         raw_address: u32,
         offset: u32,
         value: U,
-    ) -> Result<(), RwasmError>
+    ) -> Result<(), TrapCode>
     where
         U: LittleEndianConvert,
     {
@@ -387,12 +383,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` stores out of bounds from `memory`.
-    fn store<T>(
-        memory: &mut [u8],
-        address: Self,
-        offset: u32,
-        value: Self,
-    ) -> Result<(), RwasmError>
+    fn store<T>(memory: &mut [u8], address: Self, offset: u32, value: Self) -> Result<(), TrapCode>
     where
         T: From<Self> + WrapInto<T> + LittleEndianConvert,
     {
@@ -410,7 +401,7 @@ impl UntypedValue {
         address: Self,
         offset: u32,
         value: Self,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         Self::store::<i32>(memory, address, offset, value)
     }
 
@@ -425,7 +416,7 @@ impl UntypedValue {
         address: Self,
         offset: u32,
         value: Self,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         Self::store::<i64>(memory, address, offset, value)
     }
 
@@ -440,7 +431,7 @@ impl UntypedValue {
         address: Self,
         offset: u32,
         value: Self,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         Self::store::<F32>(memory, address, offset, value)
     }
 
@@ -455,7 +446,7 @@ impl UntypedValue {
         address: Self,
         offset: u32,
         value: Self,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         Self::store::<F64>(memory, address, offset, value)
     }
 
@@ -470,7 +461,7 @@ impl UntypedValue {
         address: Self,
         offset: u32,
         value: Self,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         Self::store_wrap::<i32, i8>(memory, address, offset, value)
     }
 
@@ -485,7 +476,7 @@ impl UntypedValue {
         address: Self,
         offset: u32,
         value: Self,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         Self::store_wrap::<i32, i16>(memory, address, offset, value)
     }
 
@@ -500,7 +491,7 @@ impl UntypedValue {
         address: Self,
         offset: u32,
         value: Self,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         Self::store_wrap::<i64, i8>(memory, address, offset, value)
     }
 
@@ -515,7 +506,7 @@ impl UntypedValue {
         address: Self,
         offset: u32,
         value: Self,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         Self::store_wrap::<i64, i16>(memory, address, offset, value)
     }
 
@@ -530,7 +521,7 @@ impl UntypedValue {
         address: Self,
         offset: u32,
         value: Self,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         Self::store_wrap::<i64, i32>(memory, address, offset, value)
     }
 
@@ -544,7 +535,7 @@ impl UntypedValue {
     }
 
     /// Execute an infallible generic operation on `T` that returns an `R`.
-    fn try_execute_unary<T, R>(self, op: fn(T) -> Result<R, RwasmError>) -> Result<Self, RwasmError>
+    fn try_execute_unary<T, R>(self, op: fn(T) -> Result<R, TrapCode>) -> Result<Self, TrapCode>
     where
         T: From<Self>,
         R: Into<Self>,
@@ -565,8 +556,8 @@ impl UntypedValue {
     fn try_execute_binary<T, R>(
         self,
         rhs: Self,
-        op: fn(T, T) -> Result<R, RwasmError>,
-    ) -> Result<Self, RwasmError>
+        op: fn(T, T) -> Result<R, TrapCode>,
+    ) -> Result<Self, TrapCode>
     where
         T: From<Self>,
         R: Into<Self>,
@@ -610,7 +601,7 @@ impl UntypedValue {
     ///
     /// - If `rhs` is equal to zero.
     /// - If the operation result overflows.
-    pub fn i32_div_s(self, rhs: Self) -> Result<Self, RwasmError> {
+    pub fn i32_div_s(self, rhs: Self) -> Result<Self, TrapCode> {
         self.try_execute_binary(rhs, <i32 as Integer<i32>>::div)
     }
 
@@ -620,7 +611,7 @@ impl UntypedValue {
     ///
     /// - If `rhs` is equal to zero.
     /// - If the operation result overflows.
-    pub fn i64_div_s(self, rhs: Self) -> Result<Self, RwasmError> {
+    pub fn i64_div_s(self, rhs: Self) -> Result<Self, TrapCode> {
         self.try_execute_binary(rhs, <i64 as Integer<i64>>::div)
     }
 
@@ -630,7 +621,7 @@ impl UntypedValue {
     ///
     /// - If `rhs` is equal to zero.
     /// - If the operation result overflows.
-    pub fn i32_div_u(self, rhs: Self) -> Result<Self, RwasmError> {
+    pub fn i32_div_u(self, rhs: Self) -> Result<Self, TrapCode> {
         self.try_execute_binary(rhs, <u32 as Integer<u32>>::div)
     }
 
@@ -640,7 +631,7 @@ impl UntypedValue {
     ///
     /// - If `rhs` is equal to zero.
     /// - If the operation result overflows.
-    pub fn i64_div_u(self, rhs: Self) -> Result<Self, RwasmError> {
+    pub fn i64_div_u(self, rhs: Self) -> Result<Self, TrapCode> {
         self.try_execute_binary(rhs, <u64 as Integer<u64>>::div)
     }
 
@@ -650,7 +641,7 @@ impl UntypedValue {
     ///
     /// - If `rhs` is equal to zero.
     /// - If the operation result overflows.
-    pub fn i32_rem_s(self, rhs: Self) -> Result<Self, RwasmError> {
+    pub fn i32_rem_s(self, rhs: Self) -> Result<Self, TrapCode> {
         self.try_execute_binary(rhs, <i32 as Integer<i32>>::rem)
     }
 
@@ -660,7 +651,7 @@ impl UntypedValue {
     ///
     /// - If `rhs` is equal to zero.
     /// - If the operation result overflows.
-    pub fn i64_rem_s(self, rhs: Self) -> Result<Self, RwasmError> {
+    pub fn i64_rem_s(self, rhs: Self) -> Result<Self, TrapCode> {
         self.try_execute_binary(rhs, <i64 as Integer<i64>>::rem)
     }
 
@@ -670,7 +661,7 @@ impl UntypedValue {
     ///
     /// - If `rhs` is equal to zero.
     /// - If the operation result overflows.
-    pub fn i32_rem_u(self, rhs: Self) -> Result<Self, RwasmError> {
+    pub fn i32_rem_u(self, rhs: Self) -> Result<Self, TrapCode> {
         self.try_execute_binary(rhs, <u32 as Integer<u32>>::rem)
     }
 
@@ -680,7 +671,7 @@ impl UntypedValue {
     ///
     /// - If `rhs` is equal to zero.
     /// - If the operation result overflows.
-    pub fn i64_rem_u(self, rhs: Self) -> Result<Self, RwasmError> {
+    pub fn i64_rem_u(self, rhs: Self) -> Result<Self, TrapCode> {
         self.try_execute_binary(rhs, <u64 as Integer<u64>>::rem)
     }
 
@@ -1121,8 +1112,8 @@ impl UntypedValue {
     ///
     /// [WebAssembly specification]:
     /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i32_trunc_f32_s(self) -> Result<Self, RwasmError> {
-        self.try_execute_unary(<F32 as TryTruncateInto<i32, RwasmError>>::try_truncate_into)
+    pub fn i32_trunc_f32_s(self) -> Result<Self, TrapCode> {
+        self.try_execute_unary(<F32 as TryTruncateInto<i32, TrapCode>>::try_truncate_into)
     }
 
     /// Execute `i32.trunc_f32_u` Wasm operation.
@@ -1137,8 +1128,8 @@ impl UntypedValue {
     ///
     /// [WebAssembly specification]:
     /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i32_trunc_f32_u(self) -> Result<Self, RwasmError> {
-        self.try_execute_unary(<F32 as TryTruncateInto<u32, RwasmError>>::try_truncate_into)
+    pub fn i32_trunc_f32_u(self) -> Result<Self, TrapCode> {
+        self.try_execute_unary(<F32 as TryTruncateInto<u32, TrapCode>>::try_truncate_into)
     }
 
     /// Execute `i32.trunc_f64_s` Wasm operation.
@@ -1153,8 +1144,8 @@ impl UntypedValue {
     ///
     /// [WebAssembly specification]:
     /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i32_trunc_f64_s(self) -> Result<Self, RwasmError> {
-        self.try_execute_unary(<F64 as TryTruncateInto<i32, RwasmError>>::try_truncate_into)
+    pub fn i32_trunc_f64_s(self) -> Result<Self, TrapCode> {
+        self.try_execute_unary(<F64 as TryTruncateInto<i32, TrapCode>>::try_truncate_into)
     }
 
     /// Execute `i32.trunc_f64_u` Wasm operation.
@@ -1169,8 +1160,8 @@ impl UntypedValue {
     ///
     /// [WebAssembly specification]:
     /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i32_trunc_f64_u(self) -> Result<Self, RwasmError> {
-        self.try_execute_unary(<F64 as TryTruncateInto<u32, RwasmError>>::try_truncate_into)
+    pub fn i32_trunc_f64_u(self) -> Result<Self, TrapCode> {
+        self.try_execute_unary(<F64 as TryTruncateInto<u32, TrapCode>>::try_truncate_into)
     }
 
     /// Execute `i64.extend_i32_s` Wasm operation.
@@ -1195,8 +1186,8 @@ impl UntypedValue {
     ///
     /// [WebAssembly specification]:
     /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i64_trunc_f32_s(self) -> Result<Self, RwasmError> {
-        self.try_execute_unary(<F32 as TryTruncateInto<i64, RwasmError>>::try_truncate_into)
+    pub fn i64_trunc_f32_s(self) -> Result<Self, TrapCode> {
+        self.try_execute_unary(<F32 as TryTruncateInto<i64, TrapCode>>::try_truncate_into)
     }
 
     /// Execute `i64.trunc_f32_u` Wasm operation.
@@ -1211,8 +1202,8 @@ impl UntypedValue {
     ///
     /// [WebAssembly specification]:
     /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i64_trunc_f32_u(self) -> Result<Self, RwasmError> {
-        self.try_execute_unary(<F32 as TryTruncateInto<u64, RwasmError>>::try_truncate_into)
+    pub fn i64_trunc_f32_u(self) -> Result<Self, TrapCode> {
+        self.try_execute_unary(<F32 as TryTruncateInto<u64, TrapCode>>::try_truncate_into)
     }
 
     /// Execute `i64.trunc_f64_s` Wasm operation.
@@ -1227,8 +1218,8 @@ impl UntypedValue {
     ///
     /// [WebAssembly specification]:
     /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i64_trunc_f64_s(self) -> Result<Self, RwasmError> {
-        self.try_execute_unary(<F64 as TryTruncateInto<i64, RwasmError>>::try_truncate_into)
+    pub fn i64_trunc_f64_s(self) -> Result<Self, TrapCode> {
+        self.try_execute_unary(<F64 as TryTruncateInto<i64, TrapCode>>::try_truncate_into)
     }
 
     /// Execute `i64.trunc_f64_u` Wasm operation.
@@ -1243,8 +1234,8 @@ impl UntypedValue {
     ///
     /// [WebAssembly specification]:
     /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i64_trunc_f64_u(self) -> Result<Self, RwasmError> {
-        self.try_execute_unary(<F64 as TryTruncateInto<u64, RwasmError>>::try_truncate_into)
+    pub fn i64_trunc_f64_u(self) -> Result<Self, TrapCode> {
+        self.try_execute_unary(<F64 as TryTruncateInto<u64, TrapCode>>::try_truncate_into)
     }
 
     /// Execute `f32.convert_i32_s` Wasm operation.

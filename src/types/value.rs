@@ -1,7 +1,8 @@
 use crate::{
-    types::{error::RwasmError, F32, F64},
+    types::{F32, F64},
     ExternRef,
     FuncRef,
+    TrapCode,
     UntypedValue,
 };
 use core::{f32, i32, i64, u32, u64};
@@ -70,17 +71,17 @@ pub trait LoadInto {
     /// # Errors
     ///
     /// Traps if the `memory` access is out of bounds.
-    fn load_into(&mut self, memory: &[u8], address: usize) -> Result<(), RwasmError>;
+    fn load_into(&mut self, memory: &[u8], address: usize) -> Result<(), TrapCode>;
 }
 
 impl<const N: usize> LoadInto for [u8; N] {
     #[inline]
-    fn load_into(&mut self, memory: &[u8], address: usize) -> Result<(), RwasmError> {
+    fn load_into(&mut self, memory: &[u8], address: usize) -> Result<(), TrapCode> {
         let slice: &Self = memory
             .get(address..)
             .and_then(|slice| slice.get(..N))
             .and_then(|slice| slice.try_into().ok())
-            .ok_or(RwasmError::MemoryOutOfBounds)?;
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
         *self = *slice;
         Ok(())
     }
@@ -93,17 +94,17 @@ pub trait StoreFrom {
     /// # Errors
     ///
     /// Traps if the `memory` access is out of bounds.
-    fn store_from(&self, memory: &mut [u8], address: usize) -> Result<(), RwasmError>;
+    fn store_from(&self, memory: &mut [u8], address: usize) -> Result<(), TrapCode>;
 }
 
 impl<const N: usize> StoreFrom for [u8; N] {
     #[inline]
-    fn store_from(&self, memory: &mut [u8], address: usize) -> Result<(), RwasmError> {
+    fn store_from(&self, memory: &mut [u8], address: usize) -> Result<(), TrapCode> {
         let slice: &mut Self = memory
             .get_mut(address..)
             .and_then(|slice| slice.get_mut(..N))
             .and_then(|slice| slice.try_into().ok())
-            .ok_or(RwasmError::MemoryOutOfBounds)?;
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
         *slice = *self;
         Ok(())
     }
@@ -193,13 +194,13 @@ pub trait Integer<T>: ArithmeticOps<T> {
     /// # Errors
     ///
     /// If `other` is equal to zero.
-    fn div(self, other: T) -> Result<T, RwasmError>;
+    fn div(self, other: T) -> Result<T, TrapCode>;
     /// Get division remainder.
     ///
     /// # Errors
     ///
     /// If `other` is equal to zero.
-    fn rem(self, other: T) -> Result<T, RwasmError>;
+    fn rem(self, other: T) -> Result<T, TrapCode>;
 }
 
 /// Float-point value.
@@ -274,14 +275,14 @@ impl WrapInto<F32> for F64 {
 
 macro_rules! impl_try_truncate_into {
     (@primitive $from: ident, $into: ident, $to_primitive:path, $rmin:literal, $rmax:literal) => {
-        impl TryTruncateInto<$into, RwasmError> for $from {
+        impl TryTruncateInto<$into, TrapCode> for $from {
             #[inline]
-            fn try_truncate_into(self) -> Result<$into, RwasmError> {
+            fn try_truncate_into(self) -> Result<$into, TrapCode> {
                 if self.is_nan() {
-                    return Err(RwasmError::BadConversionToInteger);
+                    return Err(TrapCode::BadConversionToInteger);
                 }
                 if self <= $rmin || self >= $rmax {
-                    return Err(RwasmError::IntegerOverflow);
+                    return Err(TrapCode::IntegerOverflow);
                 }
                 Ok(self as _)
             }
@@ -304,9 +305,9 @@ macro_rules! impl_try_truncate_into {
         }
     };
     (@wrapped $from:ident, $intermediate:ident, $into:ident) => {
-        impl TryTruncateInto<$into, RwasmError> for $from {
+        impl TryTruncateInto<$into, TrapCode> for $from {
             #[inline]
-            fn try_truncate_into(self) -> Result<$into, RwasmError> {
+            fn try_truncate_into(self) -> Result<$into, TrapCode> {
                 $intermediate::from(self).try_truncate_into()
             }
         }
@@ -605,19 +606,19 @@ macro_rules! impl_integer {
                 self.rotate_right(other as u32)
             }
             #[inline]
-            fn div(self, other: Self) -> Result<Self, RwasmError> {
+            fn div(self, other: Self) -> Result<Self, TrapCode> {
                 if other == 0 {
-                    return Err(RwasmError::IntegerDivisionByZero);
+                    return Err(TrapCode::IntegerDivisionByZero);
                 }
                 match self.overflowing_div(other) {
                     (result, false) => Ok(result),
-                    _ => Err(RwasmError::IntegerOverflow),
+                    _ => Err(TrapCode::IntegerOverflow),
                 }
             }
             #[inline]
-            fn rem(self, other: Self) -> Result<Self, RwasmError> {
+            fn rem(self, other: Self) -> Result<Self, TrapCode> {
                 if other == 0 {
-                    return Err(RwasmError::IntegerDivisionByZero);
+                    return Err(TrapCode::IntegerDivisionByZero);
                 }
                 Ok(self.wrapping_rem(other))
             }

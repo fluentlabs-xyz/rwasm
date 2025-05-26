@@ -1,7 +1,7 @@
-use rwasm::{split_i64_to_i32, InstructionSet, RwasmExecutor, StackAlloc};
+use rwasm::{split_i64_to_i32, InstructionSet, MaxStackHeight, RwasmExecutor};
 
 pub fn emit_i64_const(is: &mut InstructionSet, value: i64) {
-    is.op_stack_check(StackAlloc {
+    is.op_stack_check(MaxStackHeight {
         max_stack_height: 10,
     });
     let (lo, hi) = split_i64_to_i32(value);
@@ -10,7 +10,7 @@ pub fn emit_i64_const(is: &mut InstructionSet, value: i64) {
 }
 
 pub fn emit_i64_mul(is: &mut InstructionSet) {
-    is.op_stack_check(StackAlloc {
+    is.op_stack_check(MaxStackHeight {
         max_stack_height: 20,
     });
     is.op_i32_const(0); // (local i32)
@@ -93,7 +93,7 @@ pub fn emit_i64_mul(is: &mut InstructionSet) {
 }
 
 pub fn emit_i64_eqz(is: &mut InstructionSet) {
-    is.op_stack_check(StackAlloc {
+    is.op_stack_check(MaxStackHeight {
         max_stack_height: 2,
     });
     is.op_i32_eqz();
@@ -104,7 +104,7 @@ pub fn emit_i64_eqz(is: &mut InstructionSet) {
 }
 
 pub fn emit_i64_sub(is: &mut InstructionSet) {
-    is.op_stack_check(StackAlloc {
+    is.op_stack_check(MaxStackHeight {
         max_stack_height: 4,
     });
 
@@ -162,7 +162,7 @@ pub fn emit_i64_sub(is: &mut InstructionSet) {
 }
 
 pub fn emit_i64_le_u(is: &mut InstructionSet) {
-    is.op_stack_check(StackAlloc {
+    is.op_stack_check(MaxStackHeight {
         max_stack_height: 4,
     });
     is.op_local_get(3);
@@ -183,7 +183,7 @@ pub fn emit_i64_le_u(is: &mut InstructionSet) {
 }
 
 pub fn emit_i64_add(is: &mut InstructionSet) {
-    is.op_stack_check(StackAlloc {
+    is.op_stack_check(MaxStackHeight {
         max_stack_height: 4,
     });
     is.op_local_get(4);

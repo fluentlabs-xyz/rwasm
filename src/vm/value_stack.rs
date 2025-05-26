@@ -1,8 +1,7 @@
 use crate::{
     split_i64_to_i32,
     types::{
-        DropKeep,
-        RwasmError,
+        TrapCode,
         UntypedValue,
         DEFAULT_MAX_VALUE_STACK_HEIGHT,
         DEFAULT_MIN_VALUE_STACK_HEIGHT,
@@ -198,7 +197,7 @@ impl ValueStack {
         &mut self,
         max_stack_height: usize,
         len_locals: usize,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         self.reserve(max_stack_height)?;
         self.extend_zeros(len_locals);
         Ok(())
@@ -247,12 +246,12 @@ impl ValueStack {
     /// For this to be working we need a stack-depth analysis during Wasm
     /// compilation so that we are aware of all stack-depths for every
     /// functions.
-    pub fn reserve(&mut self, additional: usize) -> Result<(), RwasmError> {
+    pub fn reserve(&mut self, additional: usize) -> Result<(), TrapCode> {
         let new_len = self
             .len()
             .checked_add(additional)
             .filter(|&new_len| new_len <= self.maximum_len)
-            .ok_or_else(|| RwasmError::StackOverflow)?;
+            .ok_or_else(|| TrapCode::StackOverflow)?;
         if new_len > self.capacity() {
             // Note: By extending the new length, we effectively double
             // the current value stack length and add the additional flat amount
@@ -578,9 +577,9 @@ impl ValueStackPtr {
     ///
     /// If the closure execution fails.
     #[inline]
-    pub fn try_eval_top<F>(&mut self, f: F) -> Result<(), RwasmError>
+    pub fn try_eval_top<F>(&mut self, f: F) -> Result<(), TrapCode>
     where
-        F: FnOnce(UntypedValue) -> Result<UntypedValue, RwasmError>,
+        F: FnOnce(UntypedValue) -> Result<UntypedValue, TrapCode>,
     {
         let last = self.into_sub(1);
         last.set(f(last.get())?);
@@ -593,59 +592,15 @@ impl ValueStackPtr {
     ///
     /// If the closure execution fails.
     #[inline]
-    pub fn try_eval_top2<F>(&mut self, f: F) -> Result<(), RwasmError>
+    pub fn try_eval_top2<F>(&mut self, f: F) -> Result<(), TrapCode>
     where
-        F: FnOnce(UntypedValue, UntypedValue) -> Result<UntypedValue, RwasmError>,
+        F: FnOnce(UntypedValue, UntypedValue) -> Result<UntypedValue, TrapCode>,
     {
         let rhs = self.pop();
         let last = self.into_sub(1);
         let lhs = last.get();
         last.set(f(lhs, rhs)?);
         Ok(())
-    }
-
-    /// Drops some amount of entries and keeps some amount of them at the new top.
-    ///
-    /// # Note
-    ///
-    /// For an amount of entries to keep `k` and an amount of entries to drop `d`
-    /// this has the following effect on stack `s` and stack pointer `sp`.
-    ///
-    /// 1) Copy `k` elements from indices starting at `sp - k` to `sp - k - d`.
-    /// 2) Adjust stack pointer: `sp -= d`
-    ///
-    /// After this operation the value stack will have `d` fewer entries and the
-    /// top `k` entries are the top `k` entries before this operation.
-    ///
-    /// Note that `k + d` cannot be greater than the stack length.
-    pub fn drop_keep(&mut self, drop_keep: DropKeep) {
-        fn drop_keep_impl(this: ValueStackPtr, drop_keep: DropKeep) {
-            let keep = drop_keep.keep;
-            if keep == 0 {
-                // Case: no values need to be kept.
-                return;
-            }
-            let keep = keep as usize;
-            let src = this.into_sub(keep);
-            let dst = this.into_sub(keep + drop_keep.drop as usize);
-            if keep == 1 {
-                // Case: only one value needs to be kept.
-                dst.set(src.get());
-                return;
-            }
-            // Case: many values need to be kept and moved on the stack.
-            for i in 0..keep {
-                dst.into_add(i).set(src.into_add(i).get());
-            }
-        }
-
-        let drop = drop_keep.drop;
-        if drop == 0 {
-            // Nothing to do in this case.
-            return;
-        }
-        drop_keep_impl(*self, drop_keep);
-        self.dec_by(drop as usize);
     }
 
     pub fn push_f32(&mut self, value: F32) {

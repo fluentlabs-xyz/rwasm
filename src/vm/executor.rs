@@ -4,12 +4,9 @@ mod opcodes;
 use crate::{
     types::{
         AddressOffset,
-        DropKeep,
-        FuelCosts,
         GlobalIdx,
         OpcodeData,
         Pages,
-        RwasmError,
         RwasmModule,
         SignatureIdx,
         TableIdx,
@@ -31,6 +28,8 @@ use crate::{
         value_stack::{ValueStack, ValueStackPtr},
     },
     Caller,
+    FuelCosts,
+    TrapCode,
 };
 use alloc::{sync::Arc, vec, vec::Vec};
 use bitvec::{bitvec, prelude::BitVec};
@@ -75,7 +74,7 @@ use hashbrown::HashMap;
 /// - `last_signature`: Optionally stores the last used signature index, needed for validating
 ///   indirect function calls.
 /// - `next_result`: Optionally stores the result of the next operation, either a valid result or an
-///   error of type `RwasmError`.
+///   error of type `TrapCode`.
 /// - `stop_exec`: A boolean flag indicating whether the execution should halt prematurely.
 /// - `syscall_handler`: A handler of type `SyscallHandler<T>` to execute host function calls or
 ///   system calls invoked by the WASM module.
@@ -119,7 +118,7 @@ pub struct RwasmExecutor<T> {
     pub(crate) call_stack: Vec<InstructionPtr>,
     // the last used signature (needed for indirect calls type checks)
     pub(crate) last_signature: Option<SignatureIdx>,
-    pub(crate) next_result: Option<Result<i32, RwasmError>>,
+    pub(crate) next_result: Option<Result<i32, TrapCode>>,
     pub(crate) stop_exec: bool,
     pub(crate) syscall_handler: SyscallHandler<T>,
 }
@@ -129,7 +128,7 @@ impl<T> RwasmExecutor<T> {
         rwasm_bytecode: &[u8],
         config: ExecutorConfig,
         context: T,
-    ) -> Result<Self, RwasmError> {
+    ) -> Result<Self, TrapCode> {
         Ok(Self::new(
             Arc::new(RwasmModule::new(rwasm_bytecode)),
             config,
@@ -216,11 +215,11 @@ impl<T> RwasmExecutor<T> {
         self.last_signature = None;
     }
 
-    pub fn try_consume_fuel(&mut self, fuel: u64) -> Result<(), RwasmError> {
+    pub fn try_consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
         let consumed_fuel = self.consumed_fuel.checked_add(fuel).unwrap_or(u64::MAX);
         if let Some(fuel_limit) = self.config.fuel_limit {
             if consumed_fuel > fuel_limit {
-                return Err(RwasmError::OutOfFuel);
+                return Err(TrapCode::OutOfFuel);
             }
         }
         self.consumed_fuel = consumed_fuel;
@@ -268,23 +267,8 @@ impl<T> RwasmExecutor<T> {
         &mut self.context
     }
 
-    pub fn run(&mut self) -> Result<i32, RwasmError> {
-        match run_the_loop(self) {
-            Ok(exit_code) => Ok(exit_code),
-            Err(err) => match err {
-                RwasmError::ExecutionHalted(exit_code) => Ok(exit_code),
-                _ => Err(err),
-            },
-        }
-    }
-
-    pub(crate) fn fetch_drop_keep(&self, offset: usize) -> DropKeep {
-        let mut addr: InstructionPtr = self.ip;
-        addr.add(offset);
-        match addr.data() {
-            OpcodeData::DropKeep(drop_keep) => *drop_keep,
-            _ => unreachable!("rwasm: can't extract drop keep"),
-        }
+    pub fn run(&mut self) -> Result<i32, TrapCode> {
+        run_the_loop(self)
     }
 
     pub(crate) fn fetch_table_index(&self, offset: usize) -> TableIdx {
@@ -304,8 +288,8 @@ impl<T> RwasmExecutor<T> {
             memory: &[u8],
             address: UntypedValue,
             offset: u32,
-        ) -> Result<UntypedValue, RwasmError>,
-    ) -> Result<(), RwasmError> {
+        ) -> Result<UntypedValue, TrapCode>,
+    ) -> Result<(), TrapCode> {
         self.sp.try_eval_top(|address| {
             let memory = self.global_memory.data();
             let value = load_extend(memory, address, offset.into_inner())?;
@@ -324,9 +308,9 @@ impl<T> RwasmExecutor<T> {
             address: UntypedValue,
             offset: u32,
             value: UntypedValue,
-        ) -> Result<(), RwasmError>,
+        ) -> Result<(), TrapCode>,
         len: u32,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         let (address, value) = self.sp.pop2();
         let memory = self.global_memory.data_mut();
         store_wrap(memory, address, offset.into_inner(), value)?;
@@ -358,8 +342,8 @@ impl<T> RwasmExecutor<T> {
     #[inline(always)]
     pub(crate) fn try_execute_binary(
         &mut self,
-        f: fn(UntypedValue, UntypedValue) -> Result<UntypedValue, RwasmError>,
-    ) -> Result<(), RwasmError> {
+        f: fn(UntypedValue, UntypedValue) -> Result<UntypedValue, TrapCode>,
+    ) -> Result<(), TrapCode> {
         self.sp.try_eval_top2(f)?;
         self.ip.add(1);
         Ok(())
@@ -371,12 +355,12 @@ impl<T> RwasmExecutor<T> {
         is_nested_call: bool,
         skip: usize,
         instr_ref: u32,
-    ) -> Result<(), RwasmError> {
+    ) -> Result<(), TrapCode> {
         self.ip.add(skip);
         self.value_stack.sync_stack_ptr(self.sp);
         if is_nested_call {
             if self.call_stack.len() > N_MAX_RECURSION_DEPTH {
-                return Err(RwasmError::StackOverflow);
+                return Err(TrapCode::StackOverflow);
             }
             self.call_stack.push(self.ip);
         }

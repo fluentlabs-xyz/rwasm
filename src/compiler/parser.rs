@@ -102,12 +102,7 @@ impl ModuleParser {
             let func_type =
                 parser.allocations.translation.func_types[func_type_idx as usize].clone();
             result.push((k.clone(), *v, func_type));
-            print!(
-                "{}: func_idx={}, func_type_idx={}\n",
-                k,
-                v.to_u32(),
-                func_type_idx
-            );
+            print!("{}: func_idx={}, func_type_idx={}\n", k, v, func_type_idx);
         }
         Ok(result)
     }
@@ -118,17 +113,18 @@ impl ModuleParser {
             // otherwise it might be super misleading for devs
             self.allocations
                 .translation
-                .emit_function_call(start_func.to_u32(), true, false);
+                .emit_function_call(start_func, true, false);
         } else if let Some(entrypoint_name) = self.config.entrypoint_name.as_ref() {
             let func_idx = self
                 .allocations
                 .translation
                 .exported_funcs
                 .get(entrypoint_name)
+                .copied()
                 .ok_or(CompilationError::MissingEntrypoint)?;
             self.allocations
                 .translation
-                .emit_function_call(func_idx.to_u32(), true, true);
+                .emit_function_call(func_idx, true, true);
         } else if self.config.state_router.is_none() {
             // if there is no state router, then such an application can't be executed; then why do
             // we need to compile it?
@@ -234,16 +230,16 @@ impl ModuleParser {
                 .translation
                 .segment_builder
                 .entrypoint_bytecode;
-            entrypoint_bytecode.op_local_get(1);
+            entrypoint_bytecode.op_local_get(1u32);
             entrypoint_bytecode.op_i32_const(*state_value);
             entrypoint_bytecode.op_i32_eq();
-            entrypoint_bytecode.op_br_if_eqz(4);
+            entrypoint_bytecode.op_br_if_eqz(3);
             // it's super important to drop the original state from the stack
             // because input params might be passed though the stack
             entrypoint_bytecode.op_drop();
             self.allocations
                 .translation
-                .emit_function_call(func_idx.to_u32(), true, true);
+                .emit_function_call(func_idx, true, true);
         }
         // drop input state from the stack
         self.allocations
@@ -473,14 +469,11 @@ impl ModuleParser {
         self.validator.function_section(&section)?;
         for func_type_index in section.into_iter() {
             let func_type_index = func_type_index?;
-            // let func_idx = self.allocations.translation.compiled_funcs.len();
-            // println!("func_idx={func_idx}, func_type_index: {func_type_index}");
             self.allocations
                 .translation
                 .compiled_funcs
                 .push(func_type_index);
         }
-        // println!();
         Ok(())
     }
 
@@ -636,7 +629,7 @@ impl ModuleParser {
                         let compiled_expr = CompiledExpr::new(v?);
                         compiled_expr
                             .funcref()
-                            .map(|v| v.to_u32() + 1)
+                            .map(|v| v + 1)
                             .or_else(|| compiled_expr.eval_const().map(UntypedValue::as_u32))
                             .ok_or(CompilationError::ConstEvaluationFailed)
                     })
@@ -806,7 +799,7 @@ impl ModuleParser {
     fn process_code_entry(&mut self, func_body: FunctionBody) -> Result<(), CompilationError> {
         let func_idx = self.next_func();
         #[cfg(feature = "debug-print")]
-        println!("\nfunc_idx={}", func_idx.to_u32());
+        println!("\nfunc_idx={}", func_idx);
         let allocations = take(&mut self.allocations);
         let validator = self.validator.code_section_entry(&func_body)?;
         let func_validator = validator.into_validator(allocations.validation);

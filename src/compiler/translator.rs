@@ -9,8 +9,9 @@ use crate::{
             LoopControlFrame,
             UnreachableControlFrame,
         },
-        drop_keep::translate_drop_keep,
+        drop_keep::{translate_drop_keep, DropKeep},
         error::CompilationError,
+        fuel_costs::FuelCosts,
         instr_loc::InstrLoc,
         labels::{LabelRef, LabelRegistry},
         locals_registry::LocalsRegistry,
@@ -24,9 +25,7 @@ use crate::{
     BranchTableTargets,
     ConstructorParams,
     DataSegmentIdx,
-    DropKeep,
     ElementSegmentIdx,
-    FuelCosts,
     FuncIdx,
     FuncTypeIdx,
     GlobalVariable,
@@ -173,16 +172,16 @@ impl FuncTranslatorAllocations {
 
     pub(crate) fn resolve_func_type_index<I: Into<FuncIdx>>(&self, func_idx: I) -> FuncTypeIdx {
         let func_idx: FuncIdx = func_idx.into();
-        let is_imported_func = func_idx.to_u32() < self.imported_funcs.len() as u32;
+        let is_imported_func = func_idx < self.imported_funcs.len() as u32;
         if is_imported_func {
             self.imported_funcs
-                .get(func_idx.to_u32() as usize)
+                .get(func_idx as usize)
                 .map(|v| v.1)
                 .unwrap()
         } else {
             let len_imports = self.imported_funcs.len();
             self.compiled_funcs
-                .get(func_idx.to_u32() as usize - len_imports)
+                .get(func_idx as usize - len_imports)
                 .copied()
                 .unwrap()
         }
@@ -215,7 +214,6 @@ impl FuncTranslatorAllocations {
             //       this case by using the special instruction for it.
             if is_return_call {
                 is.op_return_call_internal(function_index - imported_funcs_len + 1);
-                is.op_return(DropKeep::none());
             } else {
                 let func_loc = is.op_call_internal(function_index - imported_funcs_len + 1);
                 self.func_call_locs
@@ -227,7 +225,6 @@ impl FuncTranslatorAllocations {
             //       general calling operator for it.
             if is_return_call {
                 is.op_return_call(import_linker_entity.sys_func_idx);
-                is.op_return(DropKeep::none());
             } else {
                 is.op_call(import_linker_entity.sys_func_idx);
             }
@@ -449,8 +446,8 @@ impl InstructionTranslator {
         while let Some(opcode) = iter.next() {
             match opcode {
                 (Opcode::ConsumeFuel, _) | (Opcode::SignatureCheck, _) => {}
-                (Opcode::StackCheck, OpcodeData::StackAlloc(stack_alloc)) => {
-                    stack_alloc.max_stack_height = self.stack_height.max_stack_height();
+                (Opcode::StackCheck, OpcodeData::MaxStackHeight(stack_alloc)) => {
+                    *stack_alloc = self.stack_height.max_stack_height();
                     break;
                 }
                 _ => unreachable!(),
@@ -1013,7 +1010,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                         .map(|v| &mut v.1)
                         .unwrap()
                         .update_branch_offset(drop_keep_length as i32 + 2);
-                    builder.alloc.instruction_set.op_return(DropKeep::none());
+                    builder.alloc.instruction_set.op_return();
                 }
             }
             Ok(())
@@ -1058,17 +1055,17 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             /// Encodes the [`BrTableTarget`] into the given [`Instruction`] stream.
             fn encode_br_table_target(stream: &mut InstructionSet, target: BrTableTarget) {
                 match target {
-                    BrTableTarget::Br(offset, drop_keep) => {
+                    BrTableTarget::Br(offset, _drop_keep) => {
                         // Case: We push a `Br` followed by a `Return` as usual.
-                        stream.op_br_adjust(offset);
-                        stream.op_return(drop_keep);
+                        stream.op_br(offset);
+                        stream.op_return();
                     }
-                    BrTableTarget::Return(drop_keep) => {
+                    BrTableTarget::Return(_drop_keep) => {
                         // Case: We push `Return` two times to make all branch targets use 2
                         // instruction words.       This is important to
                         // make `br_table` dispatch efficient.
-                        stream.op_return(drop_keep);
-                        stream.op_return(drop_keep);
+                        stream.op_return();
+                        stream.op_return();
                     }
                 }
             }
@@ -1106,7 +1103,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let len_branches = builder.alloc.br_table_branches.len() / 2;
             let default_branch =
                 compute_instr(builder, len_branches, default, &mut max_drop_keep_fuel)?;
-            let len_targets = BranchTableTargets::try_from(len_branches + 1)?;
+            let len_targets = BranchTableTargets::try_from(len_branches + 1)
+                .map_err(|_| CompilationError::BranchTableTargetsOutOfBounds)?;
             builder.alloc.instruction_set.op_br_table(len_targets);
             encode_br_table_target(&mut builder.alloc.br_table_branches, default_branch);
             for branch in builder.alloc.br_table_branches.drain(..) {
@@ -1128,7 +1126,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 drop_keep,
                 &mut builder.stack_height,
             );
-            builder.alloc.instruction_set.op_return(DropKeep::none());
+            builder.alloc.instruction_set.op_return();
             builder.reachable = false;
             Ok(())
         })
@@ -1211,7 +1209,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .alloc
                 .instruction_set
                 .op_return_call_indirect(signature_idx);
-            builder.alloc.instruction_set.op_return(DropKeep::none());
+            builder.alloc.instruction_set.op_return();
             builder.alloc.instruction_set.op_table_get(table_index);
             builder.reachable = false;
             Ok(())
@@ -4189,7 +4187,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             }
             builder.stack_height.pop3();
             // since we store all data sections in the one segment, then the index is always 0
-            ib.op_memory_init(data_segment_index.to_u32() + 1);
+            ib.op_memory_init(data_segment_index + 1);
             Ok(())
         })
     }

@@ -61,11 +61,6 @@ impl ValueStackHeight {
     }
 
     /// Pushes a value to the emulated value stack.
-    pub fn push3(&mut self) {
-        self.push_n(3)
-    }
-
-    /// Pushes a value to the emulated value stack.
     pub fn push4(&mut self) {
         self.push_n(4)
     }

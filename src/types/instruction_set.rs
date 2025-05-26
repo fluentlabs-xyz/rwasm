@@ -6,15 +6,14 @@ use crate::{
         BranchTableTargets,
         CompiledFunc,
         DataSegmentIdx,
-        DropKeep,
         ElementSegmentIdx,
         FuncIdx,
         GlobalIdx,
         LocalDepth,
+        MaxStackHeight,
         Opcode,
         OpcodeData,
         SignatureIdx,
-        StackAlloc,
         TableIdx,
         UntypedValue,
     },
@@ -59,10 +58,10 @@ impl Default for InstructionSet {
 macro_rules! impl_opcode {
     ($opcode:ident($data_type:ident)) => {
         paste::paste! {
-            pub fn [< op_ $opcode:snake >]<I: Into<$data_type>>(&mut self, value: I) -> u32 {
+            pub fn [< op_ $opcode:snake >]<I: TryInto<$data_type>>(&mut self, value: I) -> u32 {
                 self.push(
                     Opcode::$opcode,
-                    OpcodeData::$data_type(value.into()),
+                    OpcodeData::$data_type(value.try_into().unwrap_or_else(|_| unreachable!())),
                 )
             }
         }
@@ -107,7 +106,7 @@ impl InstructionSet {
     pub fn finalize(&mut self, inject_return: bool) {
         // inject return in the end (it's used mostly for unit tests)
         if inject_return && !self.is_return_last() {
-            self.op_return(DropKeep::default());
+            self.op_return();
         }
     }
 
@@ -121,13 +120,10 @@ impl InstructionSet {
     impl_opcode!(Br(BranchOffset));
     impl_opcode!(BrIfEqz(BranchOffset));
     impl_opcode!(BrIfNez(BranchOffset));
-    impl_opcode!(BrAdjust(BranchOffset));
-    impl_opcode!(BrAdjustIfNez(BranchOffset));
     impl_opcode!(BrTable(BranchTableTargets));
     impl_opcode!(Unreachable);
     impl_opcode!(ConsumeFuel(BlockFuel));
-    impl_opcode!(Return(DropKeep));
-    impl_opcode!(ReturnIfNez(DropKeep));
+    impl_opcode!(Return);
     impl_opcode!(ReturnCallInternal(CompiledFunc));
     impl_opcode!(ReturnCall(FuncIdx));
     impl_opcode!(ReturnCallIndirect(SignatureIdx));
@@ -140,28 +136,17 @@ impl InstructionSet {
     impl_opcode!(GlobalGet(GlobalIdx));
     impl_opcode!(GlobalSet(GlobalIdx));
     impl_opcode!(I32Load(AddressOffset));
-    //impl_opcode!(I64Load(AddressOffset));
     impl_opcode!(F32Load(AddressOffset));
     impl_opcode!(F64Load(AddressOffset));
     impl_opcode!(I32Load8S(AddressOffset));
     impl_opcode!(I32Load8U(AddressOffset));
     impl_opcode!(I32Load16S(AddressOffset));
     impl_opcode!(I32Load16U(AddressOffset));
-    //impl_opcode!(I64Load8S(AddressOffset));
-    //impl_opcode!(I64Load8U(AddressOffset));
-    //impl_opcode!(I64Load16S(AddressOffset));
-    //impl_opcode!(I64Load16U(AddressOffset));
-    //impl_opcode!(I64Load32S(AddressOffset));
-    //impl_opcode!(I64Load32U(AddressOffset));
     impl_opcode!(I32Store(AddressOffset));
-    //impl_opcode!(I64Store(AddressOffset));
     impl_opcode!(F32Store(AddressOffset));
     impl_opcode!(F64Store(AddressOffset));
     impl_opcode!(I32Store8(AddressOffset));
     impl_opcode!(I32Store16(AddressOffset));
-    //impl_opcode!(I64Store8(AddressOffset));
-    //impl_opcode!(I64Store16(AddressOffset));
-    //impl_opcode!(I64Store32(AddressOffset));
     impl_opcode!(MemorySize);
     impl_opcode!(MemoryGrow);
     impl_opcode!(MemoryFill);
@@ -178,9 +163,6 @@ impl InstructionSet {
     impl_opcode!(ElemDrop(ElementSegmentIdx));
     impl_opcode!(RefFunc(CompiledFunc));
     impl_opcode!(I32Const(UntypedValue));
-    //impl_opcode!(I64Const(UntypedValue));
-    // impl_opcode!(F32Const(UntypedValue));
-    // impl_opcode!(F64Const(UntypedValue));
     impl_opcode!(I32Eqz);
     impl_opcode!(I32Eq);
     impl_opcode!(I32Ne);
@@ -192,17 +174,6 @@ impl InstructionSet {
     impl_opcode!(I32LeU);
     impl_opcode!(I32GeS);
     impl_opcode!(I32GeU);
-    //impl_opcode!(I64Eqz);
-    //impl_opcode!(I64Eq);
-    //impl_opcode!(I64Ne);
-    //impl_opcode!(I64LtS);
-    //impl_opcode!(I64LtU);
-    //impl_opcode!(I64GtS);
-    //impl_opcode!(I64GtU);
-    //impl_opcode!(I64LeS);
-    //impl_opcode!(I64LeU);
-    //impl_opcode!(I64GeS);
-    //impl_opcode!(I64GeU);
     impl_opcode!(F32Eq);
     impl_opcode!(F32Ne);
     impl_opcode!(F32Lt);
@@ -233,24 +204,6 @@ impl InstructionSet {
     impl_opcode!(I32ShrU);
     impl_opcode!(I32Rotl);
     impl_opcode!(I32Rotr);
-    //impl_opcode!(I64Clz);
-    //impl_opcode!(I64Ctz);
-    //impl_opcode!(I64Popcnt);
-    //impl_opcode!(I64Add);
-    //impl_opcode!(I64Sub);
-    //impl_opcode!(I64Mul);
-    //impl_opcode!(I64DivS);
-    //impl_opcode!(I64DivU);
-    //impl_opcode!(I64RemS);
-    //impl_opcode!(I64RemU);
-    //impl_opcode!(I64And);
-    //impl_opcode!(I64Or);
-    //impl_opcode!(I64Xor);
-    //impl_opcode!(I64Shl);
-    //impl_opcode!(I64ShrS);
-    //impl_opcode!(I64ShrU);
-    //impl_opcode!(I64Rotl);
-    //impl_opcode!(I64Rotr);
     impl_opcode!(F32Abs);
     impl_opcode!(F32Neg);
     impl_opcode!(F32Ceil);
@@ -284,8 +237,6 @@ impl InstructionSet {
     impl_opcode!(I32TruncF32U);
     impl_opcode!(I32TruncF64S);
     impl_opcode!(I32TruncF64U);
-    //impl_opcode!(I64ExtendI32S);
-    //impl_opcode!(I64ExtendI32U);
     impl_opcode!(I64TruncF32S);
     impl_opcode!(I64TruncF32U);
     impl_opcode!(I64TruncF64S);
@@ -302,9 +253,6 @@ impl InstructionSet {
     impl_opcode!(F64PromoteF32);
     impl_opcode!(I32Extend8S);
     impl_opcode!(I32Extend16S);
-    //impl_opcode!(I64Extend8S);
-    //impl_opcode!(I64Extend16S);
-    //impl_opcode!(I64Extend32S);
     impl_opcode!(I32TruncSatF32S);
     impl_opcode!(I32TruncSatF32U);
     impl_opcode!(I32TruncSatF64S);
@@ -313,7 +261,7 @@ impl InstructionSet {
     impl_opcode!(I64TruncSatF32U);
     impl_opcode!(I64TruncSatF64S);
     impl_opcode!(I64TruncSatF64U);
-    impl_opcode!(StackCheck(StackAlloc));
+    impl_opcode!(StackCheck(MaxStackHeight));
 
     /// Adds the given `delta` amount of fuel to the [`ConsumeFuel`] instruction `instr`.
     ///
@@ -408,7 +356,6 @@ fn encode_instruction_data<E: Encoder>(
         OpcodeData::BranchOffset(value) => Encode::encode(&value, encoder),
         OpcodeData::BranchTableTargets(value) => Encode::encode(&value, encoder),
         OpcodeData::BlockFuel(value) => Encode::encode(&value, encoder),
-        OpcodeData::DropKeep(value) => Encode::encode(&value, encoder),
         OpcodeData::CompiledFunc(value) => Encode::encode(&value, encoder),
         OpcodeData::FuncIdx(value) => Encode::encode(&value, encoder),
         OpcodeData::SignatureIdx(value) => Encode::encode(&value, encoder),
@@ -418,7 +365,7 @@ fn encode_instruction_data<E: Encoder>(
         OpcodeData::TableIdx(value) => Encode::encode(&value, encoder),
         OpcodeData::ElementSegmentIdx(value) => Encode::encode(&value, encoder),
         OpcodeData::UntypedValue(value) => Encode::encode(&value, encoder),
-        OpcodeData::StackAlloc(value) => Encode::encode(&value, encoder),
+        OpcodeData::MaxStackHeight(value) => Encode::encode(&value, encoder),
     }
 }
 
@@ -429,12 +376,9 @@ fn decode_instruction_data<Context, D: Decoder<Context = Context>>(
     use Opcode::*;
     let instruction_data = match instruction {
         LocalGet | LocalSet | LocalTee => OpcodeData::LocalDepth(Decode::decode(decoder)?),
-        Br | BrIfEqz | BrIfNez | BrAdjust | BrAdjustIfNez => {
-            OpcodeData::BranchOffset(Decode::decode(decoder)?)
-        }
+        Br | BrIfEqz | BrIfNez => OpcodeData::BranchOffset(Decode::decode(decoder)?),
         BrTable => OpcodeData::BranchTableTargets(Decode::decode(decoder)?),
         ConsumeFuel => OpcodeData::BlockFuel(Decode::decode(decoder)?),
-        Return | ReturnIfNez => OpcodeData::DropKeep(Decode::decode(decoder)?),
         ReturnCallInternal | CallInternal | RefFunc => {
             OpcodeData::CompiledFunc(Decode::decode(decoder)?)
         }
@@ -453,7 +397,7 @@ fn decode_instruction_data<Context, D: Decoder<Context = Context>>(
         }
         TableInit | ElemDrop => OpcodeData::ElementSegmentIdx(Decode::decode(decoder)?),
         I32Const => OpcodeData::UntypedValue(Decode::decode(decoder)?),
-        StackCheck => OpcodeData::StackAlloc(Decode::decode(decoder)?),
+        StackCheck => OpcodeData::MaxStackHeight(Decode::decode(decoder)?),
         _ => OpcodeData::EmptyData,
     };
     Ok(instruction_data)

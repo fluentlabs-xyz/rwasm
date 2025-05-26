@@ -1,4 +1,4 @@
-use rwasm::{Caller, RwasmError};
+use rwasm::{Caller, TrapCode};
 
 pub const ENTRYPOINT_FUNC_IDX: u32 = u32::MAX;
 
@@ -19,7 +19,7 @@ pub struct TestingContext {
 pub(crate) fn testing_context_syscall_handler(
     mut caller: Caller<TestingContext>,
     func_idx: u32,
-) -> Result<(), RwasmError> {
+) -> Result<(), TrapCode> {
     match func_idx {
         FUNC_PRINT => {
             println!("print");

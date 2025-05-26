@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 rwasm = { path = ".." }
-#rwasm-legacy = { path = "../legacy" }
 anyhow = "1.0.71"
 wast = "=64.0"
 

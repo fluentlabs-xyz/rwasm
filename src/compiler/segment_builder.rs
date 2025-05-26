@@ -48,11 +48,9 @@ impl SegmentBuilder {
                 .op_ref_func(global_variable.default_value.as_u32()),
             _ => return Err(CompilationError::NotSupportedGlobalType),
         };
-        self.entrypoint_bytecode
-            .op_global_set(global_idx.to_u32() * 2);
+        self.entrypoint_bytecode.op_global_set(global_idx * 2);
         if global_type == ValType::I64 || global_type == ValType::F64 {
-            self.entrypoint_bytecode
-                .op_global_set(global_idx.to_u32() * 2 + 1);
+            self.entrypoint_bytecode.op_global_set(global_idx * 2 + 1);
         }
         Ok(())
     }
@@ -120,8 +118,7 @@ impl SegmentBuilder {
         // TODO(dmitry123): "add stack height check"
         self.entrypoint_bytecode
             .op_memory_init(DEFAULT_MEMORY_INDEX);
-        self.entrypoint_bytecode
-            .op_data_drop(segment_idx.to_u32() + 1);
+        self.entrypoint_bytecode.op_data_drop(segment_idx + 1);
         // store passive section info
         self.memory_sections
             .insert(segment_idx, (offset.as_u32(), bytes.len() as u32));
@@ -153,11 +150,9 @@ impl SegmentBuilder {
         self.entrypoint_bytecode.op_i32_const(offset);
         self.entrypoint_bytecode.op_i32_const(segment_offset);
         self.entrypoint_bytecode.op_i32_const(segment_length);
-        self.entrypoint_bytecode
-            .op_table_init(segment_idx.to_u32() + 1);
+        self.entrypoint_bytecode.op_table_init(segment_idx + 1);
         self.entrypoint_bytecode.op_table_get(table_idx);
-        self.entrypoint_bytecode
-            .op_elem_drop(segment_idx.to_u32() + 1);
+        self.entrypoint_bytecode.op_elem_drop(segment_idx + 1);
         // store active section info
         self.element_sections
             .insert(segment_idx, (offset.as_u32(), segment_length as u32));

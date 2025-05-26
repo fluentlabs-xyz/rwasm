@@ -1,5 +1,5 @@
 use crate::{
-    types::{Opcode, OpcodeData, Pages, RwasmError, UntypedValue, N_MAX_RECURSION_DEPTH},
+    types::{Opcode, OpcodeData, Pages, UntypedValue, N_MAX_RECURSION_DEPTH},
     vm::{
         context::Caller,
         executor::RwasmExecutor,
@@ -7,16 +7,17 @@ use crate::{
         table_entity::TableEntity,
     },
     OpcodeMeta,
+    TrapCode,
     NULL_FUNC_IDX,
 };
 use core::cmp;
 
-pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmError> {
+pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, TrapCode> {
     let floats_enabled = vm.config.floats_enabled;
     macro_rules! float_wrapper {
         ($func_name:ident) => {{
             if !floats_enabled {
-                return Err(RwasmError::FloatsAreDisabled);
+                return Err(TrapCode::FloatsAreDisabled);
             }
             $crate::vm::executor::fpu::$func_name(vm)?
         }};
@@ -67,12 +68,12 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
             Br => visit_br(vm),
             BrIfEqz => visit_br_if(vm),
             BrIfNez => visit_br_if_nez(vm),
-            BrAdjust => visit_br_adjust(vm),
-            BrAdjustIfNez => visit_br_adjust_if_nez(vm),
+            // BrAdjust => visit_br_adjust(vm),
+            // BrAdjustIfNez => visit_br_adjust_if_nez(vm),
             BrTable => visit_br_table(vm),
             ConsumeFuel => visit_consume_fuel_wrapped(vm),
             Return => visit_return(vm),
-            ReturnIfNez => visit_return_if_nez(vm),
+            // ReturnIfNez => visit_return_if_nez(vm),
             ReturnCallInternal => visit_return_call_internal_wrapped(vm),
             ReturnCall => visit_return_call_wrapped(vm),
             ReturnCallIndirect => visit_return_call_indirect_wrapped(vm),
@@ -273,7 +274,7 @@ macro_rules! wrap_function_result {
             #[inline(always)]
             pub(crate) fn [< $fn_name _wrapped >]<T>(vm: &mut RwasmExecutor<T>,) {
                 if let Err(err) = $fn_name(vm, /* &mut ResourceLimiterRef<'_> */) {
-                    vm.next_result = Some(Err(RwasmError::from(err)));
+                    vm.next_result = Some(Err(TrapCode::from(err)));
                     vm.stop_exec = true;
                 }
             }
@@ -303,8 +304,8 @@ wrap_function_result!(visit_table_init);
 wrap_function_result!(visit_stack_alloc);
 
 #[inline(always)]
-pub(crate) fn visit_unreachable<T>(_vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
-    Err(RwasmError::UnreachableCodeReached)
+pub(crate) fn visit_unreachable<T>(_vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
+    Err(TrapCode::UnreachableCodeReached)
 }
 
 #[inline(always)]
@@ -313,7 +314,7 @@ pub(crate) fn visit_local_get<T>(vm: &mut RwasmExecutor<T>) {
         OpcodeData::LocalDepth(local_depth) => local_depth,
         _ => unreachable!("rwasm: missing instr data"),
     };
-    let value = vm.sp.nth_back(local_depth.to_usize());
+    let value = vm.sp.nth_back(*local_depth as usize);
     vm.sp.push(value);
     vm.ip.add(1);
 }
@@ -325,7 +326,7 @@ pub(crate) fn visit_local_set<T>(vm: &mut RwasmExecutor<T>) {
         _ => unreachable!("rwasm: missing instr data"),
     };
     let new_value = vm.sp.pop();
-    vm.sp.set_nth_back(local_depth.to_usize(), new_value);
+    vm.sp.set_nth_back(*local_depth as usize, new_value);
     vm.ip.add(1);
 }
 
@@ -336,7 +337,7 @@ pub(crate) fn visit_local_tee<T>(vm: &mut RwasmExecutor<T>) {
         _ => unreachable!("rwasm: missing instr data"),
     };
     let new_value = vm.sp.last();
-    vm.sp.set_nth_back(local_depth.to_usize(), new_value);
+    vm.sp.set_nth_back(*local_depth as usize, new_value);
     vm.ip.add(1);
 }
 
@@ -378,46 +379,19 @@ pub(crate) fn visit_br_if_nez<T>(vm: &mut RwasmExecutor<T>) {
 }
 
 #[inline(always)]
-pub(crate) fn visit_br_adjust<T>(vm: &mut RwasmExecutor<T>) {
-    let branch_offset = match vm.ip.data() {
-        OpcodeData::BranchOffset(branch_offset) => branch_offset,
-        _ => unreachable!("rwasm: missing instr data"),
-    };
-    let drop_keep = vm.fetch_drop_keep(1);
-    vm.sp.drop_keep(drop_keep);
-    vm.ip.offset(branch_offset.to_i32() as isize);
-}
-
-#[inline(always)]
-pub(crate) fn visit_br_adjust_if_nez<T>(vm: &mut RwasmExecutor<T>) {
-    let branch_offset = match vm.ip.data() {
-        OpcodeData::BranchOffset(branch_offset) => branch_offset,
-        _ => unreachable!("rwasm: missing instr data"),
-    };
-    let condition = vm.sp.pop_as();
-    if condition {
-        let drop_keep = vm.fetch_drop_keep(1);
-        vm.sp.drop_keep(drop_keep);
-        vm.ip.offset(branch_offset.to_i32() as isize);
-    } else {
-        vm.ip.add(2);
-    }
-}
-
-#[inline(always)]
 pub(crate) fn visit_br_table<T>(vm: &mut RwasmExecutor<T>) {
     let targets = match vm.ip.data() {
         OpcodeData::BranchTableTargets(targets) => targets,
         _ => unreachable!("rwasm: missing instr data"),
     };
     let index: u32 = vm.sp.pop_as();
-    let max_index = targets.to_usize() - 1;
+    let max_index = *targets as usize - 1;
     let normalized_index = cmp::min(index as usize, max_index);
     vm.ip.add(2 * normalized_index + 1);
 }
 
 #[inline(always)]
-pub(crate) fn visit_consume_fuel<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_consume_fuel<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let block_fuel = match vm.ip.data() {
         OpcodeData::BlockFuel(block_fuel) => block_fuel,
         _ => unreachable!("rwasm: missing instr data"),
@@ -431,11 +405,6 @@ pub(crate) fn visit_consume_fuel<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwa
 
 #[inline(always)]
 pub(crate) fn visit_return<T>(vm: &mut RwasmExecutor<T>) {
-    let drop_keep = match vm.ip.data() {
-        OpcodeData::DropKeep(drop_keep) => drop_keep,
-        _ => unreachable!("rwasm: missing instr data"),
-    };
-    vm.sp.drop_keep(*drop_keep);
     vm.value_stack.sync_stack_ptr(vm.sp);
     match vm.call_stack.pop() {
         Some(caller) => {
@@ -449,38 +418,12 @@ pub(crate) fn visit_return<T>(vm: &mut RwasmExecutor<T>) {
 }
 
 #[inline(always)]
-pub(crate) fn visit_return_if_nez<T>(vm: &mut RwasmExecutor<T>) {
-    let drop_keep = match vm.ip.data() {
-        OpcodeData::DropKeep(drop_keep) => drop_keep,
-        _ => unreachable!("rwasm: missing instr data"),
-    };
-    let condition = vm.sp.pop_as();
-    if condition {
-        vm.sp.drop_keep(*drop_keep);
-        vm.value_stack.sync_stack_ptr(vm.sp);
-        match vm.call_stack.pop() {
-            Some(caller) => {
-                vm.ip = caller;
-            }
-            None => {
-                vm.next_result = Some(Ok(0));
-                vm.stop_exec = true;
-            }
-        }
-    } else {
-        vm.ip.add(1);
-    }
-}
-
-#[inline(always)]
-pub(crate) fn visit_return_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_return_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let instr_ref = match vm.ip.data() {
         OpcodeData::CompiledFunc(func_idx) => *func_idx,
         _ => unreachable!("rwasm: missing instr data"),
     };
-    let drop_keep = vm.fetch_drop_keep(1);
-    vm.sp.drop_keep(drop_keep);
-    vm.ip.add(2);
+    vm.ip.add(1);
     vm.value_stack.sync_stack_ptr(vm.sp);
     vm.sp = vm.value_stack.stack_ptr();
     vm.ip = InstructionPtr::new(vm.module.code_section.instr.as_ptr());
@@ -489,48 +432,44 @@ pub(crate) fn visit_return_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result
 }
 
 #[inline(always)]
-pub(crate) fn visit_return_call<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_return_call<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let func_idx = match vm.ip.data() {
         OpcodeData::CompiledFunc(func_idx) => *func_idx,
         _ => unreachable!("rwasm: missing instr data"),
     };
-    let drop_keep = vm.fetch_drop_keep(1);
-    vm.sp.drop_keep(drop_keep);
     vm.value_stack.sync_stack_ptr(vm.sp);
     // external call can cause interruption,
     // that is why it's important to increase IP before doing the call
-    vm.ip.add(2);
+    vm.ip.add(1);
     (vm.syscall_handler)(Caller::new(vm), func_idx)?;
     Ok(())
 }
 
 #[inline(always)]
-pub(crate) fn visit_return_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_return_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let signature_idx = match vm.ip.data() {
         OpcodeData::SignatureIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
     };
-    let drop_keep = vm.fetch_drop_keep(1);
-    let table = vm.fetch_table_index(2);
+    let table = vm.fetch_table_index(1);
     let func_index: u32 = vm.sp.pop_as();
-    vm.sp.drop_keep(drop_keep);
     vm.last_signature = Some(signature_idx);
     let instr_ref: u32 = vm
         .tables
         .get(&table)
         .expect("rwasm: unresolved table index")
         .get_untyped(func_index)
-        .ok_or(RwasmError::TableOutOfBounds)?
+        .ok_or(TrapCode::TableOutOfBounds)?
         .try_into()
         .unwrap();
     if instr_ref == 0 {
-        return Err(RwasmError::IndirectCallToNull.into());
+        return Err(TrapCode::IndirectCallToNull.into());
     }
-    vm.execute_call_internal(false, 3, instr_ref)
+    vm.execute_call_internal(false, 2, instr_ref)
 }
 
 #[inline(always)]
-pub(crate) fn visit_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let instr_ref = match vm.ip.data() {
         OpcodeData::CompiledFunc(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -538,7 +477,7 @@ pub(crate) fn visit_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rw
     vm.ip.add(1);
     vm.value_stack.sync_stack_ptr(vm.sp);
     if vm.call_stack.len() > N_MAX_RECURSION_DEPTH {
-        return Err(RwasmError::StackOverflow);
+        return Err(TrapCode::StackOverflow);
     }
     vm.call_stack.push(vm.ip);
     vm.sp = vm.value_stack.stack_ptr();
@@ -548,7 +487,7 @@ pub(crate) fn visit_call_internal<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rw
 }
 
 #[inline(always)]
-pub(crate) fn visit_call<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_call<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let func_idx = match vm.ip.data() {
         OpcodeData::FuncIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -557,11 +496,11 @@ pub(crate) fn visit_call<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError>
     // external call can cause interruption,
     // that is why it's important to increase IP before doing the call
     vm.ip.add(1);
-    (vm.syscall_handler)(Caller::new(vm), func_idx.to_u32())
+    (vm.syscall_handler)(Caller::new(vm), func_idx)
 }
 
 #[inline(always)]
-pub(crate) fn visit_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let signature_idx = match vm.ip.data() {
         OpcodeData::SignatureIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -576,15 +515,15 @@ pub(crate) fn visit_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rw
         .expect("rwasm: unresolved table index")
         .get_untyped(func_index)
         .map(|v| v.as_u32())
-        .ok_or(RwasmError::TableOutOfBounds)?;
+        .ok_or(TrapCode::TableOutOfBounds)?;
     if instr_ref == NULL_FUNC_IDX {
-        return Err(RwasmError::IndirectCallToNull);
+        return Err(TrapCode::IndirectCallToNull);
     }
     // call func
     vm.ip.add(2);
     vm.value_stack.sync_stack_ptr(vm.sp);
     if vm.call_stack.len() > N_MAX_RECURSION_DEPTH {
-        return Err(RwasmError::StackOverflow);
+        return Err(TrapCode::StackOverflow);
     }
     vm.call_stack.push(vm.ip);
     vm.sp = vm.value_stack.stack_ptr();
@@ -594,14 +533,14 @@ pub(crate) fn visit_call_indirect<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rw
 }
 
 #[inline(always)]
-pub(crate) fn visit_signature_check<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_signature_check<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let signature_idx = match vm.ip.data() {
         OpcodeData::SignatureIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
     };
     if let Some(actual_signature) = vm.last_signature.take() {
         if actual_signature != signature_idx {
-            return Err(RwasmError::BadSignature);
+            return Err(TrapCode::BadSignature);
         }
     }
     vm.ip.add(1);
@@ -657,7 +596,7 @@ macro_rules! impl_visit_load {
     ( $( fn $visit_ident:ident($untyped_ident:ident); )* ) => {
         $(
             #[inline(always)]
-            pub(crate) fn $visit_ident<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+            pub(crate) fn $visit_ident<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
                 let offset = match vm.ip.data() {
                     OpcodeData::AddressOffset(value) => *value,
                     _ => unreachable!("rwasm: missing instr data"),
@@ -682,7 +621,7 @@ macro_rules! impl_visit_store {
     ( $( fn $visit_ident:ident($untyped_ident:ident, $type_size:literal); )* ) => {
         $(
             #[inline(always)]
-            pub(crate) fn $visit_ident<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+            pub(crate) fn $visit_ident<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
                 let offset = match vm.ip.data() {
                     OpcodeData::AddressOffset(value) => *value,
                     _ => unreachable!("rwasm: missing instr data"),
@@ -708,7 +647,7 @@ pub(crate) fn visit_memory_size<T>(vm: &mut RwasmExecutor<T>) {
 }
 
 #[inline(always)]
-pub(crate) fn visit_memory_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_memory_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let delta: u32 = vm.sp.pop_as();
     let delta = match Pages::new(delta) {
         Some(delta) => delta,
@@ -733,7 +672,7 @@ pub(crate) fn visit_memory_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
 }
 
 #[inline(always)]
-pub(crate) fn visit_memory_fill<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_memory_fill<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let (d, val, n) = vm.sp.pop3();
     let n = i32::from(n) as usize;
     let offset = i32::from(d) as usize;
@@ -746,7 +685,7 @@ pub(crate) fn visit_memory_fill<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
         .data_mut()
         .get_mut(offset..)
         .and_then(|memory| memory.get_mut(..n))
-        .ok_or(RwasmError::MemoryOutOfBounds)?;
+        .ok_or(TrapCode::MemoryOutOfBounds)?;
     memory.fill(byte);
     if let Some(tracer) = vm.tracer.as_mut() {
         tracer.memory_change(offset as u32, n as u32, memory);
@@ -756,7 +695,7 @@ pub(crate) fn visit_memory_fill<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
 }
 
 #[inline(always)]
-pub(crate) fn visit_memory_copy<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_memory_copy<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let (d, s, n) = vm.sp.pop3();
     let n = i32::from(n) as usize;
     let src_offset = i32::from(s) as usize;
@@ -768,10 +707,10 @@ pub(crate) fn visit_memory_copy<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
     let data = vm.global_memory.data_mut();
     data.get(src_offset..)
         .and_then(|memory| memory.get(..n))
-        .ok_or(RwasmError::MemoryOutOfBounds)?;
+        .ok_or(TrapCode::MemoryOutOfBounds)?;
     data.get(dst_offset..)
         .and_then(|memory| memory.get(..n))
-        .ok_or(RwasmError::MemoryOutOfBounds)?;
+        .ok_or(TrapCode::MemoryOutOfBounds)?;
     data.copy_within(src_offset..src_offset.wrapping_add(n), dst_offset);
     if let Some(tracer) = vm.tracer.as_mut() {
         tracer.memory_change(
@@ -785,7 +724,7 @@ pub(crate) fn visit_memory_copy<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
 }
 
 #[inline(always)]
-pub(crate) fn visit_memory_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_memory_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let data_segment_idx = match vm.ip.data() {
         OpcodeData::DataSegmentIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -793,7 +732,7 @@ pub(crate) fn visit_memory_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
 
     let is_empty_data_segment = vm
         .empty_data_segments
-        .get(data_segment_idx.to_u32() as usize)
+        .get(data_segment_idx as usize)
         .as_deref()
         .copied()
         .unwrap_or(false);
@@ -810,7 +749,7 @@ pub(crate) fn visit_memory_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
         .data_mut()
         .get_mut(dst_offset..)
         .and_then(|memory| memory.get_mut(..n))
-        .ok_or(RwasmError::MemoryOutOfBounds)?;
+        .ok_or(TrapCode::MemoryOutOfBounds)?;
     let mut memory_section = vm.module.data_section.as_slice();
     if is_empty_data_segment {
         memory_section = &[];
@@ -818,7 +757,7 @@ pub(crate) fn visit_memory_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwas
     let data = memory_section
         .get(src_offset..)
         .and_then(|data| data.get(..n))
-        .ok_or(RwasmError::MemoryOutOfBounds)?;
+        .ok_or(TrapCode::MemoryOutOfBounds)?;
     memory.copy_from_slice(data);
     if let Some(tracer) = vm.tracer.as_mut() {
         tracer.global_memory(dst_offset as u32, n as u32, memory);
@@ -833,8 +772,7 @@ pub(crate) fn visit_data_drop<T>(vm: &mut RwasmExecutor<T>) {
         OpcodeData::DataSegmentIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
     };
-    vm.empty_data_segments
-        .set(data_segment_idx.to_u32() as usize, true);
+    vm.empty_data_segments.set(data_segment_idx as usize, true);
     vm.ip.add(1);
 }
 
@@ -854,7 +792,7 @@ pub(crate) fn visit_table_size<T>(vm: &mut RwasmExecutor<T>) {
 }
 
 #[inline(always)]
-pub(crate) fn visit_table_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_table_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let table_idx = match vm.ip.data() {
         OpcodeData::TableIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -865,19 +803,17 @@ pub(crate) fn visit_table_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
         vm.try_consume_fuel(vm.fuel_costs.fuel_for_elements(delta as u64))?;
     }
     let table = vm.tables.entry(table_idx).or_insert_with(TableEntity::new);
-    // println!("table_grow: {:?}", table);
     let result = table.grow_untyped(delta, init);
-    // println!("table_grow: {:?}", table);
     vm.sp.push_as(result);
     if let Some(tracer) = vm.tracer.as_mut() {
-        tracer.table_size_change(table_idx.to_u32(), init.into(), delta);
+        tracer.table_size_change(table_idx, init.into(), delta);
     }
     vm.ip.add(1);
     Ok(())
 }
 
 #[inline(always)]
-pub(crate) fn visit_table_fill<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_table_fill<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let table_idx = match vm.ip.data() {
         OpcodeData::TableIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -895,7 +831,7 @@ pub(crate) fn visit_table_fill<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
 }
 
 #[inline(always)]
-pub(crate) fn visit_table_get<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_table_get<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let table_idx = match vm.ip.data() {
         OpcodeData::TableIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -906,14 +842,14 @@ pub(crate) fn visit_table_get<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmE
         .get_mut(&table_idx)
         .expect("rwasm: missing table")
         .get_untyped(index.into())
-        .ok_or(RwasmError::TableOutOfBounds)?;
+        .ok_or(TrapCode::TableOutOfBounds)?;
     vm.sp.push(value);
     vm.ip.add(1);
     Ok(())
 }
 
 #[inline(always)]
-pub(crate) fn visit_table_set<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_table_set<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let table_idx = match vm.ip.data() {
         OpcodeData::TableIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -923,16 +859,16 @@ pub(crate) fn visit_table_set<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmE
         .get_mut(&table_idx)
         .expect("rwasm: missing table")
         .set_untyped(index.into(), value)
-        .map_err(|_| RwasmError::TableOutOfBounds)?;
+        .map_err(|_| TrapCode::TableOutOfBounds)?;
     if let Some(tracer) = vm.tracer.as_mut() {
-        tracer.table_change(table_idx.to_u32(), index.into(), value);
+        tracer.table_change(table_idx, index.into(), value);
     }
     vm.ip.add(1);
     Ok(())
 }
 
 #[inline(always)]
-pub(crate) fn visit_table_copy<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_table_copy<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let dst_table_idx = match vm.ip.data() {
         OpcodeData::TableIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -964,7 +900,7 @@ pub(crate) fn visit_table_copy<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
 }
 
 #[inline(always)]
-pub(crate) fn visit_table_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_table_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let element_segment_idx = match vm.ip.data() {
         OpcodeData::ElementSegmentIdx(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
@@ -996,7 +932,7 @@ pub(crate) fn visit_table_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
     // which is always > 0.
     let is_empty_segment = vm
         .empty_elements_segments
-        .get(element_segment_idx.to_u32() as usize)
+        .get(element_segment_idx as usize)
         .as_deref()
         .copied()
         .unwrap_or(false);
@@ -1006,9 +942,7 @@ pub(crate) fn visit_table_init<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Rwasm
         module_elements_section = &[];
     }
     let table = vm.tables.get_mut(&table_idx).expect("rwasm: missing table");
-    println!("table_init: {:?} index={}", table, table_idx.to_u32());
     table.init_untyped(dst_index, module_elements_section, src_index, len)?;
-    println!("table_init: {:?}", table);
 
     vm.ip.add(2);
     Ok(())
@@ -1021,7 +955,7 @@ pub(crate) fn visit_element_drop<T>(vm: &mut RwasmExecutor<T>) {
         _ => unreachable!("rwasm: missing instr data"),
     };
     vm.empty_elements_segments
-        .set(element_segment_idx.to_u32() as usize, true);
+        .set(element_segment_idx as usize, true);
     vm.ip.add(1);
 }
 
@@ -1109,7 +1043,7 @@ macro_rules! impl_visit_fallible_binary {
     ( $( fn $visit_ident:ident($untyped_ident:ident); )* ) => {
         $(
             #[inline(always)]
-            pub(crate) fn $visit_ident<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+            pub(crate) fn $visit_ident<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
                 vm.try_execute_binary(UntypedValue::$untyped_ident)
             }
             wrap_function_result!($visit_ident);
@@ -1125,9 +1059,9 @@ impl_visit_fallible_binary! {
 }
 
 #[inline(always)]
-pub(crate) fn visit_stack_alloc<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
+pub(crate) fn visit_stack_alloc<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
     let max_stack_height = match vm.ip.data() {
-        OpcodeData::StackAlloc(value) => value.max_stack_height,
+        OpcodeData::MaxStackHeight(value) => *value,
         _ => unreachable!("rwasm: missing instr data"),
     };
     vm.value_stack.reserve(max_stack_height as usize)?;
