@@ -13,8 +13,6 @@ use crate::handler::{
 };
 use anyhow::Result;
 use rwasm::{
-    make_instruction_table,
-    split_i64_to_i32,
     split_i64_to_i32_arr,
     Caller,
     CompilationConfig,
@@ -23,20 +21,16 @@ use rwasm::{
     ImportLinker,
     ImportLinkerEntity,
     ImportName,
-    InstructionSet,
-    InstructionTable,
     ModuleParser,
     Opcode,
     OpcodeData,
-    RwasmError,
     RwasmExecutor,
-    RwasmModule as RwasmModule2,
     RwasmModule,
     StateRouterConfig,
     ValType,
     Value,
 };
-use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use wast::token::{Id, Span};
 
 type TestingRwasmExecutor = RwasmExecutor<TestingContext>;
@@ -44,8 +38,6 @@ type Instance = Rc<RefCell<TestingRwasmExecutor>>;
 
 /// The context of a single Wasm test spec suite run.
 pub struct TestContext<'a> {
-    /// The list of all encountered Wasm modules belonging to the test.
-    modules: Vec<RwasmModule>,
     /// The list of all instantiated modules.
     instances: HashMap<String, Instance>,
     extern_types: HashMap<String, FuncType>,
@@ -66,7 +58,6 @@ impl<'a> TestContext<'a> {
     /// Creates a new [`TestContext`] with the given [`TestDescriptor`].
     pub fn new(descriptor: &'a TestDescriptor) -> Self {
         TestContext {
-            modules: Vec::new(),
             instances: HashMap::new(),
             extern_types: Default::default(),
             extern_state: Default::default(),
@@ -301,7 +292,7 @@ impl TestContext<'_> {
     ) -> Result<&[Value], TestError> {
         println!("\n --- {} ---", func_name);
 
-        let mut instance = self.instance_by_name_or_last(module_name)?;
+        let instance = self.instance_by_name_or_last(module_name)?;
         let mut instance = instance.borrow_mut();
 
         // We reset an instruction pointer to the state function position to re-invoke the function.
@@ -327,6 +318,10 @@ impl TestContext<'_> {
                     .into_iter()
                     .map(|v| Value::I32(v))
                     .collect(),
+                Value::F64(v) => split_i64_to_i32_arr(v.to_bits() as i64)
+                    .into_iter()
+                    .map(|v| Value::I32(v))
+                    .collect(),
                 v => vec![v],
             })
             .collect::<Vec<_>>();
@@ -338,7 +333,7 @@ impl TestContext<'_> {
 
         // change function state for router
         instance.context_mut().state = func_state;
-        let exit_code = instance.run().map_err(|err| TestError::Rwasm(err))?;
+        let _exit_code = instance.run().map_err(|err| TestError::Rwasm(err))?;
         // copy results
         let func_type = self.extern_types.get(func_name).unwrap();
         let len_results = func_type.results().len();

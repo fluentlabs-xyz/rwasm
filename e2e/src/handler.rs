@@ -1,4 +1,4 @@
-use rwasm::{Caller, RwasmError, SyscallHandler};
+use rwasm::{Caller, RwasmError};
 
 pub const ENTRYPOINT_FUNC_IDX: u32 = u32::MAX;
 

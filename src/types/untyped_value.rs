@@ -174,13 +174,28 @@ impl UntypedValue {
         Ok(value)
     }
 
+    pub(crate) fn load_typed<U>(
+        memory: &[u8],
+        raw_address: u32,
+        offset: u32,
+    ) -> Result<U, RwasmError>
+    where
+        U: LittleEndianConvert,
+    {
+        let address = effective_address(raw_address, offset)?;
+        let mut buffer = <<U as LittleEndianConvert>::Bytes as Default>::default();
+        buffer.load_into(memory, address)?;
+        let value = <U as LittleEndianConvert>::from_le_bytes(buffer);
+        Ok(value)
+    }
+
     /// Executes a generic `T.load` Wasm operation.
     ///
     /// # Errors
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    fn load<T>(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError>
+    pub(crate) fn load<T>(memory: &[u8], address: Self, offset: u32) -> Result<Self, RwasmError>
     where
         T: LittleEndianConvert + ExtendInto<T> + Into<Self>,
     {
@@ -347,6 +362,21 @@ impl UntypedValue {
         let address = effective_address(raw_address, offset)?;
         let wrapped = T::from(value).wrap_into();
         let buffer = <U as LittleEndianConvert>::into_le_bytes(wrapped);
+        buffer.store_from(memory, address)?;
+        Ok(())
+    }
+
+    pub(crate) fn store_typed<U>(
+        memory: &mut [u8],
+        raw_address: u32,
+        offset: u32,
+        value: U,
+    ) -> Result<(), RwasmError>
+    where
+        U: LittleEndianConvert,
+    {
+        let address = effective_address(raw_address, offset)?;
+        let buffer = <U as LittleEndianConvert>::into_le_bytes(value);
         buffer.store_from(memory, address)?;
         Ok(())
     }

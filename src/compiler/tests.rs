@@ -21,8 +21,7 @@ fn test_block() {
     let wasm_binary = wat::parse_str(
         r#"
 (module
-  (global $r externref (ref.null extern))
-  (func (export "get-r") (result externref) (global.get $r))
+    (func (export "i32.trunc_sat_f64_s") (param $x f64) (result i32) (i32.trunc_sat_f64_s (local.get $x)))
 )"#,
     )
     .unwrap();

@@ -61,10 +61,10 @@ fn execute_directives(wast: Wast, test_context: &mut TestContext) -> Result<()> 
             }
             WastDirective::Wat(_) => {
                 test_context.profile().bump_quote_module();
-                // For the purpose of testing `wasmi` we are not
+                // For the purpose of testing `rwasm` we are not
                 // interested in parsing `.wat` files, therefore
                 // we silently ignore this case for now.
-                // This might change once wasmi supports `.wat` files.
+                // This might change once rwasm supports `.wat` files.
                 continue 'outer;
             }
             WastDirective::AssertMalformed {
@@ -226,14 +226,17 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
         expected.len()
             + expected
                 .iter()
-                .filter(|c| matches!(c, WastRet::Core(WastRetCore::I64(_))))
+                .filter(|c| matches!(
+                    c,
+                    WastRet::Core(WastRetCore::I64(_)) | WastRet::Core(WastRetCore::F64(_))
+                ))
                 .count()
     );
 
     let expected = expected.iter().map(|expected| match expected {
         WastRet::Core(expected) => expected,
         WastRet::Component(expected) => panic!(
-            "{:?}: `wasmi` does not support the Wasm `component-model` proposal but found {expected:?}",
+            "{:?}: `rwasm` does not support the Wasm `component-model` proposal but found {expected:?}",
             context.spanned(span),
         ),
     }).collect::<Vec<_>>();
@@ -249,9 +252,6 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
             (Value::I64(result), WastRetCore::I64(expected)) => {
                 assert_eq!(result, expected, "in {}", context.spanned(span))
             }
-            // in rWASM we support only 64-bit globals, but technically both these types are having
-            // 64-bit representation,
-            // so there is no diff, and we can safely compare them
             (Value::I32(result), WastRetCore::I64(expected)) => {
                 let low = result;
                 let high = &results[i + shift + 1]
@@ -261,6 +261,28 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
                 let (expected_low, expected_high) = split_i64_to_i32(*expected);
                 assert_eq!(*high, expected_high, "in {}", context.spanned(span));
                 assert_eq!(*low, expected_low, "in {}", context.spanned(span));
+            }
+            (Value::I32(result), WastRetCore::F64(expected)) => {
+                let low = *result as u32;
+                let high = results[i + shift + 1]
+                    .i32()
+                    .expect("Failed to find the low part of i64") as u32;
+                let bits = (high as u64) << 32 | (low as u64);
+                let result = F64::from_bits(bits);
+                shift += 1;
+                match expected {
+                    NanPattern::CanonicalNan | NanPattern::ArithmeticNan => {
+                        assert!(result.is_nan(), "in {}", context.spanned(span))
+                    }
+                    NanPattern::Value(expected) => {
+                        assert_eq!(
+                            result.to_bits(),
+                            expected.bits,
+                            "in {}",
+                            context.spanned(span)
+                        );
+                    }
+                }
             }
             (Value::I64(result), WastRetCore::I32(expected)) => {
                 assert_eq!(*result, *expected as i64, "in {}", context.spanned(span))
@@ -390,7 +412,7 @@ fn execute_wast_invoke(
                 )
             }),
             wast::WastArg::Component(arg) => panic!(
-                "{}: `wasmi` does not support the Wasm `component-model` but found {arg:?}",
+                "{}: `rwasm` does not support the Wasm `component-model` but found {arg:?}",
                 context.spanned(span)
             ),
         };
@@ -401,7 +423,7 @@ fn execute_wast_invoke(
         .map(|results| results.to_vec())
 }
 
-/// Converts the [`WastArgCore`][`wast::core::WastArgCore`] into a [`wasmi::Value`] if possible.
+/// Converts the [`WastArgCore`][`wast::core::WastArgCore`] into a [`rwasm::Value`] if possible.
 fn value(value: &wast::core::WastArgCore) -> Option<Value> {
     Some(match value {
         wast::core::WastArgCore::I32(arg) => Value::I32(*arg),

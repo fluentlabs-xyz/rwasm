@@ -20,7 +20,7 @@ pub fn translate_drop_keep(
             opcode_count += 1;
         });
     } else {
-        height.push();
+        height.push1();
         height.pop1();
         (0..keep).for_each(|i| {
             instr_builder.op_local_get(keep as u32 - i as u32);

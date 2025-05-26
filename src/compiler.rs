@@ -1,7 +1,6 @@
 mod config;
 mod control_flow;
 mod drop_keep;
-mod entrypoint;
 mod error;
 mod func_builder;
 mod instr_loc;

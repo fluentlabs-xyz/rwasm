@@ -354,7 +354,7 @@ impl ModuleParser {
             let mut adjusted_results = Vec::new();
             for x in func_type.params() {
                 match x {
-                    ValType::I64 => {
+                    ValType::I64 | ValType::F64 => {
                         adjusted_params.push(ValType::I32);
                         adjusted_params.push(ValType::I32);
                     }
@@ -363,7 +363,7 @@ impl ModuleParser {
             }
             for x in func_type.results() {
                 match x {
-                    ValType::I64 => {
+                    ValType::I64 | ValType::F64 => {
                         adjusted_results.push(ValType::I32);
                         adjusted_results.push(ValType::I32);
                     }

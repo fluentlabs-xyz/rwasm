@@ -1,5 +1,4 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-#![allow(dead_code)]
 #![warn(unused_crate_dependencies)]
 #![recursion_limit = "750"]
 

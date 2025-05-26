@@ -14,6 +14,7 @@ pub fn always_failing_syscall_handler<T>(
 }
 
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct SimpleCallContext {
     pub input: Vec<u8>,
     pub state: u32,
@@ -21,8 +22,10 @@ pub struct SimpleCallContext {
 }
 
 #[derive(Default)]
+#[allow(dead_code)]
 struct SimpleCallHandler;
 
+#[allow(dead_code)]
 impl SimpleCallHandler {
     fn fn_proc_exit(mut caller: Caller<SimpleCallContext>) -> Result<(), RwasmError> {
         let exit_code = caller.stack_pop();
@@ -73,6 +76,7 @@ impl SimpleCallHandler {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn simple_call_handler_syscall_handler(
     caller: Caller<SimpleCallContext>,
     func_idx: u32,

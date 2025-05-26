@@ -1,9 +1,14 @@
-use crate::types::{
-    DropKeep,
-    RwasmError,
-    UntypedValue,
-    DEFAULT_MAX_VALUE_STACK_HEIGHT,
-    DEFAULT_MIN_VALUE_STACK_HEIGHT,
+use crate::{
+    split_i64_to_i32,
+    types::{
+        DropKeep,
+        RwasmError,
+        UntypedValue,
+        DEFAULT_MAX_VALUE_STACK_HEIGHT,
+        DEFAULT_MIN_VALUE_STACK_HEIGHT,
+    },
+    F32,
+    F64,
 };
 use alloc::{vec, vec::Vec};
 use core::fmt::Debug;
@@ -302,7 +307,6 @@ impl ValueStack {
 pub struct ValueStackPtr {
     src: *mut UntypedValue,
     ptr: *mut UntypedValue,
-    // len: usize,
 }
 
 impl From<*mut UntypedValue> for ValueStackPtr {
@@ -642,5 +646,45 @@ impl ValueStackPtr {
         }
         drop_keep_impl(*self, drop_keep);
         self.dec_by(drop as usize);
+    }
+
+    pub fn push_f32(&mut self, value: F32) {
+        self.push(value.into());
+    }
+
+    pub fn pop_f32(&mut self) -> F32 {
+        self.pop().as_f32()
+    }
+
+    pub fn push_f64(&mut self, value: F64) {
+        let bits = value.to_bits();
+        let lo = bits as i32;
+        self.push(lo.into());
+        let hi = (bits >> 32) as i32;
+        self.push(hi.into());
+    }
+
+    pub fn pop_f64(&mut self) -> F64 {
+        let (lo, hi) = self.pop2();
+        F64::from_bits(((hi.as_u64()) << 32) | (lo.as_u64()))
+    }
+
+    pub fn push_i32(&mut self, value: i32) {
+        self.push(value.into());
+    }
+
+    pub fn pop_i32(&mut self) -> i32 {
+        self.pop().as_i32()
+    }
+
+    pub fn push_i64(&mut self, value: i64) {
+        let (lo, hi) = split_i64_to_i32(value);
+        self.push(lo.into());
+        self.push(hi.into());
+    }
+
+    pub fn pop_i64(&mut self) -> i64 {
+        let (lo, hi) = self.pop2();
+        (hi.as_i64() << 32) | lo.as_i64()
     }
 }

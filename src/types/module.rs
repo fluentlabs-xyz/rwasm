@@ -181,4 +181,15 @@ mod tests {
             bincode::decode_from_slice(&encoded_module, bincode::config::legacy()).unwrap();
         assert_eq!(module, module2);
     }
+
+    #[test]
+    fn test_endianess() {
+        let module = vec![1, 2, 3];
+        let encoded_module = bincode::encode_to_vec(&module, bincode::config::legacy()).unwrap();
+        println!("{:?}", encoded_module);
+        let slc = unsafe {
+            core::slice::from_raw_parts(encoded_module.as_ptr().offset(8) as *const u32, 3)
+        };
+        println!("{:?}", slc);
+    }
 }

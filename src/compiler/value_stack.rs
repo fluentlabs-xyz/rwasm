@@ -1,4 +1,5 @@
 use core::cmp;
+use wasmparser::ValType;
 
 /// The current height of the emulated Wasm value stack.
 #[derive(Debug, Default, Copy, Clone)]
@@ -43,13 +44,14 @@ impl ValueStackHeight {
 
     /// Pushes an `amount` of values to the emulated value stack.
     pub fn push_n(&mut self, amount: u32) {
-        // println!("push_n: {} height={}", amount, self.height);
+        #[cfg(feature = "debug-print")]
+        println!(" + push_n: {} height={}", amount, self.height);
         self.height += amount;
         self.update_max_height();
     }
 
     /// Pushes a value to the emulated value stack.
-    pub fn push(&mut self) {
+    pub fn push1(&mut self) {
         self.push_n(1)
     }
 
@@ -58,9 +60,20 @@ impl ValueStackHeight {
         self.push_n(2)
     }
 
+    /// Pushes a value to the emulated value stack.
+    pub fn push3(&mut self) {
+        self.push_n(3)
+    }
+
+    /// Pushes a value to the emulated value stack.
+    pub fn push4(&mut self) {
+        self.push_n(4)
+    }
+
     /// Pops an `amount` of elements from the emulated value stack.
     pub fn pop_n(&mut self, amount: u32) {
-        // println!("pop_n: {} height={}", amount, self.height);
+        #[cfg(feature = "debug-print")]
+        println!(" - pop_n: {} height={}", amount, self.height);
         debug_assert!(amount <= self.height);
         self.height -= amount;
     }
@@ -83,6 +96,24 @@ impl ValueStackHeight {
     /// Pops 4 elements from the emulated value stack.
     pub fn pop4(&mut self) {
         self.pop_n(4)
+    }
+
+    pub fn pop_type(&mut self, val_type: ValType) {
+        match val_type {
+            ValType::I32 | ValType::F32 => self.pop1(),
+            ValType::I64 | ValType::F64 => self.pop2(),
+            ValType::V128 => self.pop4(),
+            ValType::FuncRef | ValType::ExternRef => self.pop1(),
+        }
+    }
+
+    pub fn push_type(&mut self, val_type: ValType) {
+        match val_type {
+            ValType::I32 | ValType::F32 => self.push1(),
+            ValType::I64 | ValType::F64 => self.push2(),
+            ValType::V128 => self.push4(),
+            ValType::FuncRef | ValType::ExternRef => self.push1(),
+        }
     }
 
     /// Shrinks the emulated value stack to the given height.

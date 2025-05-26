@@ -1,3 +1,6 @@
+mod fpu;
+mod opcodes;
+
 use crate::{
     types::{
         AddressOffset,
@@ -19,10 +22,10 @@ use crate::{
     },
     vm::{
         config::ExecutorConfig,
+        executor::opcodes::run_the_loop,
         handler::{always_failing_syscall_handler, SyscallHandler},
         instr_ptr::InstructionPtr,
         memory::GlobalMemory,
-        opcodes::run_the_loop,
         table_entity::TableEntity,
         tracer::Tracer,
         value_stack::{ValueStack, ValueStackPtr},
@@ -327,7 +330,6 @@ impl<T> RwasmExecutor<T> {
         let (address, value) = self.sp.pop2();
         let memory = self.global_memory.data_mut();
         store_wrap(memory, address, offset.into_inner(), value)?;
-        self.ip.offset(0);
         let address = u32::from(address);
         let base_address = offset.into_inner() + address;
         if let Some(tracer) = self.tracer.as_mut() {
@@ -351,16 +353,6 @@ impl<T> RwasmExecutor<T> {
     pub(crate) fn execute_binary(&mut self, f: fn(UntypedValue, UntypedValue) -> UntypedValue) {
         self.sp.eval_top2(f);
         self.ip.add(1);
-    }
-
-    #[inline(always)]
-    pub(crate) fn try_execute_unary(
-        &mut self,
-        f: fn(UntypedValue) -> Result<UntypedValue, RwasmError>,
-    ) -> Result<(), RwasmError> {
-        self.sp.try_eval_top(f)?;
-        self.ip.add(1);
-        Ok(())
     }
 
     #[inline(always)]

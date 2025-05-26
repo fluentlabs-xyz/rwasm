@@ -14,11 +14,11 @@ use core::cmp;
 pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmError> {
     let floats_enabled = vm.config.floats_enabled;
     macro_rules! float_wrapper {
-        ($expr:expr) => {{
+        ($func_name:ident) => {{
             if !floats_enabled {
                 return Err(RwasmError::FloatsAreDisabled);
             }
-            $expr
+            $crate::vm::executor::fpu::$func_name(vm)?
         }};
     }
     while !vm.stop_exec {
@@ -85,28 +85,28 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
             GlobalGet => visit_global_get(vm),
             GlobalSet => visit_global_set(vm),
             I32Load => visit_i32_load_wrapped(vm),
-            I64Load => visit_i64_load_wrapped(vm),
-            F32Load => float_wrapper!(visit_f32_load_wrapped(vm)),
-            F64Load => float_wrapper!(visit_f64_load_wrapped(vm)),
+            // I64Load => visit_i64_load_wrapped(vm),
+            F32Load => float_wrapper!(visit_f32_load),
+            F64Load => float_wrapper!(visit_f64_load),
             I32Load8S => visit_i32_load_i8_s_wrapped(vm),
             I32Load8U => visit_i32_load_i8_u_wrapped(vm),
             I32Load16S => visit_i32_load_i16_s_wrapped(vm),
             I32Load16U => visit_i32_load_i16_u_wrapped(vm),
-            I64Load8S => visit_i64_load_i8_s_wrapped(vm),
-            I64Load8U => visit_i64_load_i8_u_wrapped(vm),
-            I64Load16S => visit_i64_load_i16_s_wrapped(vm),
-            I64Load16U => visit_i64_load_i16_u_wrapped(vm),
-            I64Load32S => visit_i64_load_i32_s_wrapped(vm),
-            I64Load32U => visit_i64_load_i32_u_wrapped(vm),
+            // I64Load8S => visit_i64_load_i8_s_wrapped(vm),
+            // I64Load8U => visit_i64_load_i8_u_wrapped(vm),
+            // I64Load16S => visit_i64_load_i16_s_wrapped(vm),
+            // I64Load16U => visit_i64_load_i16_u_wrapped(vm),
+            // I64Load32S => visit_i64_load_i32_s_wrapped(vm),
+            // I64Load32U => visit_i64_load_i32_u_wrapped(vm),
             I32Store => visit_i32_store_wrapped(vm),
-            I64Store => visit_i64_store_wrapped(vm),
-            F32Store => float_wrapper!(visit_f32_store_wrapped(vm)),
-            F64Store => float_wrapper!(visit_f64_store_wrapped(vm)),
+            // I64Store => visit_i64_store_wrapped(vm),
+            F32Store => float_wrapper!(visit_f32_store),
+            F64Store => float_wrapper!(visit_f64_store),
             I32Store8 => visit_i32_store_8_wrapped(vm),
             I32Store16 => visit_i32_store_16_wrapped(vm),
-            I64Store8 => visit_i64_store_8_wrapped(vm),
-            I64Store16 => visit_i64_store_16_wrapped(vm),
-            I64Store32 => visit_i64_store_32_wrapped(vm),
+            // I64Store8 => visit_i64_store_8_wrapped(vm),
+            // I64Store16 => visit_i64_store_16_wrapped(vm),
+            // I64Store32 => visit_i64_store_32_wrapped(vm),
             MemorySize => visit_memory_size(vm),
             MemoryGrow => visit_memory_grow_wrapped(vm),
             MemoryFill => visit_memory_fill_wrapped(vm),
@@ -123,9 +123,9 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
             ElemDrop => visit_element_drop(vm),
             RefFunc => visit_ref_func(vm),
             I32Const => visit_i32_i64_const(vm),
-            I64Const => visit_i32_i64_const(vm),
-            F32Const => float_wrapper!(visit_i32_i64_const(vm)),
-            F64Const => float_wrapper!(visit_i32_i64_const(vm)),
+            // I64Const => visit_i32_i64_const(vm),
+            // F32Const => float_wrapper!(visit_i32_i64_const(vm)),
+            // F64Const => float_wrapper!(visit_i32_i64_const(vm)),
             I32Eqz => visit_i32_eqz(vm),
             I32Eq => visit_i32_eq(vm),
             I32Ne => visit_i32_ne(vm),
@@ -137,29 +137,29 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
             I32LeU => visit_i32_le_u(vm),
             I32GeS => visit_i32_ge_s(vm),
             I32GeU => visit_i32_ge_u(vm),
-            I64Eqz => visit_i64_eqz(vm),
-            I64Eq => visit_i64_eq(vm),
-            I64Ne => visit_i64_ne(vm),
-            I64LtS => visit_i64_lt_s(vm),
-            I64LtU => visit_i64_lt_u(vm),
-            I64GtS => visit_i64_gt_s(vm),
-            I64GtU => visit_i64_gt_u(vm),
-            I64LeS => visit_i64_le_s(vm),
-            I64LeU => visit_i64_le_u(vm),
-            I64GeS => visit_i64_ge_s(vm),
-            I64GeU => visit_i64_ge_u(vm),
-            F32Eq => float_wrapper!(visit_f32_eq(vm)),
-            F32Ne => float_wrapper!(visit_f32_ne(vm)),
-            F32Lt => float_wrapper!(visit_f32_lt(vm)),
-            F32Gt => float_wrapper!(visit_f32_gt(vm)),
-            F32Le => float_wrapper!(visit_f32_le(vm)),
-            F32Ge => float_wrapper!(visit_f32_ge(vm)),
-            F64Eq => float_wrapper!(visit_f64_eq(vm)),
-            F64Ne => float_wrapper!(visit_f64_ne(vm)),
-            F64Lt => float_wrapper!(visit_f64_lt(vm)),
-            F64Gt => float_wrapper!(visit_f64_gt(vm)),
-            F64Le => float_wrapper!(visit_f64_le(vm)),
-            F64Ge => float_wrapper!(visit_f64_ge(vm)),
+            // I64Eqz => visit_i64_eqz(vm),
+            // I64Eq => visit_i64_eq(vm),
+            // I64Ne => visit_i64_ne(vm),
+            // I64LtS => visit_i64_lt_s(vm),
+            // I64LtU => visit_i64_lt_u(vm),
+            // I64GtS => visit_i64_gt_s(vm),
+            // I64GtU => visit_i64_gt_u(vm),
+            // I64LeS => visit_i64_le_s(vm),
+            // I64LeU => visit_i64_le_u(vm),
+            // I64GeS => visit_i64_ge_s(vm),
+            // I64GeU => visit_i64_ge_u(vm),
+            F32Eq => float_wrapper!(visit_f32_eq),
+            F32Ne => float_wrapper!(visit_f32_ne),
+            F32Lt => float_wrapper!(visit_f32_lt),
+            F32Gt => float_wrapper!(visit_f32_gt),
+            F32Le => float_wrapper!(visit_f32_le),
+            F32Ge => float_wrapper!(visit_f32_ge),
+            F64Eq => float_wrapper!(visit_f64_eq),
+            F64Ne => float_wrapper!(visit_f64_ne),
+            F64Lt => float_wrapper!(visit_f64_lt),
+            F64Gt => float_wrapper!(visit_f64_gt),
+            F64Le => float_wrapper!(visit_f64_le),
+            F64Ge => float_wrapper!(visit_f64_ge),
             I32Clz => visit_i32_clz(vm),
             I32Ctz => visit_i32_ctz(vm),
             I32Popcnt => visit_i32_popcnt(vm),
@@ -178,86 +178,86 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<i32, RwasmErr
             I32ShrU => visit_i32_shr_u(vm),
             I32Rotl => visit_i32_rotl(vm),
             I32Rotr => visit_i32_rotr(vm),
-            I64Clz => visit_i64_clz(vm),
-            I64Ctz => visit_i64_ctz(vm),
-            I64Popcnt => visit_i64_popcnt(vm),
-            I64Add => visit_i64_add(vm),
-            I64Sub => visit_i64_sub(vm),
-            I64Mul => visit_i64_mul(vm),
-            I64DivS => visit_i64_div_s_wrapped(vm),
-            I64DivU => visit_i64_div_u_wrapped(vm),
-            I64RemS => visit_i64_rem_s_wrapped(vm),
-            I64RemU => visit_i64_rem_u_wrapped(vm),
-            I64And => visit_i64_and(vm),
-            I64Or => visit_i64_or(vm),
-            I64Xor => visit_i64_xor(vm),
-            I64Shl => visit_i64_shl(vm),
-            I64ShrS => visit_i64_shr_s(vm),
-            I64ShrU => visit_i64_shr_u(vm),
-            I64Rotl => visit_i64_rotl(vm),
-            I64Rotr => visit_i64_rotr(vm),
-            F32Abs => float_wrapper!(visit_f32_abs(vm)),
-            F32Neg => float_wrapper!(visit_f32_neg(vm)),
-            F32Ceil => float_wrapper!(visit_f32_ceil(vm)),
-            F32Floor => float_wrapper!(visit_f32_floor(vm)),
-            F32Trunc => float_wrapper!(visit_f32_trunc(vm)),
-            F32Nearest => float_wrapper!(visit_f32_nearest(vm)),
-            F32Sqrt => float_wrapper!(visit_f32_sqrt(vm)),
-            F32Add => float_wrapper!(visit_f32_add(vm)),
-            F32Sub => float_wrapper!(visit_f32_sub(vm)),
-            F32Mul => float_wrapper!(visit_f32_mul(vm)),
-            F32Div => float_wrapper!(visit_f32_div(vm)),
-            F32Min => float_wrapper!(visit_f32_min(vm)),
-            F32Max => float_wrapper!(visit_f32_max(vm)),
-            F32Copysign => float_wrapper!(visit_f32_copysign(vm)),
-            F64Abs => float_wrapper!(visit_f64_abs(vm)),
-            F64Neg => float_wrapper!(visit_f64_neg(vm)),
-            F64Ceil => float_wrapper!(visit_f64_ceil(vm)),
-            F64Floor => float_wrapper!(visit_f64_floor(vm)),
-            F64Trunc => float_wrapper!(visit_f64_trunc(vm)),
-            F64Nearest => float_wrapper!(visit_f64_nearest(vm)),
-            F64Sqrt => float_wrapper!(visit_f64_sqrt(vm)),
-            F64Add => float_wrapper!(visit_f64_add(vm)),
-            F64Sub => float_wrapper!(visit_f64_sub(vm)),
-            F64Mul => float_wrapper!(visit_f64_mul(vm)),
-            F64Div => float_wrapper!(visit_f64_div(vm)),
-            F64Min => float_wrapper!(visit_f64_min(vm)),
-            F64Max => float_wrapper!(visit_f64_max(vm)),
-            F64Copysign => float_wrapper!(visit_f64_copysign(vm)),
+            // I64Clz => visit_i64_clz(vm),
+            // I64Ctz => visit_i64_ctz(vm),
+            // I64Popcnt => visit_i64_popcnt(vm),
+            // I64Add => visit_i64_add(vm),
+            // I64Sub => visit_i64_sub(vm),
+            // I64Mul => visit_i64_mul(vm),
+            // I64DivS => visit_i64_div_s_wrapped(vm),
+            // I64DivU => visit_i64_div_u_wrapped(vm),
+            // I64RemS => visit_i64_rem_s_wrapped(vm),
+            // I64RemU => visit_i64_rem_u_wrapped(vm),
+            // I64And => visit_i64_and(vm),
+            // I64Or => visit_i64_or(vm),
+            // I64Xor => visit_i64_xor(vm),
+            // I64Shl => visit_i64_shl(vm),
+            // I64ShrS => visit_i64_shr_s(vm),
+            // I64ShrU => visit_i64_shr_u(vm),
+            // I64Rotl => visit_i64_rotl(vm),
+            // I64Rotr => visit_i64_rotr(vm),
+            F32Abs => float_wrapper!(visit_f32_abs),
+            F32Neg => float_wrapper!(visit_f32_neg),
+            F32Ceil => float_wrapper!(visit_f32_ceil),
+            F32Floor => float_wrapper!(visit_f32_floor),
+            F32Trunc => float_wrapper!(visit_f32_trunc),
+            F32Nearest => float_wrapper!(visit_f32_nearest),
+            F32Sqrt => float_wrapper!(visit_f32_sqrt),
+            F32Add => float_wrapper!(visit_f32_add),
+            F32Sub => float_wrapper!(visit_f32_sub),
+            F32Mul => float_wrapper!(visit_f32_mul),
+            F32Div => float_wrapper!(visit_f32_div),
+            F32Min => float_wrapper!(visit_f32_min),
+            F32Max => float_wrapper!(visit_f32_max),
+            F32Copysign => float_wrapper!(visit_f32_copysign),
+            F64Abs => float_wrapper!(visit_f64_abs),
+            F64Neg => float_wrapper!(visit_f64_neg),
+            F64Ceil => float_wrapper!(visit_f64_ceil),
+            F64Floor => float_wrapper!(visit_f64_floor),
+            F64Trunc => float_wrapper!(visit_f64_trunc),
+            F64Nearest => float_wrapper!(visit_f64_nearest),
+            F64Sqrt => float_wrapper!(visit_f64_sqrt),
+            F64Add => float_wrapper!(visit_f64_add),
+            F64Sub => float_wrapper!(visit_f64_sub),
+            F64Mul => float_wrapper!(visit_f64_mul),
+            F64Div => float_wrapper!(visit_f64_div),
+            F64Min => float_wrapper!(visit_f64_min),
+            F64Max => float_wrapper!(visit_f64_max),
+            F64Copysign => float_wrapper!(visit_f64_copysign),
             I32WrapI64 => visit_i32_wrap_i64(vm),
-            I32TruncF32S => float_wrapper!(visit_i32_trunc_f32_s_wrapped(vm)),
-            I32TruncF32U => float_wrapper!(visit_i32_trunc_f32_u_wrapped(vm)),
-            I32TruncF64S => float_wrapper!(visit_i32_trunc_f64_s_wrapped(vm)),
-            I32TruncF64U => float_wrapper!(visit_i32_trunc_f64_u_wrapped(vm)),
-            I64ExtendI32S => visit_i64_extend_i32_s(vm),
-            I64ExtendI32U => visit_i64_extend_i32_u(vm),
-            I64TruncF32S => float_wrapper!(visit_i64_trunc_f32_s_wrapped(vm)),
-            I64TruncF32U => float_wrapper!(visit_i64_trunc_f32_u_wrapped(vm)),
-            I64TruncF64S => float_wrapper!(visit_i64_trunc_f64_s_wrapped(vm)),
-            I64TruncF64U => float_wrapper!(visit_i64_trunc_f64_u_wrapped(vm)),
-            F32ConvertI32S => float_wrapper!(visit_f32_convert_i32_s(vm)),
-            F32ConvertI32U => float_wrapper!(visit_f32_convert_i32_u(vm)),
-            F32ConvertI64S => float_wrapper!(visit_f32_convert_i64_s(vm)),
-            F32ConvertI64U => float_wrapper!(visit_f32_convert_i64_u(vm)),
-            F32DemoteF64 => float_wrapper!(visit_f32_demote_f64(vm)),
-            F64ConvertI32S => float_wrapper!(visit_f64_convert_i32_s(vm)),
-            F64ConvertI32U => float_wrapper!(visit_f64_convert_i32_u(vm)),
-            F64ConvertI64S => float_wrapper!(visit_f64_convert_i64_s(vm)),
-            F64ConvertI64U => float_wrapper!(visit_f64_convert_i64_u(vm)),
-            F64PromoteF32 => float_wrapper!(visit_f64_promote_f32(vm)),
-            I32TruncSatF32S => float_wrapper!(visit_i32_trunc_sat_f32_s(vm)),
-            I32TruncSatF32U => float_wrapper!(visit_i32_trunc_sat_f32_u(vm)),
-            I32TruncSatF64S => float_wrapper!(visit_i32_trunc_sat_f64_s(vm)),
-            I32TruncSatF64U => float_wrapper!(visit_i32_trunc_sat_f64_u(vm)),
-            I64TruncSatF32S => float_wrapper!(visit_i64_trunc_sat_f32_s(vm)),
-            I64TruncSatF32U => float_wrapper!(visit_i64_trunc_sat_f32_u(vm)),
-            I64TruncSatF64S => float_wrapper!(visit_i64_trunc_sat_f64_s(vm)),
-            I64TruncSatF64U => float_wrapper!(visit_i64_trunc_sat_f64_u(vm)),
+            I32TruncF32S => float_wrapper!(visit_i32_trunc_f32_s),
+            I32TruncF32U => float_wrapper!(visit_i32_trunc_f32_u),
+            I32TruncF64S => float_wrapper!(visit_i32_trunc_f64_s),
+            I32TruncF64U => float_wrapper!(visit_i32_trunc_f64_u),
+            // I64ExtendI32S => visit_i64_extend_i32_s(vm),
+            // I64ExtendI32U => visit_i64_extend_i32_u(vm),
+            I64TruncF32S => float_wrapper!(visit_i64_trunc_f32_s),
+            I64TruncF32U => float_wrapper!(visit_i64_trunc_f32_u),
+            I64TruncF64S => float_wrapper!(visit_i64_trunc_f64_s),
+            I64TruncF64U => float_wrapper!(visit_i64_trunc_f64_u),
+            F32ConvertI32S => float_wrapper!(visit_f32_convert_i32_s),
+            F32ConvertI32U => float_wrapper!(visit_f32_convert_i32_u),
+            F32ConvertI64S => float_wrapper!(visit_f32_convert_i64_s),
+            F32ConvertI64U => float_wrapper!(visit_f32_convert_i64_u),
+            F32DemoteF64 => float_wrapper!(visit_f32_demote_f64),
+            F64ConvertI32S => float_wrapper!(visit_f64_convert_i32_s),
+            F64ConvertI32U => float_wrapper!(visit_f64_convert_i32_u),
+            F64ConvertI64S => float_wrapper!(visit_f64_convert_i64_s),
+            F64ConvertI64U => float_wrapper!(visit_f64_convert_i64_u),
+            F64PromoteF32 => float_wrapper!(visit_f64_promote_f32),
+            I32TruncSatF32S => float_wrapper!(visit_i32_trunc_sat_f32_s),
+            I32TruncSatF32U => float_wrapper!(visit_i32_trunc_sat_f32_u),
+            I32TruncSatF64S => float_wrapper!(visit_i32_trunc_sat_f64_s),
+            I32TruncSatF64U => float_wrapper!(visit_i32_trunc_sat_f64_u),
+            I64TruncSatF32S => float_wrapper!(visit_i64_trunc_sat_f32_s),
+            I64TruncSatF32U => float_wrapper!(visit_i64_trunc_sat_f32_u),
+            I64TruncSatF64S => float_wrapper!(visit_i64_trunc_sat_f64_s),
+            I64TruncSatF64U => float_wrapper!(visit_i64_trunc_sat_f64_u),
             I32Extend8S => visit_i32_extend8_s(vm),
             I32Extend16S => visit_i32_extend16_s(vm),
-            I64Extend8S => visit_i64_extend8_s(vm),
-            I64Extend16S => visit_i64_extend16_s(vm),
-            I64Extend32S => visit_i64_extend32_s(vm),
+            // I64Extend8S => visit_i64_extend8_s(vm),
+            // I64Extend16S => visit_i64_extend16_s(vm),
+            // I64Extend32S => visit_i64_extend32_s(vm),
             StackCheck => visit_stack_alloc_wrapped(vm),
         }
     }
@@ -671,21 +671,11 @@ macro_rules! impl_visit_load {
 
 impl_visit_load! {
     fn visit_i32_load(i32_load);
-    fn visit_i64_load(i64_load);
-    fn visit_f32_load(f32_load);
-    fn visit_f64_load(f64_load);
 
     fn visit_i32_load_i8_s(i32_load8_s);
     fn visit_i32_load_i8_u(i32_load8_u);
     fn visit_i32_load_i16_s(i32_load16_s);
     fn visit_i32_load_i16_u(i32_load16_u);
-
-    fn visit_i64_load_i8_s(i64_load8_s);
-    fn visit_i64_load_i8_u(i64_load8_u);
-    fn visit_i64_load_i16_s(i64_load16_s);
-    fn visit_i64_load_i16_u(i64_load16_u);
-    fn visit_i64_load_i32_s(i64_load32_s);
-    fn visit_i64_load_i32_u(i64_load32_u);
 }
 
 macro_rules! impl_visit_store {
@@ -706,16 +696,8 @@ macro_rules! impl_visit_store {
 
 impl_visit_store! {
     fn visit_i32_store(i32_store, 4);
-    fn visit_i64_store(i64_store, 8);
-    fn visit_f32_store(f32_store, 4);
-    fn visit_f64_store(f64_store, 8);
-
     fn visit_i32_store_8(i32_store8, 1);
     fn visit_i32_store_16(i32_store16, 2);
-
-    fn visit_i64_store_8(i64_store8, 1);
-    fn visit_i64_store_16(i64_store16, 2);
-    fn visit_i64_store_32(i64_store32, 4);
 }
 
 #[inline(always)]
@@ -1076,85 +1058,15 @@ macro_rules! impl_visit_unary {
 
 impl_visit_unary! {
     fn visit_i32_eqz(i32_eqz);
-    fn visit_i64_eqz(i64_eqz);
 
     fn visit_i32_clz(i32_clz);
     fn visit_i32_ctz(i32_ctz);
     fn visit_i32_popcnt(i32_popcnt);
 
-    fn visit_i64_clz(i64_clz);
-    fn visit_i64_ctz(i64_ctz);
-    fn visit_i64_popcnt(i64_popcnt);
-
-    fn visit_f32_abs(f32_abs);
-    fn visit_f32_neg(f32_neg);
-    fn visit_f32_ceil(f32_ceil);
-    fn visit_f32_floor(f32_floor);
-    fn visit_f32_trunc(f32_trunc);
-    fn visit_f32_nearest(f32_nearest);
-    fn visit_f32_sqrt(f32_sqrt);
-
-    fn visit_f64_abs(f64_abs);
-    fn visit_f64_neg(f64_neg);
-    fn visit_f64_ceil(f64_ceil);
-    fn visit_f64_floor(f64_floor);
-    fn visit_f64_trunc(f64_trunc);
-    fn visit_f64_nearest(f64_nearest);
-    fn visit_f64_sqrt(f64_sqrt);
-
     fn visit_i32_wrap_i64(i32_wrap_i64);
-    fn visit_i64_extend_i32_s(i64_extend_i32_s);
-    fn visit_i64_extend_i32_u(i64_extend_i32_u);
-
-    fn visit_f32_convert_i32_s(f32_convert_i32_s);
-    fn visit_f32_convert_i32_u(f32_convert_i32_u);
-    fn visit_f32_convert_i64_s(f32_convert_i64_s);
-    fn visit_f32_convert_i64_u(f32_convert_i64_u);
-    fn visit_f32_demote_f64(f32_demote_f64);
-    fn visit_f64_convert_i32_s(f64_convert_i32_s);
-    fn visit_f64_convert_i32_u(f64_convert_i32_u);
-    fn visit_f64_convert_i64_s(f64_convert_i64_s);
-    fn visit_f64_convert_i64_u(f64_convert_i64_u);
-    fn visit_f64_promote_f32(f64_promote_f32);
 
     fn visit_i32_extend8_s(i32_extend8_s);
     fn visit_i32_extend16_s(i32_extend16_s);
-    fn visit_i64_extend8_s(i64_extend8_s);
-    fn visit_i64_extend16_s(i64_extend16_s);
-    fn visit_i64_extend32_s(i64_extend32_s);
-
-    fn visit_i32_trunc_sat_f32_s(i32_trunc_sat_f32_s);
-    fn visit_i32_trunc_sat_f32_u(i32_trunc_sat_f32_u);
-    fn visit_i32_trunc_sat_f64_s(i32_trunc_sat_f64_s);
-    fn visit_i32_trunc_sat_f64_u(i32_trunc_sat_f64_u);
-    fn visit_i64_trunc_sat_f32_s(i64_trunc_sat_f32_s);
-    fn visit_i64_trunc_sat_f32_u(i64_trunc_sat_f32_u);
-    fn visit_i64_trunc_sat_f64_s(i64_trunc_sat_f64_s);
-    fn visit_i64_trunc_sat_f64_u(i64_trunc_sat_f64_u);
-}
-
-macro_rules! impl_visit_fallible_unary {
-    ( $( fn $visit_ident:ident($untyped_ident:ident); )* ) => {
-        $(
-            #[inline(always)]
-            pub(crate) fn $visit_ident<T>(vm: &mut RwasmExecutor<T>) -> Result<(), RwasmError> {
-                vm.try_execute_unary(UntypedValue::$untyped_ident)
-            }
-            wrap_function_result!($visit_ident);
-        )*
-    }
-}
-
-impl_visit_fallible_unary! {
-    fn visit_i32_trunc_f32_s(i32_trunc_f32_s);
-    fn visit_i32_trunc_f32_u(i32_trunc_f32_u);
-    fn visit_i32_trunc_f64_s(i32_trunc_f64_s);
-    fn visit_i32_trunc_f64_u(i32_trunc_f64_u);
-
-    fn visit_i64_trunc_f32_s(i64_trunc_f32_s);
-    fn visit_i64_trunc_f32_u(i64_trunc_f32_u);
-    fn visit_i64_trunc_f64_s(i64_trunc_f64_s);
-    fn visit_i64_trunc_f64_u(i64_trunc_f64_u);
 }
 
 macro_rules! impl_visit_binary {
@@ -1180,31 +1092,6 @@ impl_visit_binary! {
     fn visit_i32_ge_s(i32_ge_s);
     fn visit_i32_ge_u(i32_ge_u);
 
-    fn visit_i64_eq(i64_eq);
-    fn visit_i64_ne(i64_ne);
-    fn visit_i64_lt_s(i64_lt_s);
-    fn visit_i64_lt_u(i64_lt_u);
-    fn visit_i64_gt_s(i64_gt_s);
-    fn visit_i64_gt_u(i64_gt_u);
-    fn visit_i64_le_s(i64_le_s);
-    fn visit_i64_le_u(i64_le_u);
-    fn visit_i64_ge_s(i64_ge_s);
-    fn visit_i64_ge_u(i64_ge_u);
-
-    fn visit_f32_eq(f32_eq);
-    fn visit_f32_ne(f32_ne);
-    fn visit_f32_lt(f32_lt);
-    fn visit_f32_gt(f32_gt);
-    fn visit_f32_le(f32_le);
-    fn visit_f32_ge(f32_ge);
-
-    fn visit_f64_eq(f64_eq);
-    fn visit_f64_ne(f64_ne);
-    fn visit_f64_lt(f64_lt);
-    fn visit_f64_gt(f64_gt);
-    fn visit_f64_le(f64_le);
-    fn visit_f64_ge(f64_ge);
-
     fn visit_i32_add(i32_add);
     fn visit_i32_sub(i32_sub);
     fn visit_i32_mul(i32_mul);
@@ -1216,34 +1103,6 @@ impl_visit_binary! {
     fn visit_i32_shr_u(i32_shr_u);
     fn visit_i32_rotl(i32_rotl);
     fn visit_i32_rotr(i32_rotr);
-
-    fn visit_i64_add(i64_add);
-    fn visit_i64_sub(i64_sub);
-    fn visit_i64_mul(i64_mul);
-    fn visit_i64_and(i64_and);
-    fn visit_i64_or(i64_or);
-    fn visit_i64_xor(i64_xor);
-    fn visit_i64_shl(i64_shl);
-    fn visit_i64_shr_s(i64_shr_s);
-    fn visit_i64_shr_u(i64_shr_u);
-    fn visit_i64_rotl(i64_rotl);
-    fn visit_i64_rotr(i64_rotr);
-
-    fn visit_f32_add(f32_add);
-    fn visit_f32_sub(f32_sub);
-    fn visit_f32_mul(f32_mul);
-    fn visit_f32_div(f32_div);
-    fn visit_f32_min(f32_min);
-    fn visit_f32_max(f32_max);
-    fn visit_f32_copysign(f32_copysign);
-
-    fn visit_f64_add(f64_add);
-    fn visit_f64_sub(f64_sub);
-    fn visit_f64_mul(f64_mul);
-    fn visit_f64_div(f64_div);
-    fn visit_f64_min(f64_min);
-    fn visit_f64_max(f64_max);
-    fn visit_f64_copysign(f64_copysign);
 }
 
 macro_rules! impl_visit_fallible_binary {
@@ -1263,11 +1122,6 @@ impl_visit_fallible_binary! {
     fn visit_i32_div_u(i32_div_u);
     fn visit_i32_rem_s(i32_rem_s);
     fn visit_i32_rem_u(i32_rem_u);
-
-    fn visit_i64_div_s(i64_div_s);
-    fn visit_i64_div_u(i64_div_u);
-    fn visit_i64_rem_s(i64_rem_s);
-    fn visit_i64_rem_u(i64_rem_u);
 }
 
 #[inline(always)]

@@ -140,28 +140,28 @@ impl InstructionSet {
     impl_opcode!(GlobalGet(GlobalIdx));
     impl_opcode!(GlobalSet(GlobalIdx));
     impl_opcode!(I32Load(AddressOffset));
-    impl_opcode!(I64Load(AddressOffset));
+    //impl_opcode!(I64Load(AddressOffset));
     impl_opcode!(F32Load(AddressOffset));
     impl_opcode!(F64Load(AddressOffset));
     impl_opcode!(I32Load8S(AddressOffset));
     impl_opcode!(I32Load8U(AddressOffset));
     impl_opcode!(I32Load16S(AddressOffset));
     impl_opcode!(I32Load16U(AddressOffset));
-    impl_opcode!(I64Load8S(AddressOffset));
-    impl_opcode!(I64Load8U(AddressOffset));
-    impl_opcode!(I64Load16S(AddressOffset));
-    impl_opcode!(I64Load16U(AddressOffset));
-    impl_opcode!(I64Load32S(AddressOffset));
-    impl_opcode!(I64Load32U(AddressOffset));
+    //impl_opcode!(I64Load8S(AddressOffset));
+    //impl_opcode!(I64Load8U(AddressOffset));
+    //impl_opcode!(I64Load16S(AddressOffset));
+    //impl_opcode!(I64Load16U(AddressOffset));
+    //impl_opcode!(I64Load32S(AddressOffset));
+    //impl_opcode!(I64Load32U(AddressOffset));
     impl_opcode!(I32Store(AddressOffset));
-    impl_opcode!(I64Store(AddressOffset));
+    //impl_opcode!(I64Store(AddressOffset));
     impl_opcode!(F32Store(AddressOffset));
     impl_opcode!(F64Store(AddressOffset));
     impl_opcode!(I32Store8(AddressOffset));
     impl_opcode!(I32Store16(AddressOffset));
-    impl_opcode!(I64Store8(AddressOffset));
-    impl_opcode!(I64Store16(AddressOffset));
-    impl_opcode!(I64Store32(AddressOffset));
+    //impl_opcode!(I64Store8(AddressOffset));
+    //impl_opcode!(I64Store16(AddressOffset));
+    //impl_opcode!(I64Store32(AddressOffset));
     impl_opcode!(MemorySize);
     impl_opcode!(MemoryGrow);
     impl_opcode!(MemoryFill);
@@ -178,9 +178,9 @@ impl InstructionSet {
     impl_opcode!(ElemDrop(ElementSegmentIdx));
     impl_opcode!(RefFunc(CompiledFunc));
     impl_opcode!(I32Const(UntypedValue));
-    impl_opcode!(I64Const(UntypedValue));
-    impl_opcode!(F32Const(UntypedValue));
-    impl_opcode!(F64Const(UntypedValue));
+    //impl_opcode!(I64Const(UntypedValue));
+    // impl_opcode!(F32Const(UntypedValue));
+    // impl_opcode!(F64Const(UntypedValue));
     impl_opcode!(I32Eqz);
     impl_opcode!(I32Eq);
     impl_opcode!(I32Ne);
@@ -192,17 +192,17 @@ impl InstructionSet {
     impl_opcode!(I32LeU);
     impl_opcode!(I32GeS);
     impl_opcode!(I32GeU);
-    impl_opcode!(I64Eqz);
-    impl_opcode!(I64Eq);
-    impl_opcode!(I64Ne);
-    impl_opcode!(I64LtS);
-    impl_opcode!(I64LtU);
-    impl_opcode!(I64GtS);
-    impl_opcode!(I64GtU);
-    impl_opcode!(I64LeS);
-    impl_opcode!(I64LeU);
-    impl_opcode!(I64GeS);
-    impl_opcode!(I64GeU);
+    //impl_opcode!(I64Eqz);
+    //impl_opcode!(I64Eq);
+    //impl_opcode!(I64Ne);
+    //impl_opcode!(I64LtS);
+    //impl_opcode!(I64LtU);
+    //impl_opcode!(I64GtS);
+    //impl_opcode!(I64GtU);
+    //impl_opcode!(I64LeS);
+    //impl_opcode!(I64LeU);
+    //impl_opcode!(I64GeS);
+    //impl_opcode!(I64GeU);
     impl_opcode!(F32Eq);
     impl_opcode!(F32Ne);
     impl_opcode!(F32Lt);
@@ -233,24 +233,24 @@ impl InstructionSet {
     impl_opcode!(I32ShrU);
     impl_opcode!(I32Rotl);
     impl_opcode!(I32Rotr);
-    impl_opcode!(I64Clz);
-    impl_opcode!(I64Ctz);
-    impl_opcode!(I64Popcnt);
-    impl_opcode!(I64Add);
-    impl_opcode!(I64Sub);
-    impl_opcode!(I64Mul);
-    impl_opcode!(I64DivS);
-    impl_opcode!(I64DivU);
-    impl_opcode!(I64RemS);
-    impl_opcode!(I64RemU);
-    impl_opcode!(I64And);
-    impl_opcode!(I64Or);
-    impl_opcode!(I64Xor);
-    impl_opcode!(I64Shl);
-    impl_opcode!(I64ShrS);
-    impl_opcode!(I64ShrU);
-    impl_opcode!(I64Rotl);
-    impl_opcode!(I64Rotr);
+    //impl_opcode!(I64Clz);
+    //impl_opcode!(I64Ctz);
+    //impl_opcode!(I64Popcnt);
+    //impl_opcode!(I64Add);
+    //impl_opcode!(I64Sub);
+    //impl_opcode!(I64Mul);
+    //impl_opcode!(I64DivS);
+    //impl_opcode!(I64DivU);
+    //impl_opcode!(I64RemS);
+    //impl_opcode!(I64RemU);
+    //impl_opcode!(I64And);
+    //impl_opcode!(I64Or);
+    //impl_opcode!(I64Xor);
+    //impl_opcode!(I64Shl);
+    //impl_opcode!(I64ShrS);
+    //impl_opcode!(I64ShrU);
+    //impl_opcode!(I64Rotl);
+    //impl_opcode!(I64Rotr);
     impl_opcode!(F32Abs);
     impl_opcode!(F32Neg);
     impl_opcode!(F32Ceil);
@@ -284,8 +284,8 @@ impl InstructionSet {
     impl_opcode!(I32TruncF32U);
     impl_opcode!(I32TruncF64S);
     impl_opcode!(I32TruncF64U);
-    impl_opcode!(I64ExtendI32S);
-    impl_opcode!(I64ExtendI32U);
+    //impl_opcode!(I64ExtendI32S);
+    //impl_opcode!(I64ExtendI32U);
     impl_opcode!(I64TruncF32S);
     impl_opcode!(I64TruncF32U);
     impl_opcode!(I64TruncF64S);
@@ -302,9 +302,9 @@ impl InstructionSet {
     impl_opcode!(F64PromoteF32);
     impl_opcode!(I32Extend8S);
     impl_opcode!(I32Extend16S);
-    impl_opcode!(I64Extend8S);
-    impl_opcode!(I64Extend16S);
-    impl_opcode!(I64Extend32S);
+    //impl_opcode!(I64Extend8S);
+    //impl_opcode!(I64Extend16S);
+    //impl_opcode!(I64Extend32S);
     impl_opcode!(I32TruncSatF32S);
     impl_opcode!(I32TruncSatF32U);
     impl_opcode!(I32TruncSatF64S);
@@ -443,18 +443,16 @@ fn decode_instruction_data<Context, D: Decoder<Context = Context>>(
             OpcodeData::SignatureIdx(Decode::decode(decoder)?)
         }
         GlobalGet | GlobalSet => OpcodeData::GlobalIdx(Decode::decode(decoder)?),
-        I32Load | I64Load | F32Load | F64Load | I32Load8S | I32Load8U | I32Load16S | I32Load16U
-        | I64Load8S | I64Load8U | I64Load16S | I64Load16U | I64Load32S | I64Load32U | I32Store
-        | I64Store | F32Store | F64Store | I32Store8 | I32Store16 | I64Store8 | I64Store16
-        | I64Store32 => OpcodeData::AddressOffset(Decode::decode(decoder)?),
+        I32Load | F32Load | F64Load | I32Load8S | I32Load8U | I32Load16S | I32Load16U
+        | I32Store | F32Store | F64Store | I32Store8 | I32Store16 => {
+            OpcodeData::AddressOffset(Decode::decode(decoder)?)
+        }
         MemoryInit | DataDrop => OpcodeData::DataSegmentIdx(Decode::decode(decoder)?),
         TableSize | TableGrow | TableFill | TableGet | TableSet | TableCopy => {
             OpcodeData::TableIdx(Decode::decode(decoder)?)
         }
         TableInit | ElemDrop => OpcodeData::ElementSegmentIdx(Decode::decode(decoder)?),
-        I32Const | I64Const | F32Const | F64Const => {
-            OpcodeData::UntypedValue(Decode::decode(decoder)?)
-        }
+        I32Const => OpcodeData::UntypedValue(Decode::decode(decoder)?),
         StackCheck => OpcodeData::StackAlloc(Decode::decode(decoder)?),
         _ => OpcodeData::EmptyData,
     };

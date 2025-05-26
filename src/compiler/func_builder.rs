@@ -74,14 +74,14 @@ impl<'a> FuncBuilder<'a> {
             for _ in 0..amount as usize {
                 self.translator.alloc.instruction_set.op_i32_const(0);
                 // for i64 type, we need to push 2 values on the stack
-                if value_type == ValType::I64 {
+                if value_type == ValType::I64 || value_type == ValType::F64 {
                     self.translator.alloc.instruction_set.op_i32_const(0);
                 }
                 self.translator.alloc.stack_types.push(value_type);
             }
 
             self.translator.stack_height.push_n(amount);
-            if value_type == ValType::I64 {
+            if value_type == ValType::I64 || value_type == ValType::F64 {
                 self.translator.stack_height.push_n(amount);
             }
         }
@@ -125,8 +125,11 @@ impl<'a> FuncBuilder<'a> {
     fn translate_operators(&mut self) -> Result<usize, CompilationError> {
         let mut reader = self.func_body.get_operators_reader()?;
         while !reader.eof() {
-            // let operator = reader.clone().read()?;
-            // println!(" - {:?}", operator);
+            #[cfg(feature = "debug-print")]
+            {
+                let operator = reader.clone().read()?;
+                println!("{:?}", operator);
+            }
             self.pos = reader.original_position();
             reader.visit_operator(self)??;
         }

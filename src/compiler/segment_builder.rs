@@ -35,20 +35,14 @@ impl SegmentBuilder {
     ) -> Result<(), CompilationError> {
         let global_type = global_variable.global_type.content_type;
         match global_type {
-            ValType::I32 => self
+            ValType::I32 | ValType::F32 => self
                 .entrypoint_bytecode
                 .op_i32_const(global_variable.default_value),
-            ValType::I64 => {
+            ValType::I64 | ValType::F64 => {
                 let (lower, upper) = split_i64_to_i32(global_variable.default_value.as_i64());
                 self.entrypoint_bytecode.op_i32_const(lower);
                 self.entrypoint_bytecode.op_i32_const(upper)
             }
-            ValType::F32 => self
-                .entrypoint_bytecode
-                .op_f32_const(global_variable.default_value),
-            ValType::F64 => self
-                .entrypoint_bytecode
-                .op_i64_const(global_variable.default_value),
             ValType::FuncRef | ValType::ExternRef => self
                 .entrypoint_bytecode
                 .op_ref_func(global_variable.default_value.as_u32()),
@@ -56,7 +50,7 @@ impl SegmentBuilder {
         };
         self.entrypoint_bytecode
             .op_global_set(global_idx.to_u32() * 2);
-        if global_type == ValType::I64 {
+        if global_type == ValType::I64 || global_type == ValType::F64 {
             self.entrypoint_bytecode
                 .op_global_set(global_idx.to_u32() * 2 + 1);
         }
