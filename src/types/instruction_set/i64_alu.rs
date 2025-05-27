@@ -1,6 +1,7 @@
-use crate::InstructionSet;
+use crate::{InstructionSet, TrapCode};
 
 impl InstructionSet {
+    /// Max stack height: 8
     pub fn op_i64_add(&mut self) {
         self.op_local_get(4);
         self.op_local_get(3);
@@ -132,63 +133,1371 @@ impl InstructionSet {
         self.op_drop();
     }
 
+    /// Performs a signed 64-bit integer division using only 32-bit arithmetic,
+    /// returning the 64-bit quotient as two `u32` limbs (low, high).
+    ///
+    /// This routine emulates full signed 64-bit division for platforms or VMs
+    /// that lack native 64-bit division, such as WebAssembly VMs with 32-bit stack elements.
+    ///
+    /// # Arguments
+    /// - `n_lo`, `n_hi`: Low and high 32 bits of the dividend (`n = (n_hi << 32) | n_lo`,
+    ///   interpreted as signed i64)
+    /// - `d_lo`, `d_hi`: Low and high 32 bits of the divisor (`d = (d_hi << 32) | d_lo`,
+    ///   interpreted as signed i64)
+    ///
+    /// # Returns
+    /// - `(q_lo, q_hi)`: Low and high 32 bits of the signed quotient
+    /// (as if casting a result to i64 and splitting)
+    ///
+    /// # Algorithm
+    /// - Checks for division by zero and triggers a trap if detected.
+    /// - Checks for signed division overflow (i64::MIN / -1) and traps on this case, matching
+    ///   Rust/WASM semantics.
+    /// - Computes absolute values of numerator and denominator.
+    /// - Performs unsigned 64-bit division using a dedicated routine (`div64_impl`), producing the
+    ///   absolute quotient.
+    /// - Applies the correct sign to the quotient according to the signs of the operands
+    /// (truncates toward zero).
+    ///
+    /// # Panics / Traps
+    /// - Division by zero triggers a trap.
+    /// - Division overflow (i64::MIN / -1) triggers a trap, matching language and VM semantics.
+    ///
+    /// # Note
+    /// This function returns only the quotient, not the remainder.
+    /// The quotient is returned in the
+    /// same two-limb (low/high) format as the inputs.
+    /// Both input and output values should be
+    /// interpreted as signed i64.
+    ///
+    /// Max stack height: 17
     pub fn op_i64_div_s(&mut self) {
-        todo!()
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_local_get(10);
+        self.op_local_get(12);
+        self.op_i32_or();
+        self.op_br_if_nez(2);
+        self.op_trap(TrapCode::IntegerDivisionByZero);
+        self.op_local_get(12);
+        self.op_i32_const(-2147483648);
+        self.op_i32_ne();
+        self.op_br_if_nez(12);
+        self.op_local_get(10);
+        self.op_i32_const(-1);
+        self.op_i32_ne();
+        self.op_br_if_nez(8);
+        self.op_local_get(13);
+        self.op_br_if_nez(43);
+        self.op_local_get(11);
+        self.op_i32_const(-1);
+        self.op_i32_ne();
+        self.op_br_if_nez(39);
+        self.op_trap(TrapCode::IntegerOverflow);
+        self.op_local_get(12);
+        self.op_i32_const(-1);
+        self.op_i32_gt_s();
+        self.op_br_if_nez(17);
+        self.op_i32_const(0);
+        self.op_local_get(14);
+        self.op_i32_sub();
+        self.op_local_set(9);
+        self.op_local_get(13);
+        self.op_i32_eqz();
+        self.op_local_get(13);
+        self.op_i32_const(-1);
+        self.op_i32_xor();
+        self.op_i32_add();
+        self.op_local_set(8);
+        self.op_local_get(10);
+        self.op_i32_const(0);
+        self.op_i32_lt_s();
+        self.op_br_if_nez(28);
+        self.op_br(13);
+        self.op_local_get(13);
+        self.op_local_set(9);
+        self.op_local_get(12);
+        self.op_local_set(8);
+        self.op_local_get(10);
+        self.op_i32_const(-1);
+        self.op_i32_le_s();
+        self.op_br_if_nez(19);
+        self.op_local_get(13);
+        self.op_local_set(9);
+        self.op_local_get(12);
+        self.op_local_set(8);
+        self.op_local_get(10);
+        self.op_local_set(7);
+        self.op_local_get(11);
+        self.op_local_set(6);
+        self.op_br(21);
+        self.op_i32_const(2147483647);
+        self.op_i32_const(-2147483648);
+        self.op_local_get(15);
+        self.op_select();
+        self.op_local_set(8);
+        self.op_i32_const(0);
+        self.op_local_get(14);
+        self.op_i32_sub();
+        self.op_local_set(9);
+        self.op_i32_const(0);
+        self.op_local_get(12);
+        self.op_i32_sub();
+        self.op_local_set(6);
+        self.op_local_get(11);
+        self.op_i32_eqz();
+        self.op_local_get(11);
+        self.op_i32_const(-1);
+        self.op_i32_xor();
+        self.op_i32_add();
+        self.op_local_set(7);
+        self.op_i32_const(0);
+        self.op_local_set(11);
+        self.op_i32_const(64);
+        self.op_local_set(5);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_i32_const(0);
+        self.op_local_set(3);
+        self.op_i32_const(0);
+        self.op_local_set(2);
+        self.op_local_get(4);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(9);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(13);
+        self.op_local_get(11);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(5);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_tee(12);
+        self.op_local_get(8);
+        self.op_i32_gt_u();
+        self.op_br_if_nez(14);
+        self.op_i32_const(0);
+        self.op_local_set(1);
+        self.op_local_get(11);
+        self.op_local_get(8);
+        self.op_i32_ne();
+        self.op_br_if_nez(5);
+        self.op_local_get(13);
+        self.op_local_get(7);
+        self.op_i32_ge_u();
+        self.op_br_if_nez(4);
+        self.op_local_get(13);
+        self.op_local_set(4);
+        self.op_br(15);
+        self.op_local_get(11);
+        self.op_local_get(8);
+        self.op_i32_sub();
+        self.op_local_get(14);
+        self.op_local_get(8);
+        self.op_i32_lt_u();
+        self.op_i32_sub();
+        self.op_local_set(11);
+        self.op_local_get(13);
+        self.op_local_get(7);
+        self.op_i32_sub();
+        self.op_local_set(4);
+        self.op_i32_const(1);
+        self.op_local_set(1);
+        self.op_local_get(8);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(10);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(8);
+        self.op_local_get(9);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_set(9);
+        self.op_local_get(3);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(3);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(3);
+        self.op_local_get(1);
+        self.op_local_get(3);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_i32_or();
+        self.op_local_set(2);
+        self.op_local_get(5);
+        self.op_i32_const(-1);
+        self.op_i32_add();
+        self.op_local_tee(6);
+        self.op_br_if_nez(-76);
+        self.op_local_get(10);
+        self.op_local_get(13);
+        self.op_i32_xor();
+        self.op_i32_const(-1);
+        self.op_i32_le_s();
+        self.op_br_if_nez(4);
+        self.op_local_get(2);
+        self.op_local_set(11);
+        self.op_br(12);
+        self.op_i32_const(0);
+        self.op_local_get(3);
+        self.op_i32_sub();
+        self.op_local_set(11);
+        self.op_local_get(2);
+        self.op_i32_eqz();
+        self.op_local_get(4);
+        self.op_i32_const(-1);
+        self.op_i32_xor();
+        self.op_i32_add();
+        self.op_local_set(3);
+        self.op_local_get(3);
+        self.op_i32_const(0);
+        self.op_i32_const(32);
+        self.op_i32_const(0);
+        self.op_local_get(2);
+        self.op_i32_const(63);
+        self.op_i32_and();
+        self.op_local_set(2);
+        self.op_local_get(2);
+        self.op_br_if_eqz(32);
+        self.op_local_get(2);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_br_if_eqz(10);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_const(32);
+        self.op_i32_sub();
+        self.op_i32_shl();
+        self.op_local_set(3);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_br(19);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_shl();
+        self.op_local_set(4);
+        self.op_local_get(3);
+        self.op_local_get(3);
+        self.op_i32_shl();
+        self.op_local_set(3);
+        self.op_local_get(4);
+        self.op_i32_const(32);
+        self.op_local_get(4);
+        self.op_i32_const(31);
+        self.op_i32_and();
+        self.op_i32_sub();
+        self.op_i32_shr_u();
+        self.op_local_get(4);
+        self.op_i32_or();
+        self.op_local_set(3);
+        self.op_drop();
+        self.op_drop();
+        self.op_local_get(13);
+        self.op_i32_const(0);
+        self.op_local_get(3);
+        self.op_i32_or();
+        self.op_local_set(2);
+        self.op_local_get(3);
+        self.op_i32_or();
+        self.op_local_set(2);
+        self.op_local_set(13);
+        self.op_local_set(13);
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
     }
 
-    /// Translates a 64-bit unsigned integer division operation into a sequence of WebAssembly
-    /// (Wasm) instructions.
+    /// Performs an unsigned 64-bit division using only 32-bit arithmetic,
+    /// returning the 64-bit quotient as two `u32` limbs (low, high).
     ///
-    /// This function implements the logic for dividing two 64-bit integers (treated as unsigned) by
-    /// breaking them into 32-bit components and simulating the division operation. The function
-    /// generates the corresponding WebAssembly operations using an instruction builder
-    /// (`inst_builder`) and maintains the stack height for proper stack-based Wasm semantics.
+    /// This routine emulates a full 64-bit division in environments that lack native 64-bit
+    /// division instructions, such as custom virtual machines or WebAssembly VMs restricted to
+    /// 32-bit stack elements.
     ///
-    /// # Implementation Details
-    /// - The function works with the high (`hi`) and low (`lo`) 32-bit parts of two 64-bit
-    ///   integers.
-    /// - It simulates bitwise shifts, arithmetic operations, and comparisons to calculate the
-    ///   quotient and remainder.
-    /// - The function uses a counter to iterate through the 64 bits of the dividend, updating
-    ///   relevant intermediate results for the quotient and remainder at each step.
+    /// # Arguments
+    /// - `n_lo`, `n_hi`: Low and high 32 bits of the dividend (`n = (n_hi << 32) | n_lo`)
+    /// - `d_lo`, `d_hi`: Low and high 32 bits of the divisor  (`d = (d_hi << 32) | d_lo`)
     ///
-    /// # Stack Usage
-    /// The function involves meticulous stack operations:
-    /// - Push and pop operations are tracked using `self.stack_height` to manage the stack state.
-    /// - Custom stack height tracking ensures adherence to Wasm stack rules during dynamic
-    ///   instruction generation.
+    /// # Returns
+    /// - `(q_lo, q_hi)`: Low and high 32 bits of the quotient
     ///
-    /// # Generated Operations
-    /// - Loads local variables using `op_local_get`.
-    /// - Executes arithmetic and logical operations such as `op_i32_add`, `op_i32_sub`,
-    ///   `op_i32_or`, `op_i32_shl`, and `op_i32_shr_u`.
-    /// - Performs conditional branching using `op_br_if_nez` and `op_br_if_eqz`.
-    /// - Updates locals with `op_local_set` and `op_local_tee`.
-    /// - Handles division-related edge cases such as carry propagation and overflow checks.
+    /// # Algorithm
+    /// - Handles corner cases: division by zero traps via `core::intrinsics::breakpoint()`, and
+    ///   division producing zero quotient (when dividend < divisor).
+    /// - Fast path: When divisor fits in 32 bits (`d_hi == 0`), uses a custom loop-based 64-by-32
+    ///   division for efficiency.
+    /// - General path: For arbitrary 64-bit divisors, performs classic binary long division over 64
+    ///   iterations, building up quotient and remainder bitwise using only 32-bit arithmetic.
     ///
-    /// # Example Workflow
-    /// 1. Decompose the high and low 32-bit parts of the two 64-bit operands.
-    /// 2. Simulate division through a loop where each iteration:
-    ///    - Shifts bits and updates intermediate results.
-    ///    - Computes carries and propagates bit results for the quotient and remainder.
-    /// 3. Rebuild the final results from the calculated quotient and remainder.
+    /// # Panics / Traps
+    /// - Division by zero triggers a breakpoint (trap/abort).
     ///
-    /// # Errors
-    /// - The function assumes correct initialization of local variables and proper input setup for
-    ///   the operands.
-    /// - Overflow, division by zero, or other exceptional arithmetic conditions should be handled
-    ///   as part of higher-level logic or exception management.
+    /// # Note
+    /// This function does **not** return the remainder(); it only computes the quotient.
+    /// The input/output layout matches WebAssembly’s typical two-limb calling convention
+    /// for 64-bit arithmetic implemented on 32-bit platforms.
     ///
-    /// # Notes
-    /// - This implementation is tailored for environments where 64-bit integer operations are not
-    ///   natively available in Wasm, making it necessary to simulate these operations through
-    ///   32-bit arithmetic.
-    /// - The function might be updated in future versions for optimizations or support of
-    ///   additional architectures.
-    #[allow(unused)]
-    fn impl_div_i64_u(&mut self) {}
-
+    /// Max stack height: 15
     pub fn op_i64_div_u(&mut self) {
-        todo!()
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_local_get(8);
+        self.op_br_if_nez(138);
+        self.op_local_get(9);
+        self.op_br_if_nez(2);
+        self.op_trap(TrapCode::IntegerDivisionByZero);
+        self.op_local_get(10);
+        self.op_br_if_nez(9);
+        self.op_i32_const(0);
+        self.op_local_set(7);
+        self.op_i32_const(0);
+        self.op_local_set(6);
+        self.op_local_get(11);
+        self.op_local_get(10);
+        self.op_i32_lt_u();
+        self.op_br_if_nez(231);
+        self.op_i32_const(0);
+        self.op_local_set(7);
+        self.op_i32_const(63);
+        self.op_local_set(5);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_local_get(4);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_set(4);
+        self.op_local_get(5);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_br_if_nez(23);
+        self.op_local_get(10);
+        self.op_local_get(6);
+        self.op_i32_shr_u();
+        self.op_i32_const(1);
+        self.op_i32_and();
+        self.op_local_get(5);
+        self.op_i32_or();
+        self.op_local_tee(5);
+        self.op_local_get(10);
+        self.op_i32_lt_u();
+        self.op_br_if_nez(26);
+        self.op_local_get(4);
+        self.op_local_get(10);
+        self.op_i32_sub();
+        self.op_local_set(4);
+        self.op_local_get(7);
+        self.op_i32_const(1);
+        self.op_local_get(7);
+        self.op_i32_shl();
+        self.op_i32_or();
+        self.op_local_set(7);
+        self.op_br(15);
+        self.op_local_get(4);
+        self.op_local_get(10);
+        self.op_i32_lt_u();
+        self.op_br_if_nez(11);
+        self.op_local_get(4);
+        self.op_local_get(10);
+        self.op_i32_sub();
+        self.op_local_set(4);
+        self.op_i32_const(1);
+        self.op_local_get(6);
+        self.op_i32_shl();
+        self.op_local_get(8);
+        self.op_i32_or();
+        self.op_local_set(7);
+        self.op_local_get(5);
+        self.op_i32_const(-1);
+        self.op_i32_add();
+        self.op_local_tee(6);
+        self.op_i32_const(-1);
+        self.op_i32_ne();
+        self.op_br_if_nez(-50);
+        self.op_i32_const(0);
+        self.op_local_set(6);
+        self.op_i32_const(63);
+        self.op_local_set(5);
+        self.op_i32_const(0);
+        self.op_local_set(10);
+        self.op_local_get(10);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_set(10);
+        self.op_local_get(5);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_br_if_nez(23);
+        self.op_local_get(11);
+        self.op_local_get(6);
+        self.op_i32_shr_u();
+        self.op_i32_const(1);
+        self.op_i32_and();
+        self.op_local_get(11);
+        self.op_i32_or();
+        self.op_local_tee(11);
+        self.op_local_get(10);
+        self.op_i32_lt_u();
+        self.op_br_if_nez(35);
+        self.op_local_get(10);
+        self.op_local_get(10);
+        self.op_i32_sub();
+        self.op_local_set(10);
+        self.op_local_get(6);
+        self.op_i32_const(1);
+        self.op_local_get(7);
+        self.op_i32_shl();
+        self.op_i32_or();
+        self.op_local_set(6);
+        self.op_br(24);
+        self.op_local_get(4);
+        self.op_local_get(6);
+        self.op_i32_shr_u();
+        self.op_i32_const(1);
+        self.op_i32_and();
+        self.op_local_get(11);
+        self.op_i32_or();
+        self.op_local_tee(11);
+        self.op_local_get(10);
+        self.op_i32_lt_u();
+        self.op_br_if_nez(13);
+        self.op_local_get(10);
+        self.op_local_get(10);
+        self.op_i32_sub();
+        self.op_local_set(10);
+        self.op_i32_const(1);
+        self.op_local_get(6);
+        self.op_i32_const(31);
+        self.op_i32_and();
+        self.op_i32_shl();
+        self.op_local_get(7);
+        self.op_i32_or();
+        self.op_local_set(6);
+        self.op_local_get(5);
+        self.op_i32_const(-1);
+        self.op_i32_add();
+        self.op_local_tee(6);
+        self.op_i32_const(-1);
+        self.op_i32_ne();
+        self.op_br_if_nez(-59);
+        self.op_br(107);
+        self.op_i32_const(0);
+        self.op_local_set(7);
+        self.op_local_get(10);
+        self.op_local_get(9);
+        self.op_i32_ge_u();
+        self.op_br_if_nez(4);
+        self.op_i32_const(0);
+        self.op_local_set(6);
+        self.op_br(98);
+        self.op_local_get(11);
+        self.op_local_get(10);
+        self.op_i32_ge_u();
+        self.op_br_if_nez(7);
+        self.op_i32_const(0);
+        self.op_local_set(6);
+        self.op_local_get(10);
+        self.op_local_get(9);
+        self.op_i32_eq();
+        self.op_br_if_nez(88);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_i32_const(64);
+        self.op_local_set(3);
+        self.op_i32_const(0);
+        self.op_local_set(2);
+        self.op_i32_const(0);
+        self.op_local_set(7);
+        self.op_i32_const(0);
+        self.op_local_set(6);
+        self.op_local_get(2);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(11);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(5);
+        self.op_local_get(4);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(3);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_tee(5);
+        self.op_local_get(9);
+        self.op_i32_gt_u();
+        self.op_br_if_nez(14);
+        self.op_i32_const(0);
+        self.op_local_set(1);
+        self.op_local_get(4);
+        self.op_local_get(9);
+        self.op_i32_ne();
+        self.op_br_if_nez(5);
+        self.op_local_get(5);
+        self.op_local_get(10);
+        self.op_i32_ge_u();
+        self.op_br_if_nez(4);
+        self.op_local_get(5);
+        self.op_local_set(2);
+        self.op_br(15);
+        self.op_local_get(4);
+        self.op_local_get(9);
+        self.op_i32_sub();
+        self.op_local_get(6);
+        self.op_local_get(11);
+        self.op_i32_lt_u();
+        self.op_i32_sub();
+        self.op_local_set(4);
+        self.op_local_get(5);
+        self.op_local_get(10);
+        self.op_i32_sub();
+        self.op_local_set(2);
+        self.op_i32_const(1);
+        self.op_local_set(1);
+        self.op_local_get(10);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(12);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(10);
+        self.op_local_get(11);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_set(11);
+        self.op_local_get(7);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(7);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(7);
+        self.op_local_get(1);
+        self.op_local_get(7);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_i32_or();
+        self.op_local_set(6);
+        self.op_local_get(3);
+        self.op_i32_const(-1);
+        self.op_i32_add();
+        self.op_local_tee(4);
+        self.op_br_if_nez(-76);
+        self.op_local_get(7);
+        self.op_i32_const(0);
+        self.op_i32_const(32);
+        self.op_i32_const(0);
+        self.op_local_get(2);
+        self.op_i32_const(63);
+        self.op_i32_and();
+        self.op_local_set(2);
+        self.op_local_get(2);
+        self.op_br_if_eqz(32);
+        self.op_local_get(2);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_br_if_eqz(10);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_const(32);
+        self.op_i32_sub();
+        self.op_i32_shl();
+        self.op_local_set(3);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_br(19);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_shl();
+        self.op_local_set(4);
+        self.op_local_get(3);
+        self.op_local_get(3);
+        self.op_i32_shl();
+        self.op_local_set(3);
+        self.op_local_get(4);
+        self.op_i32_const(32);
+        self.op_local_get(4);
+        self.op_i32_const(31);
+        self.op_i32_and();
+        self.op_i32_sub();
+        self.op_i32_shr_u();
+        self.op_local_get(4);
+        self.op_i32_or();
+        self.op_local_set(3);
+        self.op_drop();
+        self.op_drop();
+        self.op_local_get(8);
+        self.op_i32_const(0);
+        self.op_local_get(3);
+        self.op_i32_or();
+        self.op_local_set(2);
+        self.op_local_get(3);
+        self.op_i32_or();
+        self.op_local_set(2);
+        self.op_local_set(11);
+        self.op_local_set(11);
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+    }
+
+    /// Computes the signed 64-bit integer remainder (modulus) using only 32-bit arithmetic,
+    /// returning the 64-bit remainder as two `u32` limbs (low, high).
+    ///
+    /// Emulates full signed 64-bit remainder operation for platforms or VMs lacking native
+    /// 64-bit division/modulo, such as WASM VMs with 32-bit stack elements.
+    ///
+    /// # Arguments
+    /// - `n_lo`, `n_hi`: Low and high 32 bits of the dividend (`n = (n_hi << 32) | n_lo`,
+    ///   interpreted as signed i64)
+    /// - `d_lo`, `d_hi`: Low and high 32 bits of the divisor (`d = (d_hi << 32) | d_lo`,
+    ///   interpreted as signed i64)
+    ///
+    /// # Returns
+    /// - `(rem_lo, rem_hi)`: Low and high 32 bits of the signed remainder (as if casting to i64 and
+    ///   splitting)
+    ///
+    /// # Algorithm
+    /// - Traps on division by zero, matching WASM and Rust semantics.
+    /// - Traps on signed overflow (`i64::MIN % -1` is defined as 0 in Rust/WASM, but still check
+    ///   for consistency).
+    /// - Computes absolute values of numerator and denominator.
+    /// - Performs unsigned 64-bit division to get both quotient and remainder.
+    /// - Restores the correct sign to the remainder (a remainder always has the same sign as the
+    ///   dividend).
+    ///
+    /// # Panics / Traps
+    /// - Division by zero triggers a trap (`core::intrinsics::abort()`).
+    ///
+    /// # Note
+    /// The remainder takes the sign of the dividend, matching WebAssembly and Rust semantics.
+    /// Input and output values are two-limb representations of signed 64-bit integers.
+    ///
+    /// Max stack height: 12
+    pub fn op_i64_rem_s(&mut self) {
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_local_get(5);
+        self.op_local_get(7);
+        self.op_i32_or();
+        self.op_br_if_nez(2);
+        self.op_trap(TrapCode::IntegerDivisionByZero);
+        self.op_local_get(7);
+        self.op_i32_const(-1);
+        self.op_i32_le_s();
+        self.op_br_if_nez(147);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_local_get(5);
+        self.op_i32_const(0);
+        self.op_i32_lt_s();
+        self.op_br_if_nez(67);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_i32_const(64);
+        self.op_local_set(3);
+        self.op_i32_const(0);
+        self.op_local_set(2);
+        self.op_local_get(2);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(8);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(1);
+        self.op_local_get(4);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(3);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_tee(5);
+        self.op_local_get(6);
+        self.op_i32_gt_u();
+        self.op_br_if_nez(12);
+        self.op_local_get(4);
+        self.op_local_get(6);
+        self.op_i32_ne();
+        self.op_br_if_nez(5);
+        self.op_local_get(1);
+        self.op_local_get(7);
+        self.op_i32_ge_u();
+        self.op_br_if_nez(4);
+        self.op_local_get(1);
+        self.op_local_set(2);
+        self.op_br(13);
+        self.op_local_get(4);
+        self.op_local_get(6);
+        self.op_i32_sub();
+        self.op_local_get(2);
+        self.op_local_get(8);
+        self.op_i32_lt_u();
+        self.op_i32_sub();
+        self.op_local_set(4);
+        self.op_local_get(1);
+        self.op_local_get(7);
+        self.op_i32_sub();
+        self.op_local_set(2);
+        self.op_local_get(7);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(9);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(7);
+        self.op_local_get(8);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_set(8);
+        self.op_local_get(3);
+        self.op_i32_const(-1);
+        self.op_i32_add();
+        self.op_local_tee(4);
+        self.op_br_if_nez(-58);
+        self.op_br(240);
+        self.op_i32_const(0);
+        self.op_local_get(7);
+        self.op_i32_sub();
+        self.op_local_tee(4);
+        self.op_i32_eqz();
+        self.op_local_get(6);
+        self.op_i32_const(-1);
+        self.op_i32_xor();
+        self.op_i32_add();
+        self.op_local_set(6);
+        self.op_i32_const(64);
+        self.op_local_set(1);
+        self.op_i32_const(0);
+        self.op_local_set(2);
+        self.op_local_get(2);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(8);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(5);
+        self.op_local_get(4);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(3);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_tee(5);
+        self.op_local_get(7);
+        self.op_i32_gt_u();
+        self.op_br_if_nez(12);
+        self.op_local_get(4);
+        self.op_local_get(7);
+        self.op_i32_ne();
+        self.op_br_if_nez(5);
+        self.op_local_get(5);
+        self.op_local_get(4);
+        self.op_i32_ge_u();
+        self.op_br_if_nez(4);
+        self.op_local_get(5);
+        self.op_local_set(2);
+        self.op_br(13);
+        self.op_local_get(4);
+        self.op_local_get(7);
+        self.op_i32_sub();
+        self.op_local_get(6);
+        self.op_local_get(5);
+        self.op_i32_lt_u();
+        self.op_i32_sub();
+        self.op_local_set(4);
+        self.op_local_get(5);
+        self.op_local_get(4);
+        self.op_i32_sub();
+        self.op_local_set(2);
+        self.op_local_get(7);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(9);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(7);
+        self.op_local_get(8);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_set(8);
+        self.op_local_get(1);
+        self.op_i32_const(-1);
+        self.op_i32_add();
+        self.op_local_tee(2);
+        self.op_br_if_nez(-58);
+        self.op_br(166);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_i32_const(0);
+        self.op_local_get(9);
+        self.op_i32_sub();
+        self.op_local_tee(3);
+        self.op_i32_eqz();
+        self.op_local_get(8);
+        self.op_i32_const(-1);
+        self.op_i32_xor();
+        self.op_i32_add();
+        self.op_local_set(8);
+        self.op_local_get(5);
+        self.op_i32_const(0);
+        self.op_i32_lt_s();
+        self.op_br_if_nez(67);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_i32_const(64);
+        self.op_local_set(3);
+        self.op_i32_const(0);
+        self.op_local_set(7);
+        self.op_local_get(7);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(9);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(1);
+        self.op_local_get(4);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(8);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_tee(5);
+        self.op_local_get(6);
+        self.op_i32_gt_u();
+        self.op_br_if_nez(12);
+        self.op_local_get(4);
+        self.op_local_get(6);
+        self.op_i32_ne();
+        self.op_br_if_nez(5);
+        self.op_local_get(1);
+        self.op_local_get(7);
+        self.op_i32_ge_u();
+        self.op_br_if_nez(4);
+        self.op_local_get(1);
+        self.op_local_set(7);
+        self.op_br(13);
+        self.op_local_get(4);
+        self.op_local_get(6);
+        self.op_i32_sub();
+        self.op_local_get(2);
+        self.op_local_get(8);
+        self.op_i32_lt_u();
+        self.op_i32_sub();
+        self.op_local_set(4);
+        self.op_local_get(1);
+        self.op_local_get(7);
+        self.op_i32_sub();
+        self.op_local_set(7);
+        self.op_local_get(8);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(3);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(8);
+        self.op_local_get(2);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_set(2);
+        self.op_local_get(3);
+        self.op_i32_const(-1);
+        self.op_i32_add();
+        self.op_local_tee(4);
+        self.op_br_if_nez(-58);
+        self.op_br(74);
+        self.op_i32_const(0);
+        self.op_local_get(7);
+        self.op_i32_sub();
+        self.op_local_tee(4);
+        self.op_i32_eqz();
+        self.op_local_get(6);
+        self.op_i32_const(-1);
+        self.op_i32_xor();
+        self.op_i32_add();
+        self.op_local_set(6);
+        self.op_i32_const(64);
+        self.op_local_set(1);
+        self.op_i32_const(0);
+        self.op_local_set(7);
+        self.op_local_get(7);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(9);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(5);
+        self.op_local_get(4);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(8);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_tee(5);
+        self.op_local_get(7);
+        self.op_i32_gt_u();
+        self.op_br_if_nez(12);
+        self.op_local_get(4);
+        self.op_local_get(7);
+        self.op_i32_ne();
+        self.op_br_if_nez(5);
+        self.op_local_get(5);
+        self.op_local_get(4);
+        self.op_i32_ge_u();
+        self.op_br_if_nez(4);
+        self.op_local_get(5);
+        self.op_local_set(7);
+        self.op_br(13);
+        self.op_local_get(4);
+        self.op_local_get(7);
+        self.op_i32_sub();
+        self.op_local_get(6);
+        self.op_local_get(5);
+        self.op_i32_lt_u();
+        self.op_i32_sub();
+        self.op_local_set(4);
+        self.op_local_get(5);
+        self.op_local_get(4);
+        self.op_i32_sub();
+        self.op_local_set(7);
+        self.op_local_get(8);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(3);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(8);
+        self.op_local_get(2);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_set(2);
+        self.op_local_get(1);
+        self.op_i32_const(-1);
+        self.op_i32_add();
+        self.op_local_tee(2);
+        self.op_br_if_nez(-58);
+        self.op_i32_const(0);
+        self.op_local_get(8);
+        self.op_i32_sub();
+        self.op_local_tee(3);
+        self.op_i32_eqz();
+        self.op_local_get(5);
+        self.op_i32_const(-1);
+        self.op_i32_xor();
+        self.op_i32_add();
+        self.op_local_set(4);
+        self.op_local_get(4);
+        self.op_i32_const(0);
+        self.op_i32_const(32);
+        self.op_i32_const(0);
+        self.op_local_get(2);
+        self.op_i32_const(63);
+        self.op_i32_and();
+        self.op_local_set(2);
+        self.op_local_get(2);
+        self.op_br_if_eqz(32);
+        self.op_local_get(2);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_br_if_eqz(10);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_const(32);
+        self.op_i32_sub();
+        self.op_i32_shl();
+        self.op_local_set(3);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_br(19);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_shl();
+        self.op_local_set(4);
+        self.op_local_get(3);
+        self.op_local_get(3);
+        self.op_i32_shl();
+        self.op_local_set(3);
+        self.op_local_get(4);
+        self.op_i32_const(32);
+        self.op_local_get(4);
+        self.op_i32_const(31);
+        self.op_i32_and();
+        self.op_i32_sub();
+        self.op_i32_shr_u();
+        self.op_local_get(4);
+        self.op_i32_or();
+        self.op_local_set(3);
+        self.op_drop();
+        self.op_drop();
+        self.op_local_get(4);
+        self.op_i32_const(0);
+        self.op_local_get(3);
+        self.op_i32_or();
+        self.op_local_set(2);
+        self.op_local_get(3);
+        self.op_i32_or();
+        self.op_local_set(2);
+        self.op_local_set(8);
+        self.op_local_set(8);
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+    }
+
+    /// Computes the unsigned 64-bit integer remainder (modulus) using only 32-bit arithmetic,
+    /// returning the 64-bit remainder as two `u32` limbs (low, high).
+    ///
+    /// Emulates full unsigned 64-bit remainder operation for platforms or VMs lacking native
+    /// 64-bit division/modulo, such as WASM VMs with 32-bit stack elements.
+    ///
+    /// # Arguments
+    /// - `n_lo`, `n_hi`: Low and high 32 bits of the dividend (`n = (n_hi << 32) | n_lo`,
+    ///   interpreted as u64)
+    /// - `d_lo`, `d_hi`: Low and high 32 bits of the divisor (`d = (d_hi << 32) | d_lo`,
+    ///   interpreted as u64)
+    ///
+    /// # Returns
+    /// - `(rem_lo, rem_hi)`: Low and high 32 bits of the unsigned remainder
+    ///
+    /// # Algorithm
+    /// - Traps on division by zero, matching WASM and Rust semantics.
+    /// - Fast path: When divisor fits in 32 bits, uses a custom 64-by-32 remainder loop.
+    /// - General path: For arbitrary 64-bit divisors, performs classic binary long division over 64
+    ///   iterations, building up quotient and remainder bitwise using only 32-bit arithmetic.
+    /// - Returns the unsigned remainder as two 32-bit limbs.
+    ///
+    /// # Panics / Traps
+    /// - Division by zero triggers a trap (`core::intrinsics::abort()`).
+    ///
+    /// # Note
+    /// Input and output values are two-limb representations of unsigned 64-bit integers.
+    ///
+    /// Max stack height: 14
+    pub fn op_i64_rem_u(&mut self) {
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_local_get(7);
+        self.op_i32_eqz();
+        self.op_br_if_nez(112);
+        self.op_i32_const(0);
+        self.op_local_set(6);
+        self.op_i32_const(64);
+        self.op_local_set(5);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_local_get(4);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(10);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(3);
+        self.op_local_get(6);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(5);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_tee(7);
+        self.op_local_get(8);
+        self.op_i32_gt_u();
+        self.op_br_if_nez(12);
+        self.op_local_get(6);
+        self.op_local_get(8);
+        self.op_i32_ne();
+        self.op_br_if_nez(5);
+        self.op_local_get(3);
+        self.op_local_get(9);
+        self.op_i32_ge_u();
+        self.op_br_if_nez(4);
+        self.op_local_get(3);
+        self.op_local_set(4);
+        self.op_br(13);
+        self.op_local_get(6);
+        self.op_local_get(8);
+        self.op_i32_sub();
+        self.op_local_get(4);
+        self.op_local_get(10);
+        self.op_i32_lt_u();
+        self.op_i32_sub();
+        self.op_local_set(6);
+        self.op_local_get(3);
+        self.op_local_get(9);
+        self.op_i32_sub();
+        self.op_local_set(4);
+        self.op_local_get(9);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_get(11);
+        self.op_i32_const(31);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(9);
+        self.op_local_get(10);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_local_set(10);
+        self.op_local_get(5);
+        self.op_i32_const(-1);
+        self.op_i32_add();
+        self.op_local_tee(6);
+        self.op_br_if_nez(-58);
+        self.op_local_get(6);
+        self.op_i32_const(0);
+        self.op_i32_const(32);
+        self.op_i32_const(0);
+        self.op_local_get(2);
+        self.op_i32_const(63);
+        self.op_i32_and();
+        self.op_local_set(2);
+        self.op_local_get(2);
+        self.op_br_if_eqz(32);
+        self.op_local_get(2);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_br_if_eqz(10);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_const(32);
+        self.op_i32_sub();
+        self.op_i32_shl();
+        self.op_local_set(3);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_br(19);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_shl();
+        self.op_local_set(4);
+        self.op_local_get(3);
+        self.op_local_get(3);
+        self.op_i32_shl();
+        self.op_local_set(3);
+        self.op_local_get(4);
+        self.op_i32_const(32);
+        self.op_local_get(4);
+        self.op_i32_const(31);
+        self.op_i32_and();
+        self.op_i32_sub();
+        self.op_i32_shr_u();
+        self.op_local_get(4);
+        self.op_i32_or();
+        self.op_local_set(3);
+        self.op_drop();
+        self.op_drop();
+        self.op_local_set(2);
+        self.op_local_set(2);
+        self.op_br(132);
+        self.op_local_get(8);
+        self.op_i32_eqz();
+        self.op_br_if_nez(128);
+        self.op_i32_const(62);
+        self.op_local_set(4);
+        self.op_i32_const(0);
+        self.op_local_set(6);
+        self.op_i32_const(0);
+        self.op_local_get(10);
+        self.op_local_get(6);
+        self.op_i32_shr_u();
+        self.op_i32_const(1);
+        self.op_i32_and();
+        self.op_local_get(6);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_select();
+        self.op_i32_const(0);
+        self.op_local_get(11);
+        self.op_local_get(7);
+        self.op_i32_const(1);
+        self.op_i32_add();
+        self.op_local_tee(7);
+        self.op_i32_shr_u();
+        self.op_i32_const(1);
+        self.op_i32_and();
+        self.op_local_get(6);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_select();
+        self.op_local_get(8);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_i32_or();
+        self.op_local_tee(8);
+        self.op_i32_const(0);
+        self.op_local_get(11);
+        self.op_local_get(10);
+        self.op_local_get(13);
+        self.op_i32_lt_u();
+        self.op_select();
+        self.op_i32_sub();
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_i32_or();
+        self.op_local_tee(7);
+        self.op_i32_const(0);
+        self.op_local_get(10);
+        self.op_local_get(9);
+        self.op_local_get(12);
+        self.op_i32_lt_u();
+        self.op_select();
+        self.op_i32_sub();
+        self.op_local_set(6);
+        self.op_local_get(4);
+        self.op_i32_const(-2);
+        self.op_i32_add();
+        self.op_local_tee(5);
+        self.op_i32_const(-2);
+        self.op_i32_ne();
+        self.op_br_if_nez(-53);
+        self.op_i32_const(62);
+        self.op_local_set(9);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_local_get(6);
+        self.op_local_get(10);
+        self.op_i32_const(30);
+        self.op_i32_and();
+        self.op_i32_shr_u();
+        self.op_local_get(11);
+        self.op_local_get(11);
+        self.op_i32_shr_u();
+        self.op_local_get(11);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_select();
+        self.op_i32_const(1);
+        self.op_i32_and();
+        self.op_local_get(7);
+        self.op_local_get(11);
+        self.op_i32_const(1);
+        self.op_i32_add();
+        self.op_local_tee(6);
+        self.op_i32_shr_u();
+        self.op_local_get(12);
+        self.op_local_get(6);
+        self.op_i32_shr_u();
+        self.op_local_get(6);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_select();
+        self.op_i32_const(1);
+        self.op_i32_and();
+        self.op_local_get(6);
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_i32_or();
+        self.op_local_tee(6);
+        self.op_i32_const(0);
+        self.op_local_get(11);
+        self.op_local_get(8);
+        self.op_local_get(13);
+        self.op_i32_lt_u();
+        self.op_select();
+        self.op_i32_sub();
+        self.op_i32_const(1);
+        self.op_i32_shl();
+        self.op_i32_or();
+        self.op_local_tee(5);
+        self.op_i32_const(0);
+        self.op_local_get(10);
+        self.op_local_get(7);
+        self.op_local_get(12);
+        self.op_i32_lt_u();
+        self.op_select();
+        self.op_i32_sub();
+        self.op_local_set(4);
+        self.op_local_get(9);
+        self.op_i32_const(-2);
+        self.op_i32_add();
+        self.op_local_tee(10);
+        self.op_i32_const(-2);
+        self.op_i32_ne();
+        self.op_br_if_nez(-59);
+        self.op_i32_const(0);
+        self.op_i32_const(0);
+        self.op_local_set(2);
+        self.op_local_set(2);
+        self.op_br(2);
+        self.op_trap(TrapCode::IntegerDivisionByZero);
+        self.op_local_get(2);
+        self.op_local_get(2);
+        self.op_local_get(6);
+        self.op_i32_const(0);
+        self.op_local_get(3);
+        self.op_i32_or();
+        self.op_local_set(2);
+        self.op_local_get(3);
+        self.op_i32_or();
+        self.op_local_set(2);
+        self.op_local_set(10);
+        self.op_local_set(10);
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
+        self.op_drop();
     }
 }

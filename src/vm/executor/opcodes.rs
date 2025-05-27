@@ -7,7 +7,7 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode>
         {
             let stack = vm.value_stack.dump_stack(vm.sp);
             println!(
-                "{:04x}:\t {} \tstack({}):{:?}",
+                "{:04}:\t {} \tstack({}):{:?}",
                 vm.ip.pc(),
                 instr,
                 stack.len(),

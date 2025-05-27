@@ -10,7 +10,7 @@ pub struct StateRouterConfig {
     pub opcode: Option<Opcode>,
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct CompilationConfig {
     /// State router is used to choose one of the function based on the index provided.
     /// P.S: this flag doesn't work if you have WASM's start entry point.
@@ -31,13 +31,26 @@ pub struct CompilationConfig {
     pub allow_malformed_entrypoint_func_type: bool,
     /// Should fuel-charging instructions be injected before each builtin call.
     pub builtins_consume_fuel: bool,
-    /// A boolean field that indicates whether floating-point operations are enabled. It's used
-    /// only for running WebAssembly testing suite to make sure rWasm fully satisfies WebAssembly
-    /// standards.
-    pub enable_floating_point: bool,
     /// We don't support imported global, but you can set a default value for these values instead.
     /// Thus is required by testing suite.
     pub default_imported_global_value: Option<i64>,
+    /// Enable fuel metering (always eager mode)
+    pub consume_fuel: bool,
+}
+
+impl Default for CompilationConfig {
+    fn default() -> Self {
+        Self {
+            state_router: None,
+            entrypoint_name: None,
+            import_linker: None,
+            wrap_import_functions: false,
+            allow_malformed_entrypoint_func_type: false,
+            builtins_consume_fuel: false,
+            default_imported_global_value: None,
+            consume_fuel: true,
+        }
+    }
 }
 
 impl CompilationConfig {
@@ -98,16 +111,16 @@ impl CompilationConfig {
         self
     }
 
-    pub fn with_enable_floating_point(mut self, enable_floating_point: bool) -> Self {
-        self.enable_floating_point = enable_floating_point;
-        self
-    }
-
     pub fn with_default_imported_global_value(
         mut self,
         default_imported_global_value: i64,
     ) -> Self {
         self.default_imported_global_value = Some(default_imported_global_value);
+        self
+    }
+
+    pub fn with_consume_fuel(mut self, consume_fuel: bool) -> Self {
+        self.consume_fuel = consume_fuel;
         self
     }
 }

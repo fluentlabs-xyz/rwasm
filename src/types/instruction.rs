@@ -255,9 +255,20 @@ pub enum Opcode {
 
 impl core::fmt::Display for Opcode {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let name = format!("{:?}", self);
-        let name: Vec<_> = name.split('(').collect();
-        write!(f, "{}", name[0])
+        if f.alternate() {
+            let name = format!("{:?}", self);
+            let name: Vec<_> = name.split('(').collect();
+            write!(f, "{}", name[0])
+        } else {
+            match self {
+                Opcode::I32Const(value) => write!(f, "I32Const({})", value),
+                Opcode::ConsumeFuel(value) => write!(f, "ConsumeFuel({})", value.to_u64()),
+                Opcode::Br(value) => write!(f, "Br({})", value.to_i32()),
+                Opcode::BrIfEqz(value) => write!(f, "BrIfEqz({})", value.to_i32()),
+                Opcode::BrIfNez(value) => write!(f, "BrIfNez({})", value.to_i32()),
+                _ => write!(f, "{:?}", self),
+            }
+        }
     }
 }
 

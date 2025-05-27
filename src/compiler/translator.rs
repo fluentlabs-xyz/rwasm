@@ -1,5 +1,3 @@
-#[cfg(feature = "fpu")]
-use crate::F32;
 use crate::{
     compiler::{
         control_flow::{
@@ -215,7 +213,8 @@ impl FuncTranslatorAllocations {
             if is_return_call {
                 is.op_return_call_internal(function_index - imported_funcs_len + 1);
             } else {
-                let func_loc = is.op_call_internal(function_index - imported_funcs_len + 1);
+                let func_loc = is.loc();
+                is.op_call_internal(function_index - imported_funcs_len + 1);
                 self.func_call_locs
                     .push((InstrLoc::from_u32(func_loc), is_entrypoint));
             }
@@ -257,7 +256,7 @@ pub struct InstructionTranslator {
     /// The `fuel_costs` field represents an instance of the `FuelCosts` structure.
     /// This field is used to store and manage data related to the costs associated
     /// with fuel consumption, such as pricing or expenditure for a particular use case.
-    pub(crate) fuel_costs: FuelCosts,
+    pub(crate) fuel_costs: Option<FuelCosts>,
     /// Stores and resolves local variable types.
     pub(crate) locals: LocalsRegistry,
 }
@@ -330,8 +329,10 @@ impl InstructionTranslator {
     /// to the sequence of instructions. The finalized location of this instruction in
     /// the instruction sequence is then returned.
     pub fn push_consume_fuel_base(&mut self) -> InstrLoc {
-        let base_fuel = u32::try_from(self.fuel_costs.base).expect("base fuel exceeds u32 size");
-        let instr_loc = self.alloc.instruction_set.op_consume_fuel(base_fuel);
+        let base_fuel = u32::try_from(self.fuel_costs.map(|v| v.base).unwrap())
+            .expect("base fuel exceeds u32 size");
+        let instr_loc = self.alloc.instruction_set.loc();
+        self.alloc.instruction_set.op_consume_fuel(base_fuel);
         InstrLoc::from_u32(instr_loc)
     }
 
@@ -349,8 +350,15 @@ impl InstructionTranslator {
     /// Does nothing if gas metering is disabled.
     ///
     /// [`ConsumeFuel`]: enum.Instruction.html#variant.ConsumeFuel
-    pub(crate) fn bump_fuel_consumption(&mut self, delta: u64) -> Result<(), CompilationError> {
+    pub(crate) fn bump_fuel_consumption<F: FnOnce(&FuelCosts) -> u64>(
+        &mut self,
+        delta: F,
+    ) -> Result<(), CompilationError> {
         if let Some(instr) = self.consume_fuel_instr() {
+            let Some(fuel_costs) = self.fuel_costs.as_ref() else {
+                return Ok(());
+            };
+            let delta = delta(fuel_costs);
             self.alloc
                 .instruction_set
                 .bump_fuel_consumption(instr.into_u32(), delta)?;
@@ -383,7 +391,7 @@ impl InstructionTranslator {
     }
 
     pub fn is_fuel_metering_enabled(&self) -> bool {
-        true
+        self.fuel_costs.is_some()
     }
 
     /// Try resolving the `label` for the given `instr`.
@@ -608,10 +616,6 @@ impl InstructionTranslator {
         Ok(())
     }
 
-    fn fuel_costs(&self) -> &FuelCosts {
-        &self.fuel_costs
-    }
-
     /// Returns the relative depth on the stack of the local variable.
     fn relative_local_depth(&self, local_idx: u32) -> u32 {
         debug_assert!(self.is_reachable());
@@ -678,7 +682,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_unreachable(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
             builder.alloc.instruction_set.op_unreachable();
             builder.reachable = false;
             Ok(())
@@ -746,7 +750,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let stack_height = self.frame_stack_height(block_type);
             let else_label = self.alloc.labels.new_label();
             let end_label = self.alloc.labels.new_label();
-            self.bump_fuel_consumption(self.fuel_costs.base)?;
+            self.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
             let branch_offset = self.branch_offset(else_label)?;
             self.alloc.instruction_set.op_br_if_eqz(branch_offset);
             let consume_fuel = self
@@ -796,7 +800,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         // Create the jump from the end of the `then` block to the `if`
         // block's end label in case the end of `then` is reachable.
         if reachable {
-            self.bump_fuel_consumption(self.fuel_costs.base)?;
+            self.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
             let offset = self.branch_offset(if_frame.end_label())?;
             self.alloc.instruction_set.op_br(offset);
         }
@@ -938,7 +942,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
-                    builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+                    builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
                     translate_drop_keep(
                         &mut builder.alloc.instruction_set,
                         drop_keep,
@@ -963,14 +967,14 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
-                    builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+                    builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
                     if drop_keep.is_noop() {
                         let offset = builder.branch_offset(end_label)?;
                         builder.alloc.instruction_set.op_br_if_nez(offset);
                     } else {
-                        builder.bump_fuel_consumption(
-                            builder.fuel_costs().fuel_for_drop_keep(drop_keep),
-                        )?;
+                        builder.bump_fuel_consumption(|fuel_costs| {
+                            fuel_costs.fuel_for_drop_keep(drop_keep)
+                        })?;
                         builder
                             .alloc
                             .instruction_set
@@ -1025,6 +1029,14 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 InstrLoc::from_u32(base.into_u32() + offset as u32)
             }
 
+            fn fuel_for_drop_keep(builder: &mut InstructionTranslator, drop_keep: DropKeep) -> u64 {
+                if let Some(fuel_costs) = builder.fuel_costs {
+                    fuel_costs.fuel_for_drop_keep(drop_keep)
+                } else {
+                    0
+                }
+            }
+
             fn compute_instr(
                 builder: &mut InstructionTranslator,
                 n: usize,
@@ -1033,16 +1045,16 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             ) -> Result<BrTableTarget, CompilationError> {
                 match builder.acquire_target(depth.into_u32())? {
                     AcquiredTarget::Branch(label, drop_keep) => {
-                        *max_drop_keep_fuel = (*max_drop_keep_fuel)
-                            .max(builder.fuel_costs().fuel_for_drop_keep(drop_keep));
+                        *max_drop_keep_fuel =
+                            (*max_drop_keep_fuel).max(fuel_for_drop_keep(builder, drop_keep));
                         let base = builder.current_pc();
                         let instr = offset_instr(base, 2 * n + 1);
                         let offset = builder.try_resolve_label_for(label, instr)?;
                         Ok(BrTableTarget::Br(offset, drop_keep))
                     }
                     AcquiredTarget::Return(drop_keep) => {
-                        *max_drop_keep_fuel = (*max_drop_keep_fuel)
-                            .max(builder.fuel_costs().fuel_for_drop_keep(drop_keep));
+                        *max_drop_keep_fuel =
+                            (*max_drop_keep_fuel).max(fuel_for_drop_keep(builder, drop_keep));
                         Ok(BrTableTarget::Return(drop_keep))
                     }
                 }
@@ -1079,7 +1091,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 })
                 .map(RelativeDepth::from_u32);
 
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
             // The maximum fuel costs among all `br_table` arms.
             // We use this to charge fuel once at the entry of a `br_table`
             // for the most expensive arm of all of its arms.
@@ -1106,7 +1118,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             for branch in builder.alloc.br_table_branches.drain(..) {
                 builder.alloc.instruction_set.push(branch);
             }
-            builder.bump_fuel_consumption(max_drop_keep_fuel)?;
+            builder.bump_fuel_consumption(|_| max_drop_keep_fuel)?;
             builder.reachable = false;
             Ok(())
         })
@@ -1115,8 +1127,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_return(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
             let drop_keep = builder.drop_keep_return()?;
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.bump_fuel_consumption(builder.fuel_costs().fuel_for_drop_keep(drop_keep))?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.fuel_for_drop_keep(drop_keep))?;
             translate_drop_keep(
                 &mut builder.alloc.instruction_set,
                 drop_keep,
@@ -1130,7 +1142,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_call(&mut self, function_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().call)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.call)?;
             let func_type_idx = builder.alloc.resolve_func_type_index(function_index);
             builder.adjust_value_stack_for_call(func_type_idx);
             builder
@@ -1147,7 +1159,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         _table_byte: u8,
     ) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().call)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.call)?;
             builder.stack_height.pop1();
             builder.alloc.stack_types.pop().unwrap();
             builder.adjust_value_stack_for_call(func_type_index as FuncTypeIdx);
@@ -1166,8 +1178,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let func_type_idx = builder.alloc.resolve_func_type_index(function_index);
             let func_type = &builder.alloc.func_types[func_type_idx as usize];
             let drop_keep = builder.drop_keep_return_call(&func_type)?;
-            builder.bump_fuel_consumption(builder.fuel_costs().call)?;
-            builder.bump_fuel_consumption(builder.fuel_costs().fuel_for_drop_keep(drop_keep))?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.call)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.fuel_for_drop_keep(drop_keep))?;
             translate_drop_keep(
                 &mut builder.alloc.instruction_set,
                 drop_keep,
@@ -1193,8 +1205,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let mut drop_keep = builder.drop_keep_return_call(&func_type)?;
             // TODO(dmitry123): "why? is there a bug in [drop_keep_return_call]?"
             drop_keep.keep += 1;
-            builder.bump_fuel_consumption(builder.fuel_costs().call)?;
-            builder.bump_fuel_consumption(builder.fuel_costs().fuel_for_drop_keep(drop_keep))?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.call)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.fuel_for_drop_keep(drop_keep))?;
             translate_drop_keep(
                 &mut builder.alloc.instruction_set,
                 drop_keep,
@@ -1221,7 +1233,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_drop(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
             builder.stack_height.pop1();
             let item_type = builder.alloc.stack_types.pop().unwrap();
             builder.alloc.instruction_set.op_drop();
@@ -1235,7 +1247,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_select(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
             builder.stack_height.pop3();
             builder.stack_height.push1();
             builder.alloc.stack_types.pop().unwrap();
@@ -1263,7 +1275,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_local_get(&mut self, local_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
             let local_depth = builder.relative_local_depth(local_index);
             let value =
                 builder.alloc.stack_types[builder.alloc.stack_types.len() - local_depth as usize];
@@ -1281,7 +1293,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_local_set(&mut self, local_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
             builder.stack_height.pop1();
             let value_type = builder.alloc.stack_types.pop().unwrap();
             let local_depth = builder.relative_local_depth(local_index);
@@ -1297,7 +1309,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_local_tee(&mut self, local_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
             let local_depth = builder.relative_local_depth(local_index);
             let expressed_depth = builder.get_expressed_depth(local_depth);
             let value_type = builder.alloc.stack_types.last().unwrap();
@@ -1319,7 +1331,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_global_get(&mut self, global_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             let global_type = builder.resolve_global_type(global_index).clone();
             builder.alloc.stack_types.push(global_type.content_type);
             if global_type.content_type == ValType::I64 || global_type.content_type == ValType::F64
@@ -1346,7 +1358,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_global_set(&mut self, global_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             let global_type = builder.resolve_global_type(global_index).clone();
             debug_assert!(global_type.mutable);
             builder.alloc.stack_types.pop().unwrap();
@@ -1368,33 +1380,17 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i32_load(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I32, Opcode::I32Load)
+        self.translate_load(memarg, ValType::I32, InstructionSet::op_i32_load, 0)
     }
 
     fn visit_i64_load(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
-            let popped_type = builder.alloc.stack_types.pop().unwrap();
-            debug_assert_eq!(popped_type, ValType::I32);
-            builder.alloc.stack_types.push(ValType::I64);
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_i64_load(offset);
-            Ok(())
-        })
+        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load, 2)
     }
 
     fn visit_f32_load(&mut self, memarg: MemArg) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_load(memarg, ValType::F32, Opcode::F32Load)
+            self.translate_load(memarg, ValType::F32, InstructionSet::op_f32_load, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -1403,149 +1399,64 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_load(&mut self, memarg: MemArg) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_load(memarg, ValType::F64, Opcode::F64Load)
+            self.translate_load(memarg, ValType::F64, InstructionSet::op_f64_load, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_load8_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I32, Opcode::I32Load8S)
+        self.translate_load(memarg, ValType::I32, InstructionSet::op_i32_load8_s, 0)
     }
 
     fn visit_i32_load8_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I32, Opcode::I32Load8U)
+        self.translate_load(memarg, ValType::I32, InstructionSet::op_i32_load8_u, 0)
     }
 
     fn visit_i32_load16_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I32, Opcode::I32Load16S)
+        self.translate_load(memarg, ValType::I32, InstructionSet::op_i32_load16_s, 0)
     }
 
     fn visit_i32_load16_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I32, Opcode::I32Load16U)
+        self.translate_load(memarg, ValType::I32, InstructionSet::op_i32_load16_u, 0)
     }
 
     fn visit_i64_load8_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder
-                .alloc
-                .instruction_set
-                .op_i64_load8_s(memarg.offset as u32);
-            Ok(())
-        })
+        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load8_s, 1)
     }
 
     fn visit_i64_load8_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
-            builder.stack_height.push1();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-            let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_i64_load8_u(offset);
-            Ok(())
-        })
+        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load8_u, 1)
     }
 
     fn visit_i64_load16_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-            let offset = AddressOffset::from(memarg.offset as u32);
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.alloc.instruction_set.op_i64_load16_s(offset);
-            Ok(())
-        })
+        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load16_s, 1)
     }
 
     fn visit_i64_load16_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
-            builder.stack_height.push1();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-            let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_i64_load16_u(offset);
-            Ok(())
-        })
+        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load16_u, 1)
     }
 
     fn visit_i64_load32_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder
-                .alloc
-                .instruction_set
-                .op_i64_load32_s(memarg.offset as u32);
-            Ok(())
-        })
+        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load32_s, 1)
     }
 
     fn visit_i64_load32_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-            let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_i64_load32_u(offset);
-            Ok(())
-        })
+        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load32_u, 1)
     }
 
     fn visit_i32_store(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::I32, Opcode::I32Store)
+        self.translate_store(memarg, ValType::I32, InstructionSet::op_i32_store, 0)
     }
 
     fn visit_i64_store(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            let offset = AddressOffset::from(memarg.offset as u32);
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.pop1();
-            builder.stack_height.pop2();
-            builder.alloc.instruction_set.op_i64_store(offset);
-            Ok(())
-        })
+        self.translate_store(memarg, ValType::I64, InstructionSet::op_i64_store, 2)
     }
 
     fn visit_f32_store(&mut self, memarg: MemArg) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_store(memarg, ValType::F32, Opcode::F32Store)
+            self.translate_store(memarg, ValType::F32, InstructionSet::op_f32_store, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -1554,72 +1465,35 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_store(&mut self, memarg: MemArg) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_store(memarg, ValType::F64, Opcode::F64Store)
+            self.translate_store(memarg, ValType::F64, InstructionSet::op_f64_store, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_store8(&mut self, memarg: MemArg) -> Self::Output {
-        #[cfg(feature = "fpu")]
-        {
-            self.translate_store(memarg, ValType::I32, Opcode::I32Store8)
-        }
-        #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_store(memarg, ValType::I32, InstructionSet::op_i32_store8, 0)
     }
 
     fn visit_i32_store16(&mut self, memarg: MemArg) -> Self::Output {
-        #[cfg(feature = "fpu")]
-        {
-            self.translate_store(memarg, ValType::I32, Opcode::I32Store16)
-        }
-        #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_store(memarg, ValType::I32, InstructionSet::op_i32_store16, 0)
     }
 
     fn visit_i64_store8(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
-            builder.stack_height.pop3();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_i64_store8(offset);
-            Ok(())
-        })
+        self.translate_store(memarg, ValType::I64, InstructionSet::op_i64_store8, 0)
     }
 
     fn visit_i64_store16(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
-            builder.stack_height.pop3();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_i64_store16(offset);
-            Ok(())
-        })
+        self.translate_store(memarg, ValType::I64, InstructionSet::op_i64_store16, 0)
     }
 
     fn visit_i64_store32(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
-            builder.stack_height.pop3();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.op_i64_store32(offset);
-            Ok(())
-        })
+        self.translate_store(memarg, ValType::I64, InstructionSet::op_i64_store32, 0)
     }
 
     fn visit_memory_size(&mut self, memory_index: u32, _mem_byte: u8) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.stack_height.push1();
             builder.alloc.stack_types.push(ValType::I32);
@@ -1631,7 +1505,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_memory_grow(&mut self, memory_index: u32, _mem_byte: u8) -> Self::Output {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             // for rWASM, we inject memory limit error check, if we exceed the number of allowed
             // pages, then we push `u32::MAX` value on the stack that is equal to memory grow
             // overflow error
@@ -1666,9 +1540,9 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_i32_const(&mut self, value: i32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.push1();
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
             builder.alloc.stack_types.push(ValType::I32);
+            builder.stack_height.push1();
             builder.alloc.instruction_set.op_i32_const(value);
             Ok(())
         })
@@ -1676,10 +1550,9 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_i64_const(&mut self, value: i64) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.push1();
-            builder.stack_height.push1();
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
             builder.alloc.stack_types.push(ValType::I64);
+            builder.stack_height.push2();
             builder.alloc.instruction_set.op_i64_const(value);
             Ok(())
         })
@@ -1689,13 +1562,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         #[cfg(feature = "fpu")]
         {
             self.translate_if_reachable(|builder| {
-                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-                builder.stack_height.push1();
+                builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
                 builder.alloc.stack_types.push(ValType::F32);
-                builder
-                    .alloc
-                    .instruction_set
-                    .op_i32_const(F32::from(value.bits()));
+                builder.stack_height.push1();
+                use crate::F32;
+                let value = F32::from(value.bits());
+                builder.alloc.instruction_set.op_i32_const(value);
                 Ok(())
             })
         }
@@ -1707,13 +1579,11 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         #[cfg(feature = "fpu")]
         {
             self.translate_if_reachable(|builder| {
-                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-                builder.stack_height.push_type(ValType::F64);
+                builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
                 builder.alloc.stack_types.push(ValType::F64);
-                builder
-                    .alloc
-                    .instruction_set
-                    .op_i64_const(value.bits() as i64);
+                builder.stack_height.push2();
+                let value = value.bits() as i64;
+                builder.alloc.instruction_set.op_i64_const(value);
                 Ok(())
             })
         }
@@ -1737,303 +1607,110 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_ref_func(&mut self, function_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.alloc.stack_types.push(ValType::FuncRef);
+            builder.stack_height.push1();
             // We do +1 here because 0 offset is reserved for `null` value and an entrypoint
             builder
                 .alloc
                 .instruction_set
                 .op_ref_func(function_index + 1);
-            builder.stack_height.push1();
-            builder.alloc.stack_types.push(ValType::FuncRef);
             Ok(())
         })
     }
 
     fn visit_i32_eqz(&mut self) -> Self::Output {
-        self.translate_unary_cmp(ValType::I32, Opcode::I32Eqz)
+        self.translate_unary_compare(InstructionSet::op_i32_eqz, 0)
     }
 
     fn visit_i32_eq(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::I32, Opcode::I32Eq)
+        self.translate_binary_compare(InstructionSet::op_i32_eq, 0)
     }
 
     fn visit_i32_ne(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::I32, Opcode::I32Ne)
+        self.translate_binary_compare(InstructionSet::op_i32_ne, 0)
     }
 
     fn visit_i32_lt_s(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::I32, Opcode::I32LtS)
+        self.translate_binary_compare(InstructionSet::op_i32_lt_s, 0)
     }
 
     fn visit_i32_lt_u(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::I32, Opcode::I32LtU)
+        self.translate_binary_compare(InstructionSet::op_i32_lt_u, 0)
     }
 
     fn visit_i32_gt_s(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::I32, Opcode::I32GtS)
+        self.translate_binary_compare(InstructionSet::op_i32_gt_s, 0)
     }
 
     fn visit_i32_gt_u(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::I32, Opcode::I32GtU)
+        self.translate_binary_compare(InstructionSet::op_i32_gt_u, 0)
     }
 
     fn visit_i32_le_s(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::I32, Opcode::I32LeS)
+        self.translate_binary_compare(InstructionSet::op_i32_le_s, 0)
     }
 
     fn visit_i32_le_u(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::I32, Opcode::I32LeU)
+        self.translate_binary_compare(InstructionSet::op_i32_le_u, 0)
     }
 
     fn visit_i32_ge_s(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::I32, Opcode::I32GeS)
+        self.translate_binary_compare(InstructionSet::op_i32_ge_s, 0)
     }
 
     fn visit_i32_ge_u(&mut self) -> Self::Output {
-        self.translate_binary_cmp(ValType::I32, Opcode::I32GeU)
+        self.translate_binary_compare(InstructionSet::op_i32_ge_u, 0)
     }
 
     fn visit_i64_eqz(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-
-            builder.alloc.instruction_set.op_i64_eqz();
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I32);
-            Ok(())
-        })
+        self.translate_unary_compare(InstructionSet::op_i64_eqz, 0)
     }
 
     fn visit_i64_eq(&mut self) -> Self::Output {
-        self.translate_expressed_binary_operation(Opcode::I32Eq, |builder| {
-            builder.alloc.instruction_set.op_i64_eq();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I32);
-            Ok(())
-        })
+        self.translate_binary_compare(InstructionSet::op_i64_eq, 1)
     }
 
     fn visit_i64_ne(&mut self) -> Self::Output {
-        self.translate_expressed_binary_operation(Opcode::I32Ne, |builder| {
-            builder.alloc.instruction_set.op_i64_ne();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I32);
-            Ok(())
-        })
+        self.translate_binary_compare(InstructionSet::op_i64_ne, 1)
     }
 
     fn visit_i64_lt_s(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I32);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop_n(4);
-
-            builder.alloc.instruction_set.op_i64_lt_s();
-            Ok(())
-        })
+        self.translate_binary_compare(InstructionSet::op_i64_lt_s, 2)
     }
 
     fn visit_i64_lt_u(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I32);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop_n(4);
-
-            builder.alloc.instruction_set.op_i64_lt_u();
-            Ok(())
-        })
+        self.translate_binary_compare(InstructionSet::op_i64_lt_u, 2)
     }
 
     fn visit_i64_gt_s(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I32);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop_n(4);
-
-            builder.alloc.instruction_set.op_i64_gt_s();
-            Ok(())
-        })
+        self.translate_binary_compare(InstructionSet::op_i64_gt_s, 2)
     }
 
     fn visit_i64_gt_u(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I32);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop_n(4);
-
-            builder.alloc.instruction_set.op_i64_gt_u();
-            Ok(())
-        })
+        self.translate_binary_compare(InstructionSet::op_i64_gt_u, 2)
     }
 
     fn visit_i64_le_s(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I32);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop_n(4);
-
-            builder.alloc.instruction_set.op_i64_le_s();
-            Ok(())
-        })
+        self.translate_binary_compare(InstructionSet::op_i64_le_s, 2)
     }
 
     fn visit_i64_le_u(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I32);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop_n(4);
-
-            builder.alloc.instruction_set.op_i64_le_u();
-            Ok(())
-        })
+        self.translate_binary_compare(InstructionSet::op_i64_le_u, 2)
     }
 
     fn visit_i64_ge_s(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I32);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop_n(4);
-
-            builder.alloc.instruction_set.op_i64_ge_s();
-            Ok(())
-        })
+        self.translate_binary_compare(InstructionSet::op_i64_ge_s, 2)
     }
 
     fn visit_i64_ge_u(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I32);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop_n(4);
-
-            builder.alloc.instruction_set.op_i64_ge_u();
-            Ok(())
-        })
+        self.translate_binary_compare(InstructionSet::op_i64_ge_u, 2)
     }
 
     fn visit_f32_eq(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_cmp(ValType::F32, Opcode::F32Eq)
+            self.translate_binary_compare(InstructionSet::op_f32_eq, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -2042,7 +1719,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_ne(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_cmp(ValType::F32, Opcode::F32Ne)
+            self.translate_binary_compare(InstructionSet::op_f32_ne, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -2051,7 +1728,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_lt(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_cmp(ValType::F32, Opcode::F32Lt)
+            self.translate_binary_compare(InstructionSet::op_f32_lt, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -2060,7 +1737,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_gt(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_cmp(ValType::F32, Opcode::F32Gt)
+            self.translate_binary_compare(InstructionSet::op_f32_gt, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -2069,7 +1746,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_le(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_cmp(ValType::F32, Opcode::F32Le)
+            self.translate_binary_compare(InstructionSet::op_f32_le, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -2078,7 +1755,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_ge(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_cmp(ValType::F32, Opcode::F32Ge)
+            self.translate_binary_compare(InstructionSet::op_f32_ge, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -2087,7 +1764,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_eq(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_cmp(ValType::F64, Opcode::F64Eq)
+            self.translate_binary_compare(InstructionSet::op_f64_eq, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -2096,7 +1773,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_ne(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_cmp(ValType::F64, Opcode::F64Ne)
+            self.translate_binary_compare(InstructionSet::op_f64_ne, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -2105,7 +1782,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_lt(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_cmp(ValType::F64, Opcode::F64Lt)
+            self.translate_binary_compare(InstructionSet::op_f64_lt, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -2114,7 +1791,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_gt(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_cmp(ValType::F64, Opcode::F64Gt)
+            self.translate_binary_compare(InstructionSet::op_f64_gt, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -2123,7 +1800,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_le(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_cmp(ValType::F64, Opcode::F64Le)
+            self.translate_binary_compare(InstructionSet::op_f64_le, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -2132,1078 +1809,160 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_ge(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_cmp(ValType::F64, Opcode::F64Ge)
+            self.translate_binary_compare(InstructionSet::op_f64_ge, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i32_clz(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::I32, Opcode::I32Clz)
+        self.translate_unary(InstructionSet::op_i32_clz, 0)
     }
 
     fn visit_i32_ctz(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::I32, Opcode::I32Ctz)
+        self.translate_unary(InstructionSet::op_i32_ctz, 0)
     }
 
     fn visit_i32_popcnt(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::I32, Opcode::I32Popcnt)
+        self.translate_unary(InstructionSet::op_i32_popcnt, 0)
     }
 
     fn visit_i32_add(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32Add)
+        self.translate_binary(InstructionSet::op_i32_add, 0)
     }
 
     fn visit_i32_sub(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32Sub)
+        self.translate_binary(InstructionSet::op_i32_sub, 0)
     }
 
     fn visit_i32_mul(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32Mul)
+        self.translate_binary(InstructionSet::op_i32_mul, 0)
     }
 
     fn visit_i32_div_s(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32DivS)
+        self.translate_binary(InstructionSet::op_i32_div_s, 0)
     }
 
     fn visit_i32_div_u(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32DivU)
+        self.translate_binary(InstructionSet::op_i32_div_u, 0)
     }
 
     fn visit_i32_rem_s(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32RemS)
+        self.translate_binary(InstructionSet::op_i32_rem_s, 0)
     }
 
     fn visit_i32_rem_u(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32RemU)
+        self.translate_binary(InstructionSet::op_i32_rem_u, 0)
     }
 
     fn visit_i32_and(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32And)
+        self.translate_binary(InstructionSet::op_i32_and, 0)
     }
 
     fn visit_i32_or(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32Or)
+        self.translate_binary(InstructionSet::op_i32_or, 0)
     }
 
     fn visit_i32_xor(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32Xor)
+        self.translate_binary(InstructionSet::op_i32_xor, 0)
     }
 
     fn visit_i32_shl(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32Shl)
+        self.translate_binary(InstructionSet::op_i32_shl, 0)
     }
 
     fn visit_i32_shr_s(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32ShrS)
+        self.translate_binary(InstructionSet::op_i32_shr_s, 0)
     }
 
     fn visit_i32_shr_u(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32ShrU)
+        self.translate_binary(InstructionSet::op_i32_shr_u, 0)
     }
 
     fn visit_i32_rotl(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32Rotl)
+        self.translate_binary(InstructionSet::op_i32_rotl, 0)
     }
 
     fn visit_i32_rotr(&mut self) -> Self::Output {
-        self.translate_binary_operation(ValType::I32, Opcode::I32Rotr)
+        self.translate_binary(InstructionSet::op_i32_rotr, 0)
     }
 
     fn visit_i64_clz(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-
-            builder.alloc.instruction_set.op_i64_clz();
-            Ok(())
-        })
+        self.translate_unary(InstructionSet::op_i64_clz, 2)
     }
 
     fn visit_i64_ctz(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-
-            builder.alloc.instruction_set.op_i64_ctz();
-            Ok(())
-        })
+        self.translate_unary(InstructionSet::op_i64_ctz, 3)
     }
 
     fn visit_i64_popcnt(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.alloc.instruction_set.op_i64_popcnt();
-            Ok(())
-        })
+        self.translate_unary(InstructionSet::op_i64_popcnt, 1)
     }
 
     fn visit_i64_add(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_i64_add();
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_add, 8)
     }
 
     fn visit_i64_sub(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_i64_sub();
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_sub, 8)
     }
 
     fn visit_i64_mul(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-
-            builder.stack_height.pop4();
-            builder.stack_height.push_n(10);
-            builder.stack_height.pop_n(8);
-
-            builder.alloc.instruction_set.op_i64_mul();
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_mul, 8)
     }
 
     fn visit_i64_div_s(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            // divide by zero check
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_or();
-            builder.alloc.instruction_set.op_br_if_nez(3);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_i32_div_u();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            // integer overflow check
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_eqz(14);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_const(-2147483648);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_eqz(10);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_and();
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_eqz(4);
-            builder.alloc.instruction_set.op_i32_const(-2147483648);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_div_s();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            // zero division check
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_or();
-            builder.alloc.instruction_set.op_br_if_nez(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_br(186 + 4 + 4 - 6);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_i32_lt_s();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_br_if_eqz(11 + 4);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_local_set(5);
-            builder.alloc.instruction_set.op_br_if_nez(3);
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_set(2);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(7);
-            builder.alloc.instruction_set.op_local_get(7);
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_i32_lt_s();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_br_if_eqz(11 + 4);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_local_set(5);
-            builder.alloc.instruction_set.op_br_if_nez(3);
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_set(2);
-
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_select();
-
-            builder.stack_height.pop2();
-
-            builder.alloc.instruction_set.op_local_set(10);
-            builder.alloc.instruction_set.op_drop();
-
-            builder.stack_height.pop3();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-
-            builder.alloc.instruction_set.op_local_set(6);
-            builder.alloc.instruction_set.op_local_set(6);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_set(3);
-            builder.alloc.instruction_set.op_local_set(1);
-
-            builder.translate_i64_div_u();
-
-            builder.stack_height.pop_n(7);
-
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
-            builder.alloc.instruction_set.op_local_set(5);
-            builder.alloc.instruction_set.op_local_set(5);
-
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_eqz(5);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_set(3);
-            builder.alloc.instruction_set.op_local_set(1);
-            builder.alloc.instruction_set.op_br(22 - 6);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop2();
-
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_local_set(5);
-            builder.alloc.instruction_set.op_br_if_nez(3);
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_set(2);
-            builder.alloc.instruction_set.op_drop();
-
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_div_s, 17)
     }
 
     fn visit_i64_div_u(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-
-            builder.translate_i64_div_u();
-
-            builder.stack_height.pop_n(7);
-
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
-            builder.alloc.instruction_set.op_local_set(5);
-            builder.alloc.instruction_set.op_local_set(5);
-
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_div_u, 15)
     }
 
     fn visit_i64_rem_s(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_or();
-            builder.alloc.instruction_set.op_br_if_nez(3);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_i32_div_u();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_or();
-            builder.alloc.instruction_set.op_br_if_nez(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder
-                .alloc
-                .instruction_set
-                .op_br(158 + 4 + 4 - 2 + 15 + 7);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_i32_lt_s();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_br_if_eqz(11 + 4);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_local_set(5);
-            builder.alloc.instruction_set.op_br_if_nez(3);
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_set(2);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(7);
-            builder.alloc.instruction_set.op_local_get(7);
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_const(0);
-            builder.alloc.instruction_set.op_i32_lt_s();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_br_if_eqz(11 + 4);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_local_get(4);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_local_set(5);
-            builder.alloc.instruction_set.op_br_if_nez(3);
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_set(2);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_select();
-
-            builder.stack_height.pop2();
-
-            builder.alloc.instruction_set.op_local_set(10);
-            builder.alloc.instruction_set.op_drop();
-
-            builder.stack_height.pop3();
-            builder.stack_height.push1();
-            builder.stack_height.pop2();
-
-            builder.alloc.instruction_set.op_local_set(6);
-            builder.alloc.instruction_set.op_local_set(6);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_set(3);
-            builder.alloc.instruction_set.op_local_set(1);
-
-            builder.translate_i64_div_u();
-
-            builder.stack_height.pop_n(7);
-
-            builder.alloc.instruction_set.op_local_set(7);
-            builder.alloc.instruction_set.op_local_set(7);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_eq();
-            builder.alloc.instruction_set.op_br_if_eqz(5);
-            builder.alloc.instruction_set.op_local_get(2);
-            builder.alloc.instruction_set.op_local_set(3);
-            builder.alloc.instruction_set.op_local_set(1);
-            builder.alloc.instruction_set.op_br(16);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop2();
-
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.op_i32_const(-1);
-            builder.alloc.instruction_set.op_i32_xor();
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_local_set(5);
-            builder.alloc.instruction_set.op_br_if_nez(3);
-            builder.alloc.instruction_set.op_i32_const(1);
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_local_set(2);
-            builder.alloc.instruction_set.op_drop();
-
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_rem_s, 12)
     }
 
     fn visit_i64_rem_u(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-
-            builder.translate_i64_div_u();
-
-            builder.stack_height.pop_n(7);
-
-            builder.alloc.instruction_set.op_local_set(7);
-            builder.alloc.instruction_set.op_local_set(7);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_drop();
-
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_rem_u, 14)
     }
 
     fn visit_i64_and(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.alloc.instruction_set.op_i64_and();
-            builder.alloc.stack_types.pop().unwrap();
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_and, 1)
     }
 
     fn visit_i64_or(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.alloc.instruction_set.op_i64_or();
-            builder.alloc.stack_types.pop().unwrap();
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_or, 1)
     }
 
     fn visit_i64_xor(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.alloc.instruction_set.op_i64_xor();
-            builder.alloc.stack_types.pop().unwrap();
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_xor, 1)
     }
 
     fn visit_i64_shl(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_i64_shl();
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_shl, 4)
     }
 
     fn visit_i64_shr_s(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_i64_shr_s();
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_shr_s, 4)
     }
 
     fn visit_i64_shr_u(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.stack_types.pop().unwrap();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_i64_shr_u();
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_shr_u, 4)
     }
 
     fn visit_i64_rotl(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_i64_rotl();
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_rotl, 6)
     }
 
     fn visit_i64_rotr(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-
-            builder.alloc.stack_types.pop().unwrap();
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            builder.alloc.instruction_set.op_i64_rotr();
-            Ok(())
-        })
+        self.translate_binary(InstructionSet::op_i64_rotr, 6)
     }
 
     fn visit_f32_abs(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F32, Opcode::F32Abs)
+            self.translate_unary(InstructionSet::op_f32_abs, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3212,7 +1971,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_neg(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F32, Opcode::F32Neg)
+            self.translate_unary(InstructionSet::op_f32_neg, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3221,7 +1980,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_ceil(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F32, Opcode::F32Ceil)
+            self.translate_unary(InstructionSet::op_f32_ceil, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3230,7 +1989,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_floor(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F32, Opcode::F32Floor)
+            self.translate_unary(InstructionSet::op_f32_floor, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3239,7 +1998,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_trunc(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F32, Opcode::F32Trunc)
+            self.translate_unary(InstructionSet::op_f32_trunc, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3248,7 +2007,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_nearest(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F32, Opcode::F32Nearest)
+            self.translate_unary(InstructionSet::op_f32_nearest, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3257,7 +2016,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_sqrt(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F32, Opcode::F32Sqrt)
+            self.translate_unary(InstructionSet::op_f32_sqrt, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3266,7 +2025,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_add(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F32, Opcode::F32Add)
+            self.translate_binary(InstructionSet::op_f32_add, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3275,7 +2034,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_sub(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F32, Opcode::F32Sub)
+            self.translate_binary(InstructionSet::op_f32_sub, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3284,7 +2043,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_mul(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F32, Opcode::F32Mul)
+            self.translate_binary(InstructionSet::op_f32_mul, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3293,7 +2052,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_div(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F32, Opcode::F32Div)
+            self.translate_binary(InstructionSet::op_f32_div, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3302,7 +2061,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_min(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F32, Opcode::F32Min)
+            self.translate_binary(InstructionSet::op_f32_min, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3311,7 +2070,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_max(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F32, Opcode::F32Max)
+            self.translate_binary(InstructionSet::op_f32_max, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3320,7 +2079,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_copysign(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F32, Opcode::F32Copysign)
+            self.translate_binary(InstructionSet::op_f32_copysign, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3329,7 +2088,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_abs(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F64, Opcode::F64Abs)
+            self.translate_unary(InstructionSet::op_f64_abs, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3338,7 +2097,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_neg(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F64, Opcode::F64Neg)
+            self.translate_unary(InstructionSet::op_f64_neg, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3347,7 +2106,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_ceil(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F64, Opcode::F64Ceil)
+            self.translate_unary(InstructionSet::op_f64_ceil, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3356,7 +2115,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_floor(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F64, Opcode::F64Floor)
+            self.translate_unary(InstructionSet::op_f64_floor, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3365,7 +2124,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_trunc(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F64, Opcode::F64Trunc)
+            self.translate_unary(InstructionSet::op_f64_trunc, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3374,7 +2133,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_nearest(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F64, Opcode::F64Nearest)
+            self.translate_unary(InstructionSet::op_f64_nearest, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3383,7 +2142,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_sqrt(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_unary_operation(ValType::F64, Opcode::F64Sqrt)
+            self.translate_unary(InstructionSet::op_f64_sqrt, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3392,7 +2151,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_add(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F64, Opcode::F64Add)
+            self.translate_binary(InstructionSet::op_f64_add, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3401,7 +2160,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_sub(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F64, Opcode::F64Sub)
+            self.translate_binary(InstructionSet::op_f64_sub, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3410,7 +2169,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_mul(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F64, Opcode::F64Mul)
+            self.translate_binary(InstructionSet::op_f64_mul, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3419,7 +2178,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_div(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F64, Opcode::F64Div)
+            self.translate_binary(InstructionSet::op_f64_div, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3428,7 +2187,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_min(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F64, Opcode::F64Min)
+            self.translate_binary(InstructionSet::op_f64_min, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3437,7 +2196,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_max(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F64, Opcode::F64Max)
+            self.translate_binary(InstructionSet::op_f64_max, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3446,7 +2205,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_copysign(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_binary_operation(ValType::F64, Opcode::F64Copysign)
+            self.translate_binary(InstructionSet::op_f64_copysign, 0)
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3454,7 +2213,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_i32_wrap_i64(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
             let popped_value = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(popped_value, ValType::I64);
             builder.alloc.stack_types.push(ValType::I32);
@@ -3467,7 +2226,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i32_trunc_f32_s(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F32, ValType::I32, Opcode::I32TruncF32S)
+            self.translate_conversion(
+                ValType::F32,
+                ValType::I32,
+                InstructionSet::op_i32_trunc_f32_s,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3476,7 +2240,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i32_trunc_f32_u(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F32, ValType::I32, Opcode::I32TruncF32U)
+            self.translate_conversion(
+                ValType::F32,
+                ValType::I32,
+                InstructionSet::op_i32_trunc_f32_u,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3485,7 +2254,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i32_trunc_f64_s(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F64, ValType::I32, Opcode::I32TruncF64S)
+            self.translate_conversion(
+                ValType::F64,
+                ValType::I32,
+                InstructionSet::op_i32_trunc_f64_s,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3494,40 +2268,44 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i32_trunc_f64_u(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F64, ValType::I32, Opcode::I32TruncF64U)
+            self.translate_conversion(
+                ValType::F64,
+                ValType::I32,
+                InstructionSet::op_i32_trunc_f64_u,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
     }
 
     fn visit_i64_extend_i32_s(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.alloc.instruction_set.op_i64_extend_i32_s();
-            Ok(())
-        })
+        self.translate_conversion(
+            ValType::I32,
+            ValType::I64,
+            InstructionSet::op_i64_extend_i32_s,
+            1,
+        )
     }
 
     fn visit_i64_extend_i32_u(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(ValType::I64);
-            builder.stack_height.push1();
-            builder.alloc.instruction_set.op_i64_extend_i32_u();
-            Ok(())
-        })
+        self.translate_conversion(
+            ValType::I32,
+            ValType::I64,
+            InstructionSet::op_i64_extend_i32_u,
+            1,
+        )
     }
 
     fn visit_i64_trunc_f32_s(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F32, ValType::I64, Opcode::I64TruncF32S)
+            self.translate_conversion(
+                ValType::F32,
+                ValType::I64,
+                InstructionSet::op_i64_trunc_f32_s,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3536,7 +2314,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i64_trunc_f32_u(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F32, ValType::I64, Opcode::I64TruncF32U)
+            self.translate_conversion(
+                ValType::F32,
+                ValType::I64,
+                InstructionSet::op_i64_trunc_f32_u,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3545,7 +2328,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i64_trunc_f64_s(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F64, ValType::I64, Opcode::I64TruncF64S)
+            self.translate_conversion(
+                ValType::F64,
+                ValType::I64,
+                InstructionSet::op_i64_trunc_f64_s,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3554,7 +2342,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i64_trunc_f64_u(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F64, ValType::I64, Opcode::I64TruncF64U)
+            self.translate_conversion(
+                ValType::F64,
+                ValType::I64,
+                InstructionSet::op_i64_trunc_f64_u,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3563,7 +2356,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_convert_i32_s(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::I32, ValType::F32, Opcode::F32ConvertI32S)
+            self.translate_conversion(
+                ValType::I32,
+                ValType::F32,
+                InstructionSet::op_f32_convert_i32_s,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3572,7 +2370,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_convert_i32_u(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::I32, ValType::F32, Opcode::F32ConvertI32U)
+            self.translate_conversion(
+                ValType::I32,
+                ValType::F32,
+                InstructionSet::op_f32_convert_i32_u,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3581,7 +2384,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_convert_i64_s(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::I64, ValType::F32, Opcode::F32ConvertI64S)
+            self.translate_conversion(
+                ValType::I64,
+                ValType::F32,
+                InstructionSet::op_f32_convert_i64_s,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3590,7 +2398,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_convert_i64_u(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::I64, ValType::F32, Opcode::F32ConvertI64U)
+            self.translate_conversion(
+                ValType::I64,
+                ValType::F32,
+                InstructionSet::op_f32_convert_i64_u,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3599,7 +2412,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f32_demote_f64(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F64, ValType::F32, Opcode::F32DemoteF64)
+            self.translate_conversion(
+                ValType::F64,
+                ValType::F32,
+                InstructionSet::op_f32_demote_f64,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3608,7 +2426,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_convert_i32_s(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::I32, ValType::F64, Opcode::F64ConvertI32S)
+            self.translate_conversion(
+                ValType::I32,
+                ValType::F64,
+                InstructionSet::op_f64_convert_i32_s,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3617,7 +2440,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_convert_i32_u(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::I32, ValType::F64, Opcode::F64ConvertI32U)
+            self.translate_conversion(
+                ValType::I32,
+                ValType::F64,
+                InstructionSet::op_f64_convert_i32_u,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3626,7 +2454,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_convert_i64_s(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::I64, ValType::F64, Opcode::F64ConvertI64S)
+            self.translate_conversion(
+                ValType::I64,
+                ValType::F64,
+                InstructionSet::op_f64_convert_i64_s,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3635,7 +2468,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_convert_i64_u(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::I64, ValType::F64, Opcode::F64ConvertI64U)
+            self.translate_conversion(
+                ValType::I64,
+                ValType::F64,
+                InstructionSet::op_f64_convert_i64_u,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3644,7 +2482,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_f64_promote_f32(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F32, ValType::F64, Opcode::F64PromoteF32)
+            self.translate_conversion(
+                ValType::F32,
+                ValType::F64,
+                InstructionSet::op_f64_promote_f32,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3687,59 +2530,34 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i32_extend8_s(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::I32, Opcode::I32Extend8S)
+        self.translate_unary(InstructionSet::op_i32_extend8_s, 0)
     }
 
     fn visit_i32_extend16_s(&mut self) -> Self::Output {
-        self.translate_unary_operation(ValType::I32, Opcode::I32Extend16S)
+        self.translate_unary(InstructionSet::op_i32_extend16_s, 0)
     }
 
     fn visit_i64_extend8_s(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.alloc.instruction_set.op_i64_extend8_s();
-            Ok(())
-        })
+        self.translate_unary(InstructionSet::op_i64_extend8_s, 2)
     }
 
     fn visit_i64_extend16_s(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.alloc.instruction_set.op_i64_extend16_s();
-            Ok(())
-        })
+        self.translate_unary(InstructionSet::op_i64_extend16_s, 2)
     }
 
     fn visit_i64_extend32_s(&mut self) -> Self::Output {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.alloc.instruction_set.op_i64_extend32_s();
-            Ok(())
-        })
+        self.translate_unary(InstructionSet::op_i64_extend32_s, 2)
     }
 
     fn visit_i32_trunc_sat_f32_s(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F32, ValType::I32, Opcode::I32TruncSatF32S)
+            self.translate_conversion(
+                ValType::F32,
+                ValType::I32,
+                InstructionSet::op_i32_trunc_sat_f32_s,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3748,7 +2566,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i32_trunc_sat_f32_u(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F32, ValType::I32, Opcode::I32TruncSatF32U)
+            self.translate_conversion(
+                ValType::F32,
+                ValType::I32,
+                InstructionSet::op_i32_trunc_sat_f32_u,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3757,7 +2580,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i32_trunc_sat_f64_s(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F64, ValType::I32, Opcode::I32TruncSatF64S)
+            self.translate_conversion(
+                ValType::F64,
+                ValType::I32,
+                InstructionSet::op_i32_trunc_sat_f64_s,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3766,7 +2594,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i32_trunc_sat_f64_u(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_conversion(ValType::F64, ValType::I32, Opcode::I32TruncSatF64U)
+            self.translate_conversion(
+                ValType::F64,
+                ValType::I32,
+                InstructionSet::op_i32_trunc_sat_f64_u,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3775,15 +2608,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i64_trunc_sat_f32_s(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_if_reachable(|builder| {
-                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-                builder.alloc.stack_types.pop().unwrap();
-                builder.alloc.stack_types.push(ValType::I64);
-                builder.alloc.instruction_set.op_i64_trunc_sat_f32_s();
-                builder.stack_height.pop1();
-                builder.stack_height.push2();
-                Ok(())
-            })
+            self.translate_conversion(
+                ValType::F32,
+                ValType::I64,
+                InstructionSet::op_i64_trunc_sat_f32_s,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3792,15 +2622,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i64_trunc_sat_f32_u(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_if_reachable(|builder| {
-                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-                builder.alloc.stack_types.pop().unwrap();
-                builder.alloc.stack_types.push(ValType::I64);
-                builder.alloc.instruction_set.op_i64_trunc_sat_f32_u();
-                builder.stack_height.pop1();
-                builder.stack_height.push2();
-                Ok(())
-            })
+            self.translate_conversion(
+                ValType::F32,
+                ValType::I64,
+                InstructionSet::op_i64_trunc_sat_f32_u,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3809,13 +2636,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i64_trunc_sat_f64_s(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_if_reachable(|builder| {
-                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-                builder.alloc.stack_types.pop().unwrap();
-                builder.alloc.stack_types.push(ValType::I64);
-                builder.alloc.instruction_set.op_i64_trunc_sat_f64_s();
-                Ok(())
-            })
+            self.translate_conversion(
+                ValType::F64,
+                ValType::I64,
+                InstructionSet::op_i64_trunc_sat_f64_s,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3824,13 +2650,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_i64_trunc_sat_f64_u(&mut self) -> Self::Output {
         #[cfg(feature = "fpu")]
         {
-            self.translate_if_reachable(|builder| {
-                builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-                builder.alloc.stack_types.pop().unwrap();
-                builder.alloc.stack_types.push(ValType::I64);
-                builder.alloc.instruction_set.op_i64_trunc_sat_f64_u();
-                Ok(())
-            })
+            self.translate_conversion(
+                ValType::F64,
+                ValType::I64,
+                InstructionSet::op_i64_trunc_sat_f64_u,
+                0,
+            )
         }
         #[cfg(not(feature = "fpu"))]
         Err(CompilationError::FloatsAreNotSupported)
@@ -3872,7 +2697,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_memory_init(&mut self, data_segment_index: u32, memory_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
 
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
@@ -3931,7 +2756,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_data_drop(&mut self, data_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             // We do +1 here because we store all data sections in the one segment,
             // and we use 0 for a default memory segment.
             builder.alloc.instruction_set.op_data_drop(data_index + 1);
@@ -3943,7 +2768,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(dst_memory_index, DEFAULT_MEMORY_INDEX);
             debug_assert_eq!(src_memory_index, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             builder.stack_height.pop3();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
@@ -3956,7 +2781,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_memory_fill(&mut self, memory_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             builder.stack_height.pop3();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
@@ -3968,7 +2793,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_table_init(&mut self, segment_index: u32, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
 
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
@@ -4028,7 +2853,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_elem_drop(&mut self, segment_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             builder
                 .alloc
                 .instruction_set
@@ -4039,7 +2864,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_table_copy(&mut self, dst_table: u32, src_table: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             builder.stack_height.pop3();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
@@ -4052,7 +2877,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_table_fill(&mut self, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             builder.stack_height.pop3();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
@@ -4064,7 +2889,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_table_get(&mut self, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             builder.alloc.instruction_set.op_table_get(table_index);
             Ok(())
         })
@@ -4072,7 +2897,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_table_set(&mut self, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             builder.stack_height.pop2();
             //TODO: Do set and get for i32 x2 as i64
             builder.alloc.stack_types.pop().unwrap();
@@ -4084,7 +2909,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_table_grow(&mut self, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
 
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
@@ -4125,7 +2950,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_table_size(&mut self, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().entity)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             builder.stack_height.push1();
             builder.alloc.stack_types.push(ValType::I32);
             builder.alloc.instruction_set.op_table_size(table_index);
@@ -5435,496 +4260,72 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 }
 
 impl InstructionTranslator {
-    /// Translate a Wasm `<ty>.load` instruction.
-    ///
-    /// # Note
-    ///
-    /// This is used as the translation backend of the following Wasm instructions:
-    ///
-    /// - `i32.load`
-    /// - `i64.load`
-    /// - `f32.load`
-    /// - `f64.load`
-    /// - `i32.load_i8`
-    /// - `i32.load_u8`
-    /// - `i32.load_i16`
-    /// - `i32.load_u16`
-    /// - `i64.load_i8`
-    /// - `i64.load_u8`
-    /// - `i64.load_i16`
-    /// - `i64.load_u16`
-    /// - `i64.load_i32`
-    /// - `i64.load_u32`
     fn translate_load(
         &mut self,
         memarg: MemArg,
         loaded_type: ValType,
-        opcode: fn(AddressOffset) -> Opcode,
+        emitter: fn(&mut InstructionSet, offset: AddressOffset),
+        max_stack_height: u32,
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().load)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.load)?;
             let addr_type = builder.alloc.stack_types.pop().unwrap();
             builder.stack_height.pop_type(addr_type);
             builder.stack_height.push_type(loaded_type);
+            builder.stack_height.push_n(max_stack_height);
+            builder.stack_height.pop_n(max_stack_height);
             builder.alloc.stack_types.push(loaded_type);
             let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.push(opcode(offset));
+            emitter(&mut builder.alloc.instruction_set, offset);
             Ok(())
         })
     }
 
-    /// Translate a Wasm `<ty>.store` instruction.
-    ///
-    /// # Note
-    ///
-    /// This is used as the translation backend of the following Wasm instructions:
-    ///
-    /// - `i32.store`
-    /// - `i64.store`
-    /// - `f32.store`
-    /// - `f64.store`
-    /// - `i32.store_i8`
-    /// - `i32.store_i16`
-    /// - `i64.store_i8`
-    /// - `i64.store_i16`
-    /// - `i64.store_i32`
     fn translate_store(
         &mut self,
         memarg: MemArg,
         stored_value: ValType,
-        opcode: fn(AddressOffset) -> Opcode,
+        emitter: fn(&mut InstructionSet, offset: AddressOffset),
+        max_stack_height: u32,
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(builder.fuel_costs().store)?;
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.store)?;
             let value_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(value_type, stored_value);
             builder.stack_height.pop_type(value_type);
             let addr_type = builder.alloc.stack_types.pop().unwrap();
             builder.stack_height.pop_type(addr_type);
+            builder.stack_height.push_n(max_stack_height);
+            builder.stack_height.pop_n(max_stack_height);
             let offset = AddressOffset::from(memarg.offset as u32);
-            builder.alloc.instruction_set.push(opcode(offset));
+            emitter(&mut builder.alloc.instruction_set, offset);
             Ok(())
         })
     }
 
-    /// Translate a Wasm unary comparison instruction.
-    ///
-    /// # Note
-    ///
-    /// This is used to translate the following Wasm instructions:
-    ///
-    /// - `i32.eqz`
-    /// - `i64.eqz`
-    fn translate_unary_cmp(
-        &mut self,
-        _input_type: ValType,
-        inst: Opcode,
-    ) -> Result<(), CompilationError> {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.instruction_set.push(inst);
-            Ok(())
-        })
-    }
-
-    fn translate_expressed_binary_operation<F>(
-        &mut self,
-        opcode: Opcode,
-        additional_translator: F,
-    ) -> Result<(), CompilationError>
-    where
-        F: FnOnce(&mut Self) -> Result<(), CompilationError>,
-    {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.push(opcode);
-            builder.alloc.instruction_set.op_local_set(2);
-            builder.alloc.instruction_set.op_local_get(3);
-            builder.alloc.instruction_set.push(opcode);
-            builder.alloc.instruction_set.op_local_set(2);
-            additional_translator(builder)?;
-            Ok(())
-        })
-    }
-
-    /// Translate a Wasm binary comparison instruction.
-    ///
-    /// # Note
-    ///
-    /// This is used to translate the following Wasm instructions:
-    ///
-    /// - `{i32, i64, f32, f64}.eq`
-    /// - `{i32, i64, f32, f64}.ne`
-    /// - `{i32, u32, i64, u64, f32, f64}.lt`
-    /// - `{i32, u32, i64, u64, f32, f64}.le`
-    /// - `{i32, u32, i64, u64, f32, f64}.gt`
-    /// - `{i32, u32, i64, u64, f32, f64}.ge`
-    fn translate_binary_cmp(
-        &mut self,
-        input_type: ValType,
-        opcode: Opcode,
-    ) -> Result<(), CompilationError> {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.pop_type(input_type);
-            builder.stack_height.pop_type(input_type);
-            builder.stack_height.push_type(ValType::I32);
-            let popped_type = builder.alloc.stack_types.pop().unwrap();
-            debug_assert_eq!(popped_type, input_type);
-            let popped_type = builder.alloc.stack_types.pop().unwrap();
-            debug_assert_eq!(popped_type, input_type);
-            builder.alloc.stack_types.push(ValType::I32);
-            builder.alloc.instruction_set.push(opcode);
-            Ok(())
-        })
-    }
-
-    /// Translate a unary Wasm instruction.
-    ///
-    /// # Note
-    ///
-    /// This is used to translate the following Wasm instructions:
-    ///
-    /// - `i32.clz`
-    /// - `i32.ctz`
-    /// - `i32.popcnt`
-    /// - `{f32, f64}.abs`
-    /// - `{f32, f64}.neg`
-    /// - `{f32, f64}.ceil`
-    /// - `{f32, f64}.floor`
-    /// - `{f32, f64}.trunc`
-    /// - `{f32, f64}.nearest`
-    /// - `{f32, f64}.sqrt`
-    fn translate_unary_operation(
-        &mut self,
-        _value_type: ValType,
-        opcode: Opcode,
-    ) -> Result<(), CompilationError> {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.alloc.instruction_set.push(opcode);
-            Ok(())
-        })
-    }
-
-    /// Translate a binary Wasm instruction.
-    ///
-    /// - `{i32, i64}.add`
-    /// - `{i32, i64}.sub`
-    /// - `{i32, i64}.mul`
-    /// - `{i32, u32, i64, u64}.div`
-    /// - `{i32, u32, i64, u64}.rem`
-    /// - `{i32, i64}.and`
-    /// - `{i32, i64}.or`
-    /// - `{i32, i64}.xor`
-    /// - `{i32, i64}.shl`
-    /// - `{i32, u32, i64, u64}.shr`
-    /// - `{i32, i64}.rotl`
-    /// - `{i32, i64}.rotr`
-    /// - `{f32, f64}.add`
-    /// - `{f32, f64}.sub`
-    /// - `{f32, f64}.mul`
-    /// - `{f32, f64}.div`
-    /// - `{f32, f64}.min`
-    /// - `{f32, f64}.max`
-    /// - `{f32, f64}.copysign`
-    fn translate_binary_operation(
-        &mut self,
-        value_type: ValType,
-        opcode: Opcode,
-    ) -> Result<(), CompilationError> {
-        self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            builder.stack_height.pop_type(value_type);
-            builder.stack_height.pop_type(value_type);
-            builder.stack_height.push_type(value_type);
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.stack_types.push(value_type);
-            builder.alloc.instruction_set.push(opcode);
-            Ok(())
-        })
-    }
-
-    fn translate_i64_div_u(&mut self) {
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-
-        self.alloc.instruction_set.op_local_get(2);
-        self.alloc.instruction_set.op_local_get(2);
-        self.alloc.instruction_set.op_i32_or();
-        self.alloc.instruction_set.op_br_if_nez(3);
-        self.alloc.instruction_set.op_i32_const(0);
-        self.alloc.instruction_set.op_i32_div_u();
-
-        self.stack_height.push_n(5);
-
-        //Stack: lo1 hi1 lo2 hi2
-        self.alloc.instruction_set.op_i32_const(64); //counter
-        self.alloc.instruction_set.op_i32_const(0); //q_lo
-        self.alloc.instruction_set.op_i32_const(0); //q_hi
-        self.alloc.instruction_set.op_i32_const(0); //r_lo
-        self.alloc.instruction_set.op_i32_const(0); //r_hi
-
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-
-        //set r_hi
-        self.alloc.instruction_set.op_local_get(1); //ri
-        self.alloc.instruction_set.op_i32_const(1);
-        self.alloc.instruction_set.op_i32_shl();
-        self.alloc.instruction_set.op_local_get(3); //ro
-        self.alloc.instruction_set.op_i32_const(31);
-        self.alloc.instruction_set.op_i32_shr_u();
-        self.alloc.instruction_set.op_i32_or();
-        self.alloc.instruction_set.op_local_set(1);
-
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-
-        //set r_lo
-        self.alloc.instruction_set.op_local_get(2); //ro
-        self.alloc.instruction_set.op_i32_const(1);
-        self.alloc.instruction_set.op_i32_shl();
-        self.alloc.instruction_set.op_local_get(9); //1
-        self.alloc.instruction_set.op_i32_const(31);
-        self.alloc.instruction_set.op_i32_shr_u();
-        self.alloc.instruction_set.op_i32_or();
-        self.alloc.instruction_set.op_local_set(2);
-
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-
-        //set hi1
-        self.alloc.instruction_set.op_local_get(8); //1
-        self.alloc.instruction_set.op_i32_const(1);
-        self.alloc.instruction_set.op_i32_shl();
-        self.alloc.instruction_set.op_local_get(10); //1
-        self.alloc.instruction_set.op_i32_const(31);
-        self.alloc.instruction_set.op_i32_shr_u();
-        self.alloc.instruction_set.op_i32_or();
-        self.alloc.instruction_set.op_local_set(8); //1
-
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-
-        //set lo1
-        self.alloc.instruction_set.op_local_get(9); //1
-        self.alloc.instruction_set.op_i32_const(1);
-        self.alloc.instruction_set.op_i32_shl();
-        self.alloc.instruction_set.op_local_set(9); //1
-
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-
-        self.alloc.instruction_set.op_local_get(2); //ro
-        self.alloc.instruction_set.op_local_get(8); //2
-        self.alloc.instruction_set.op_i32_sub(); //temp_r_lo
-
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-
-        self.alloc.instruction_set.op_local_get(3); //ro
-        self.alloc.instruction_set.op_local_get(9); //2
-        self.alloc.instruction_set.op_i32_ge_u(); //not l_carry
-
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-
-        self.alloc.instruction_set.op_local_get(3); //ri
-        self.alloc.instruction_set.op_local_get(2); //not l_cay
-        self.alloc.instruction_set.op_i32_lt_u(); //c_carry
-
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-
-        self.alloc.instruction_set.op_local_get(4); //ri
-        self.alloc.instruction_set.op_local_get(3); //cay
-        self.alloc.instruction_set.op_i32_const(1);
-        self.alloc.instruction_set.op_i32_xor();
-        self.alloc.instruction_set.op_i32_sub();
-        self.alloc.instruction_set.op_local_get(3); //not l_cay
-        self.alloc.instruction_set.op_local_set(2); //not l_cay
-        self.alloc.instruction_set.op_local_set(2); //temp_ri
-
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-
-        self.alloc.instruction_set.op_local_get(2); //temp_ri
-        self.alloc.instruction_set.op_local_get(10); //2
-        self.alloc.instruction_set.op_i32_sub();
-        self.alloc.instruction_set.op_local_set(2); //temp_ri
-
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-
-        self.alloc.instruction_set.op_local_get(4); //ri
-        self.alloc.instruction_set.op_local_get(10); //2
-        self.alloc.instruction_set.op_i32_ge_u(); //not hi_carry
-
-        self.stack_height.pop1();
-
-        self.alloc.instruction_set.op_i32_and(); //carry
-
-        self.stack_height.pop1();
-
-        self.alloc.instruction_set.op_br_if_eqz(18);
-
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-
-        self.alloc.instruction_set.op_local_set(2); //r_hi = temp_ri
-        self.alloc.instruction_set.op_local_set(2); //r_lo = temp_r_;
-
-        //set q_hi
-        self.alloc.instruction_set.op_local_get(3); //qi
-        self.alloc.instruction_set.op_i32_const(1);
-        self.alloc.instruction_set.op_i32_shl();
-        self.alloc.instruction_set.op_local_get(5); //qo
-        self.alloc.instruction_set.op_i32_const(31);
-        self.alloc.instruction_set.op_i32_shr_u();
-        self.alloc.instruction_set.op_i32_or();
-        self.alloc.instruction_set.op_local_set(3); //qi
-
-        //set q_lo
-        self.alloc.instruction_set.op_local_get(4); //qo
-        self.alloc.instruction_set.op_i32_const(1);
-        self.alloc.instruction_set.op_i32_shl();
-        self.alloc.instruction_set.op_i32_const(1);
-        self.alloc.instruction_set.op_i32_or();
-        self.alloc.instruction_set.op_local_set(4); //qo
-
-        self.alloc.instruction_set.op_br(15);
-
-        //set q_hi
-        self.alloc.instruction_set.op_drop();
-        self.alloc.instruction_set.op_drop();
-        self.alloc.instruction_set.op_local_get(3); //qi
-        self.alloc.instruction_set.op_i32_const(1);
-        self.alloc.instruction_set.op_i32_shl();
-        self.alloc.instruction_set.op_local_get(5); //qo
-        self.alloc.instruction_set.op_i32_const(31);
-        self.alloc.instruction_set.op_i32_shr_u();
-        self.alloc.instruction_set.op_i32_or();
-        self.alloc.instruction_set.op_local_set(3); //qi
-
-        //set q_lo
-        self.alloc.instruction_set.op_local_get(4); //qo
-        self.alloc.instruction_set.op_i32_const(1);
-        self.alloc.instruction_set.op_i32_shl();
-        self.alloc.instruction_set.op_local_set(4); //qo
-
-        self.stack_height.push1();
-        self.stack_height.push1();
-        self.stack_height.pop1();
-        self.stack_height.pop1();
-
-        self.alloc.instruction_set.op_local_get(5); //counr
-        self.alloc.instruction_set.op_i32_const(1);
-        self.alloc.instruction_set.op_i32_sub();
-        self.alloc.instruction_set.op_local_tee(6); //counr
-        self.alloc.instruction_set.op_br_if_nez(-89);
-    }
-
-    /// Translate a Wasm conversion instruction.
-    ///
-    /// - `i32.wrap_i64`
-    /// - `{i32, u32}.trunc_f32
-    /// - `{i32, u32}.trunc_f64`
-    /// - `{i64, u64}.extend_i32`
-    /// - `{i64, u64}.trunc_f32`
-    /// - `{i64, u64}.trunc_f64`
-    /// - `f32.convert_{i32, u32, i64, u64}`
-    /// - `f32.demote_f64`
-    /// - `f64.convert_{i32, u32, i64, u64}`
-    /// - `f64.promote_f32`
-    /// - `i32.reinterpret_f32`
-    /// - `i64.reinterpret_f64`
-    /// - `f32.reinterpret_i32`
-    /// - `f64.reinterpret_i64`
-    #[allow(dead_code)]
     fn translate_conversion(
         &mut self,
         input_type: ValType,
         output_type: ValType,
-        opcode: Opcode,
+        emitter: fn(&mut InstructionSet),
+        max_stack_height: u32,
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(builder.fuel_costs().base)?;
-            let popped_type = builder.alloc.stack_types.pop().unwrap();
-            debug_assert_eq!(popped_type, input_type);
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            let lhs_type = builder.alloc.stack_types.pop().unwrap();
+            debug_assert_eq!(lhs_type, input_type);
             builder.alloc.stack_types.push(output_type);
             builder.stack_height.pop_type(input_type);
+            builder.stack_height.push_n(max_stack_height);
+            builder.stack_height.pop_n(max_stack_height);
             builder.stack_height.push_type(output_type);
-            builder.alloc.instruction_set.push(opcode);
+            emitter(&mut builder.alloc.instruction_set);
             Ok(())
         })
     }
 
-    /// Translates a Wasm reinterpret instruction.
-    ///
-    /// # Note
-    ///
-    /// The `rwasm` translation simply ignores reinterpret instructions since
-    /// `rwasm` bytecode in itself is untyped.
     #[allow(dead_code)]
     fn visit_reinterpret(
         &mut self,
@@ -5932,11 +4333,101 @@ impl InstructionTranslator {
         output_type: ValType,
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
-            let popped_type = builder.alloc.stack_types.pop().unwrap();
-            debug_assert_eq!(popped_type, input_type);
+            let lhs_type = builder.alloc.stack_types.pop().unwrap();
+            debug_assert_eq!(lhs_type, input_type);
             builder.alloc.stack_types.push(output_type);
+            // calc stack height
             builder.stack_height.pop_type(input_type);
             builder.stack_height.push_type(output_type);
+            Ok(())
+        })
+    }
+
+    fn translate_binary(
+        &mut self,
+        emitter: fn(&mut InstructionSet),
+        max_stack_height: u32,
+    ) -> Result<(), CompilationError> {
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            // calculate the type stack and make sure params are correct
+            let lhs_type = builder.alloc.stack_types.pop().unwrap();
+            let rhs_type = builder.alloc.stack_types.pop().unwrap();
+            debug_assert_eq!(lhs_type, rhs_type);
+            builder.alloc.stack_types.push(lhs_type);
+            // calculate max stack height
+            builder.stack_height.pop_type(lhs_type);
+            builder.stack_height.pop_type(lhs_type);
+            builder.stack_height.push_n(max_stack_height);
+            builder.stack_height.pop_n(max_stack_height);
+            builder.stack_height.push_type(lhs_type);
+            // emit an instruction
+            emitter(&mut builder.alloc.instruction_set);
+            Ok(())
+        })
+    }
+
+    fn translate_binary_compare(
+        &mut self,
+        emitter: fn(&mut InstructionSet),
+        max_stack_height: u32,
+    ) -> Result<(), CompilationError> {
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            let lhs_type = builder.alloc.stack_types.pop().unwrap();
+            let rhs_type = builder.alloc.stack_types.pop().unwrap();
+            debug_assert_eq!(lhs_type, rhs_type);
+            builder.alloc.stack_types.push(ValType::I32);
+            // do stack height check
+            builder.stack_height.pop_type(lhs_type);
+            builder.stack_height.pop_type(rhs_type);
+            builder.stack_height.push_n(max_stack_height);
+            builder.stack_height.pop_n(max_stack_height);
+            builder.stack_height.push_type(ValType::I32);
+            // emit an opcode
+            emitter(&mut builder.alloc.instruction_set);
+            Ok(())
+        })
+    }
+
+    fn translate_unary(
+        &mut self,
+        emitter: fn(&mut InstructionSet),
+        max_stack_height: u32,
+    ) -> Result<(), CompilationError> {
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            // calc the type stack
+            let lhs_type = builder.alloc.stack_types.pop().unwrap();
+            builder.alloc.stack_types.push(lhs_type);
+            // calc stack height
+            builder.stack_height.pop_type(lhs_type);
+            builder.stack_height.push_n(max_stack_height);
+            builder.stack_height.pop_n(max_stack_height);
+            builder.stack_height.push_type(lhs_type);
+            // emit instruction
+            emitter(&mut builder.alloc.instruction_set);
+            Ok(())
+        })
+    }
+
+    fn translate_unary_compare(
+        &mut self,
+        emitter: fn(&mut InstructionSet),
+        max_stack_height: u32,
+    ) -> Result<(), CompilationError> {
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            // check the type stack
+            let lsh_type = builder.alloc.stack_types.pop().unwrap();
+            builder.alloc.stack_types.push(ValType::I32);
+            // calc stack height
+            builder.stack_height.pop_type(lsh_type);
+            builder.stack_height.push_n(max_stack_height);
+            builder.stack_height.pop_n(max_stack_height);
+            builder.stack_height.push_type(ValType::I32);
+            // emit opcode
+            emitter(&mut builder.alloc.instruction_set);
             Ok(())
         })
     }

@@ -1,67 +1,42 @@
-use rwasm::RwasmExecutor;
-
-#[allow(unused)]
-pub fn trace_execution_logs(vm: &RwasmExecutor<()>) {
-    let trace = vm.tracer().unwrap().logs.len();
-    println!("execution trace ({} steps):", trace);
-    println!("fuel consumed: {}", vm.fuel_consumed());
-    let logs = &vm.tracer().unwrap().logs;
-    println!("execution trace ({} steps):", logs.len());
-    for log in logs.iter().rev().take(100_000).rev() {
-        println!(
-            " - pc={} opcode={} gas={} stack={:?}",
-            log.program_counter,
-            log.opcode,
-            log.consumed_fuel,
-            log.stack
-                .iter()
-                .map(|v| v.to_string())
-                .rev()
-                .take(100)
-                .rev()
-                .collect::<Vec<_>>(),
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use rwasm::{ExecutorConfig, InstructionSet, RwasmExecutor, RwasmModule};
+    use crate::{i64_rem_s::i64_rem_s, i64_rem_u::i64_rem_u};
+    use rwasm::{ExecutorConfig, InstructionSet, RwasmExecutor, RwasmModule, TrapCode};
 
-    fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Vec<u32> {
+    fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Result<Vec<u32>, TrapCode> {
         is.op_return();
         let rwasm_module = RwasmModule::with_one_function(is);
-        let mut vm = RwasmExecutor::new(
-            rwasm_module.into(),
-            ExecutorConfig::default().trace_enabled(true),
-            (),
-        );
+        let mut vm = RwasmExecutor::new(rwasm_module.into(), ExecutorConfig::default(), ());
         for i in inputs {
             vm.caller().stack_push(i);
         }
-        vm.run().unwrap();
-        vm.caller()
+        vm.run()?;
+        let output = vm
+            .caller()
             .dump_stack()
             .iter()
             .map(|v| v.as_u32())
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        Ok(output)
     }
 
-    fn run_binary_test_case(is: &InstructionSet, a: u64, b: u64, c: u64) {
+    fn run_binary_test_case(is: &InstructionSet, a: u64, b: u64, c: u64) -> Result<(), TrapCode> {
         let output = run_vm_instr(
             is.clone(),
             vec![a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32],
-        );
+        )?;
         assert_eq!(output.len(), 2);
         let r = (output[1] as u64) << 32 | output[0] as u64;
         assert_eq!(c, r);
+        Ok(())
     }
 
-    fn run_unary_test_case(is: &InstructionSet, a: u64, c: u64) {
-        let output = run_vm_instr(is.clone(), vec![a as u32, (a >> 32) as u32]);
+    fn run_unary_test_case(is: &InstructionSet, a: u64, c: u64) -> Result<(), TrapCode> {
+        let output = run_vm_instr(is.clone(), vec![a as u32, (a >> 32) as u32])?;
         assert_eq!(output.len(), 1);
         let r = output[0] as u64;
         assert_eq!(c, r);
+        Ok(())
     }
 
     #[test]
@@ -69,7 +44,7 @@ mod tests {
         let test_case_u64 = |a: i64| {
             let mut is = InstructionSet::new();
             is.op_i64_const(a);
-            let output = run_vm_instr(is.clone(), vec![]);
+            let output = run_vm_instr(is.clone(), vec![]).unwrap();
             assert_eq!(output.len(), 2);
             let r = (output[1] as u64) << 32 | output[0] as u64;
             assert_eq!(a, r as i64);
@@ -108,12 +83,12 @@ mod tests {
 
         let test_case_u64 = |a: u64, b: u64| {
             let c = a.wrapping_mul(b);
-            run_binary_test_case(&is, a, b, c);
+            run_binary_test_case(&is, a, b, c).unwrap();
         };
 
         let test_case_i64 = |a: i64, b: i64| {
             let c = a.wrapping_mul(b);
-            run_binary_test_case(&is, a as u64, b as u64, c as u64);
+            run_binary_test_case(&is, a as u64, b as u64, c as u64).unwrap();
         };
 
         // u64 test cases
@@ -166,7 +141,7 @@ mod tests {
 
         let test_case_u64 = |a: u64| {
             let c = (a == 0) as u64;
-            run_unary_test_case(&is, a, c);
+            run_unary_test_case(&is, a, c).unwrap();
         };
 
         test_case_u64(0x0000_0000_0000_0000); // zero
@@ -205,7 +180,7 @@ mod tests {
 
         let test_case_u64 = |a: u64, b: u64| {
             let c = a.wrapping_sub(b);
-            run_binary_test_case(&is, a, b, c);
+            run_binary_test_case(&is, a, b, c).unwrap();
         };
 
         test_case_u64(0, 0); // 0 - 0 = 0
@@ -245,7 +220,8 @@ mod tests {
             let output = run_vm_instr(
                 is.clone(),
                 vec![a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32],
-            );
+            )
+            .unwrap();
             assert_eq!(output.len(), 1);
             let r = output[0] as u64;
             assert_eq!(c, r);
@@ -285,7 +261,7 @@ mod tests {
 
         let test_case_u64 = |a: u64, b: u64| {
             let c = a.wrapping_add(b);
-            run_binary_test_case(&is, a, b, c);
+            run_binary_test_case(&is, a, b, c).unwrap();
         };
 
         test_case_u64(0, 0); // 0 - 0 = 0
@@ -313,5 +289,166 @@ mod tests {
         //     let b = rand::rng().random::<i64>();
         //     test_case_u64(a as u64, b as u64);
         // }
+    }
+
+    #[test]
+    fn test_i64_div_s() {
+        let mut is = InstructionSet::new();
+        is.op_i64_div_s();
+
+        let test_case_i64 = |a: i64, b: i64| {
+            let c = a.wrapping_div(b);
+            run_binary_test_case(&is, a as u64, b as u64, c as u64).unwrap();
+        };
+        let test_case_i64_trap = |a: i64, b: i64, trap_code: TrapCode| {
+            assert_eq!(
+                run_binary_test_case(&is, a as u64, b as u64, u64::MAX).unwrap_err(),
+                trap_code
+            );
+        };
+
+        test_case_i64_trap(0, 0, TrapCode::IntegerDivisionByZero);
+        test_case_i64_trap(1, 0, TrapCode::IntegerDivisionByZero);
+        test_case_i64_trap(-1, 0, TrapCode::IntegerDivisionByZero);
+        test_case_i64_trap(i64::MAX, 0, TrapCode::IntegerDivisionByZero);
+        test_case_i64_trap(i64::MIN, 0, TrapCode::IntegerDivisionByZero);
+        test_case_i64_trap(i64::MIN, -1, TrapCode::IntegerOverflow);
+        test_case_i64(10, 2);
+        test_case_i64(-10, 2);
+        test_case_i64(10, -2);
+        test_case_i64(-10, -2);
+        test_case_i64(0, 1);
+        test_case_i64(1, 1);
+        test_case_i64(-1, 1);
+        test_case_i64(1, -1);
+        test_case_i64(-1, -1);
+        test_case_i64(i64::MAX, 1);
+        test_case_i64(i64::MAX, -1);
+        test_case_i64(i64::MIN, 1);
+        test_case_i64(i64::MIN, 2);
+        test_case_i64(i64::MIN, i64::MAX);
+        test_case_i64(123, -3);
+        test_case_i64(-123, 3);
+        test_case_i64(-123, -3);
+        test_case_i64(i64::MIN + 1, -1);
+        test_case_i64(i64::MIN + 1, 1);
+        test_case_i64(1, 2);
+        test_case_i64(-1, 2);
+        test_case_i64(1, -2);
+        test_case_i64(-1, -2);
+        test_case_i64(i64::MAX, 2);
+        test_case_i64(-100, 7);
+        test_case_i64(100, -7);
+        test_case_i64(i64::MIN, i64::MIN);
+        test_case_i64(i64::MAX, i64::MAX);
+    }
+
+    #[test]
+    fn test_i64_div_u() {
+        let mut is = InstructionSet::new();
+        is.op_i64_div_u();
+
+        let test_case_i64 = |a: u64, b: u64| {
+            let c = a.wrapping_div(b);
+            run_binary_test_case(&is, a, b, c).unwrap();
+        };
+        let test_case_i64_trap = |a: u64, b: u64, trap_code: TrapCode| {
+            assert_eq!(
+                run_binary_test_case(&is, a, b, u64::MAX).unwrap_err(),
+                trap_code
+            );
+        };
+
+        test_case_i64_trap(0u64, 0u64, TrapCode::IntegerDivisionByZero);
+        test_case_i64_trap(1, 0, TrapCode::IntegerDivisionByZero);
+        test_case_i64_trap(u64::MAX, 0, TrapCode::IntegerDivisionByZero);
+        test_case_i64(0, 1);
+        test_case_i64(1, 1);
+        test_case_i64(1, u64::MAX);
+        test_case_i64(u64::MAX, 1);
+        test_case_i64(u64::MAX, u64::MAX);
+        test_case_i64(u64::MAX - 1, u64::MAX);
+        test_case_i64(u64::MAX, 2);
+        test_case_i64(2, u64::MAX);
+        test_case_i64(2, 1);
+        test_case_i64(12345678901234567890, 1234567890);
+        test_case_i64(100, 10);
+        test_case_i64(10, 100);
+        test_case_i64(0xFFFF_FFFF_0000_0000, 0xFFFF_FFFF);
+        test_case_i64(0x8000_0000_0000_0000, 2);
+        test_case_i64(0x0000_0001_0000_0000, 0x100);
+    }
+
+    #[test]
+    fn test_i64_rem_s() {
+        let mut is = InstructionSet::new();
+        is.op_i64_rem_s();
+
+        let test_case_i64 = |a: i64, b: i64| {
+            let res = i64_rem_s(a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32);
+            let c = a.wrapping_rem(b);
+            assert_eq!(res, c as u64);
+            run_binary_test_case(&is, a as u64, b as u64, c as u64).unwrap();
+        };
+        let test_case_i64_trap = |a: i64, b: i64, trap_code: TrapCode| {
+            assert_eq!(
+                run_binary_test_case(&is, a as u64, b as u64, u64::MAX).unwrap_err(),
+                trap_code
+            );
+        };
+
+        test_case_i64(0i64, 1i64);
+        test_case_i64(1, 1);
+        test_case_i64(-1, 1);
+        test_case_i64(1, -1);
+        test_case_i64(-1, -1);
+        test_case_i64(5, 2);
+        test_case_i64(5, -2);
+        test_case_i64(-5, 2);
+        test_case_i64(-5, -2);
+        test_case_i64(i64::MAX, 2);
+        test_case_i64(i64::MIN, 2);
+        test_case_i64(i64::MIN, -1); // a special: Rust defines MIN % -1 = ;
+        test_case_i64(i64::MIN, i64::MAX);
+        test_case_i64_trap(0, 0, TrapCode::IntegerDivisionByZero);
+        test_case_i64_trap(1, 0, TrapCode::IntegerDivisionByZero);
+        test_case_i64_trap(-1, 0, TrapCode::IntegerDivisionByZero);
+    }
+
+    #[test]
+    fn test_i64_rem_u() {
+        let mut is = InstructionSet::new();
+        is.op_i64_rem_u();
+
+        let test_case_i64 = |a: u64, b: u64| {
+            let res = i64_rem_u(a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32);
+            let c = a.wrapping_rem(b);
+            assert_eq!(res, c);
+            run_binary_test_case(&is, a, b, c).unwrap();
+        };
+        let test_case_i64_trap = |a: u64, b: u64, trap_code: TrapCode| {
+            assert_eq!(
+                run_binary_test_case(&is, a, b, u64::MAX).unwrap_err(),
+                trap_code
+            );
+        };
+
+        test_case_i64(0u64, 1u64);
+        test_case_i64(1, 1);
+        test_case_i64(1, u64::MAX);
+        test_case_i64(u64::MAX, 1);
+        test_case_i64(u64::MAX, u64::MAX);
+        test_case_i64(u64::MAX - 1, u64::MAX);
+        test_case_i64(12345678901234567890, 1234567890);
+        test_case_i64(100, 10);
+        test_case_i64(101, 10);
+        test_case_i64(10, 100);
+        test_case_i64(0xFFFF_FFFF_0000_0000, 0xFFFF_FFFF);
+        test_case_i64(0x8000_0000_0000_0000, 2);
+        test_case_i64(0x8000_0000_0000_0001, 2);
+        test_case_i64(0x0000_0001_0000_0000, 0x100);
+        test_case_i64_trap(0, 0, TrapCode::IntegerDivisionByZero);
+        test_case_i64_trap(1, 0, TrapCode::IntegerDivisionByZero);
+        test_case_i64_trap(u64::MAX, 0, TrapCode::IntegerDivisionByZero);
     }
 }

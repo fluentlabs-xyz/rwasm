@@ -40,5 +40,12 @@ fn test_ending_opcodes(seq: &InstrSeq) {
 #[test]
 fn test_extract_i64_add() {
     let wasm_binary = include_bytes!("./lib.wasm");
-    extract_wasm_snippet(wasm_binary);
+    let (module, _) = RwasmModule::compile(
+        CompilationConfig::default()
+            .with_entrypoint_name("i64_ne".into())
+            .with_consume_fuel(false),
+        wasm_binary,
+    )
+    .unwrap();
+    println!("{}", module);
 }

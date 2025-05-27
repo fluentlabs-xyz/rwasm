@@ -63,15 +63,15 @@ impl Default for InstructionSet {
 macro_rules! impl_opcode {
     ($opcode:ident($data_type:ident)) => {
         paste::paste! {
-            pub fn [< op_ $opcode:snake >]<I: TryInto<$data_type>>(&mut self, value: I) -> u32 {
-                self.push(Opcode::$opcode(value.try_into().unwrap_or_else(|_| unreachable!())))
+            pub fn [< op_ $opcode:snake >]<I: TryInto<$data_type>>(&mut self, value: I) {
+                self.push(Opcode::$opcode(value.try_into().unwrap_or_else(|_| unreachable!())));
             }
         }
     };
     ($opcode:ident) => {
         paste::paste! {
-            pub fn [< op_ $opcode:snake >](&mut self) -> u32 {
-                self.push(Opcode::$opcode)
+            pub fn [< op_ $opcode:snake >](&mut self) {
+                self.push(Opcode::$opcode);
             }
         }
     };
@@ -103,6 +103,10 @@ impl InstructionSet {
                 _ => false,
             })
             .unwrap_or_default()
+    }
+
+    pub fn loc(&self) -> u32 {
+        self.instr.len() as u32
     }
 
     pub fn finalize(&mut self, inject_return: bool) {

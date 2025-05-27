@@ -1,9 +1,20 @@
-#![allow(clippy::needless_range_loop)]
+#![allow(
+    clippy::needless_range_loop,
+    internal_features,
+    unused_unsafe,
+    dead_code
+)]
+#![feature(core_intrinsics)]
 
 mod extractor;
-mod rwasm;
 #[cfg(test)]
-mod test;
+mod fuzz;
+mod i64_add;
+mod i64_ne;
+mod i64_rem_s;
+mod i64_rem_u;
+mod i64_sub;
+mod tests;
 
 /// Stack layout (little-endian limbs)
 /// before: …, a_lo, a_hi, b_lo, b_hi
@@ -95,24 +106,6 @@ pub fn karatsuba_mul64_stack(a_lo: u32, a_hi: u32, b_lo: u32, b_hi: u32) -> u64 
 }
 
 #[inline(always)]
-pub(crate) fn add64_impl(a_lo: u32, a_hi: u32, b_lo: u32, b_hi: u32) -> (u32, u32) {
-    // low part
-    let sum_lo = a_lo.wrapping_add(b_lo);
-    // compute carry without branches
-    let carry = (sum_lo < a_lo) as u32;
-    // high part + carry
-    let sum_hi = a_hi.wrapping_add(b_hi).wrapping_add(carry);
-    // push result
-    (sum_lo, sum_hi)
-}
-
-#[no_mangle]
-pub fn add64_stack(a_lo: u32, a_hi: u32, b_lo: u32, b_hi: u32) -> u64 {
-    let (res_lo, res_hi) = add64_impl(a_lo, a_hi, b_lo, b_hi);
-    (res_hi as u64) << 32 | res_lo as u64
-}
-
-#[inline(always)]
 pub(crate) fn div64u_impl(
     n_lo: u32,
     n_hi: u32,
@@ -121,10 +114,12 @@ pub(crate) fn div64u_impl(
 ) -> (u32 /* q_lo */, u32 /* q_hi */) {
     // ---------- simple corner cases ---------------------------------------
     if d_hi == 0 && d_lo == 0 {
-        core::hint::black_box(()); // force a trap later; UB if ignored
+        unsafe {
+            core::intrinsics::breakpoint();
+        }
     }
     if (n_hi < d_hi) || (n_hi == d_hi && n_lo < d_lo) {
-        return (0, 0); // quotient = 0  (remainder is n, caller doesn’t need it)
+        return (0, 0); // quotient = 0 (the remainder is n, caller doesn’t need it)
     }
 
     // ---------- fast path: divisor fits in one limb -----------------------
@@ -135,7 +130,7 @@ pub(crate) fn div64u_impl(
             let mut q = 0u32;
             let mut r = 0u32;
             for i in (0..64).rev() {
-                // shift remainder left, bring next dividend bit
+                // shift the remainder left, bring the next dividend bit
                 r <<= 1;
                 r |= if i >= 32 {
                     (hi >> (i - 32)) & 1
@@ -187,7 +182,7 @@ pub(crate) fn div64u_impl(
             r_hi = r_hi.wrapping_sub(d_hi + borrow as u32);
         }
 
-        // shift quotient left and add current bit
+        // shift quotient left and add the current bit
         let carry_q = (q_lo >> 31) & 1;
         q_lo = (q_lo << 1) | ge as u32;
         q_hi = (q_hi << 1) | carry_q;
@@ -206,7 +201,7 @@ pub fn div64u_stack(n_lo: u32, n_hi: u32, d_lo: u32, d_hi: u32) -> u64 {
 /// helpers
 /// -------------------------------------------------------------------------
 
-/// Two’s-complement negate of a 64-bit value held in little-endian limbs.
+/// Two’s-complement negates of a 64-bit value held in little-endian limbs.
 #[inline(always)]
 fn neg64(lo: u32, hi: u32) -> (u32, u32) {
     let lo_n = (!lo).wrapping_add(1);
@@ -260,11 +255,26 @@ pub(crate) fn div64s_impl(
     d_lo: u32,
     d_hi: u32,
 ) -> (u32 /* q_lo */, u32 /* q_hi */) {
-    // 1. Extract signs
+    // 0. Zero division
+    if d_hi == 0 && d_lo == 0 {
+        unsafe {
+            core::intrinsics::breakpoint();
+        }
+    }
+    // 1. Overflow: i64::MIN / -1 triggers overflow
+    let is_n_min = n_hi == 0x8000_0000 && n_lo == 0;
+    let is_d_neg_one = d_hi == 0xFFFF_FFFF && d_lo == 0xFFFF_FFFF;
+    if is_n_min && is_d_neg_one {
+        unsafe {
+            core::intrinsics::breakpoint();
+        }
+    }
+
+    // 2. Extract signs
     let n_neg = (n_hi >> 31) != 0;
     let d_neg = (d_hi >> 31) != 0;
 
-    // 2. Absolute values
+    // 3. Absolute values
     let (n_lo, n_hi) = if n_neg {
         neg64(n_lo, n_hi)
     } else {
@@ -276,10 +286,10 @@ pub(crate) fn div64s_impl(
         (d_lo, d_hi)
     };
 
-    // 3. Unsigned divide
+    // 4. Unsigned divide
     let (mut q_lo, mut q_hi) = div64_impl(n_lo, n_hi, d_lo, d_hi);
 
-    // 4. Apply sign to quotient (truncate toward zero)
+    // 5. Apply sign to quotient (truncate toward zero)
     if n_neg ^ d_neg {
         let (lo, hi) = neg64(q_lo, q_hi);
         q_lo = lo;
@@ -296,35 +306,4 @@ pub fn div64s_stack(n_lo: u32, n_hi: u32, d_lo: u32, d_hi: u32) -> i64 {
     let (q_lo, q_hi) = div64s_impl(n_lo, n_hi, d_lo, d_hi);
     let bits = ((q_hi as u64) << 32) | q_lo as u64;
     bits as i64
-}
-
-/// -------------------------------------------------------------------------
-/// 64-bit subtraction in pure 32-bit arithmetic
-/// (two’s-complement works for both signed and unsigned values)
-/// -------------------------------------------------------------------------
-
-#[inline(always)]
-pub(crate) fn sub64_impl(
-    a_lo: u32,
-    a_hi: u32,
-    b_lo: u32,
-    b_hi: u32,
-) -> (u32 /* res_lo */, u32 /* res_hi */) {
-    // low 32-bit difference
-    let diff_lo = a_lo.wrapping_sub(b_lo);
-
-    // detect borrow without branches
-    let borrow = (a_lo < b_lo) as u32;
-
-    // high 32-bit difference minus borrow
-    let diff_hi = a_hi.wrapping_sub(b_hi).wrapping_sub(borrow);
-
-    (diff_lo, diff_hi)
-}
-
-#[no_mangle]
-pub fn sub64_stack(a_lo: u32, a_hi: u32, b_lo: u32, b_hi: u32) -> u64 {
-    let (res_lo, res_hi) = sub64_impl(a_lo, a_hi, b_lo, b_hi);
-    // pack the two limbs back into a single i64
-    ((res_hi as u64) << 32) | res_lo as u64
 }

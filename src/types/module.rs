@@ -14,7 +14,6 @@ use bincode::{
     Decode,
     Encode,
 };
-use hashbrown::HashSet;
 
 /// Represents a compiled rWasm module.
 ///
@@ -129,26 +128,15 @@ impl core::fmt::Display for RwasmModule {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         writeln!(f, "RwasmModule {{")?;
         let mut func_num = 0;
-        let mut func_section = HashSet::new();
-        for instr in self.code_section.iter() {
-            match instr {
-                Opcode::CallInternal(compiled_func)
-                | Opcode::ReturnCallInternal(compiled_func)
-                | Opcode::RefFunc(compiled_func) => {
-                    func_section.insert(*compiled_func);
-                }
-                _ => continue,
-            }
-        }
         writeln!(f, " .function_begin_{} (#{})", 0, func_num)?;
         for (pos, opcode) in self.code_section.iter().enumerate() {
             let pos = pos as u32;
-            if func_section.contains(&pos) {
+            if let Opcode::SignatureCheck(_) = opcode {
                 writeln!(f, " .function_end\n")?;
                 func_num += 1;
                 writeln!(f, " .function_begin_{} (#{})", pos, func_num)?;
             }
-            write!(f, "  {:04x}: {}", pos, opcode)?;
+            write!(f, "  {:04}: {}", pos, opcode)?;
             writeln!(f)?;
         }
         writeln!(f, " .function_end\n")?;
