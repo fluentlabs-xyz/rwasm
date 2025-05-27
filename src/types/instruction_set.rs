@@ -2,7 +2,11 @@ mod i64_alu;
 mod i64_bitwise;
 mod i64_compare;
 mod i64_conv;
+mod i64_div_s;
+mod i64_div_u;
 mod i64_memory;
+mod i64_rem_s;
+mod i64_rem_u;
 
 use crate::{
     types::{
