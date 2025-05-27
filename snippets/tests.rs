@@ -359,6 +359,7 @@ mod tests {
             );
         };
 
+        test_case_i64(15602808788219557311, 9181438499313657906);
         test_case_i64_trap(0u64, 0u64, TrapCode::IntegerDivisionByZero);
         test_case_i64_trap(1, 0, TrapCode::IntegerDivisionByZero);
         test_case_i64_trap(u64::MAX, 0, TrapCode::IntegerDivisionByZero);

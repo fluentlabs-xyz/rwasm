@@ -6,6 +6,7 @@
 )]
 #![feature(core_intrinsics)]
 
+#[cfg(test)]
 mod extractor;
 #[cfg(test)]
 mod fuzz;
