@@ -98,14 +98,14 @@ pub(crate) fn visit_consume_fuel<T>(
 }
 
 #[inline(always)]
-pub(crate) fn visit_return<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
+pub(crate) fn visit_return<T>(vm: &mut RwasmExecutor<T>) -> bool {
     vm.value_stack.sync_stack_ptr(vm.sp);
     match vm.call_stack.pop() {
         Some(caller) => {
             vm.ip = caller;
-            Ok(())
+            false
         }
-        None => Err(TrapCode::ExecutionHalted),
+        None => true,
     }
 }
 
@@ -113,13 +113,12 @@ pub(crate) fn visit_return<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode>
 pub(crate) fn visit_return_call_internal<T>(
     vm: &mut RwasmExecutor<T>,
     compiled_func: CompiledFunc,
-) -> Result<(), TrapCode> {
+) {
     vm.ip.add(1);
     vm.value_stack.sync_stack_ptr(vm.sp);
     vm.sp = vm.value_stack.stack_ptr();
     vm.ip = InstructionPtr::new(vm.module.code_section.instr.as_ptr());
     vm.ip.add(compiled_func as usize);
-    Ok(())
 }
 
 #[inline(always)]
@@ -154,7 +153,12 @@ pub(crate) fn visit_return_call_indirect<T>(
     if instr_ref == 0 {
         return Err(TrapCode::IndirectCallToNull.into());
     }
-    vm.execute_call_internal(false, 2, instr_ref)
+    vm.ip.add(2);
+    vm.value_stack.sync_stack_ptr(vm.sp);
+    vm.sp = vm.value_stack.stack_ptr();
+    vm.ip = InstructionPtr::new(vm.module.code_section.instr.as_ptr());
+    vm.ip.add(instr_ref as usize);
+    Ok(())
 }
 
 #[inline(always)]
@@ -233,6 +237,16 @@ pub(crate) fn visit_signature_check<T>(
 }
 
 #[inline(always)]
+pub(crate) fn visit_stack_check<T>(
+    vm: &mut RwasmExecutor<T>,
+    max_stack_height: MaxStackHeight,
+) -> Result<(), TrapCode> {
+    vm.value_stack.reserve(max_stack_height as usize)?;
+    vm.ip.add(1);
+    Ok(())
+}
+
+#[inline(always)]
 pub(crate) fn visit_drop<T>(vm: &mut RwasmExecutor<T>) {
     vm.sp.drop();
     vm.ip.add(1);
@@ -276,17 +290,7 @@ pub(crate) fn visit_ref_func<T>(vm: &mut RwasmExecutor<T>, compiled_func: Compil
 }
 
 #[inline(always)]
-pub(crate) fn visit_i32_i64_const<T>(vm: &mut RwasmExecutor<T>, untyped_value: UntypedValue) {
+pub(crate) fn visit_i32_const<T>(vm: &mut RwasmExecutor<T>, untyped_value: UntypedValue) {
     vm.sp.push(untyped_value);
     vm.ip.add(1);
-}
-
-#[inline(always)]
-pub(crate) fn visit_stack_alloc<T>(
-    vm: &mut RwasmExecutor<T>,
-    max_stack_height: MaxStackHeight,
-) -> Result<(), TrapCode> {
-    vm.value_stack.reserve(max_stack_height as usize)?;
-    vm.ip.add(1);
-    Ok(())
 }

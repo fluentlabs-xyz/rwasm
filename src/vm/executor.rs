@@ -17,7 +17,6 @@ use crate::{
         UntypedValue,
         N_DEFAULT_STACK_SIZE,
         N_MAX_DATA_SEGMENTS,
-        N_MAX_RECURSION_DEPTH,
         N_MAX_STACK_SIZE,
         N_MAX_TABLE_SIZE,
     },
@@ -200,7 +199,8 @@ impl<T> RwasmExecutor<T> {
     }
 
     pub fn program_counter(&self) -> u32 {
-        self.ip.pc()
+        let diff = self.ip.ptr as u32 - self.module.code_section.instr.as_ptr() as u32;
+        diff / size_of::<Opcode>() as u32
     }
 
     pub fn reset(&mut self, pc: Option<usize>) {
@@ -208,13 +208,11 @@ impl<T> RwasmExecutor<T> {
         ip.add(pc.unwrap_or(0));
         self.ip = ip;
         self.consumed_fuel = 0;
-        self.value_stack.drain();
+        self.value_stack.reset();
         self.sp = self.value_stack.stack_ptr();
-        self.call_stack.clear();
-        self.last_signature = None;
-    }
-
-    pub fn reset_last_signature(&mut self) {
+        unsafe {
+            self.call_stack.set_len(0);
+        }
         self.last_signature = None;
     }
 
@@ -358,27 +356,6 @@ impl<T> RwasmExecutor<T> {
     ) -> Result<(), TrapCode> {
         self.sp.try_eval_top2(f)?;
         self.ip.add(1);
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub(crate) fn execute_call_internal(
-        &mut self,
-        is_nested_call: bool,
-        skip: usize,
-        instr_ref: u32,
-    ) -> Result<(), TrapCode> {
-        self.ip.add(skip);
-        self.value_stack.sync_stack_ptr(self.sp);
-        if is_nested_call {
-            if self.call_stack.len() > N_MAX_RECURSION_DEPTH {
-                return Err(TrapCode::StackOverflow);
-            }
-            self.call_stack.push(self.ip);
-        }
-        self.sp = self.value_stack.stack_ptr();
-        self.ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
-        self.ip.add(instr_ref as usize);
         Ok(())
     }
 }

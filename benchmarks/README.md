@@ -4,9 +4,9 @@ When it's required to load the account from storage, only raw bytes.
 
 Current results:
 
-| Test          | Native | Risc-V | Wasmi | rWasm |
-|---------------|--------|--------|-------|-------|
-| Fibonacci(43) | ~12ns  | ~7ms   | ~6us  | ~2us  |
+| Test     | Native | Wasmi | rWasm  |
+|----------|--------|-------|--------|
+| Fib (43) | ~12ns  | ~6us  | ~0.7us |
 
 PS:
 

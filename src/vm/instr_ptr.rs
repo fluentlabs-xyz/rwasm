@@ -2,10 +2,10 @@ use crate::types::Opcode;
 
 /// The instruction pointer to the instruction of a function on the call stack.
 #[derive(Debug, Copy, Clone, PartialEq)]
+#[repr(transparent)]
 pub struct InstructionPtr {
     /// The pointer to the instruction.
     pub(crate) ptr: *const Opcode,
-    pub(crate) src: *const Opcode,
 }
 
 /// It is safe to send an [`rwasm::engine::code_map::InstructionPtr`] to another thread.
@@ -22,14 +22,15 @@ impl InstructionPtr {
     /// Creates a new [`rwasm::engine::code_map::InstructionPtr`] for `instr`.
     #[inline]
     pub fn new(ptr: *const Opcode) -> Self {
-        Self { ptr, src: ptr }
+        Self { ptr }
     }
 
     #[inline(always)]
     pub fn pc(&self) -> u32 {
-        let size = size_of::<Opcode>() as u32;
-        let diff = self.ptr as u32 - self.src as u32;
-        diff / size
+        // let size = size_of::<Opcode>() as u32;
+        // let diff = self.ptr as u32 - self.src as u32;
+        // diff / size
+        0
     }
 
     /// Offset the [`rwasm::engine::code_map::InstructionPtr`] by the given value.

@@ -8,7 +8,7 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode>
             let stack = vm.value_stack.dump_stack(vm.sp);
             println!(
                 "{:04}:\t {} \tstack({}):{:?}",
-                vm.ip.pc(),
+                vm.program_counter(),
                 instr,
                 stack.len(),
                 stack
@@ -50,21 +50,25 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode>
             BrIfNez(imm) => super::stack::visit_br_if_nez(vm, imm),
             BrTable(imm) => super::stack::visit_br_table(vm, imm),
             ConsumeFuel(imm) => super::stack::visit_consume_fuel(vm, imm)?,
-            Return => super::stack::visit_return(vm)?,
-            ReturnCallInternal(imm) => super::stack::visit_return_call_internal(vm, imm)?,
+            Return => {
+                if super::stack::visit_return(vm) {
+                    break Ok(());
+                }
+            }
+            ReturnCallInternal(imm) => super::stack::visit_return_call_internal(vm, imm),
             ReturnCall(imm) => super::stack::visit_return_call(vm, imm)?,
             ReturnCallIndirect(imm) => super::stack::visit_return_call_indirect(vm, imm)?,
             CallInternal(imm) => super::stack::visit_call_internal(vm, imm)?,
             Call(imm) => super::stack::visit_call(vm, imm)?,
             CallIndirect(imm) => super::stack::visit_call_indirect(vm, imm)?,
             SignatureCheck(imm) => super::stack::visit_signature_check(vm, imm)?,
-            StackCheck(imm) => super::stack::visit_stack_alloc(vm, imm)?,
+            StackCheck(imm) => super::stack::visit_stack_check(vm, imm)?,
             Drop => super::stack::visit_drop(vm),
             Select => super::stack::visit_select(vm),
             GlobalGet(imm) => super::stack::visit_global_get(vm, imm),
             GlobalSet(imm) => super::stack::visit_global_set(vm, imm),
             RefFunc(imm) => super::stack::visit_ref_func(vm, imm),
-            I32Const(imm) => super::stack::visit_i32_i64_const(vm, imm),
+            I32Const(imm) => super::stack::visit_i32_const(vm, imm),
 
             // alu
             I32Eqz => super::alu::visit_i32_eqz(vm),
