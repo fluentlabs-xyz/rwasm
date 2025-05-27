@@ -39,7 +39,7 @@ fn test_ending_opcodes(seq: &InstrSeq) {
 }
 
 #[test]
-fn test_extract_i64_add() {
+fn test_extract_rwasm_bytecode() {
     let wasm_binary = include_bytes!("./lib.wasm");
     let (module, _) = RwasmModule::compile(
         CompilationConfig::default()
