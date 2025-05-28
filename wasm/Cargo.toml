@@ -9,3 +9,4 @@ path = "lib.rs"
 
 [dependencies]
 rwasm = { path = "..", default-features = false }
+wat = "1.230.0"
