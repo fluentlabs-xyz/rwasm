@@ -8,11 +8,17 @@ fn test_fib() {
     parser.parse(wasm_binary).unwrap();
     let (rwasm_module, _) = parser.finalize().unwrap();
     println!("{}", rwasm_module);
-    let mut vm = RwasmExecutor::new(rwasm_module.into(), ExecutorConfig::new(), ());
+    let mut vm = RwasmExecutor::new(
+        rwasm_module.into(),
+        ExecutorConfig::new().fuel_enabled(true),
+        (),
+    );
     vm.caller().stack_push(43);
     vm.run().unwrap();
     let result = vm.caller().stack_pop();
     assert_eq!(result.as_i64(), 433494437);
+    println!("fuel_consumed: {}", vm.fuel_consumed());
+    assert_eq!(vm.fuel_consumed(), 1253);
 }
 
 #[test]

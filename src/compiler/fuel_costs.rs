@@ -40,18 +40,18 @@ pub struct FuelCosts {
     /// # Note
     ///
     /// If this is zero, then processing memory bytes costs nothing.
-    memory_bytes_per_fuel: u64,
+    pub memory_bytes_per_fuel: u64,
     /// How many table elements can be processed per fuel in a `bulk-table` instruction?
     ///
     /// # Note
     ///
     /// If this is zero, then processing table elements costs nothing.
-    table_elements_per_fuel: u64,
+    pub table_elements_per_fuel: u64,
 }
 
 impl FuelCosts {
     /// Returns the fuel consumption of the number of items with costs per items.
-    fn costs_per(len_items: u64, items_per_fuel: u64) -> u64 {
+    pub fn costs_per(len_items: u64, items_per_fuel: u64) -> u64 {
         NonZeroU64::new(items_per_fuel)
             .map(|items_per_fuel| len_items / items_per_fuel)
             .unwrap_or(0)

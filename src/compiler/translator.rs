@@ -34,7 +34,7 @@ use crate::{
     SignatureIdx,
     DEFAULT_MEMORY_INDEX,
     N_MAX_MEMORY_PAGES,
-    N_MAX_TABLE_ELEMENTS,
+    N_MAX_TABLE_SIZE,
 };
 use alloc::{boxed::Box, vec, vec::Vec};
 use hashbrown::HashMap;
@@ -262,12 +262,12 @@ pub struct InstructionTranslator {
 }
 
 impl InstructionTranslator {
-    pub fn new(alloc: FuncTranslatorAllocations) -> Self {
+    pub fn new(alloc: FuncTranslatorAllocations, with_consume_fuel: bool) -> Self {
         Self {
             reachable: true,
             alloc,
             stack_height: Default::default(),
-            fuel_costs: Default::default(),
+            fuel_costs: with_consume_fuel.then(FuelCosts::default),
             locals: Default::default(),
         }
     }
@@ -1495,8 +1495,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
-            builder.stack_height.push1();
             builder.alloc.stack_types.push(ValType::I32);
+            builder.stack_height.push1();
             builder.alloc.instruction_set.op_memory_size();
             Ok(())
         })
@@ -1514,26 +1514,21 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .maximum
                 .and_then(|v| u32::try_from(v).ok())
                 .unwrap_or(N_MAX_MEMORY_PAGES);
-
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-
-            builder.alloc.instruction_set.op_local_get(1);
-            builder.alloc.instruction_set.op_memory_size();
-            builder.alloc.instruction_set.op_i32_add();
-            builder.alloc.instruction_set.op_i32_const(max_pages);
-            builder.alloc.instruction_set.op_i32_gt_s();
-            builder.alloc.instruction_set.op_br_if_eqz(4);
-            builder.alloc.instruction_set.op_drop();
-            builder.alloc.instruction_set.op_i32_const(u32::MAX);
-            builder.alloc.instruction_set.op_br(2);
-            builder.alloc.instruction_set.op_memory_grow();
+            builder.alloc.instruction_set.op_memory_grow_checked(
+                Some(max_pages),
+                builder
+                    .fuel_costs
+                    .map(|v| u32::try_from(v.memory_bytes_per_fuel).unwrap_or(u32::MAX)),
+            );
+            // make sure types are correct
+            let popped_type = builder.alloc.stack_types.pop().unwrap();
+            debug_assert_eq!(popped_type, ValType::I32);
+            builder.alloc.stack_types.push(popped_type);
+            // calc stack height
+            builder.stack_height.pop_type(ValType::I32);
+            builder.stack_height.push2();
+            builder.stack_height.pop2();
+            builder.stack_height.push_type(ValType::I32);
             Ok(())
         })
     }
@@ -2919,7 +2914,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // elements, then we push `u32::MAX` on the stack that is equal to table
             // grow overflow error
             let table_type = builder.resolve_table_type(table_index);
-            let max_table_elements = table_type.maximum.unwrap_or(N_MAX_TABLE_ELEMENTS as u32);
+            let max_table_elements = table_type.maximum.unwrap_or(N_MAX_TABLE_SIZE);
             let ib = &mut builder.alloc.instruction_set;
 
             builder.stack_height.push1();

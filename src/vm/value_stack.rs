@@ -1,11 +1,6 @@
 use crate::{
     split_i64_to_i32,
-    types::{
-        TrapCode,
-        UntypedValue,
-        DEFAULT_MAX_VALUE_STACK_HEIGHT,
-        DEFAULT_MIN_VALUE_STACK_HEIGHT,
-    },
+    types::{TrapCode, UntypedValue},
     F32,
     F64,
 };
@@ -50,16 +45,6 @@ impl PartialEq for ValueStack {
 }
 
 impl Eq for ValueStack {}
-
-impl Default for ValueStack {
-    fn default() -> Self {
-        let register_len = size_of::<UntypedValue>();
-        Self::new(
-            DEFAULT_MIN_VALUE_STACK_HEIGHT / register_len,
-            DEFAULT_MAX_VALUE_STACK_HEIGHT / register_len,
-        )
-    }
-}
 
 impl Extend<UntypedValue> for ValueStack {
     fn extend<I>(&mut self, iter: I)
@@ -142,7 +127,7 @@ impl ValueStack {
         );
         assert!(
             initial_len <= maximum_len,
-            "initial value stack length is greater than maximum value stack length",
+            "the initial value stack length is greater than maximum value stack length",
         );
         let entries = vec![UntypedValue::default(); initial_len];
         Self {
@@ -302,7 +287,6 @@ impl ValueStack {
 ///
 /// [`ValueStack`]: super::ValueStack
 #[derive(Debug, Copy, Clone)]
-// #[repr(transparent)]
 pub struct ValueStackPtr {
     src: *mut UntypedValue,
     ptr: *mut UntypedValue,
@@ -311,11 +295,7 @@ pub struct ValueStackPtr {
 impl From<*mut UntypedValue> for ValueStackPtr {
     #[inline]
     fn from(ptr: *mut UntypedValue) -> Self {
-        Self {
-            src: ptr,
-            ptr,
-            // len: usize::MAX,
-        }
+        Self { src: ptr, ptr }
     }
 }
 

@@ -49,7 +49,7 @@ fn bench_rwasm(b: &mut Bencher) {
         let result: i32 = Caller::new(&mut vm).stack_pop_as();
         core::hint::black_box(result);
         assert_eq!(result, 433494437);
-        vm.reset(None);
+        vm.reset(None, false);
     });
 }
 

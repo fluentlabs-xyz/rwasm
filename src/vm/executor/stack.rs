@@ -98,6 +98,16 @@ pub(crate) fn visit_consume_fuel<T>(
 }
 
 #[inline(always)]
+pub(crate) fn visit_consume_fuel_stack<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
+    let block_fuel: u32 = vm.sp.pop_as();
+    if vm.config.fuel_enabled {
+        vm.try_consume_fuel(block_fuel as u64)?;
+    }
+    vm.ip.add(1);
+    Ok(())
+}
+
+#[inline(always)]
 pub(crate) fn visit_return<T>(vm: &mut RwasmExecutor<T>) -> bool {
     vm.value_stack.sync_stack_ptr(vm.sp);
     match vm.call_stack.pop() {
@@ -242,6 +252,8 @@ pub(crate) fn visit_stack_check<T>(
     max_stack_height: MaxStackHeight,
 ) -> Result<(), TrapCode> {
     vm.value_stack.reserve(max_stack_height as usize)?;
+    // we should rewrite SP after reserve because of potential reallocation
+    vm.sp = vm.value_stack.stack_ptr();
     vm.ip.add(1);
     Ok(())
 }

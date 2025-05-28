@@ -142,13 +142,13 @@ pub(crate) fn visit_table_init<T>(
     // Therefore, in `element_segment_idx`, we store the original index,
     // which is always > 0.
     let is_empty_segment = vm
-        .empty_elements_segments
+        .empty_elem_segments
         .get(element_segment_idx as usize)
         .as_deref()
         .copied()
         .unwrap_or(false);
 
-    let mut module_elements_section = &vm.default_elements_segment[..];
+    let mut module_elements_section = &vm.module.elem_section[..];
     if is_empty_segment {
         module_elements_section = &[];
     }
@@ -164,7 +164,7 @@ pub(crate) fn visit_element_drop<T>(
     vm: &mut RwasmExecutor<T>,
     element_segment_idx: ElementSegmentIdx,
 ) {
-    vm.empty_elements_segments
+    vm.empty_elem_segments
         .set(element_segment_idx as usize, true);
     vm.ip.add(1);
 }

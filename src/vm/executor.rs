@@ -18,7 +18,6 @@ use crate::{
         N_DEFAULT_STACK_SIZE,
         N_MAX_DATA_SEGMENTS,
         N_MAX_STACK_SIZE,
-        N_MAX_TABLE_SIZE,
     },
     vm::{
         config::ExecutorConfig,
@@ -33,10 +32,14 @@ use crate::{
     FuelCosts,
     Opcode,
     TrapCode,
+    N_MAX_DATA_SEGMENTS_BITS,
+    N_MAX_ELEM_SEGMENTS,
+    N_MAX_ELEM_SEGMENTS_BITS,
 };
-use alloc::{sync::Arc, vec, vec::Vec};
-use bitvec::{bitvec, prelude::BitVec};
+use alloc::sync::Arc;
+use bitvec::{array::BitArray, bitarr};
 use hashbrown::HashMap;
+use smallvec::{smallvec, SmallVec};
 
 /// The `RwasmExecutor` struct represents the state and functionality required to execute
 /// WebAssembly (WASM) instructions within an embedded WASM runtime environment.
@@ -109,48 +112,37 @@ pub struct RwasmExecutor<T> {
     pub(crate) global_memory: GlobalMemory,
     pub(crate) ip: InstructionPtr,
     pub(crate) context: T,
+    // the last used signature (needed for indirect calls type checks)
+    pub(crate) last_signature: Option<SignatureIdx>,
     #[cfg(feature = "tracing")]
     pub(crate) tracer: Option<crate::vm::Tracer>,
     pub(crate) fuel_costs: FuelCosts,
     // rwasm modified segments
     pub(crate) tables: HashMap<TableIdx, TableEntity>,
-    pub(crate) default_elements_segment: Vec<UntypedValue>,
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
-    pub(crate) empty_elements_segments: BitVec,
-    pub(crate) empty_data_segments: BitVec,
+    // elem/data emptiness flags
+    pub(crate) empty_data_segments: BitArray<[usize; N_MAX_DATA_SEGMENTS_BITS]>,
+    pub(crate) empty_elem_segments: BitArray<[usize; N_MAX_ELEM_SEGMENTS_BITS]>,
     // list of nested calls return pointers
-    pub(crate) call_stack: Vec<InstructionPtr>,
-    // the last used signature (needed for indirect calls type checks)
-    pub(crate) last_signature: Option<SignatureIdx>,
+    pub(crate) call_stack: SmallVec<[InstructionPtr; 128]>,
     pub(crate) syscall_handler: SyscallHandler<T>,
 }
 
 impl<T> RwasmExecutor<T> {
-    pub fn parse(
-        rwasm_bytecode: &[u8],
-        config: ExecutorConfig,
-        context: T,
-    ) -> Result<Self, TrapCode> {
-        Ok(Self::new(
-            Arc::new(RwasmModule::new(rwasm_bytecode)),
-            config,
-            context,
-        ))
-    }
-
     pub fn new(module: Arc<RwasmModule>, config: ExecutorConfig, context: T) -> Self {
         // create a stack with sp
         let mut value_stack = ValueStack::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE);
         let sp = value_stack.stack_ptr();
 
         // assign sp to the position inside a code section
-        let ip = InstructionPtr::new(module.code_section.instr.as_ptr());
+        let mut ip = InstructionPtr::new(module.code_section.instr.as_ptr());
+        ip.add(config.default_pc.unwrap_or(0));
 
         // create global memory
         let global_memory = GlobalMemory::new(Pages::default());
 
-        let dropped_elements = bitvec![0; N_MAX_TABLE_SIZE];
-        let empty_data_segments = bitvec![0; N_MAX_DATA_SEGMENTS];
+        let empty_data_segments = bitarr![0; N_MAX_DATA_SEGMENTS];
+        let empty_elem_segments = bitarr![0; N_MAX_ELEM_SEGMENTS];
 
         #[cfg(feature = "tracing")]
         let tracer = if config.trace_enabled {
@@ -158,13 +150,6 @@ impl<T> RwasmExecutor<T> {
         } else {
             None
         };
-
-        let module_elements_section = module
-            .elem_section
-            .iter()
-            .copied()
-            .map(|v| UntypedValue::from(v))
-            .collect::<Vec<_>>();
 
         Self {
             module,
@@ -181,11 +166,10 @@ impl<T> RwasmExecutor<T> {
             fuel_costs: Default::default(),
             global_variables: Default::default(),
             tables: Default::default(),
-            call_stack: vec![],
+            call_stack: smallvec![],
             last_signature: None,
             syscall_handler: always_failing_syscall_handler,
-            default_elements_segment: module_elements_section,
-            empty_elements_segments: dropped_elements,
+            empty_elem_segments,
             empty_data_segments,
         }
     }
@@ -203,16 +187,52 @@ impl<T> RwasmExecutor<T> {
         diff / size_of::<Opcode>() as u32
     }
 
-    pub fn reset(&mut self, pc: Option<usize>) {
-        let mut ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
-        ip.add(pc.unwrap_or(0));
-        self.ip = ip;
+    /// Resets the state of the current execution context.
+    ///
+    /// # Parameters
+    /// - `pc`: An optional program counter (`usize`) specifying the instruction pointer position to
+    ///   reset to. If not provided, defaults to `0` (the entrypoint).
+    /// - `keep_flags`: A boolean indicating whether to preserve the data and element segment flags
+    ///   (`true` to keep the flags, `false` to reset them).
+    ///
+    /// # Behavior
+    /// - Resets the instruction pointer (`ip`) to the specified `pc` or the default value of `0`.
+    /// - Clears the consumed and refunded fuel counters by setting them to `0`.
+    /// - Resets the value stack by clearing its contents and updating the stack pointer (`sp`).
+    /// - Empties the call stack by setting its length to `0`.
+    /// - Resets the data and element segment flags to `false` if `keep_flags` is `false`.
+    /// - Clears the `last_signature` field, which can remain active after a trap.
+    ///
+    /// # Notes
+    /// - The `value_stack` is completely cleared, and the stack pointer (`sp`) is re-initialized to
+    ///   reflect the reset state.
+    /// - The call stack is reset to zero directly through an unsafe operation for performance
+    ///   optimization, avoiding a full drain.
+    /// - Preserving the data and element flags with `keep_flags` is particularly useful for
+    ///   end-to-end test cases that depend on unchanged segments.
+    pub fn reset(&mut self, pc: Option<usize>, keep_flags: bool) {
+        // if pc is not specified, then fallback to 0 (an entrypoint)
+        self.ip = {
+            let mut ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
+            ip.add(pc.unwrap_or(0));
+            ip
+        };
+        // reset consumed and refunded fuel to 0
         self.consumed_fuel = 0;
+        self.refunded_fuel = 0;
+        // reset stack pointer to zero (stack must be cleared)
         self.value_stack.reset();
         self.sp = self.value_stack.stack_ptr();
+        // reset the call stack to 0 if it's not, don't drain for performance reasons
         unsafe {
             self.call_stack.set_len(0);
         }
+        // we might want to keep data/elem flags between calls, it's required for e2e tests
+        if !keep_flags {
+            self.empty_data_segments.fill(false);
+            self.empty_elem_segments.fill(false);
+        }
+        // in case of a trap we might have this flag remains active
         self.last_signature = None;
     }
 
@@ -308,7 +328,6 @@ impl<T> RwasmExecutor<T> {
         Ok(())
     }
 
-    #[allow(unused_variables)]
     #[inline(always)]
     pub(crate) fn execute_store_wrap(
         &mut self,
@@ -319,7 +338,7 @@ impl<T> RwasmExecutor<T> {
             offset: u32,
             value: UntypedValue,
         ) -> Result<(), TrapCode>,
-        len: u32,
+        #[allow(unused_variables)] len: u32,
     ) -> Result<(), TrapCode> {
         let (address, value) = self.sp.pop2();
         let memory = self.global_memory.data_mut();
@@ -333,28 +352,6 @@ impl<T> RwasmExecutor<T> {
                 &memory[base_address as usize..(base_address + len) as usize],
             );
         }
-        self.ip.add(1);
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub(crate) fn execute_unary(&mut self, f: fn(UntypedValue) -> UntypedValue) {
-        self.sp.eval_top(f);
-        self.ip.add(1);
-    }
-
-    #[inline(always)]
-    pub(crate) fn execute_binary(&mut self, f: fn(UntypedValue, UntypedValue) -> UntypedValue) {
-        self.sp.eval_top2(f);
-        self.ip.add(1);
-    }
-
-    #[inline(always)]
-    pub(crate) fn try_execute_binary(
-        &mut self,
-        f: fn(UntypedValue, UntypedValue) -> Result<UntypedValue, TrapCode>,
-    ) -> Result<(), TrapCode> {
-        self.sp.try_eval_top2(f)?;
         self.ip.add(1);
         Ok(())
     }

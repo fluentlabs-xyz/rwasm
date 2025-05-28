@@ -8,6 +8,7 @@ use crate::{
     InstructionSet,
     TableIdx,
     DEFAULT_MEMORY_INDEX,
+    MEMORY_BYTES_PER_FUEL,
     NULL_FUNC_IDX,
     N_BYTES_PER_MEMORY_PAGE,
     N_MAX_MEMORY_PAGES,
@@ -54,6 +55,7 @@ impl SegmentBuilder {
         Ok(())
     }
 
+    /// Max stack height: 3
     pub fn add_memory_pages(&mut self, initial_pages: u32) -> Result<(), CompilationError> {
         // there is a hard limit of max possible memory used (~64 mB)
         let next_pages = self
@@ -61,13 +63,16 @@ impl SegmentBuilder {
             .checked_add(initial_pages)
             .unwrap_or(u32::MAX);
         if next_pages >= N_MAX_MEMORY_PAGES {
-            return Err(CompilationError::MemorySegmentsOverflow);
+            return Err(CompilationError::MaxReadonlyDataReached);
         }
         // it makes no sense to grow memory with 0 pages
         if initial_pages > 0 {
             // TODO(dmitry123): "add stack height check?"
             self.entrypoint_bytecode.op_i32_const(initial_pages);
-            self.entrypoint_bytecode.op_memory_grow();
+            self.entrypoint_bytecode
+                .op_memory_grow_checked(None, Some(MEMORY_BYTES_PER_FUEL));
+            // there is no need to verify for a potential trap because it can't overflow,
+            // we have this check upper during the compilation time
             self.entrypoint_bytecode.op_drop();
         }
         // increase the total number of pages allocated
@@ -80,6 +85,8 @@ impl SegmentBuilder {
         table_index: TableIdx,
         table_type: &TableType,
     ) -> Result<(), CompilationError> {
+        // Wasm validation guarantees that number of table segments can't exceed 100 items,
+        // that is why there is no need to check for potential overflow
         self.entrypoint_bytecode.op_ref_func(NULL_FUNC_IDX);
         self.entrypoint_bytecode.op_i32_const(table_type.initial);
         self.entrypoint_bytecode.op_table_grow(table_index);

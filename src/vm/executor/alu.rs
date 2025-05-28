@@ -4,8 +4,9 @@ macro_rules! impl_visit_unary {
     ( $( fn $visit_ident:ident($untyped_ident:ident); )* ) => {
         $(
             #[inline(always)]
-            pub(crate) fn $visit_ident<T>(exec: &mut RwasmExecutor<T>) {
-                exec.execute_unary(UntypedValue::$untyped_ident)
+            pub(crate) fn $visit_ident<T>(vm: &mut RwasmExecutor<T>) {
+                vm.sp.eval_top(UntypedValue::$untyped_ident);
+                vm.ip.add(1);
             }
         )*
     }
@@ -29,7 +30,8 @@ macro_rules! impl_visit_binary {
         $(
             #[inline(always)]
             pub(crate) fn $visit_ident<T>(vm: &mut RwasmExecutor<T>) {
-                vm.execute_binary(UntypedValue::$untyped_ident)
+                vm.sp.eval_top2(UntypedValue::$untyped_ident);
+                vm.ip.add(1);
             }
         )*
     }
@@ -65,7 +67,9 @@ macro_rules! impl_visit_fallible_binary {
         $(
             #[inline(always)]
             pub(crate) fn $visit_ident<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
-                vm.try_execute_binary(UntypedValue::$untyped_ident)
+                vm.sp.try_eval_top2(UntypedValue::$untyped_ident)?;
+                vm.ip.add(1);
+                Ok(())
             }
         )*
     }

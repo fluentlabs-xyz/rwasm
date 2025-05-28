@@ -13,6 +13,7 @@ use crate::handler::{
 };
 use anyhow::Result;
 use rwasm::{
+    instruction_set,
     split_i64_to_i32_arr,
     Caller,
     CompilationConfig,
@@ -68,12 +69,15 @@ impl<'a> TestContext<'a> {
     }
 
     pub fn import_linker() -> ImportLinker {
+        let block_fuel = instruction_set! {
+            .op_i32_const(0)
+        };
         ImportLinker::from([
             (
                 ImportName::new("spectest", "print"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT,
-                    block_fuel: 0,
+                    block_fuel: block_fuel.clone(),
                     params: &[],
                     result: &[],
                 },
@@ -82,7 +86,7 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_i32"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I32,
-                    block_fuel: 0,
+                    block_fuel: block_fuel.clone(),
                     params: &[ValType::I32],
                     result: &[],
                 },
@@ -91,7 +95,7 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_i64"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I64,
-                    block_fuel: 0,
+                    block_fuel: block_fuel.clone(),
                     params: &[ValType::I32; 2],
                     result: &[],
                 },
@@ -100,7 +104,7 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_f32"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_F32.into(),
-                    block_fuel: 0,
+                    block_fuel: block_fuel.clone(),
                     params: &[ValType::F32],
                     result: &[],
                 },
@@ -109,7 +113,7 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_f64"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_F64,
-                    block_fuel: 0,
+                    block_fuel: block_fuel.clone(),
                     params: &[ValType::F32; 2],
                     result: &[],
                 },
@@ -118,7 +122,7 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_i32_f32"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I32_F32,
-                    block_fuel: 0,
+                    block_fuel: block_fuel.clone(),
                     params: &[ValType::I32, ValType::F32],
                     result: &[],
                 },
@@ -127,7 +131,7 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_i64_f64"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I64_F64,
-                    block_fuel: 0,
+                    block_fuel: block_fuel.clone(),
                     params: &[ValType::I32, ValType::I32, ValType::F32, ValType::F32],
                     result: &[],
                 },
@@ -307,7 +311,7 @@ impl TestContext<'_> {
         // Some tests might fail, and we might keep outdated signature value in the state,
         // make sure the state is clear before every new call.
         let pc = instance.context().program_counter as usize;
-        instance.reset(Some(pc));
+        instance.reset(Some(pc), true);
 
         let func_state = self
             .extern_state

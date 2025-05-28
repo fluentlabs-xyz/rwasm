@@ -495,7 +495,7 @@ impl ModuleParser {
         self.validator.table_section(&section)?;
         for (table_idx, table_type) in section.into_iter().enumerate() {
             let table_type = table_type?;
-            let table_idx = TableIdx::from(table_idx as u32);
+            let table_idx = TableIdx::try_from(table_idx).unwrap();
             self.allocations
                 .translation
                 .segment_builder
@@ -654,14 +654,14 @@ impl ModuleParser {
                     // We can fail-fast here because we already that know that there an overflow
                     let element_offset = u32::try_from(self.eval_const(compiled_expr)?)
                         .map_err(|_| CompilationError::TableOutOfBounds)?;
-                    let table_index = TableIdx::from(table_index);
+                    let table_idx = TableIdx::try_from(table_index).unwrap();
                     self.allocations
                         .translation
                         .segment_builder
                         .add_active_elements(
                             element_segment_idx,
                             element_offset,
-                            table_index,
+                            table_idx,
                             element_items_vec,
                         );
                 }
@@ -812,8 +812,13 @@ impl ModuleParser {
         let allocations = take(&mut self.allocations);
         let validator = self.validator.code_section_entry(&func_body)?;
         let func_validator = validator.into_validator(allocations.validation);
-        let func_builder =
-            FuncBuilder::new(func_body, func_validator, func_idx, allocations.translation);
+        let func_builder = FuncBuilder::new(
+            func_body,
+            func_validator,
+            func_idx,
+            allocations.translation,
+            self.config.consume_fuel,
+        );
         let allocations = func_builder.translate()?;
         let _ = replace(&mut self.allocations, allocations);
         Ok(())

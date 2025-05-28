@@ -34,6 +34,7 @@ pub enum Opcode {
     BrIfNez(BranchOffset) = 0x22,
     BrTable(BranchTableTargets) = 0x23,
     ConsumeFuel(BlockFuel) = 0x30,
+    ConsumeFuelStack = 0x31,
     Return = 0x40,
     ReturnCallInternal(CompiledFunc) = 0x41,
     ReturnCall(SysFuncIdx) = 0x42,

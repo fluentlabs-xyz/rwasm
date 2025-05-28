@@ -14,7 +14,7 @@ impl From<i32> for BranchOffset {
 }
 
 impl BranchOffset {
-    /// Creates an uninitalized [`BranchOffset`].
+    /// Creates an uninitialized [`BranchOffset`].
     pub fn uninit() -> Self {
         Self(0)
     }
@@ -34,23 +34,6 @@ impl BranchOffset {
         let offset = dst.checked_sub(src)?;
         let offset = i32::try_from(offset).ok()?;
         Some(Self(offset))
-    }
-
-    /// Returns `true` if the [`BranchOffset`] has been initialized.
-    pub fn is_init(self) -> bool {
-        self.to_i32() != 0
-    }
-
-    /// Initializes the [`BranchOffset`] with a proper value.
-    ///
-    /// # Panics
-    ///
-    /// - If the [`BranchOffset`] have already been initialized.
-    /// - If the given [`BranchOffset`] is not properly initialized.
-    pub fn init(&mut self, valid_offset: BranchOffset) {
-        assert!(valid_offset.is_init());
-        assert!(!self.is_init());
-        *self = valid_offset;
     }
 
     /// Returns the `i32` representation of the [`BranchOffset`].

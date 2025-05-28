@@ -25,14 +25,6 @@ impl InstructionPtr {
         Self { ptr }
     }
 
-    #[inline(always)]
-    pub fn pc(&self) -> u32 {
-        // let size = size_of::<Opcode>() as u32;
-        // let diff = self.ptr as u32 - self.src as u32;
-        // diff / size
-        0
-    }
-
     /// Offset the [`rwasm::engine::code_map::InstructionPtr`] by the given value.
     ///
     /// # Safety

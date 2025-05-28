@@ -1,12 +1,13 @@
-mod i64_alu;
-mod i64_bitwise;
-mod i64_compare;
-mod i64_conv;
-mod i64_div_s;
-mod i64_div_u;
-mod i64_memory;
-mod i64_rem_s;
-mod i64_rem_u;
+mod add_sub;
+mod bitwise;
+mod compare;
+mod conv;
+mod div_s;
+mod div_u;
+mod memory;
+mod mul;
+mod rem_s;
+mod rem_u;
 
 use crate::{
     types::{
@@ -133,6 +134,7 @@ impl InstructionSet {
     impl_opcode!(BrIfNez(BranchOffset));
     impl_opcode!(BrTable(BranchTableTargets));
     impl_opcode!(ConsumeFuel(BlockFuel));
+    impl_opcode!(ConsumeFuelStack);
     impl_opcode!(Return);
     impl_opcode!(ReturnCallInternal(CompiledFunc));
     impl_opcode!(ReturnCall(SysFuncIdx));
@@ -368,7 +370,7 @@ macro_rules! instruction_set_internal {
     // Nothing left to do
     ($code:ident, ) => {};
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {
-        _ = crate::types::Opcode::$x;
+        _ = crate::Opcode::$x;
         paste::paste! {
             $code.[< op_ $x:snake >]($v);
         }
@@ -376,7 +378,7 @@ macro_rules! instruction_set_internal {
     };
     // Default opcode without any inputs
     ($code:ident, $x:ident $($rest:tt)*) => {
-        _ = crate::types::Opcode::$x;
+        _ = crate::Opcode::$x;
         paste::paste! {
             $code.[< op_ $x:snake >]();
         }
@@ -392,7 +394,7 @@ macro_rules! instruction_set_internal {
 #[macro_export]
 macro_rules! instruction_set {
     ($($args:tt)*) => {{
-        let mut code = $crate::types::InstructionSet::new();
+        let mut code = $crate::InstructionSet::new();
         $crate::instruction_set_internal!(code, $($args)*);
         code
     }};

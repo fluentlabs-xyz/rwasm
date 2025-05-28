@@ -55,10 +55,6 @@ pub(crate) fn visit_memory_grow<T>(vm: &mut RwasmExecutor<T>) -> Result<(), Trap
             return Ok(());
         }
     };
-    if vm.config.fuel_enabled {
-        let delta_in_bytes = delta.to_bytes().unwrap_or(0) as u64;
-        vm.try_consume_fuel(vm.fuel_costs.fuel_for_bytes(delta_in_bytes))?;
-    }
     let new_pages = vm
         .global_memory
         .grow(delta)

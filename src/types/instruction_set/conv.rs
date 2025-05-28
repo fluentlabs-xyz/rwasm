@@ -16,6 +16,7 @@ impl InstructionSet {
         self.op_i32_const(-1);
     }
 
+    /// Max stack height: 1
     pub fn op_i64_extend_i32_u(&mut self) {
         self.op_i32_const(0);
     }

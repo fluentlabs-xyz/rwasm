@@ -50,6 +50,7 @@ pub(crate) fn run_the_loop<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode>
             BrIfNez(imm) => super::stack::visit_br_if_nez(vm, imm),
             BrTable(imm) => super::stack::visit_br_table(vm, imm),
             ConsumeFuel(imm) => super::stack::visit_consume_fuel(vm, imm)?,
+            ConsumeFuelStack => super::stack::visit_consume_fuel_stack(vm)?,
             Return => {
                 if super::stack::visit_return(vm) {
                     break Ok(());

@@ -1,13 +1,13 @@
 use crate::{
     types::{TrapCode, UntypedValue},
-    N_MAX_TABLE_ELEMENTS,
+    N_MAX_TABLE_SIZE,
 };
 use alloc::vec::Vec;
 
 /// A Wasm table entity.
 #[derive(Debug)]
 pub struct TableEntity {
-    pub(crate) elements: Vec<UntypedValue>,
+    pub(crate) elements: Vec<u32>,
 }
 
 impl TableEntity {
@@ -17,7 +17,7 @@ impl TableEntity {
     ///
     /// If `init` does not match the [`TableType`] element type.
     pub fn new() -> Self {
-        let elements = Vec::with_capacity(N_MAX_TABLE_ELEMENTS);
+        let elements = Vec::with_capacity(N_MAX_TABLE_SIZE as usize);
         Self { elements }
     }
 
@@ -47,7 +47,7 @@ impl TableEntity {
         if desired as usize > self.elements.capacity() {
             return u32::MAX;
         }
-        self.elements.resize(desired as usize, init);
+        self.elements.resize(desired as usize, init.to_bits());
         current
     }
 
@@ -60,7 +60,7 @@ impl TableEntity {
     /// This is a more efficient version of [`Table::get`] for
     /// internal use only.
     pub fn get_untyped(&self, index: u32) -> Option<UntypedValue> {
-        self.elements.get(index as usize).copied()
+        self.elements.get(index as usize).copied().map(Into::into)
     }
 
     /// Returns the [`UntypedValue`] of the [`Table`] at `index`.
@@ -73,7 +73,7 @@ impl TableEntity {
             .elements
             .get_mut(index as usize)
             .ok_or(TrapCode::TableOutOfBounds)?;
-        *untyped = value;
+        *untyped = value.to_bits();
         Ok(())
     }
 
@@ -116,7 +116,7 @@ impl TableEntity {
     pub fn init_untyped(
         &mut self,
         dst_index: u32,
-        element: &[UntypedValue],
+        element: &[u32],
         src_index: u32,
         len: u32,
     ) -> Result<(), TrapCode> {
@@ -231,7 +231,7 @@ impl TableEntity {
             .get_mut(dst_index..)
             .and_then(|elements| elements.get_mut(..len))
             .ok_or(TrapCode::TableOutOfBounds)?;
-        dst.fill(val);
+        dst.fill(val.to_bits());
         Ok(())
     }
 }

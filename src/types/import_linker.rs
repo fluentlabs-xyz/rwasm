@@ -1,4 +1,4 @@
-use crate::ImportName;
+use crate::{ImportName, InstructionSet};
 use core::ops::{Deref, DerefMut};
 use hashbrown::HashMap;
 use wasmparser::{FuncType, ValType};
@@ -24,7 +24,7 @@ impl DerefMut for ImportLinker {
 #[derive(Debug, Clone)]
 pub struct ImportLinkerEntity {
     pub sys_func_idx: u32,
-    pub block_fuel: u32,
+    pub block_fuel: InstructionSet,
     pub params: &'static [ValType],
     pub result: &'static [ValType],
 }
@@ -73,7 +73,7 @@ impl ImportLinker {
         &mut self,
         import_name: ImportName,
         sys_func_idx: u32,
-        block_fuel: u32,
+        block_fuel: InstructionSet,
         params: &'static [ValType],
         result: &'static [ValType],
     ) {
