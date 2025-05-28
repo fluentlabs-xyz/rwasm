@@ -4,7 +4,6 @@ pub struct ExecutorConfig {
     pub fuel_limit: Option<u64>,
     #[cfg(feature = "tracing")]
     pub trace_enabled: bool,
-    pub default_pc: Option<usize>,
 }
 
 impl ExecutorConfig {
@@ -14,7 +13,6 @@ impl ExecutorConfig {
             fuel_limit: None,
             #[cfg(feature = "tracing")]
             trace_enabled: false,
-            default_pc: None,
         }
     }
 

@@ -2,7 +2,6 @@ use crate::{
     BlockFuel,
     BranchOffset,
     BranchTableTargets,
-    Caller,
     CompiledFunc,
     GlobalIdx,
     InstructionPtr,
@@ -18,291 +17,280 @@ use crate::{
 };
 use core::cmp;
 
-#[inline(always)]
-pub(crate) fn visit_unreachable<T>(_vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
-    Err(TrapCode::UnreachableCodeReached)
-}
-
-#[inline(always)]
-pub(crate) fn visit_trap_code<T>(
-    _vm: &mut RwasmExecutor<T>,
-    trap_code: TrapCode,
-) -> Result<(), TrapCode> {
-    Err(trap_code)
-}
-
-#[inline(always)]
-pub(crate) fn visit_local_get<T>(vm: &mut RwasmExecutor<T>, local_depth: LocalDepth) {
-    let value = vm.sp.nth_back(local_depth as usize);
-    vm.sp.push(value);
-    vm.ip.add(1);
-}
-
-#[inline(always)]
-pub(crate) fn visit_local_set<T>(vm: &mut RwasmExecutor<T>, local_depth: LocalDepth) {
-    let new_value = vm.sp.pop();
-    vm.sp.set_nth_back(local_depth as usize, new_value);
-    vm.ip.add(1);
-}
-
-#[inline(always)]
-pub(crate) fn visit_local_tee<T>(vm: &mut RwasmExecutor<T>, local_depth: LocalDepth) {
-    let new_value = vm.sp.last();
-    vm.sp.set_nth_back(local_depth as usize, new_value);
-    vm.ip.add(1);
-}
-
-#[inline(always)]
-pub(crate) fn visit_br<T>(vm: &mut RwasmExecutor<T>, branch_offset: BranchOffset) {
-    vm.ip.offset(branch_offset.to_i32() as isize)
-}
-
-#[inline(always)]
-pub(crate) fn visit_br_if<T>(vm: &mut RwasmExecutor<T>, branch_offset: BranchOffset) {
-    let condition = vm.sp.pop_as();
-    if condition {
-        vm.ip.add(1);
-    } else {
-        vm.ip.offset(branch_offset.to_i32() as isize);
+impl<'a, T> RwasmExecutor<'a, T> {
+    #[inline(always)]
+    pub(crate) fn visit_unreachable(&mut self) -> Result<(), TrapCode> {
+        Err(TrapCode::UnreachableCodeReached)
     }
-}
 
-#[inline(always)]
-pub(crate) fn visit_br_if_nez<T>(vm: &mut RwasmExecutor<T>, branch_offset: BranchOffset) {
-    let condition = vm.sp.pop_as();
-    if condition {
-        vm.ip.offset(branch_offset.to_i32() as isize);
-    } else {
-        vm.ip.add(1);
+    #[inline(always)]
+    pub(crate) fn visit_trap_code(&mut self, trap_code: TrapCode) -> Result<(), TrapCode> {
+        Err(trap_code)
     }
-}
 
-#[inline(always)]
-pub(crate) fn visit_br_table<T>(vm: &mut RwasmExecutor<T>, targets: BranchTableTargets) {
-    let index: u32 = vm.sp.pop_as();
-    let max_index = targets as usize - 1;
-    let normalized_index = cmp::min(index as usize, max_index);
-    vm.ip.add(2 * normalized_index + 1);
-}
-
-#[inline(always)]
-pub(crate) fn visit_consume_fuel<T>(
-    vm: &mut RwasmExecutor<T>,
-    block_fuel: BlockFuel,
-) -> Result<(), TrapCode> {
-    if vm.config.fuel_enabled {
-        vm.try_consume_fuel(block_fuel.to_u64())?;
+    #[inline(always)]
+    pub(crate) fn visit_local_get(&mut self, local_depth: LocalDepth) {
+        let value = self.sp.nth_back(local_depth as usize);
+        self.sp.push(value);
+        self.ip.add(1);
     }
-    vm.ip.add(1);
-    Ok(())
-}
 
-#[inline(always)]
-pub(crate) fn visit_consume_fuel_stack<T>(vm: &mut RwasmExecutor<T>) -> Result<(), TrapCode> {
-    let block_fuel: u32 = vm.sp.pop_as();
-    if vm.config.fuel_enabled {
-        vm.try_consume_fuel(block_fuel as u64)?;
+    #[inline(always)]
+    pub(crate) fn visit_local_set(&mut self, local_depth: LocalDepth) {
+        let new_value = self.sp.pop();
+        self.sp.set_nth_back(local_depth as usize, new_value);
+        self.ip.add(1);
     }
-    vm.ip.add(1);
-    Ok(())
-}
 
-#[inline(always)]
-pub(crate) fn visit_return<T>(vm: &mut RwasmExecutor<T>) -> bool {
-    vm.value_stack.sync_stack_ptr(vm.sp);
-    match vm.call_stack.pop() {
-        Some(caller) => {
-            vm.ip = caller;
-            false
-        }
-        None => true,
+    #[inline(always)]
+    pub(crate) fn visit_local_tee(&mut self, local_depth: LocalDepth) {
+        let new_value = self.sp.last();
+        self.sp.set_nth_back(local_depth as usize, new_value);
+        self.ip.add(1);
     }
-}
 
-#[inline(always)]
-pub(crate) fn visit_return_call_internal<T>(
-    vm: &mut RwasmExecutor<T>,
-    compiled_func: CompiledFunc,
-) {
-    vm.ip.add(1);
-    vm.value_stack.sync_stack_ptr(vm.sp);
-    vm.sp = vm.value_stack.stack_ptr();
-    vm.ip = InstructionPtr::new(vm.module.code_section.instr.as_ptr());
-    vm.ip.add(compiled_func as usize);
-}
-
-#[inline(always)]
-pub(crate) fn visit_return_call<T>(
-    vm: &mut RwasmExecutor<T>,
-    sys_func_idx: SysFuncIdx,
-) -> Result<(), TrapCode> {
-    vm.value_stack.sync_stack_ptr(vm.sp);
-    // external call can cause interruption,
-    // that is why it's important to increase IP before doing the call
-    vm.ip.add(1);
-    (vm.syscall_handler)(Caller::new(vm), sys_func_idx)?;
-    Ok(())
-}
-
-#[inline(always)]
-pub(crate) fn visit_return_call_indirect<T>(
-    vm: &mut RwasmExecutor<T>,
-    signature_idx: SignatureIdx,
-) -> Result<(), TrapCode> {
-    let table = vm.fetch_table_index(1);
-    let func_index: u32 = vm.sp.pop_as();
-    vm.last_signature = Some(signature_idx);
-    let instr_ref: u32 = vm
-        .tables
-        .get(&table)
-        .expect("rwasm: unresolved table index")
-        .get_untyped(func_index)
-        .ok_or(TrapCode::TableOutOfBounds)?
-        .try_into()
-        .unwrap();
-    if instr_ref == 0 {
-        return Err(TrapCode::IndirectCallToNull.into());
+    #[inline(always)]
+    pub(crate) fn visit_br(&mut self, branch_offset: BranchOffset) {
+        self.ip.offset(branch_offset.to_i32() as isize)
     }
-    vm.ip.add(2);
-    vm.value_stack.sync_stack_ptr(vm.sp);
-    vm.sp = vm.value_stack.stack_ptr();
-    vm.ip = InstructionPtr::new(vm.module.code_section.instr.as_ptr());
-    vm.ip.add(instr_ref as usize);
-    Ok(())
-}
 
-#[inline(always)]
-pub(crate) fn visit_call_internal<T>(
-    vm: &mut RwasmExecutor<T>,
-    compiled_func: CompiledFunc,
-) -> Result<(), TrapCode> {
-    vm.ip.add(1);
-    vm.value_stack.sync_stack_ptr(vm.sp);
-    if vm.call_stack.len() > N_MAX_RECURSION_DEPTH {
-        return Err(TrapCode::StackOverflow);
-    }
-    vm.call_stack.push(vm.ip);
-    vm.sp = vm.value_stack.stack_ptr();
-    vm.ip = InstructionPtr::new(vm.module.code_section.instr.as_ptr());
-    vm.ip.add(compiled_func as usize);
-    Ok(())
-}
-
-#[inline(always)]
-pub(crate) fn visit_call<T>(
-    vm: &mut RwasmExecutor<T>,
-    sys_func_idx: SysFuncIdx,
-) -> Result<(), TrapCode> {
-    vm.value_stack.sync_stack_ptr(vm.sp);
-    // external call can cause interruption,
-    // that is why it's important to increase IP before doing the call
-    vm.ip.add(1);
-    (vm.syscall_handler)(Caller::new(vm), sys_func_idx)
-}
-
-#[inline(always)]
-pub(crate) fn visit_call_indirect<T>(
-    vm: &mut RwasmExecutor<T>,
-    signature_idx: SignatureIdx,
-) -> Result<(), TrapCode> {
-    // resolve func index
-    let table = vm.fetch_table_index(1);
-    let func_index: u32 = vm.sp.pop_as();
-    vm.last_signature = Some(signature_idx);
-    let instr_ref = vm
-        .tables
-        .get(&table)
-        .expect("rwasm: unresolved table index")
-        .get_untyped(func_index)
-        .map(|v| v.as_u32())
-        .ok_or(TrapCode::TableOutOfBounds)?;
-    if instr_ref == NULL_FUNC_IDX {
-        return Err(TrapCode::IndirectCallToNull);
-    }
-    // call func
-    vm.ip.add(2);
-    vm.value_stack.sync_stack_ptr(vm.sp);
-    if vm.call_stack.len() > N_MAX_RECURSION_DEPTH {
-        return Err(TrapCode::StackOverflow);
-    }
-    vm.call_stack.push(vm.ip);
-    vm.sp = vm.value_stack.stack_ptr();
-    vm.ip = InstructionPtr::new(vm.module.code_section.instr.as_ptr());
-    vm.ip.add(instr_ref as usize);
-    Ok(())
-}
-
-#[inline(always)]
-pub(crate) fn visit_signature_check<T>(
-    vm: &mut RwasmExecutor<T>,
-    signature_idx: SignatureIdx,
-) -> Result<(), TrapCode> {
-    if let Some(actual_signature) = vm.last_signature.take() {
-        if actual_signature != signature_idx {
-            return Err(TrapCode::BadSignature);
-        }
-    }
-    vm.ip.add(1);
-    Ok(())
-}
-
-#[inline(always)]
-pub(crate) fn visit_stack_check<T>(
-    vm: &mut RwasmExecutor<T>,
-    max_stack_height: MaxStackHeight,
-) -> Result<(), TrapCode> {
-    vm.value_stack.reserve(max_stack_height as usize)?;
-    // we should rewrite SP after reserve because of potential reallocation
-    vm.sp = vm.value_stack.stack_ptr();
-    vm.ip.add(1);
-    Ok(())
-}
-
-#[inline(always)]
-pub(crate) fn visit_drop<T>(vm: &mut RwasmExecutor<T>) {
-    vm.sp.drop();
-    vm.ip.add(1);
-}
-
-#[inline(always)]
-pub(crate) fn visit_select<T>(vm: &mut RwasmExecutor<T>) {
-    vm.sp.eval_top3(|e1, e2, e3| {
-        let condition = <bool as From<UntypedValue>>::from(e3);
+    #[inline(always)]
+    pub(crate) fn visit_br_if(&mut self, branch_offset: BranchOffset) {
+        let condition = self.sp.pop_as();
         if condition {
-            e1
+            self.ip.add(1);
         } else {
-            e2
+            self.ip.offset(branch_offset.to_i32() as isize);
         }
-    });
-    vm.ip.add(1);
-}
+    }
 
-#[inline(always)]
-pub(crate) fn visit_global_get<T>(vm: &mut RwasmExecutor<T>, global_idx: GlobalIdx) {
-    let global_value = vm
-        .global_variables
-        .get(&global_idx)
-        .copied()
-        .unwrap_or_default();
-    vm.sp.push(global_value);
-    vm.ip.add(1);
-}
+    #[inline(always)]
+    pub(crate) fn visit_br_if_nez(&mut self, branch_offset: BranchOffset) {
+        let condition = self.sp.pop_as();
+        if condition {
+            self.ip.offset(branch_offset.to_i32() as isize);
+        } else {
+            self.ip.add(1);
+        }
+    }
 
-#[inline(always)]
-pub(crate) fn visit_global_set<T>(vm: &mut RwasmExecutor<T>, global_idx: GlobalIdx) {
-    let new_value = vm.sp.pop();
-    vm.global_variables.insert(global_idx, new_value);
-    vm.ip.add(1);
-}
+    #[inline(always)]
+    pub(crate) fn visit_br_table(&mut self, targets: BranchTableTargets) {
+        let index: u32 = self.sp.pop_as();
+        let max_index = targets as usize - 1;
+        let normalized_index = cmp::min(index as usize, max_index);
+        self.ip.add(2 * normalized_index + 1);
+    }
 
-#[inline(always)]
-pub(crate) fn visit_ref_func<T>(vm: &mut RwasmExecutor<T>, compiled_func: CompiledFunc) {
-    vm.sp.push_as(compiled_func);
-    vm.ip.add(1);
-}
+    #[inline(always)]
+    pub(crate) fn visit_consume_fuel(&mut self, block_fuel: BlockFuel) -> Result<(), TrapCode> {
+        if self.store.config.fuel_enabled {
+            self.try_consume_fuel(block_fuel.to_u64())?;
+        }
+        self.ip.add(1);
+        Ok(())
+    }
 
-#[inline(always)]
-pub(crate) fn visit_i32_const<T>(vm: &mut RwasmExecutor<T>, untyped_value: UntypedValue) {
-    vm.sp.push(untyped_value);
-    vm.ip.add(1);
+    #[inline(always)]
+    pub(crate) fn visit_consume_fuel_stack(&mut self) -> Result<(), TrapCode> {
+        let block_fuel: u32 = self.sp.pop_as();
+        if self.store.config.fuel_enabled {
+            self.try_consume_fuel(block_fuel as u64)?;
+        }
+        self.ip.add(1);
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_return(&mut self) -> bool {
+        self.value_stack.sync_stack_ptr(self.sp);
+        match self.call_stack.pop() {
+            Some(caller) => {
+                self.ip = caller;
+                false
+            }
+            None => true,
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_return_call_internal(&mut self, compiled_func: CompiledFunc) {
+        self.ip.add(1);
+        self.value_stack.sync_stack_ptr(self.sp);
+        self.sp = self.value_stack.stack_ptr();
+        self.ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
+        self.ip.add(compiled_func as usize);
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_return_call(&mut self, sys_func_idx: SysFuncIdx) -> Result<bool, TrapCode> {
+        self.value_stack.sync_stack_ptr(self.sp);
+        // external call can cause interruption,
+        // that is why it's important to increase IP before doing the call
+        self.ip.add(1);
+        self.invoke_syscall(sys_func_idx)
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_return_call_indirect(
+        &mut self,
+        signature_idx: SignatureIdx,
+    ) -> Result<(), TrapCode> {
+        let table = self.fetch_table_index(1);
+        let func_index: u32 = self.sp.pop_as();
+        self.store.last_signature = Some(signature_idx);
+        let instr_ref: u32 = self
+            .store
+            .tables
+            .get(&table)
+            .expect("rwasm: unresolved table index")
+            .get_untyped(func_index)
+            .ok_or(TrapCode::TableOutOfBounds)?
+            .try_into()
+            .unwrap();
+        if instr_ref == 0 {
+            return Err(TrapCode::IndirectCallToNull.into());
+        }
+        self.ip.add(2);
+        self.value_stack.sync_stack_ptr(self.sp);
+        self.sp = self.value_stack.stack_ptr();
+        self.ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
+        self.ip.add(instr_ref as usize);
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_call_internal(
+        &mut self,
+        compiled_func: CompiledFunc,
+    ) -> Result<(), TrapCode> {
+        self.ip.add(1);
+        self.value_stack.sync_stack_ptr(self.sp);
+        if self.call_stack.len() > N_MAX_RECURSION_DEPTH {
+            return Err(TrapCode::StackOverflow);
+        }
+        self.call_stack.push(self.ip);
+        self.sp = self.value_stack.stack_ptr();
+        self.ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
+        self.ip.add(compiled_func as usize);
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_call(&mut self, sys_func_idx: SysFuncIdx) -> Result<bool, TrapCode> {
+        self.value_stack.sync_stack_ptr(self.sp);
+        // external call can cause interruption,
+        // that is why it's important to increase IP before doing the call
+        self.ip.add(1);
+        self.invoke_syscall(sys_func_idx)
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_call_indirect(
+        &mut self,
+        signature_idx: SignatureIdx,
+    ) -> Result<(), TrapCode> {
+        // resolve func index
+        let table = self.fetch_table_index(1);
+        let func_index: u32 = self.sp.pop_as();
+        self.store.last_signature = Some(signature_idx);
+        let instr_ref = self
+            .store
+            .tables
+            .get(&table)
+            .expect("rwasm: unresolved table index")
+            .get_untyped(func_index)
+            .map(|v| v.as_u32())
+            .ok_or(TrapCode::TableOutOfBounds)?;
+        if instr_ref == NULL_FUNC_IDX {
+            return Err(TrapCode::IndirectCallToNull);
+        }
+        // call func
+        self.ip.add(2);
+        self.value_stack.sync_stack_ptr(self.sp);
+        if self.call_stack.len() > N_MAX_RECURSION_DEPTH {
+            return Err(TrapCode::StackOverflow);
+        }
+        self.call_stack.push(self.ip);
+        self.sp = self.value_stack.stack_ptr();
+        self.ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
+        self.ip.add(instr_ref as usize);
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_signature_check(
+        &mut self,
+        signature_idx: SignatureIdx,
+    ) -> Result<(), TrapCode> {
+        if let Some(actual_signature) = self.store.last_signature.take() {
+            if actual_signature != signature_idx {
+                return Err(TrapCode::BadSignature);
+            }
+        }
+        self.ip.add(1);
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_stack_check(
+        &mut self,
+        max_stack_height: MaxStackHeight,
+    ) -> Result<(), TrapCode> {
+        self.value_stack.reserve(max_stack_height as usize)?;
+        // we should rewrite SP after reserve because of potential reallocation
+        self.sp = self.value_stack.stack_ptr();
+        self.ip.add(1);
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_drop(&mut self) {
+        self.sp.drop();
+        self.ip.add(1);
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_select(&mut self) {
+        self.sp.eval_top3(|e1, e2, e3| {
+            let condition = <bool as From<UntypedValue>>::from(e3);
+            if condition {
+                e1
+            } else {
+                e2
+            }
+        });
+        self.ip.add(1);
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_global_get(&mut self, global_idx: GlobalIdx) {
+        let global_value = self
+            .store
+            .global_variables
+            .get(&global_idx)
+            .copied()
+            .unwrap_or_default();
+        self.sp.push(global_value);
+        self.ip.add(1);
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_global_set(&mut self, global_idx: GlobalIdx) {
+        let new_value = self.sp.pop();
+        self.store.global_variables.insert(global_idx, new_value);
+        self.ip.add(1);
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_ref_func(&mut self, compiled_func: CompiledFunc) {
+        self.sp.push_as(compiled_func);
+        self.ip.add(1);
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_i32_const(&mut self, untyped_value: UntypedValue) {
+        self.sp.push(untyped_value);
+        self.ip.add(1);
+    }
 }

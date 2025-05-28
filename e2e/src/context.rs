@@ -15,9 +15,8 @@ use anyhow::Result;
 use rwasm::{
     instruction_set,
     split_i64_to_i32_arr,
-    Caller,
+    CallStack,
     CompilationConfig,
-    ExecutorConfig,
     FuncType,
     ImportLinker,
     ImportLinkerEntity,
@@ -27,14 +26,34 @@ use rwasm::{
     RwasmExecutor,
     RwasmModule,
     StateRouterConfig,
+    Store,
     ValType,
     Value,
+    ValueStack,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use wast::token::{Id, Span};
 
-type TestingRwasmExecutor = RwasmExecutor<TestingContext>;
-type Instance = Rc<RefCell<TestingRwasmExecutor>>;
+pub struct InstanceInner {
+    module: RwasmModule,
+    store: Store<TestingContext>,
+    value_stack: ValueStack,
+    call_stack: CallStack,
+    program_counter: usize,
+}
+
+impl InstanceInner {
+    fn new_executor(&mut self) -> RwasmExecutor<TestingContext> {
+        RwasmExecutor::new(
+            &self.module,
+            &mut self.value_stack,
+            &mut self.call_stack,
+            &mut self.store,
+        )
+    }
+}
+
+type Instance = Rc<RefCell<InstanceInner>>;
 
 /// The context of a single Wasm test spec suite run.
 pub struct TestContext<'a> {
@@ -207,20 +226,32 @@ impl TestContext<'_> {
         #[cfg(feature = "debug-print")]
         println!("{}", rwasm_module);
 
-        let mut executor = TestingRwasmExecutor::new(
-            rwasm_module.into(),
-            ExecutorConfig::new(),
-            TestingContext::default(),
+        let mut store = Store::default();
+        store.set_syscall_handler(testing_context_syscall_handler);
+        let mut instance_inner = InstanceInner {
+            module: rwasm_module,
+            store,
+            value_stack: ValueStack::default(),
+            call_stack: CallStack::default(),
+            program_counter: 0,
+        };
+        let mut executor = RwasmExecutor::<TestingContext>::new(
+            &instance_inner.module,
+            &mut instance_inner.value_stack,
+            &mut instance_inner.call_stack,
+            &mut instance_inner.store,
         );
-        executor.set_syscall_handler(testing_context_syscall_handler);
         executor.context_mut().state = ENTRYPOINT_FUNC_IDX;
         #[cfg(feature = "debug-print")]
         println!(" --- entrypoint ---");
         executor.run()?;
         #[cfg(feature = "debug-print")]
         println!();
+        instance_inner.value_stack.reset();
+        instance_inner.call_stack.reset();
+        instance_inner.store.reset(true);
 
-        let instance = Rc::new(RefCell::new(executor));
+        let instance = Rc::new(RefCell::new(instance_inner));
 
         if let Some(module_name) = module_name {
             self.instances
@@ -265,18 +296,6 @@ impl TestContext<'_> {
             return;
         }
         self.instances.insert(name.to_string(), instance.clone());
-        // for export in instance.exports(&self.store) {
-        //     self.linker
-        //         .define(name, export.name(), export.clone().into_extern())
-        //         .unwrap_or_else(|error| {
-        //             let field_name = export.name();
-        //             let export = export.clone().into_extern();
-        //             panic!(
-        //                 "failed to define export {name}::{field_name}: \
-        //                 {export:?}: {error}",
-        //             )
-        //         });
-        // }
         self.last_instance = Some(instance);
     }
 
@@ -293,7 +312,7 @@ impl TestContext<'_> {
     ///
     /// - If no module instances can be found.
     /// - If no function identified with `func_name` can be found.
-    /// - If function invokation returned an error.
+    /// - If function invocation returned an error.
     pub fn invoke(
         &mut self,
         module_name: Option<&str>,
@@ -310,16 +329,14 @@ impl TestContext<'_> {
         // However, with different states.
         // Some tests might fail, and we might keep outdated signature value in the state,
         // make sure the state is clear before every new call.
-        let pc = instance.context().program_counter as usize;
-        instance.reset(Some(pc), true);
+        instance.program_counter = instance.store.context().program_counter as usize;
+        instance.store.reset(true);
 
         let func_state = self
             .extern_state
             .get(&func_name.to_string())
             .unwrap()
             .clone();
-
-        let mut caller = Caller::new(&mut instance);
 
         let binding = args
             .iter()
@@ -338,21 +355,28 @@ impl TestContext<'_> {
             .collect::<Vec<_>>();
         let args = binding.as_slice();
 
+        // reset PC and other state values
+        instance.value_stack.reset();
+        instance.call_stack.reset();
+        instance.store.reset(true);
+        // insert input params
         for value in args {
-            caller.stack_push(value.clone());
+            instance.value_stack.push(value.clone().into());
         }
-
         // change function state for router
-        instance.context_mut().state = func_state;
-        let _exit_code = instance.run()?;
+        instance.store.context_mut().state = func_state;
+
+        let pc = instance.program_counter;
+        let mut vm = instance.new_executor();
+        vm.advance_ip(pc);
+        vm.run()?;
         // copy results
         let func_type = self.extern_types.get(func_name).unwrap();
         let len_results = func_type.results().len();
         self.results.clear();
         self.results.resize(len_results, Value::I32(0));
-        let mut caller = Caller::new(&mut instance);
         for (i, val_type) in func_type.results().iter().rev().enumerate() {
-            let popped_value = caller.stack_pop();
+            let popped_value = instance.value_stack.pop();
             self.results[len_results - 1 - i] = match val_type {
                 ValType::I32 => Value::I32(popped_value.into()),
                 ValType::I64 => Value::I64(popped_value.into()),

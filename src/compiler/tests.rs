@@ -1,24 +1,17 @@
-use crate::{compiler::parser::ModuleParser, CompilationConfig, ExecutorConfig, RwasmExecutor};
+use crate::{CompilationConfig, ExecutionEngine, RwasmModule, Store};
 
 #[test]
 fn test_fib() {
     let wasm_binary = include_bytes!("../../benchmarks/lib.wasm");
     let config = CompilationConfig::default().with_entrypoint_name("main".into());
-    let mut parser = ModuleParser::new(config);
-    parser.parse(wasm_binary).unwrap();
-    let (rwasm_module, _) = parser.finalize().unwrap();
+    let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     println!("{}", rwasm_module);
-    let mut vm = RwasmExecutor::new(
-        rwasm_module.into(),
-        ExecutorConfig::new().fuel_enabled(true),
-        (),
-    );
-    vm.caller().stack_push(43);
-    vm.run().unwrap();
-    let result = vm.caller().stack_pop();
+    let mut store = Store::<()>::default();
+    let mut engine = ExecutionEngine::new(&mut store);
+    engine.value_stack().push(43.into());
+    engine.execute(&rwasm_module).unwrap();
+    let result = engine.value_stack().pop();
     assert_eq!(result.as_i64(), 433494437);
-    println!("fuel_consumed: {}", vm.fuel_consumed());
-    assert_eq!(vm.fuel_consumed(), 1253);
 }
 
 #[test]
@@ -27,18 +20,24 @@ fn test_block() {
     let wasm_binary = wat::parse_str(
         r#"
 (module
-    (func (export "i32.trunc_sat_f64_s") (param $x f64) (result i32) (i32.trunc_sat_f64_s (local.get $x)))
+  (func $const-i32 (result i32) (i32.const 0x132))
+  (func (export "as-select-first") (result i32)
+    (select (call $const-i32) (i32.const 2) (i32.const 3))
+  )
 )"#,
     )
     .unwrap();
     let config = CompilationConfig::default()
-        .with_entrypoint_name("i32.trunc_sat_f64_s".into())
+        .with_entrypoint_name("as-select-first".into())
         .with_allow_malformed_entrypoint_func_type(true);
-    let mut parser = ModuleParser::new(config);
-    parser.parse(&wasm_binary).unwrap();
-    let (rwasm_module, _) = parser.finalize().unwrap();
+    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
-    let mut vm = RwasmExecutor::new(rwasm_module.into(), ExecutorConfig::new(), ());
-    println!("\nfunc:");
-    vm.run().unwrap();
+    let mut store = Store::<()>::default();
+    let mut engine = ExecutionEngine::new(&mut store);
+    engine.value_stack().push(0x132.into());
+    engine.value_stack().push(0.into());
+    engine.execute(&rwasm_module).unwrap();
+    let result = engine.value_stack().pop();
+    let result = engine.value_stack().pop();
+    // assert_eq!(result.as_i64(), 433494437);
 }

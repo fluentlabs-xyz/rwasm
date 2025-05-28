@@ -1,10 +1,12 @@
 extern crate test;
 
-use rwasm::{Caller, CompilationConfig};
+use rwasm::{CompilationConfig, ExecutionEngine, Store};
 use test::Bencher;
 
+const FIB_VALUE: i32 = 47;
+
 #[bench]
-fn bench_wasmi(b: &mut Bencher) {
+fn bench_wasmi_no_cache(b: &mut Bencher) {
     use wasmi::{Engine, Linker, Module, Store};
     let engine = Engine::default();
     b.iter(|| {
@@ -20,36 +22,80 @@ fn bench_wasmi(b: &mut Bencher) {
         let result = instance
             .get_typed_func::<i32, i32>(&store, "main")
             .unwrap()
-            .call(&mut store, 43)
+            .call(&mut store, FIB_VALUE)
             .unwrap();
         core::hint::black_box(result);
-        assert_eq!(result, 433494437);
+    });
+}
+
+#[bench]
+fn bench_wasmi(b: &mut Bencher) {
+    use wasmi::{Engine, Linker, Module, Store};
+    let engine = Engine::default();
+    let wasm_binary = include_bytes!("./lib.wasm");
+    let module = Module::new(&engine, &wasm_binary[..]).unwrap();
+    let mut store = Store::new(&engine, ());
+    let linker = <Linker<()>>::new(&engine);
+    let instance = linker
+        .instantiate(&mut store, &module)
+        .unwrap()
+        .start(&mut store)
+        .unwrap();
+    b.iter(|| {
+        let result = instance
+            .get_typed_func::<i32, i32>(&store, "main")
+            .unwrap()
+            .call(&mut store, FIB_VALUE)
+            .unwrap();
+        core::hint::black_box(result);
+    });
+}
+
+#[bench]
+fn bench_rwasm_no_cache(b: &mut Bencher) {
+    use rwasm::{ExecutorConfig, RwasmModule};
+
+    let wasm_binary = include_bytes!("./lib.wasm");
+
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("main".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+    let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
+    let encoded_rwasm_module = rwasm_module.serialize();
+    let mut store = Store::new(ExecutorConfig::default(), ());
+    let mut engine = ExecutionEngine::new(&mut store);
+
+    b.iter(|| {
+        let rwasm_module = RwasmModule::new(&encoded_rwasm_module);
+        engine.value_stack().push(FIB_VALUE.into());
+        engine.execute(&rwasm_module).unwrap();
+        let result = engine.value_stack().pop();
+        core::hint::black_box(result);
+        engine.store().reset(true);
     });
 }
 
 #[bench]
 fn bench_rwasm(b: &mut Bencher) {
-    use rwasm::{ExecutorConfig, RwasmExecutor, RwasmModule};
-    use std::sync::Arc;
+    use rwasm::{ExecutorConfig, RwasmModule};
 
-    let wasm = include_bytes!("./lib.wasm");
+    let wasm_binary = include_bytes!("./lib.wasm");
 
     let config = CompilationConfig::default()
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true);
-    let (rwasm_module, _) = RwasmModule::compile(config, wasm).unwrap();
+    let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     let encoded_rwasm_module = rwasm_module.serialize();
-    let rwasm_module: Arc<RwasmModule> = RwasmModule::new(&encoded_rwasm_module).into();
-    let mut vm = RwasmExecutor::new(rwasm_module, ExecutorConfig::default(), ());
+    let mut store = Store::new(ExecutorConfig::default(), ());
+    let mut engine = ExecutionEngine::new(&mut store);
+    let rwasm_module = RwasmModule::new(&encoded_rwasm_module);
 
     b.iter(|| {
-        core::hint::black_box(RwasmModule::new(&encoded_rwasm_module));
-        Caller::new(&mut vm).stack_push(43);
-        vm.run().unwrap();
-        let result: i32 = Caller::new(&mut vm).stack_pop_as();
+        engine.value_stack().push(FIB_VALUE.into());
+        engine.execute(&rwasm_module).unwrap();
+        let result = engine.value_stack().pop();
         core::hint::black_box(result);
-        assert_eq!(result, 433494437);
-        vm.reset(None, false);
+        engine.store().reset(true);
     });
 }
 
@@ -65,6 +111,6 @@ fn bench_native(b: &mut Bencher) {
             }
             a
         }
-        core::hint::black_box(main(core::hint::black_box(43)));
+        core::hint::black_box(main(core::hint::black_box(FIB_VALUE)));
     });
 }

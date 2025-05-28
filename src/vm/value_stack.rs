@@ -3,6 +3,8 @@ use crate::{
     types::{TrapCode, UntypedValue},
     F32,
     F64,
+    N_DEFAULT_STACK_SIZE,
+    N_MAX_STACK_SIZE,
 };
 use alloc::{vec, vec::Vec};
 use core::fmt::Debug;
@@ -54,6 +56,12 @@ impl Extend<UntypedValue> for ValueStack {
         for item in iter {
             self.push(item)
         }
+    }
+}
+
+impl Default for ValueStack {
+    fn default() -> Self {
+        Self::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE)
     }
 }
 
@@ -162,32 +170,6 @@ impl ValueStack {
         unsafe { self.entries.get_unchecked_mut(index) }
     }
 
-    /// Extends the value stack by the `additional` amount of zeros.
-    ///
-    /// # Errors
-    ///
-    /// If the value stack cannot fit `additional` stack values.
-    pub fn extend_zeros(&mut self, additional: usize) {
-        let cells = self
-            .entries
-            .get_mut(self.stack_ptr..)
-            .and_then(|slice| slice.get_mut(..additional))
-            .unwrap_or_else(|| panic!("did not reserve enough value stack space"));
-        cells.fill(UntypedValue::default());
-        self.stack_ptr += additional;
-    }
-
-    /// Prepares the [`ValueStack`] for execution of the given Wasm function.
-    pub fn prepare_wasm_call(
-        &mut self,
-        max_stack_height: usize,
-        len_locals: usize,
-    ) -> Result<(), TrapCode> {
-        self.reserve(max_stack_height)?;
-        self.extend_zeros(len_locals);
-        Ok(())
-    }
-
     /// Drops the last value on the [`ValueStack`].
     #[inline]
     pub fn drop(&mut self, depth: usize) {
@@ -206,6 +188,13 @@ impl ValueStack {
     pub fn push(&mut self, entry: UntypedValue) {
         *self.get_release_unchecked_mut(self.stack_ptr) = entry;
         self.stack_ptr += 1;
+    }
+
+    #[inline]
+    pub fn pop(&mut self) -> UntypedValue {
+        debug_assert!(self.stack_ptr > 0);
+        self.stack_ptr -= 1;
+        *self.get_release_unchecked_mut(self.stack_ptr)
     }
 
     /// Returns the capacity of the [`ValueStack`].

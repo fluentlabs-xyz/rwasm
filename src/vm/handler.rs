@@ -46,7 +46,7 @@ impl SimpleCallHandler {
             .context()
             .input
             .get(offset.as_usize()..(offset.as_usize() + length.as_usize()))
-            .ok_or(TrapCode::ExecutionHalted)?
+            .unwrap()
             .to_vec();
         caller.memory_write(target.as_usize(), &input)?;
         Ok(())

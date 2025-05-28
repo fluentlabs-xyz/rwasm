@@ -21,7 +21,7 @@ use bincode::{
 /// reference) information needed for execution within the rWasm virtual machine.
 ///
 /// It's compiled from Wasm
-#[derive(Default, Debug, PartialEq)]
+#[derive(Default, Clone, Debug, PartialEq)]
 pub struct RwasmModule {
     /// The main instruction set (bytecode) for this module that includes an entrypoint
     /// and all required functions.
