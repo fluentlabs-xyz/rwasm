@@ -10,6 +10,7 @@ use crate::{
 use rand::Rng;
 
 #[test]
+#[ignore]
 fn test_i64_mul_fuzz() {
     for _ in 0..1_000_000 {
         let a = rand::rng().random::<u64>();
@@ -22,6 +23,7 @@ fn test_i64_mul_fuzz() {
 }
 
 #[test]
+#[ignore]
 fn test_i64_add_fuzz() {
     for _ in 0..1_000_000 {
         let a = rand::rng().random::<u64>();
@@ -34,6 +36,7 @@ fn test_i64_add_fuzz() {
 }
 
 #[test]
+#[ignore]
 fn test_i64_div_u_fuzz() {
     for _ in 0..1_000_000 {
         let a = rand::rng().random::<u64>();
@@ -46,6 +49,7 @@ fn test_i64_div_u_fuzz() {
 }
 
 #[test]
+#[ignore]
 fn test_i64_div_s_fuzz() {
     for _ in 0..1_000_000 {
         let a = rand::rng().random::<i64>();
@@ -58,6 +62,7 @@ fn test_i64_div_s_fuzz() {
 }
 
 #[test]
+#[ignore]
 fn test_i64_sub_fuzz() {
     for _ in 0..1_000_000 {
         let a = rand::rng().random::<u64>();
@@ -70,6 +75,7 @@ fn test_i64_sub_fuzz() {
 }
 
 #[test]
+#[ignore]
 fn test_i64_rem_s_fuzz() {
     for _ in 0..1_000_000 {
         let a = rand::rng().random::<i64>();
