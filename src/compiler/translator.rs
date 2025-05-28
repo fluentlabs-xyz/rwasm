@@ -1020,8 +1020,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_br_table(&mut self, targets: BrTable<'a>) -> Self::Output {
         #[derive(Debug, Copy, Clone)]
         enum BrTableTarget {
-            Br(BranchOffset, DropKeep),
             Return(DropKeep),
+            Label(LabelRef, DropKeep),
         }
 
         self.translate_if_reachable(|builder| {
@@ -1050,7 +1050,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                         let base = builder.current_pc();
                         let instr = offset_instr(base, 2 * n + 1);
                         let offset = builder.try_resolve_label_for(label, instr)?;
-                        Ok(BrTableTarget::Br(offset, drop_keep))
+                        Ok(BrTableTarget::Label(label, drop_keep))
                     }
                     AcquiredTarget::Return(drop_keep) => {
                         *max_drop_keep_fuel =
@@ -1061,24 +1061,51 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             }
 
             /// Encodes the [`BrTableTarget`] into the given [`Instruction`] stream.
-            fn encode_br_table_target(stream: &mut InstructionSet, target: BrTableTarget) {
+            fn encode_br_table_target(builder: &mut InstructionTranslator, target: BrTableTarget, trampoline_ixs: &mut InstructionSet, final_len: usize) -> Result<(), CompilationError> {
                 match target {
-                    BrTableTarget::Br(offset, _drop_keep) => {
-                        // Case: We push a `Br` followed by a `Return` as usual.
-                        stream.op_br(offset);
-                        stream.op_return();
-                    }
-                    BrTableTarget::Return(_drop_keep) => {
+                    BrTableTarget::Return(drop_keep) => {
                         // Case: We push `Return` two times to make all branch targets use 2
                         // instruction words.       This is important to
                         // make `br_table` dispatch efficient.
-                        stream.op_return();
-                        stream.op_return();
+                        if drop_keep.is_noop() {
+                            builder.alloc.br_table_branches.op_return();
+                            builder.alloc.br_table_branches.op_return();
+                        } else {
+                            builder.alloc.br_table_branches.op_br(BranchOffset::from((final_len - builder.alloc.br_table_branches.len() + trampoline_ixs.len()) as i32));
+                            builder.alloc.br_table_branches.op_return();
+                            translate_drop_keep(trampoline_ixs, drop_keep, &mut builder.stack_height);
+                            trampoline_ixs.op_return();
+                        }
+                    }
+                    BrTableTarget::Label(label, drop_keep) => {
+                        let base = builder.current_pc();
+                        if drop_keep.is_noop() {
+                            builder.alloc.br_table_branches.op_return();
+
+                            let instr = offset_instr(base, builder.alloc.br_table_branches.len());
+                            let offset = builder.try_resolve_label_for(label, instr)?;
+                            *builder.alloc.br_table_branches.last_mut().unwrap() = Opcode::Br(BranchOffset::from(offset));
+
+                            builder.alloc.br_table_branches.op_return();
+                        } else {
+                            builder.alloc.br_table_branches.op_br(BranchOffset::from((final_len - builder.alloc.br_table_branches.len() + trampoline_ixs.len()) as i32));
+                            builder.alloc.br_table_branches.op_return();
+
+                            translate_drop_keep(trampoline_ixs, drop_keep, &mut builder.stack_height);
+                            trampoline_ixs.op_return();
+
+                            let instr = offset_instr(base, final_len + trampoline_ixs.len());
+                            let offset = builder.try_resolve_label_for(label, instr)?;
+                            *trampoline_ixs.last_mut().unwrap() = Opcode::Br(BranchOffset::from(offset));
+                        }
                     }
                 }
+
+                Ok(())
             }
 
             let default = RelativeDepth::from_u32(targets.default());
+            let target_len = (targets.len() as usize + 1) * 2; //With default branch
             let targets = targets
                 .targets()
                 .map(|relative_depth| {
@@ -1096,14 +1123,17 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // We use this to charge fuel once at the entry of a `br_table`
             // for the most expensive arm of all of its arms.
             let mut max_drop_keep_fuel = 0;
-
             builder.stack_height.pop1();
             builder.alloc.stack_types.pop().unwrap();
 
             builder.alloc.br_table_branches.clear();
+
+            let final_len = builder.alloc.instruction_set.len() + target_len;
+            let mut trampoline_ixs = InstructionSet::new();
             for (n, depth) in targets.into_iter().enumerate() {
                 let target = compute_instr(builder, n, depth, &mut max_drop_keep_fuel)?;
-                encode_br_table_target(&mut builder.alloc.br_table_branches, target)
+
+                encode_br_table_target(builder, target, &mut trampoline_ixs, target_len)?;
             }
 
             // We include the default target in `len_branches`. Each branch takes up 2 instruction
@@ -1113,8 +1143,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 compute_instr(builder, len_branches, default, &mut max_drop_keep_fuel)?;
             let len_targets = BranchTableTargets::try_from(len_branches + 1)
                 .map_err(|_| CompilationError::BranchTableTargetsOutOfBounds)?;
+            encode_br_table_target(builder, default_branch, &mut trampoline_ixs, target_len)?;
             builder.alloc.instruction_set.op_br_table(len_targets);
-            encode_br_table_target(&mut builder.alloc.br_table_branches, default_branch);
+
+            builder.alloc.br_table_branches.append(&mut trampoline_ixs);
             for branch in builder.alloc.br_table_branches.drain(..) {
                 builder.alloc.instruction_set.push(branch);
             }
