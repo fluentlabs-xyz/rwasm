@@ -1046,10 +1046,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 match builder.acquire_target(depth.into_u32())? {
                     AcquiredTarget::Branch(label, drop_keep) => {
                         *max_drop_keep_fuel =
-                            (*max_drop_keep_fuel).max(fuel_for_drop_keep(builder, drop_keep));
-                        let base = builder.current_pc();
-                        let instr = offset_instr(base, 2 * n + 1);
-                        let offset = builder.try_resolve_label_for(label, instr)?;
+                        (*max_drop_keep_fuel).max(fuel_for_drop_keep(builder, drop_keep));
                         Ok(BrTableTarget::Label(label, drop_keep))
                     }
                     AcquiredTarget::Return(drop_keep) => {
@@ -1088,7 +1085,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
                             builder.alloc.br_table_branches.op_return();
                         } else {
-                            builder.alloc.br_table_branches.op_br(BranchOffset::from((final_len - builder.alloc.br_table_branches.len() + trampoline_ixs.len()) as i32));
+                            let br_offset = (final_len - builder.alloc.br_table_branches.len() + trampoline_ixs.len()) as i32;
+                            builder.alloc.br_table_branches.op_br(BranchOffset::from(br_offset));
                             builder.alloc.br_table_branches.op_return();
 
                             translate_drop_keep(trampoline_ixs, drop_keep, &mut builder.stack_height);
