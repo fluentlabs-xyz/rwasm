@@ -1046,7 +1046,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 match builder.acquire_target(depth.into_u32())? {
                     AcquiredTarget::Branch(label, drop_keep) => {
                         *max_drop_keep_fuel =
-                        (*max_drop_keep_fuel).max(fuel_for_drop_keep(builder, drop_keep));
+                            (*max_drop_keep_fuel).max(fuel_for_drop_keep(builder, drop_keep));
                         Ok(BrTableTarget::Label(label, drop_keep))
                     }
                     AcquiredTarget::Return(drop_keep) => {
@@ -1058,7 +1058,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             }
 
             /// Encodes the [`BrTableTarget`] into the given [`Instruction`] stream.
-            fn encode_br_table_target(builder: &mut InstructionTranslator, target: BrTableTarget, trampoline_ixs: &mut InstructionSet, final_len: usize) -> Result<(), CompilationError> {
+            fn encode_br_table_target(
+                builder: &mut InstructionTranslator,
+                target: BrTableTarget,
+                trampoline_ixs: &mut InstructionSet,
+                final_len: usize,
+            ) -> Result<(), CompilationError> {
                 match target {
                     BrTableTarget::Return(drop_keep) => {
                         // Case: We push `Return` two times to make all branch targets use 2
@@ -1068,9 +1073,16 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                             builder.alloc.br_table_branches.op_return();
                             builder.alloc.br_table_branches.op_return();
                         } else {
-                            builder.alloc.br_table_branches.op_br(BranchOffset::from((final_len - builder.alloc.br_table_branches.len() + trampoline_ixs.len()) as i32));
+                            builder.alloc.br_table_branches.op_br(
+                                (final_len - builder.alloc.br_table_branches.len()
+                                    + trampoline_ixs.len()) as i32,
+                            );
                             builder.alloc.br_table_branches.op_return();
-                            translate_drop_keep(trampoline_ixs, drop_keep, &mut builder.stack_height);
+                            translate_drop_keep(
+                                trampoline_ixs,
+                                drop_keep,
+                                &mut builder.stack_height,
+                            );
                             trampoline_ixs.op_return();
                         }
                     }
@@ -1081,20 +1093,31 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
                             let instr = offset_instr(base, builder.alloc.br_table_branches.len());
                             let offset = builder.try_resolve_label_for(label, instr)?;
-                            *builder.alloc.br_table_branches.last_mut().unwrap() = Opcode::Br(BranchOffset::from(offset));
+                            *builder.alloc.br_table_branches.last_mut().unwrap() =
+                                Opcode::Br(BranchOffset::from(offset));
 
                             builder.alloc.br_table_branches.op_return();
                         } else {
-                            let br_offset = (final_len - builder.alloc.br_table_branches.len() + trampoline_ixs.len()) as i32;
-                            builder.alloc.br_table_branches.op_br(BranchOffset::from(br_offset));
+                            let br_offset = (final_len - builder.alloc.br_table_branches.len()
+                                + trampoline_ixs.len())
+                                as i32;
+                            builder
+                                .alloc
+                                .br_table_branches
+                                .op_br(BranchOffset::from(br_offset));
                             builder.alloc.br_table_branches.op_return();
 
-                            translate_drop_keep(trampoline_ixs, drop_keep, &mut builder.stack_height);
+                            translate_drop_keep(
+                                trampoline_ixs,
+                                drop_keep,
+                                &mut builder.stack_height,
+                            );
                             trampoline_ixs.op_return();
 
                             let instr = offset_instr(base, final_len + trampoline_ixs.len());
                             let offset = builder.try_resolve_label_for(label, instr)?;
-                            *trampoline_ixs.last_mut().unwrap() = Opcode::Br(BranchOffset::from(offset));
+                            *trampoline_ixs.last_mut().unwrap() =
+                                Opcode::Br(BranchOffset::from(offset));
                         }
                     }
                 }
