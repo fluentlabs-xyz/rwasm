@@ -38,7 +38,7 @@ jobs:
         run: cargo check
       - name: Generate code coverage
         run: |
-          cargo install cargo-llvm-cov
+          cargo install cargo-llvm-cov grcov
           make coverage
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v5.4.2
