@@ -97,9 +97,8 @@ impl ValueStack {
         self.stack_len(sp) > self.maximum_len
     }
 
-    pub fn dump_stack(&mut self, sp: ValueStackPtr) -> Vec<UntypedValue> {
-        let size = self.stack_len(sp);
-        self.entries[0..size.min(self.entries.len())].to_vec()
+    pub fn dump_stack(&mut self) -> Vec<UntypedValue> {
+        self.entries[0..self.stack_ptr].to_vec()
     }
 
     /// Returns the base [`ValueStackPtr`] of `self`.

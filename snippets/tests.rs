@@ -1,18 +1,19 @@
 #[cfg(test)]
 mod tests {
     use crate::{i64_rem_s::i64_rem_s, i64_rem_u::i64_rem_u};
-    use rwasm::{ExecutorConfig, InstructionSet, RwasmExecutor, RwasmModule, TrapCode};
+    use rwasm::{ExecutionEngine, InstructionSet, RwasmModule, Store, TrapCode};
 
     fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Result<Vec<u32>, TrapCode> {
         is.op_return();
         let rwasm_module = RwasmModule::with_one_function(is);
-        let mut vm = RwasmExecutor::new(rwasm_module.into(), ExecutorConfig::default(), ());
+        let mut store = Store::<()>::default();
+        let mut engine = ExecutionEngine::new(&mut store);
         for i in inputs {
-            vm.caller().stack_push(i);
+            engine.value_stack().push(i.into());
         }
-        vm.run()?;
-        let output = vm
-            .caller()
+        engine.execute(&rwasm_module)?;
+        let output = engine
+            .value_stack()
             .dump_stack()
             .iter()
             .map(|v| v.as_u32())

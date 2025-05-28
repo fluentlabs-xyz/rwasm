@@ -7,3 +7,4 @@ test-specific-cases:
 	cd snippets && make
 	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml
 	cargo test --color=always --no-fail-fast --manifest-path e2e/Cargo.toml
+	cargo test --color=always --no-fail-fast --manifest-path snippets/Cargo.toml
