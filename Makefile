@@ -22,4 +22,5 @@ coverage:
 	cargo llvm-cov --json --manifest-path=./Cargo.toml
 	cargo llvm-cov --json --manifest-path=./e2e/Cargo.toml
 	# merge all lcov files together
-	grcov ./snippets/lcov.info ./lcov.info ./e2e/lcov.info > lcov.info
+	grcov $(find . -name 'lcov.info' -type f) > lcov.info
+
