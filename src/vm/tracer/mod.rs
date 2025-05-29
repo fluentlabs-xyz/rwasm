@@ -1,6 +1,5 @@
 use crate::{
     types::{Opcode, OpcodeMeta, TableIdx},
-    OpcodeData,
     UntypedValue,
 };
 use alloc::{string::String, vec::Vec};
@@ -45,7 +44,7 @@ pub struct TraceTableSizeState {
 pub struct TracerInstrState {
     pub program_counter: u32,
     pub opcode: Opcode,
-    pub value: OpcodeData,
+    pub value: OpcodeMeta,
     pub memory_changes: Vec<TracerMemoryState>,
     pub table_changes: Vec<TraceTableState>,
     pub table_size_changes: Vec<TraceTableSizeState>,
