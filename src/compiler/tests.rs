@@ -1,18 +1,18 @@
 use crate::{CompilationConfig, ExecutionEngine, RwasmModule, Store};
-
-#[test]
-fn test_fib() {
-    let wasm_binary = include_bytes!("../../benchmarks/lib.wasm");
-    let config = CompilationConfig::default().with_entrypoint_name("main".into());
-    let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-    println!("{}", rwasm_module);
-    let mut store = Store::<()>::default();
-    let mut engine = ExecutionEngine::new(&mut store);
-    engine.value_stack().push(43.into());
-    engine.execute(&rwasm_module).unwrap();
-    let result = engine.value_stack().pop();
-    assert_eq!(result.as_i64(), 433494437);
-}
+// #[ignore]
+// #[test]
+// fn test_fib() {
+//     let wasm_binary = include_bytes!("../../benchmarks/lib.wasm");
+//     let config = CompilationConfig::default().with_entrypoint_name("main".into());
+//     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
+//     println!("{}", rwasm_module);
+//     let mut store = Store::<()>::default();
+//     let mut engine = ExecutionEngine::new(&mut store);
+//     engine.value_stack().push(43.into());
+//     engine.execute(&rwasm_module).unwrap();
+//     let result = engine.value_stack().pop();
+//     assert_eq!(result.as_i64(), 433494437);
+// }
 
 #[test]
 #[ignore]

@@ -1,4 +1,4 @@
-use crate::{vm::opcodes, Opcode};
+use crate::{Opcode};
 
 pub mod memory;
 

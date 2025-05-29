@@ -44,7 +44,7 @@ pub struct TraceTableSizeState {
 pub struct TracerInstrState {
     pub program_counter: u32,
     pub opcode: Opcode,
-    pub value: OpcodeMeta,
+    pub value: u32,
     pub memory_changes: Vec<TracerMemoryState>,
     pub table_changes: Vec<TraceTableState>,
     pub table_size_changes: Vec<TraceTableSizeState>,
@@ -117,12 +117,12 @@ impl Tracer {
         shard: u32,
         clk: u32,
         opcode: Opcode,
-        value: OpcodeData,
+        value: u32,
     ) {
         let memory_changes = take(&mut self.memory_changes);
         let table_changes = take(&mut self.table_changes);
         let table_size_changes = take(&mut self.table_size_changes);
-        self.record_mr(opcode, sp.to_position(), shard, clk);
+        // self.record_mr(opcode, sp.to_position(), shard, clk);
         let opcode_state = TracerInstrState {
             program_counter,
             opcode,
@@ -170,12 +170,12 @@ impl Tracer {
         })
     }
 
-    pub fn global_variable(&mut self, value: UntypedValue, index: u32) {
-        self.global_variables.push(TracerGlobalVariable {
-            value: value.to_bits(),
-            index,
-        })
-    }
+    // pub fn global_variable(&mut self, value: UntypedValue, index: u32) {
+    //     self.global_variables.push(TracerGlobalVariable {
+    //         value: value.to_bits(),
+    //         index,
+    //     })
+    // }
 
     pub fn memory_change(&mut self, offset: u32, len: u32, memory: &[u8]) {
         self.memory_changes.push(TracerMemoryState {

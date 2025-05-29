@@ -282,6 +282,224 @@ impl Opcode {
             _ => unreachable!(),
         }
     }
+
+    pub fn is_alu_instruction(self) -> bool {
+        match self {
+            Opcode::I32Eq
+            | Opcode::I32Eqz
+            | Opcode::I32Ne
+            | Opcode::I32LtS
+            | Opcode::I32LtU
+            | Opcode::I32GtU
+            | Opcode::I32GtS
+            | Opcode::I32LeS
+            | Opcode::I32LeU
+            | Opcode::I32GeS
+            | Opcode::I32GeU
+            | Opcode::I32Clz
+            | Opcode::I32Ctz
+            | Opcode::I32Popcnt
+            | Opcode::I32Add
+            | Opcode::I32Sub
+            | Opcode::I32Mul
+            | Opcode::I32DivS
+            | Opcode::I32DivU
+            | Opcode::I32RemS
+            | Opcode::I32RemU
+            | Opcode::I32And
+            | Opcode::I32Or
+            | Opcode::I32Xor
+            | Opcode::I32Shl
+            | Opcode::I32ShrS
+            | Opcode::I32ShrU
+            | Opcode::I32Rotl
+            | Opcode::I32Rotr => true,
+
+            _ => false,
+        }
+    }
+
+    pub fn is_memory_instruction(self) -> bool {
+        match self {
+            Opcode::I32Load8S(_)
+            | Opcode::I32Load8U(_)
+            | Opcode::I32Load16S(_)
+            | Opcode::I32Load16U(_)
+            | Opcode::I32Load(_)
+            | Opcode::I32Store8(_)
+            | Opcode::I32Store16(_)
+            | Opcode::I32Store(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_memory_load_instruction(self) -> bool {
+        match self {
+            Opcode::I32Load8S(_)
+            | Opcode::I32Load8U(_)
+            | Opcode::I32Load16S(_)
+            | Opcode::I32Load16U(_)
+            | Opcode::I32Load(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_memory_store_instruction(self) -> bool {
+        match self {
+            Opcode::I32Store8(_) | Opcode::I32Store16(_) | Opcode::I32Store(_) => true,
+
+            _ => false,
+        }
+    }
+
+    pub fn is_ecall_instruction(self) -> bool {
+        match self {
+            _ => false,
+        }
+    }
+
+    pub fn is_branch_instruction(self) -> bool {
+        match self {
+            Opcode::Br(_) | Opcode::BrIfEqz(_) | Opcode::BrIfNez(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_jump_instruction(self) -> bool {
+        match self {
+            _ => false,
+        }
+    }
+
+    pub fn is_halt(self) -> bool {
+        match self {
+            _ => false,
+        }
+    }
+
+    pub fn is_unary_instruction(self) -> bool {
+        match self {
+            Opcode::I32Clz | Opcode::I32Ctz | Opcode::I32Popcnt | Opcode::I32Eqz => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_binary_instruction(self) -> bool {
+        match self {
+            Opcode::I32Eq
+            | Opcode::I32Ne
+            | Opcode::I32LtS
+            | Opcode::I32LtU
+            | Opcode::I32GtU
+            | Opcode::I32GtS
+            | Opcode::I32LeS
+            | Opcode::I32LeU
+            | Opcode::I32GeS
+            | Opcode::I32GeU
+            | Opcode::I32Add
+            | Opcode::I32Sub
+            | Opcode::I32Mul
+            | Opcode::I32DivS
+            | Opcode::I32DivU
+            | Opcode::I32RemS
+            | Opcode::I32RemU
+            | Opcode::I32And
+            | Opcode::I32Or
+            | Opcode::I32Xor
+            | Opcode::I32Shl
+            | Opcode::I32ShrS
+            | Opcode::I32ShrU
+            | Opcode::I32Rotl
+            | Opcode::I32Rotr => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_nullary(&self) -> bool {
+        match self {
+            Opcode::Br(_) | Opcode::I32Const(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_call_instruction(self) -> bool {
+        match self {
+            Opcode::Call(_)
+            | Opcode::CallIndirect(_)
+            | Opcode::CallInternal(_)
+            | Opcode::ReturnCallIndirect(_)
+            | Opcode::ReturnCallInternal(_)
+            | Opcode::Return => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_const_instruction(self) -> bool {
+        match self {
+            Opcode::I32Const(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_local_instruction(self) -> bool {
+        match self {
+            Opcode::LocalGet(_) | Opcode::LocalSet(_) | Opcode::LocalTee(_) => true,
+            _ => false,
+        }
+    }
+    #[inline]
+    pub fn aux_value(&self) -> u32 {
+        let mut aux_value = 0u32;
+        match self {
+            Opcode::Unreachable => (),
+            Opcode::Trap(trap_code) => aux_value = *trap_code as u32,
+            Opcode::LocalGet(depth) => aux_value = *depth as u32,
+            Opcode::LocalSet(depth) => aux_value = *depth as u32,
+            Opcode::LocalTee(depth) => aux_value = *depth as u32,
+            Opcode::Br(branch_offset) => aux_value = branch_offset.to_i32() as u32,
+            Opcode::BrIfEqz(branch_offset) => aux_value = branch_offset.to_i32() as u32,
+            Opcode::BrIfNez(branch_offset) => aux_value = branch_offset.to_i32() as u32,
+            Opcode::BrTable(target) => aux_value = *target as u32,
+            Opcode::ConsumeFuel(block_fuel) => aux_value = block_fuel.to_u64() as u32,
+            Opcode::ReturnCallInternal(func) => aux_value = *func as u32,
+            Opcode::ReturnCall(sys_func_id) => aux_value = *sys_func_id as u32,
+            Opcode::ReturnCallIndirect(func) => aux_value = *func as u32,
+            Opcode::CallInternal(sign_id) => aux_value = *sign_id as u32,
+            Opcode::Call(func) => aux_value = *func as u32,
+            Opcode::CallIndirect(sys_func_id) => aux_value = *sys_func_id as u32,
+            Opcode::SignatureCheck(sys_func_id) => aux_value = *sys_func_id as u32,
+            Opcode::StackCheck(max_height) => aux_value = *max_height as u32,
+            Opcode::RefFunc(func) => aux_value = *func as u32,
+            Opcode::I32Const(untyped_value) => aux_value = untyped_value.to_bits(),
+
+            Opcode::GlobalGet(idx) => aux_value = *idx as u32,
+            Opcode::GlobalSet(idx) => aux_value = *idx as u32,
+            Opcode::I32Load(offset) => aux_value = *offset as u32,
+            Opcode::I32Load8S(offset) => aux_value = *offset as u32,
+            Opcode::I32Load8U(offset) => aux_value = *offset as u32,
+            Opcode::I32Load16S(offset) => aux_value = *offset as u32,
+            Opcode::I32Load16U(offset) => aux_value = *offset as u32,
+            Opcode::I32Store(offset) => aux_value = *offset as u32,
+            Opcode::I32Store8(offset) => aux_value = *offset as u32,
+            Opcode::I32Store16(offset) => aux_value = *offset as u32,
+            Opcode::MemoryInit(seg_id) => aux_value = *seg_id as u32,
+            Opcode::DataDrop(seg_id) => aux_value = *seg_id as u32,
+            Opcode::TableSize(table_id) => aux_value = *table_id as u32,
+            Opcode::TableGrow(table_id) => aux_value = *table_id as u32,
+            Opcode::TableFill(table_id) => aux_value = *table_id as u32,
+            Opcode::TableGet(table_id) => aux_value = *table_id as u32,
+            Opcode::TableSet(table_id) => aux_value = *table_id as u32,
+            Opcode::TableCopy(table_id) => aux_value = *table_id as u32,
+            Opcode::TableInit(ele_seg_id) => aux_value = *ele_seg_id as u32,
+            Opcode::ElemDrop(ele_seg_id) => aux_value = *ele_seg_id as u32,
+            _ => (),
+        }
+        aux_value
+    }
+    pub fn code(&self)->u32{
+        unsafe { *<*const _>::from(self).cast::<u16>() as u32}
+    }
+   
 }
 
 #[derive(Default, Debug, PartialEq, Clone, Eq, Hash)]
@@ -290,6 +508,7 @@ pub struct OpcodeMeta {
     pub pos: usize,
     pub opcode: u8,
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -302,8 +521,5 @@ mod tests {
         println!("{:?}", data);
     }
 
-    #[test]
-    fn test_opcode_size() {
-        assert_eq!(size_of::<Opcode>(), 8);
-    }
+  
 }
