@@ -1,11 +1,9 @@
-use crate::Opcode;
 use serde::{Deserialize, Serialize};
 
 /// Memory Record.
 ///
 /// This object encapsulates the information needed to prove a memory access operation. This
 /// includes the shard, timestamp, and value of the memory address.
-#[cfg(feature = "std")]
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
 pub struct MemoryRecord {
     /// The shard number.
@@ -18,7 +16,7 @@ pub struct MemoryRecord {
 
 /// Memory Access Position.
 ///
-/// This enum represents the position of a memory access in a register. For example, if a memory
+/// This enum represents the position of memory access in a register. For example, if memory
 /// access is performed in the C register, it will have a position of C.
 ///
 /// Note: The register positions require that they be read and written in the following order:
@@ -40,7 +38,6 @@ pub enum MemoryAccessPosition {
 /// This object encapsulates the information needed to prove a memory read operation. This
 /// includes the value, shard, timestamp, and previous shard and timestamp.
 #[allow(clippy::manual_non_exhaustive)]
-#[cfg(feature = "std")]
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
 pub struct MemoryReadRecord {
     /// The value.

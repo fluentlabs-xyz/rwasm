@@ -320,15 +320,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let stack = self.value_stack.dump_stack();
         self.store.tracer.as_mut().unwrap().pre_opcode_state(
             self.program_counter(),
+            self.sp,
             *instr,
-            stack,
-            &crate::OpcodeMeta {
-                index: 0,
-                pos: 0,
-                opcode: 0,
-            },
-            memory_size,
-            consumed_fuel,
         );
     }
 

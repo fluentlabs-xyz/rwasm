@@ -106,7 +106,7 @@ impl ValueStack {
     /// The returned [`ValueStackPtr`] points to the first value on the [`ValueStack`].
     #[inline]
     fn base_ptr(&mut self) -> ValueStackPtr {
-        ValueStackPtr::new(self.entries.as_mut_ptr(), self.entries.len())
+        ValueStackPtr::new(self.entries.as_mut_ptr())
     }
 
     /// Synchronizes [`ValueStack`] with the new [`ValueStackPtr`].
@@ -262,7 +262,8 @@ impl ValueStack {
     ///
     /// This is required since sometimes execution can halt in the middle of
     /// function execution which leaves the [`ValueStack`] in an unspecified
-    /// state. Therefore the [`ValueStack`] is required to be reset before
+    /// state.
+    /// Therefore, the [`ValueStack`] is required to be reset before
     /// function execution happens.
     pub fn reset(&mut self) {
         self.stack_ptr = 0;
@@ -288,8 +289,7 @@ impl From<*mut UntypedValue> for ValueStackPtr {
 }
 
 impl ValueStackPtr {
-    pub fn new(ptr: *mut UntypedValue, _len: usize) -> ValueStackPtr {
-        // Self { src: ptr, ptr, len }
+    pub fn new(ptr: *mut UntypedValue) -> ValueStackPtr {
         Self { ptr, src: ptr }
     }
 
@@ -325,7 +325,7 @@ impl ValueStackPtr {
     ///
     /// # Note
     ///
-    /// The amount of `delta` is in number of bytes per [`UntypedValue`].
+    /// The amount of `delta` is in the number of bytes per [`UntypedValue`].
     #[must_use]
     #[inline]
     pub fn into_add(mut self, delta: usize) -> Self {
@@ -337,7 +337,7 @@ impl ValueStackPtr {
     ///
     /// # Note
     ///
-    /// The amount of `delta` is in number of bytes per [`UntypedValue`].
+    /// The amount of `delta` is in the number of bytes per [`UntypedValue`].
     #[must_use]
     #[inline]
     pub fn into_sub(mut self, delta: usize) -> Self {

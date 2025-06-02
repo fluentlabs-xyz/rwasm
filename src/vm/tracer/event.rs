@@ -1,6 +1,4 @@
-use crate::{Opcode};
-
-pub mod memory;
+use crate::Opcode;
 
 pub fn opcode_stack_read(ins: Opcode) -> u32 {
     if ins.is_binary_instruction() {
@@ -15,7 +13,7 @@ pub fn opcode_stack_read(ins: Opcode) -> u32 {
         return 2;
     } else if ins.is_branch_instruction() {
     }
-    return 0;
+    0
 }
 
 pub fn opcode_stack_write(op: Opcode) -> bool {
@@ -27,10 +25,11 @@ pub fn opcode_stack_write(op: Opcode) -> bool {
     }
     if op.is_memory_instruction() {
         if op.is_memory_load_instruction() {
-            return true;
+            true
         } else {
-            return false;
+            false
         }
+    } else {
+        false
     }
-    return false;
 }

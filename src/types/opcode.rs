@@ -314,7 +314,6 @@ impl Opcode {
             | Opcode::I32ShrU
             | Opcode::I32Rotl
             | Opcode::I32Rotr => true,
-
             _ => false,
         }
     }
@@ -347,13 +346,13 @@ impl Opcode {
     pub fn is_memory_store_instruction(self) -> bool {
         match self {
             Opcode::I32Store8(_) | Opcode::I32Store16(_) | Opcode::I32Store(_) => true,
-
             _ => false,
         }
     }
 
     pub fn is_ecall_instruction(self) -> bool {
         match self {
+            Opcode::Call(_) | Opcode::ReturnCall(_) => true,
             _ => false,
         }
     }
@@ -424,8 +423,7 @@ impl Opcode {
 
     pub fn is_call_instruction(self) -> bool {
         match self {
-            Opcode::Call(_)
-            | Opcode::CallIndirect(_)
+            Opcode::CallIndirect(_)
             | Opcode::CallInternal(_)
             | Opcode::ReturnCallIndirect(_)
             | Opcode::ReturnCallInternal(_)
@@ -436,7 +434,7 @@ impl Opcode {
 
     pub fn is_const_instruction(self) -> bool {
         match self {
-            Opcode::I32Const(_) => true,
+            Opcode::I32Const(_) | Opcode::RefFunc(_) => true,
             _ => false,
         }
     }
@@ -447,59 +445,57 @@ impl Opcode {
             _ => false,
         }
     }
+
     #[inline]
     pub fn aux_value(&self) -> u32 {
-        let mut aux_value = 0u32;
         match self {
-            Opcode::Unreachable => (),
-            Opcode::Trap(trap_code) => aux_value = *trap_code as u32,
-            Opcode::LocalGet(depth) => aux_value = *depth as u32,
-            Opcode::LocalSet(depth) => aux_value = *depth as u32,
-            Opcode::LocalTee(depth) => aux_value = *depth as u32,
-            Opcode::Br(branch_offset) => aux_value = branch_offset.to_i32() as u32,
-            Opcode::BrIfEqz(branch_offset) => aux_value = branch_offset.to_i32() as u32,
-            Opcode::BrIfNez(branch_offset) => aux_value = branch_offset.to_i32() as u32,
-            Opcode::BrTable(target) => aux_value = *target as u32,
-            Opcode::ConsumeFuel(block_fuel) => aux_value = block_fuel.to_u64() as u32,
-            Opcode::ReturnCallInternal(func) => aux_value = *func as u32,
-            Opcode::ReturnCall(sys_func_id) => aux_value = *sys_func_id as u32,
-            Opcode::ReturnCallIndirect(func) => aux_value = *func as u32,
-            Opcode::CallInternal(sign_id) => aux_value = *sign_id as u32,
-            Opcode::Call(func) => aux_value = *func as u32,
-            Opcode::CallIndirect(sys_func_id) => aux_value = *sys_func_id as u32,
-            Opcode::SignatureCheck(sys_func_id) => aux_value = *sys_func_id as u32,
-            Opcode::StackCheck(max_height) => aux_value = *max_height as u32,
-            Opcode::RefFunc(func) => aux_value = *func as u32,
-            Opcode::I32Const(untyped_value) => aux_value = untyped_value.to_bits(),
-
-            Opcode::GlobalGet(idx) => aux_value = *idx as u32,
-            Opcode::GlobalSet(idx) => aux_value = *idx as u32,
-            Opcode::I32Load(offset) => aux_value = *offset as u32,
-            Opcode::I32Load8S(offset) => aux_value = *offset as u32,
-            Opcode::I32Load8U(offset) => aux_value = *offset as u32,
-            Opcode::I32Load16S(offset) => aux_value = *offset as u32,
-            Opcode::I32Load16U(offset) => aux_value = *offset as u32,
-            Opcode::I32Store(offset) => aux_value = *offset as u32,
-            Opcode::I32Store8(offset) => aux_value = *offset as u32,
-            Opcode::I32Store16(offset) => aux_value = *offset as u32,
-            Opcode::MemoryInit(seg_id) => aux_value = *seg_id as u32,
-            Opcode::DataDrop(seg_id) => aux_value = *seg_id as u32,
-            Opcode::TableSize(table_id) => aux_value = *table_id as u32,
-            Opcode::TableGrow(table_id) => aux_value = *table_id as u32,
-            Opcode::TableFill(table_id) => aux_value = *table_id as u32,
-            Opcode::TableGet(table_id) => aux_value = *table_id as u32,
-            Opcode::TableSet(table_id) => aux_value = *table_id as u32,
-            Opcode::TableCopy(table_id) => aux_value = *table_id as u32,
-            Opcode::TableInit(ele_seg_id) => aux_value = *ele_seg_id as u32,
-            Opcode::ElemDrop(ele_seg_id) => aux_value = *ele_seg_id as u32,
-            _ => (),
+            Opcode::Trap(trap_code) => *trap_code as u32,
+            Opcode::LocalGet(depth) => *depth as u32,
+            Opcode::LocalSet(depth) => *depth as u32,
+            Opcode::LocalTee(depth) => *depth as u32,
+            Opcode::Br(branch_offset) => branch_offset.to_i32() as u32,
+            Opcode::BrIfEqz(branch_offset) => branch_offset.to_i32() as u32,
+            Opcode::BrIfNez(branch_offset) => branch_offset.to_i32() as u32,
+            Opcode::BrTable(target) => *target as u32,
+            Opcode::ConsumeFuel(block_fuel) => block_fuel.to_u64() as u32,
+            Opcode::ReturnCallInternal(func) => *func as u32,
+            Opcode::ReturnCall(sys_func_id) => *sys_func_id as u32,
+            Opcode::ReturnCallIndirect(func) => *func as u32,
+            Opcode::CallInternal(sign_id) => *sign_id as u32,
+            Opcode::Call(func) => *func as u32,
+            Opcode::CallIndirect(sys_func_id) => *sys_func_id as u32,
+            Opcode::SignatureCheck(sys_func_id) => *sys_func_id as u32,
+            Opcode::StackCheck(max_height) => *max_height as u32,
+            Opcode::RefFunc(func) => *func as u32,
+            Opcode::I32Const(untyped_value) => untyped_value.to_bits(),
+            Opcode::GlobalGet(idx) => *idx as u32,
+            Opcode::GlobalSet(idx) => *idx as u32,
+            Opcode::I32Load(offset) => *offset as u32,
+            Opcode::I32Load8S(offset) => *offset as u32,
+            Opcode::I32Load8U(offset) => *offset as u32,
+            Opcode::I32Load16S(offset) => *offset as u32,
+            Opcode::I32Load16U(offset) => *offset as u32,
+            Opcode::I32Store(offset) => *offset as u32,
+            Opcode::I32Store8(offset) => *offset as u32,
+            Opcode::I32Store16(offset) => *offset as u32,
+            Opcode::MemoryInit(seg_id) => *seg_id as u32,
+            Opcode::DataDrop(seg_id) => *seg_id as u32,
+            Opcode::TableSize(table_id) => *table_id as u32,
+            Opcode::TableGrow(table_id) => *table_id as u32,
+            Opcode::TableFill(table_id) => *table_id as u32,
+            Opcode::TableGet(table_id) => *table_id as u32,
+            Opcode::TableSet(table_id) => *table_id as u32,
+            Opcode::TableCopy(table_id) => *table_id as u32,
+            Opcode::TableInit(ele_seg_id) => *ele_seg_id as u32,
+            Opcode::ElemDrop(ele_seg_id) => *ele_seg_id as u32,
+            _ => 0,
         }
-        aux_value
     }
-    pub fn code(&self)->u32{
-        unsafe { *<*const _>::from(self).cast::<u16>() as u32}
+
+    pub fn code(&self) -> u32 {
+        // TODO(wangyao): "is it safe?"
+        unsafe { *<*const _>::from(self).cast::<u16>() as u32 }
     }
-   
 }
 
 #[derive(Default, Debug, PartialEq, Clone, Eq, Hash)]
@@ -508,7 +504,6 @@ pub struct OpcodeMeta {
     pub pos: usize,
     pub opcode: u8,
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -520,6 +515,4 @@ mod tests {
         let data = bincode::encode_to_vec(&opcode, bincode::config::legacy()).unwrap();
         println!("{:?}", data);
     }
-
-  
 }

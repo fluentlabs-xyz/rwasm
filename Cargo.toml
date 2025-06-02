@@ -22,7 +22,7 @@ num-traits = { version = "0.2", default-features = false }
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
 libm = "0.2.1"
 smallvec = "1.15.0"
-serde = {version = "1.0.219",features = ["derive"]}
+serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 [dev-dependencies]
 rand = "0.9.1"
@@ -37,6 +37,8 @@ std = [
     "bitvec/std",
 ]
 more-max-pages = []
-tracing = []
+tracing = [
+    "dep:serde"
+]
 debug-print = []
 fpu = []

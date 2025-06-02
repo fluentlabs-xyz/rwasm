@@ -1,5 +1,14 @@
+use super::ValueStackPtr;
 use crate::{
-    types::{Opcode, OpcodeMeta, TableIdx},
+    types::{Opcode, TableIdx},
+    vm::tracer::mem::{
+        MemoryAccessRecord,
+        MemoryLocalEvent,
+        MemoryReadRecord,
+        MemoryRecord,
+        MemoryRecordEnum,
+        MemoryWriteRecord,
+    },
     UntypedValue,
 };
 use alloc::{string::String, vec::Vec};
@@ -7,17 +16,11 @@ use core::{
     fmt::{Debug, Formatter},
     mem::take,
 };
-use downcast_rs::Downcast;
-use event::{
-    memory::{MemoryRecord, MemoryRecordEnum},
-    opcode_stack_read,
-    opcode_stack_write,
-};
-use hashbrown::{hash_map::Entry, HashMap};
+use event::{opcode_stack_read, opcode_stack_write};
+use hashbrown::HashMap;
 
 pub mod event;
-use super::{ValueStack, ValueStackPtr};
-use event::memory::*;
+pub mod mem;
 
 #[derive(Debug, Clone)]
 pub struct TracerMemoryState {
@@ -75,11 +78,10 @@ pub struct Tracer {
     pub table_size_changes: Vec<TraceTableSizeState>,
     pub fns_meta: Vec<TracerFunctionMeta>,
     pub global_variables: Vec<TracerGlobalVariable>,
-    pub extern_names: HashMap<u32, String>,
     pub nested_calls: u32,
     pub memory_records: HashMap<u32, MemoryRecord>,
     pub local_memory_event: HashMap<u32, MemoryLocalEvent>,
-    pub memory_accesseveny: Vec<MemoryAccessRecord>,
+    pub memory_access_event: Vec<MemoryAccessRecord>,
     pub cycle_memory_access: Vec<MemoryAccessRecord>,
 }
 
@@ -110,15 +112,8 @@ impl Tracer {
         });
     }
 
-    pub fn pre_opcode_state(
-        &mut self,
-        program_counter: u32,
-        sp: ValueStackPtr,
-        shard: u32,
-        clk: u32,
-        opcode: Opcode,
-        value: u32,
-    ) {
+    pub fn pre_opcode_state(&mut self, program_counter: u32, sp: ValueStackPtr, opcode: Opcode) {
+        // TODO(wangyao): "determine clk and shard here using counters"
         let memory_changes = take(&mut self.memory_changes);
         let table_changes = take(&mut self.table_changes);
         let table_size_changes = take(&mut self.table_size_changes);
@@ -126,7 +121,7 @@ impl Tracer {
         let opcode_state = TracerInstrState {
             program_counter,
             opcode,
-            value,
+            value: opcode.aux_value(),
             memory_changes,
             table_changes,
             table_size_changes,
@@ -152,22 +147,6 @@ impl Tracer {
         self.logs.last_mut().map(|v| {
             v.next_table_idx = Some(table_idx);
         });
-    }
-
-    pub fn function_call(
-        &mut self,
-        fn_index: u32,
-        max_stack_height: usize,
-        num_locals: usize,
-        fn_name: String,
-    ) {
-        let resolved_name = self.extern_names.get(&fn_index).unwrap_or(&fn_name);
-        self.fns_meta.push(TracerFunctionMeta {
-            fn_index,
-            max_stack_height: max_stack_height as u32,
-            num_locals: num_locals as u32,
-            fn_name: resolved_name.clone(),
-        })
     }
 
     // pub fn global_variable(&mut self, value: UntypedValue, index: u32) {
@@ -259,36 +238,35 @@ impl Tracer {
         clk: u32,
         stack: Vec<UntypedValue>,
     ) {
-        if opcode_stack_write(ins) {
-            let record = self.memory_records.entry(sp).or_default();
-            let prev_record = *record;
-            record.shard = shard;
-            record.timestamp = clk;
-            record.value = stack.last().unwrap().as_u32();
-            let local_memory_access = &mut self.local_memory_event;
-            local_memory_access
-                .entry(sp)
-                .and_modify(|e| {
-                    e.final_mem_access = *record;
-                })
-                .or_insert(MemoryLocalEvent {
-                    addr: sp,
-                    initial_mem_access: prev_record,
-                    final_mem_access: *record,
-                });
-            // Construct the memory write record.
-
-            let write_record = MemoryWriteRecord::new(
-                record.value,
-                record.shard,
-                record.timestamp,
-                prev_record.value,
-                prev_record.shard,
-                prev_record.timestamp,
-            );
-
-            let memory_access = self.cycle_memory_access.last_mut();
-            memory_access.unwrap().c = Some(MemoryRecordEnum::Write(write_record));
+        if !opcode_stack_write(ins) {
+            return;
         }
+        let record = self.memory_records.entry(sp).or_default();
+        let prev_record = *record;
+        record.shard = shard;
+        record.timestamp = clk;
+        record.value = stack.last().unwrap().as_u32();
+        let local_memory_access = &mut self.local_memory_event;
+        local_memory_access
+            .entry(sp)
+            .and_modify(|e| {
+                e.final_mem_access = *record;
+            })
+            .or_insert(MemoryLocalEvent {
+                addr: sp,
+                initial_mem_access: prev_record,
+                final_mem_access: *record,
+            });
+        // Construct the memory write record.
+        let write_record = MemoryWriteRecord::new(
+            record.value,
+            record.shard,
+            record.timestamp,
+            prev_record.value,
+            prev_record.shard,
+            prev_record.timestamp,
+        );
+        let memory_access = self.cycle_memory_access.last_mut();
+        memory_access.unwrap().c = Some(MemoryRecordEnum::Write(write_record));
     }
 }
