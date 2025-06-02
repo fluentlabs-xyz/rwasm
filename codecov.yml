@@ -1,5 +1,6 @@
 ignore:
   - "benchmarks"
+  - "e2e"
   - "legacy"  # legacy will be removed
   - "snippets"
   - "wasm"

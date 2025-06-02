@@ -15,7 +15,6 @@ use crate::{CompilationConfig, ExecutionEngine, RwasmModule, Store};
 // }
 
 #[test]
-#[ignore]
 fn test_block() {
     let wasm_binary = wat::parse_str(
         r#"

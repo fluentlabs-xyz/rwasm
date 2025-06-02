@@ -1,6 +1,8 @@
 rWASM (reduced-WebAssembly)
 ===========================
 
+[![codecov](https://codecov.io/gh/fluentlabs-xyz/rwasm/graph/badge.svg?token=9T2PLQQW4L)](https://codecov.io/gh/fluentlabs-xyz/rwasm)
+
 rWASM (reduced WebAssembly) is an EIP-3540 compatible binary intermediary representation (IR) of WASM (WebAssembly).
 It is designed
 to simplify the execution process of WASM binaries while maintaining 100% compatibility with original WASM features.

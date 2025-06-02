@@ -1,5 +1,3 @@
-all: test-specific-cases
-
 .PHONY: test-specific-cases
 test-specific-cases:
 	# build all binaries
@@ -23,3 +21,5 @@ coverage:
 	cargo llvm-cov --lcov --manifest-path=./e2e/Cargo.toml > lcov3.info
 	# merge all lcov files together
 	grcov --llvm ./lcov1.info ./lcov2.info ./lcov3.info > lcov.info
+
+all: test-specific-cases
