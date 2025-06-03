@@ -402,6 +402,11 @@ impl ValueStackPtr {
         self.ptr = unsafe { self.ptr.sub(delta) };
         debug_assert!(self.ptr >= self.src, "stack underflow");
     }
+    /// convert stack pointer to the address number
+    #[inline]
+    pub fn to_position(&self) -> u32 {
+        unsafe { (*self.src).as_u32() }
+    }
 
     /// Pushes the `T` to the end of the [`ValueStack`].
     ///

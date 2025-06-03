@@ -175,12 +175,12 @@ impl<'a, T> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "tracing")]
     pub fn tracer(&self) -> Option<&crate::vm::Tracer> {
-        self.tracer.as_ref()
+        self.store.tracer.as_ref()
     }
 
     #[cfg(feature = "tracing")]
     pub fn tracer_mut(&mut self) -> Option<&mut crate::vm::Tracer> {
-        self.tracer.as_mut()
+        self.store.tracer.as_mut()
     }
 
     pub fn context(&self) -> &T {
@@ -192,13 +192,24 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     pub fn run(mut self) -> Result<(), TrapCode> {
-        use Opcode::*;
-        loop {
+       loop {
+         match self.run_step(){
+            Ok(_) => continue,
+            Err(trap_code) => return Err(trap_code),
+        }
+       }
+        
+    }
+
+    pub fn run_step(mut self)->Result<(), TrapCode>{
+         {
+            use Opcode::*;
             let instr = self.ip.get();
             #[cfg(feature = "debug-print")]
             self.debug_print(&instr);
             #[cfg(feature = "tracing")]
             self.trace_instr(&instr);
+
             match instr {
                 // stack
                 Unreachable => self.visit_unreachable()?,
@@ -214,20 +225,20 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 ConsumeFuelStack => self.visit_consume_fuel_stack()?,
                 Return => {
                     if self.visit_return() {
-                        break Ok(());
+                        Ok(());
                     }
                 }
                 ReturnCallInternal(imm) => self.visit_return_call_internal(imm),
                 ReturnCall(imm) => {
                     if self.visit_return_call(imm)? {
-                        break Ok(());
+                        Ok(());
                     }
                 }
                 ReturnCallIndirect(imm) => self.visit_return_call_indirect(imm)?,
                 CallInternal(imm) => self.visit_call_internal(imm)?,
                 Call(imm) => {
                     if self.visit_call(imm)? {
-                        break Ok(());
+                         Ok(());
                     }
                 }
                 CallIndirect(imm) => self.visit_call_indirect(imm)?,
@@ -304,7 +315,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 #[cfg(feature = "fpu")]
                 opcode => self.exec_fpu_opcode(opcode)?,
             }
-        }
+        };
+        Ok(())
     }
 
     #[cfg(feature = "debug-print")]
@@ -332,7 +344,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 let memory_size: u32 = self.store.global_memory.current_pages().into();
                 let consumed_fuel = self.fuel_consumed();
                 let stack = self.value_stack.dump_stack();
-                self.store.tracer.as_mut().unwrap().pre_opcode_state(
+                let tracer = self.store.tracer.as_mut().unwrap();
+                tracer.pre_opcode_state(
                     pc,
                     self.sp,    
                     clk,
