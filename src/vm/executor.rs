@@ -5,6 +5,8 @@ mod memory;
 mod stack;
 mod table;
 
+use core::u32::MAX;
+
 use super::Tracer;
 use crate::{
     types::{AddressOffset, RwasmModule, TableIdx, UntypedValue},
@@ -93,15 +95,10 @@ pub struct RwasmExecutor<'a, T> {
     pub(crate) sp: ValueStackPtr,
     pub(crate) call_stack: &'a mut CallStack,
     pub(crate) ip: InstructionPtr,
-    pub(crate) store: &'a mut Store<T>,
+    pub store: &'a mut Store<T>,
     #[cfg(feature = "tracing")]
-    pub(crate) vmstate: VMState,
-}
-
-#[derive(Default, Clone)]
-pub struct VMState {
-    pub clk: u32,
-    pub shard: u32,
+    pub vmstate: VMState,
+   
 }
 
 impl<'a, T> RwasmExecutor<'a, T> {
@@ -121,7 +118,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
             ip,
             store,
             #[cfg(feature = "tracing")]
-            vmstate: Some(VMState::default()),
+            vmstate: VMState::default(),
         }
     }
 
@@ -188,7 +185,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         &mut self.store.context
     }
 
-    pub fn run(mut self) -> Result<(), TrapCode> {
+    pub fn run(&mut self) -> Result<(), TrapCode> {
         loop {
             match self.run_step() {
                 Ok(_) => continue,
@@ -197,13 +194,14 @@ impl<'a, T> RwasmExecutor<'a, T> {
         }
     }
 
-    pub fn run_step(mut self) -> Result<(), TrapCode> {
+    pub fn run_step(&mut self) -> Result<(), TrapCode> {
         {
             use Opcode::*;
             let instr = self.ip.get();
             #[cfg(feature = "debug-print")]
             self.debug_print(&instr);
             #[cfg(feature = "tracing")]
+            
             self.trace_instr(&instr);
 
             match instr {
@@ -221,20 +219,20 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 ConsumeFuelStack => self.visit_consume_fuel_stack()?,
                 Return => {
                     if self.visit_return() {
-                        Ok(());
+                        return Ok(());
                     }
                 }
                 ReturnCallInternal(imm) => self.visit_return_call_internal(imm),
                 ReturnCall(imm) => {
                     if self.visit_return_call(imm)? {
-                        Ok(());
+                        return Ok(());
                     }
                 }
                 ReturnCallIndirect(imm) => self.visit_return_call_indirect(imm)?,
                 CallInternal(imm) => self.visit_call_internal(imm)?,
                 Call(imm) => {
                     if self.visit_call(imm)? {
-                        Ok(());
+                        return Ok(());
                     }
                 }
                 CallIndirect(imm) => self.visit_call_indirect(imm)?,
@@ -311,6 +309,22 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 #[cfg(feature = "fpu")]
                 opcode => self.exec_fpu_opcode(opcode)?,
             }
+             #[cfg(feature = "tracing")]
+             {   let tracer = self.tracer_mut().unwrap();
+                let log = tracer.logs.last();
+                 let sp =self.sp.to_position();
+                 let pc = self.program_counter();
+                 let clk = self.vmstate.clk;
+                 let shard = self.vmstate.shard;
+                 let stack =self.value_stack.dump_stack();
+                 self.tracer_mut().unwrap().post_opcode_state(
+                     pc,
+                     sp, 
+                     shard, 
+                     clk, 
+                     stack);
+             }
+           
         };
         Ok(())
     }
@@ -406,5 +420,30 @@ impl<'a, T> RwasmExecutor<'a, T> {
             Err(TrapCode::ExecutionHalted) => Ok(true),
             Err(err) => Err(err),
         }
+    }
+}
+
+
+#[derive(Default, Clone)]
+pub struct VMState {
+    pub clk: u32,
+    pub shard: u32,
+}
+
+pub const MAX_CYCLE_FOR_OP:u32 = 8;//TODO determin this for all instructions
+pub const MAX_CYCLE:u32 = 1<<20;
+impl VMState{
+    pub fn next_cylce(&mut self){
+        if self.clk+MAX_CYCLE_FOR_OP>MAX_CYCLE{
+            self.clk = 0;
+            self.next_shard();
+        } else{
+            self.clk+=4;
+        }
+
+    }
+
+    pub fn next_shard(&mut self){
+        unimplemented!()
     }
 }

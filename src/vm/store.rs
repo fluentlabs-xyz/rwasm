@@ -27,9 +27,8 @@ pub struct Store<T> {
     pub(crate) config: ExecutorConfig,
     // the last used signature (needed for indirect calls type checks)
     pub(crate) last_signature: Option<SignatureIdx>,
-    #[cfg(feature = "tracing")]
+     #[cfg(feature = "tracing")]
     pub(crate) tracer: Option<crate::vm::Tracer>,
-
     // rwasm modified segments
     pub(crate) tables: HashMap<TableIdx, TableEntity>,
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
@@ -75,8 +74,6 @@ impl<T> Store<T> {
             context,
             #[cfg(feature = "tracing")]
             tracer,
-            #[cfg(feature = "tracing")]
-            vmstate,
             global_variables: Default::default(),
             tables: Default::default(),
             last_signature: None,

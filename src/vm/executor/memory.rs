@@ -85,7 +85,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         memory.fill(byte);
         #[cfg(feature = "tracing")]
-        if let Some(tracer) = self.tracer.as_mut() {
+        if let Some(tracer) = self.store.tracer.as_mut() {
             tracer.memory_change(offset as u32, n as u32, memory);
         }
         self.ip.add(1);
@@ -111,7 +111,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         data.copy_within(src_offset..src_offset.wrapping_add(n), dst_offset);
         #[cfg(feature = "tracing")]
-        if let Some(tracer) = self.tracer.as_mut() {
+        if let Some(tracer) = self.store.tracer.as_mut() {
             tracer.memory_change(
                 dst_offset as u32,
                 n as u32,
@@ -158,7 +158,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         memory.copy_from_slice(data);
         #[cfg(feature = "tracing")]
-        if let Some(tracer) = self.tracer.as_mut() {
+        if let Some(tracer) = self.store.tracer.as_mut() {
             tracer.global_memory(dst_offset as u32, n as u32, memory);
         }
         self.ip.add(1);

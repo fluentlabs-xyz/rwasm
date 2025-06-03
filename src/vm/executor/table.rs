@@ -28,8 +28,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let result = table.grow_untyped(delta, init);
         self.sp.push_as(result);
         #[cfg(feature = "tracing")]
-        if let Some(tracer) = self.tracer.as_mut() {
-            tracer.table_size_change(table_idx, init.into(), delta);
+        if let Some(tracer) = self.store.tracer.as_mut() {
+            tracer.table_size_change(table_idx as u32, init.into(), delta);
         }
         self.ip.add(1);
         Ok(())
@@ -75,8 +75,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .set_untyped(index.into(), value)
             .map_err(|_| TrapCode::TableOutOfBounds)?;
         #[cfg(feature = "tracing")]
-        if let Some(tracer) = self.tracer.as_mut() {
-            tracer.table_change(table_idx, index.into(), value);
+        if let Some(tracer) = self.store.tracer.as_mut() {
+            tracer.table_change(table_idx as u32, index.into(), value);
         }
         self.ip.add(1);
         Ok(())
