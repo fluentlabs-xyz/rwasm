@@ -18,6 +18,8 @@ use crate::{
 use bitvec::{array::BitArray, bitarr};
 use hashbrown::HashMap;
 
+use super::VMState;
+
 pub struct Store<T> {
     pub(crate) consumed_fuel: u64,
     pub(crate) refunded_fuel: i64,
@@ -28,6 +30,8 @@ pub struct Store<T> {
     pub(crate) last_signature: Option<SignatureIdx>,
     #[cfg(feature = "tracing")]
     pub(crate) tracer: Option<crate::vm::Tracer>,
+     #[cfg(feature = "tracing")]
+    pub(crate) vmstate: Option<crate::vm::VMState>,
     // rwasm modified segments
     pub(crate) tables: HashMap<TableIdx, TableEntity>,
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
@@ -59,6 +63,12 @@ impl<T> Store<T> {
         } else {
             None
         };
+          #[cfg(feature = "tracing")]
+        let vmstate = if config.trace_enabled {
+            Some(crate::vm::VMState::default())
+        } else {
+            None
+        };
 
         Self {
             consumed_fuel: 0,
@@ -67,6 +77,8 @@ impl<T> Store<T> {
             context,
             #[cfg(feature = "tracing")]
             tracer,
+            #[cfg(feature = "tracing")]
+            vmstate,
             global_variables: Default::default(),
             tables: Default::default(),
             last_signature: None,

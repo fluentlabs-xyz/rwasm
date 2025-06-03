@@ -18,6 +18,8 @@ use crate::{
     ValueStackPtr,
 };
 
+use super::Tracer;
+
 pub fn execute_rwasm_module<'a, T>(
     module: &'a RwasmModule,
     value_stack: &'a mut ValueStack,
@@ -95,6 +97,14 @@ pub struct RwasmExecutor<'a, T> {
     pub(crate) store: &'a mut Store<T>,
 }
 
+
+#[derive(Default, Clone)]
+pub struct VMState {
+    pub clk: u32,
+    pub shard: u32,
+}
+
+
 impl<'a, T> RwasmExecutor<'a, T> {
     pub fn new(
         module: &'a RwasmModule,
@@ -111,6 +121,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
             call_stack,
             ip,
             store,
+            #[cfg(feature ="tracing")]
+            vmstate:VMState::default(),
         }
     }
 
@@ -311,7 +323,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     #[cfg(feature = "tracing")]
-    fn trace_instr(&self, instr: &Opcode) {
+    fn trace_instr(&mut self, instr: &Opcode) {
         let Some(tracer) = self.store.tracer.as_ref() else {
             return;
         };
