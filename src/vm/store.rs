@@ -30,8 +30,7 @@ pub struct Store<T> {
     pub(crate) last_signature: Option<SignatureIdx>,
     #[cfg(feature = "tracing")]
     pub(crate) tracer: Option<crate::vm::Tracer>,
-     #[cfg(feature = "tracing")]
-    pub(crate) vmstate: Option<crate::vm::VMState>,
+   
     // rwasm modified segments
     pub(crate) tables: HashMap<TableIdx, TableEntity>,
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,

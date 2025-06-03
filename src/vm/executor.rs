@@ -95,6 +95,8 @@ pub struct RwasmExecutor<'a, T> {
     pub(crate) call_stack: &'a mut CallStack,
     pub(crate) ip: InstructionPtr,
     pub(crate) store: &'a mut Store<T>,
+    #[cfg(feature = "tracing")]
+    pub(crate) vmstate: VMState,
 }
 
 
@@ -121,8 +123,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
             call_stack,
             ip,
             store,
-            #[cfg(feature ="tracing")]
-            vmstate:VMState::default(),
+            #[cfg(feature = "tracing")]
+            vmstate: Some(VMState::default()),
         }
     }
 
@@ -324,17 +326,19 @@ impl<'a, T> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "tracing")]
     fn trace_instr(&mut self, instr: &Opcode) {
-        let Some(tracer) = self.store.tracer.as_ref() else {
-            return;
-        };
-        let memory_size: u32 = self.store.global_memory.current_pages().into();
-        let consumed_fuel = self.fuel_consumed();
-        let stack = self.value_stack.dump_stack();
-        self.store.tracer.as_mut().unwrap().pre_opcode_state(
-            self.program_counter(),
-            self.sp,
-            *instr,
-        );
+          let clk = self.vmstate.clk;
+          let shard = self.vmstate.shard; 
+          let pc =  self.program_counter();
+                let memory_size: u32 = self.store.global_memory.current_pages().into();
+                let consumed_fuel = self.fuel_consumed();
+                let stack = self.value_stack.dump_stack();
+                self.store.tracer.as_mut().unwrap().pre_opcode_state(
+                    pc,
+                    self.sp,    
+                    clk,
+                    shard,
+                    *instr,
+                );
     }
 
     pub(crate) fn fetch_table_index(&self, offset: usize) -> TableIdx {
