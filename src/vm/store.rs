@@ -1,3 +1,4 @@
+use super::VMState;
 use crate::{
     always_failing_syscall_handler,
     ExecutorConfig,
@@ -18,8 +19,6 @@ use crate::{
 use bitvec::{array::BitArray, bitarr};
 use hashbrown::HashMap;
 
-use super::VMState;
-
 pub struct Store<T> {
     pub(crate) consumed_fuel: u64,
     pub(crate) refunded_fuel: i64,
@@ -30,7 +29,7 @@ pub struct Store<T> {
     pub(crate) last_signature: Option<SignatureIdx>,
     #[cfg(feature = "tracing")]
     pub(crate) tracer: Option<crate::vm::Tracer>,
-   
+
     // rwasm modified segments
     pub(crate) tables: HashMap<TableIdx, TableEntity>,
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
@@ -62,7 +61,7 @@ impl<T> Store<T> {
         } else {
             None
         };
-          #[cfg(feature = "tracing")]
+        #[cfg(feature = "tracing")]
         let vmstate = if config.trace_enabled {
             Some(crate::vm::VMState::default())
         } else {

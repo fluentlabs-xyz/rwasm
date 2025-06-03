@@ -112,11 +112,14 @@ impl Tracer {
         });
     }
 
-    pub fn pre_opcode_state(&mut self, program_counter: u32,
+    pub fn pre_opcode_state(
+        &mut self,
+        program_counter: u32,
         sp: ValueStackPtr,
-        clk:u32,
-        shard:u32,
-        opcode: Opcode) {
+        clk: u32,
+        shard: u32,
+        opcode: Opcode,
+    ) {
         // TODO(wangyao): "determine clk and shard here using counters,will do it in post opcode"
 
         let memory_changes = take(&mut self.memory_changes);

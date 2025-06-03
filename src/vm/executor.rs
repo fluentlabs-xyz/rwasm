@@ -5,6 +5,7 @@ mod memory;
 mod stack;
 mod table;
 
+use super::Tracer;
 use crate::{
     types::{AddressOffset, RwasmModule, TableIdx, UntypedValue},
     CallStack,
@@ -17,8 +18,6 @@ use crate::{
     ValueStack,
     ValueStackPtr,
 };
-
-use super::Tracer;
 
 pub fn execute_rwasm_module<'a, T>(
     module: &'a RwasmModule,
@@ -99,13 +98,11 @@ pub struct RwasmExecutor<'a, T> {
     pub(crate) vmstate: VMState,
 }
 
-
 #[derive(Default, Clone)]
 pub struct VMState {
     pub clk: u32,
     pub shard: u32,
 }
-
 
 impl<'a, T> RwasmExecutor<'a, T> {
     pub fn new(
@@ -192,17 +189,16 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     pub fn run(mut self) -> Result<(), TrapCode> {
-       loop {
-         match self.run_step(){
-            Ok(_) => continue,
-            Err(trap_code) => return Err(trap_code),
+        loop {
+            match self.run_step() {
+                Ok(_) => continue,
+                Err(trap_code) => return Err(trap_code),
+            }
         }
-       }
-        
     }
 
-    pub fn run_step(mut self)->Result<(), TrapCode>{
-         {
+    pub fn run_step(mut self) -> Result<(), TrapCode> {
+        {
             use Opcode::*;
             let instr = self.ip.get();
             #[cfg(feature = "debug-print")]
@@ -238,7 +234,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 CallInternal(imm) => self.visit_call_internal(imm)?,
                 Call(imm) => {
                     if self.visit_call(imm)? {
-                         Ok(());
+                        Ok(());
                     }
                 }
                 CallIndirect(imm) => self.visit_call_indirect(imm)?,
@@ -338,20 +334,14 @@ impl<'a, T> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "tracing")]
     fn trace_instr(&mut self, instr: &Opcode) {
-          let clk = self.vmstate.clk;
-          let shard = self.vmstate.shard; 
-          let pc =  self.program_counter();
-                let memory_size: u32 = self.store.global_memory.current_pages().into();
-                let consumed_fuel = self.fuel_consumed();
-                let stack = self.value_stack.dump_stack();
-                let tracer = self.store.tracer.as_mut().unwrap();
-                tracer.pre_opcode_state(
-                    pc,
-                    self.sp,    
-                    clk,
-                    shard,
-                    *instr,
-                );
+        let clk = self.vmstate.clk;
+        let shard = self.vmstate.shard;
+        let pc = self.program_counter();
+        let memory_size: u32 = self.store.global_memory.current_pages().into();
+        let consumed_fuel = self.fuel_consumed();
+        let stack = self.value_stack.dump_stack();
+        let tracer = self.store.tracer.as_mut().unwrap();
+        tracer.pre_opcode_state(pc, self.sp, clk, shard, *instr);
     }
 
     pub(crate) fn fetch_table_index(&self, offset: usize) -> TableIdx {
