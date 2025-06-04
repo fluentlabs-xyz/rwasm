@@ -29,7 +29,7 @@ rand = "0.9.1"
 wat = "1.230.0"
 
 [features]
-default = ["std"]
+default = ["std","tracing"]
 std = [
     "bytes/std",
     "bincode/std",

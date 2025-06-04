@@ -21,7 +21,7 @@ use hashbrown::HashMap;
 
 pub mod event;
 pub mod mem;
-
+pub mod mem_index;
 #[derive(Debug, Clone)]
 pub struct TracerMemoryState {
     pub offset: u32,
