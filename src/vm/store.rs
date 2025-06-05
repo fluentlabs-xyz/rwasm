@@ -1,4 +1,3 @@
-use super::VMState;
 use crate::{
     always_failing_syscall_handler,
     ExecutorConfig,
@@ -27,7 +26,7 @@ pub struct Store<T> {
     pub(crate) config: ExecutorConfig,
     // the last used signature (needed for indirect calls type checks)
     pub(crate) last_signature: Option<SignatureIdx>,
-     #[cfg(feature = "tracing")]
+    #[cfg(feature = "tracing")]
     pub(crate) tracer: Option<crate::vm::Tracer>,
     // rwasm modified segments
     pub(crate) tables: HashMap<TableIdx, TableEntity>,
@@ -57,12 +56,6 @@ impl<T> Store<T> {
         #[cfg(feature = "tracing")]
         let tracer = if config.trace_enabled {
             Some(crate::vm::Tracer::default())
-        } else {
-            None
-        };
-        #[cfg(feature = "tracing")]
-        let vmstate = if config.trace_enabled {
-            Some(crate::vm::VMState::default())
         } else {
             None
         };
