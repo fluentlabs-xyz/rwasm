@@ -19,7 +19,8 @@ use crate::{
 };
 use alloc::{format, vec::Vec};
 use bincode::{Decode, Encode};
-
+use serde::{Deserialize, Serialize};
+#[cfg_attr(feature = "tracing", derive(Serialize, Deserialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(u16)]
 pub enum Opcode {
