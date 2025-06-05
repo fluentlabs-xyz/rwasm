@@ -1,8 +1,10 @@
 mod alu;
+mod control_flow;
 #[cfg(feature = "fpu")]
 mod fpu;
 mod memory;
 mod stack;
+mod system;
 mod table;
 
 use crate::{
