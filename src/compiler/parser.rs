@@ -110,7 +110,10 @@ impl ModuleParser {
         Ok(result)
     }
 
-    pub fn finalize(mut self) -> Result<(RwasmModule, ConstructorParams), CompilationError> {
+    pub fn finalize(
+        mut self,
+        wasm_binary: &[u8],
+    ) -> Result<(RwasmModule, ConstructorParams), CompilationError> {
         if let Some(start_func) = self.allocations.translation.start_func {
             // for the start section we must always invoke even if there is a main function,
             // otherwise it might be super misleading for devs
@@ -187,6 +190,7 @@ impl ModuleParser {
                 .segment_builder
                 .global_memory_section,
             elem_section: element_section,
+            wasm_section: wasm_binary.to_vec(),
         };
         let constructor_params = self.allocations.translation.constructor_params;
 
