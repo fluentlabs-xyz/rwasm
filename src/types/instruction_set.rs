@@ -1,21 +1,34 @@
-use crate::types::{
-    AddressOffset,
-    BlockFuel,
-    BranchOffset,
-    BranchTableTargets,
-    CompiledFunc,
-    DataSegmentIdx,
-    DropKeep,
-    ElementSegmentIdx,
-    FuncIdx,
-    GlobalIdx,
-    LocalDepth,
-    Opcode,
-    OpcodeData,
-    SignatureIdx,
-    StackAlloc,
-    TableIdx,
-    UntypedValue,
+mod add_sub;
+mod bitwise;
+mod compare;
+mod conv;
+mod div_s;
+mod div_u;
+mod memory;
+mod mul;
+mod rem_s;
+mod rem_u;
+
+use crate::{
+    types::{
+        AddressOffset,
+        BlockFuel,
+        BranchOffset,
+        BranchTableTargets,
+        CompiledFunc,
+        DataSegmentIdx,
+        ElementSegmentIdx,
+        GlobalIdx,
+        LocalDepth,
+        MaxStackHeight,
+        Opcode,
+        SignatureIdx,
+        TableIdx,
+        UntypedValue,
+    },
+    CompilationError,
+    SysFuncIdx,
+    TrapCode,
 };
 use alloc::{vec, vec::Vec};
 use bincode::{
@@ -26,15 +39,14 @@ use bincode::{
     Encode,
 };
 use core::ops::{Deref, DerefMut};
-use num_enum::TryFromPrimitive;
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub struct InstructionSet {
-    pub instr: Vec<(Opcode, OpcodeData)>,
+    pub instr: Vec<Opcode>,
 }
 
 impl Deref for InstructionSet {
-    type Target = Vec<(Opcode, OpcodeData)>;
+    type Target = Vec<Opcode>;
 
     fn deref(&self) -> &Self::Target {
         &self.instr
@@ -49,27 +61,22 @@ impl DerefMut for InstructionSet {
 
 impl Default for InstructionSet {
     fn default() -> Self {
-        Self {
-            instr: vec![(Opcode::Return, OpcodeData::DropKeep(DropKeep::default()))],
-        }
+        Self { instr: vec![] }
     }
 }
 
 macro_rules! impl_opcode {
     ($opcode:ident($data_type:ident)) => {
         paste::paste! {
-            pub fn [< op_ $opcode:snake >]<I: Into<$data_type>>(&mut self, value: I) -> u32 {
-                self.push(
-                    Opcode::$opcode,
-                    OpcodeData::$data_type(value.into()),
-                )
+            pub fn [< op_ $opcode:snake >]<I: TryInto<$data_type>>(&mut self, value: I) {
+                self.push(Opcode::$opcode(value.try_into().unwrap_or_else(|_| unreachable!())));
             }
         }
     };
     ($opcode:ident) => {
         paste::paste! {
-            pub fn [< op_ $opcode:snake >](&mut self) -> u32 {
-                self.push(Opcode::$opcode, OpcodeData::EmptyData)
+            pub fn [< op_ $opcode:snake >](&mut self) {
+                self.push(Opcode::$opcode);
             }
         }
     };
@@ -80,9 +87,9 @@ impl InstructionSet {
         Self { instr: vec![] }
     }
 
-    pub fn push(&mut self, opcode: Opcode, data: OpcodeData) -> u32 {
+    pub fn push(&mut self, opcode: Opcode) -> u32 {
         let idx = self.instr.len() as u32;
-        self.instr.push((opcode, data));
+        self.instr.push(opcode);
         idx
     }
 
@@ -90,70 +97,65 @@ impl InstructionSet {
         self.instr.clear();
     }
 
-    fn is_return_last(&self) -> bool {
+    pub fn is_return_last(&self) -> bool {
         self.instr
             .last()
-            .map(|instr| match instr.0 {
-                Opcode::Return => true,
+            .map(|instr| match instr {
+                Opcode::Return
+                | Opcode::ReturnCall(_)
+                | Opcode::ReturnCallInternal(_)
+                | Opcode::ReturnCallIndirect(_) => true,
                 _ => false,
             })
             .unwrap_or_default()
     }
 
+    pub fn loc(&self) -> u32 {
+        self.instr.len() as u32
+    }
+
     pub fn finalize(&mut self, inject_return: bool) {
-        // inject return in the end (it's used mostly for unit tests)
         if inject_return && !self.is_return_last() {
-            self.op_return(DropKeep::default());
+            self.op_return();
         }
     }
 
+    pub fn last_nth_mut(&mut self, offset: usize) -> Option<&mut Opcode> {
+        self.instr.iter_mut().rev().nth(offset)
+    }
+
+    impl_opcode!(Unreachable);
+    impl_opcode!(Trap(TrapCode));
     impl_opcode!(LocalGet(LocalDepth));
     impl_opcode!(LocalSet(LocalDepth));
     impl_opcode!(LocalTee(LocalDepth));
     impl_opcode!(Br(BranchOffset));
     impl_opcode!(BrIfEqz(BranchOffset));
     impl_opcode!(BrIfNez(BranchOffset));
-    impl_opcode!(BrAdjust(BranchOffset));
-    impl_opcode!(BrAdjustIfNez(BranchOffset));
     impl_opcode!(BrTable(BranchTableTargets));
-    impl_opcode!(Unreachable);
     impl_opcode!(ConsumeFuel(BlockFuel));
-    impl_opcode!(Return(DropKeep));
-    impl_opcode!(ReturnIfNez(DropKeep));
+    impl_opcode!(ConsumeFuelStack);
+    impl_opcode!(Return);
     impl_opcode!(ReturnCallInternal(CompiledFunc));
-    impl_opcode!(ReturnCall(FuncIdx));
+    impl_opcode!(ReturnCall(SysFuncIdx));
     impl_opcode!(ReturnCallIndirect(SignatureIdx));
     impl_opcode!(CallInternal(CompiledFunc));
-    impl_opcode!(Call(FuncIdx));
+    impl_opcode!(Call(SysFuncIdx));
     impl_opcode!(CallIndirect(SignatureIdx));
     impl_opcode!(SignatureCheck(SignatureIdx));
+    impl_opcode!(StackCheck(MaxStackHeight));
     impl_opcode!(Drop);
     impl_opcode!(Select);
     impl_opcode!(GlobalGet(GlobalIdx));
     impl_opcode!(GlobalSet(GlobalIdx));
     impl_opcode!(I32Load(AddressOffset));
-    impl_opcode!(I64Load(AddressOffset));
-    impl_opcode!(F32Load(AddressOffset));
-    impl_opcode!(F64Load(AddressOffset));
     impl_opcode!(I32Load8S(AddressOffset));
     impl_opcode!(I32Load8U(AddressOffset));
     impl_opcode!(I32Load16S(AddressOffset));
     impl_opcode!(I32Load16U(AddressOffset));
-    impl_opcode!(I64Load8S(AddressOffset));
-    impl_opcode!(I64Load8U(AddressOffset));
-    impl_opcode!(I64Load16S(AddressOffset));
-    impl_opcode!(I64Load16U(AddressOffset));
-    impl_opcode!(I64Load32S(AddressOffset));
-    impl_opcode!(I64Load32U(AddressOffset));
     impl_opcode!(I32Store(AddressOffset));
-    impl_opcode!(I64Store(AddressOffset));
-    impl_opcode!(F32Store(AddressOffset));
-    impl_opcode!(F64Store(AddressOffset));
     impl_opcode!(I32Store8(AddressOffset));
     impl_opcode!(I32Store16(AddressOffset));
-    impl_opcode!(I64Store8(AddressOffset));
-    impl_opcode!(I64Store16(AddressOffset));
-    impl_opcode!(I64Store32(AddressOffset));
     impl_opcode!(MemorySize);
     impl_opcode!(MemoryGrow);
     impl_opcode!(MemoryFill);
@@ -166,17 +168,10 @@ impl InstructionSet {
     impl_opcode!(TableGet(TableIdx));
     impl_opcode!(TableSet(TableIdx));
     impl_opcode!(TableCopy(TableIdx));
-    impl_opcode!(TableInit(TableIdx));
-    pub fn op_table_init_checked(&mut self, table_idx: TableIdx, elem_idx: ElementSegmentIdx) {
-        self.push(Opcode::TableInit, OpcodeData::ElementSegmentIdx(elem_idx));
-        self.push(Opcode::TableGet, OpcodeData::TableIdx(table_idx));
-    }
+    impl_opcode!(TableInit(ElementSegmentIdx));
     impl_opcode!(ElemDrop(ElementSegmentIdx));
-    impl_opcode!(RefFunc(FuncIdx));
+    impl_opcode!(RefFunc(CompiledFunc));
     impl_opcode!(I32Const(UntypedValue));
-    impl_opcode!(I64Const(UntypedValue));
-    impl_opcode!(F32Const(UntypedValue));
-    impl_opcode!(F64Const(UntypedValue));
     impl_opcode!(I32Eqz);
     impl_opcode!(I32Eq);
     impl_opcode!(I32Ne);
@@ -188,29 +183,6 @@ impl InstructionSet {
     impl_opcode!(I32LeU);
     impl_opcode!(I32GeS);
     impl_opcode!(I32GeU);
-    impl_opcode!(I64Eqz);
-    impl_opcode!(I64Eq);
-    impl_opcode!(I64Ne);
-    impl_opcode!(I64LtS);
-    impl_opcode!(I64LtU);
-    impl_opcode!(I64GtS);
-    impl_opcode!(I64GtU);
-    impl_opcode!(I64LeS);
-    impl_opcode!(I64LeU);
-    impl_opcode!(I64GeS);
-    impl_opcode!(I64GeU);
-    impl_opcode!(F32Eq);
-    impl_opcode!(F32Ne);
-    impl_opcode!(F32Lt);
-    impl_opcode!(F32Gt);
-    impl_opcode!(F32Le);
-    impl_opcode!(F32Ge);
-    impl_opcode!(F64Eq);
-    impl_opcode!(F64Ne);
-    impl_opcode!(F64Lt);
-    impl_opcode!(F64Gt);
-    impl_opcode!(F64Le);
-    impl_opcode!(F64Ge);
     impl_opcode!(I32Clz);
     impl_opcode!(I32Ctz);
     impl_opcode!(I32Popcnt);
@@ -229,87 +201,168 @@ impl InstructionSet {
     impl_opcode!(I32ShrU);
     impl_opcode!(I32Rotl);
     impl_opcode!(I32Rotr);
-    impl_opcode!(I64Clz);
-    impl_opcode!(I64Ctz);
-    impl_opcode!(I64Popcnt);
-    impl_opcode!(I64Add);
-    impl_opcode!(I64Sub);
-    impl_opcode!(I64Mul);
-    impl_opcode!(I64DivS);
-    impl_opcode!(I64DivU);
-    impl_opcode!(I64RemS);
-    impl_opcode!(I64RemU);
-    impl_opcode!(I64And);
-    impl_opcode!(I64Or);
-    impl_opcode!(I64Xor);
-    impl_opcode!(I64Shl);
-    impl_opcode!(I64ShrS);
-    impl_opcode!(I64ShrU);
-    impl_opcode!(I64Rotl);
-    impl_opcode!(I64Rotr);
-    impl_opcode!(F32Abs);
-    impl_opcode!(F32Neg);
-    impl_opcode!(F32Ceil);
-    impl_opcode!(F32Floor);
-    impl_opcode!(F32Trunc);
-    impl_opcode!(F32Nearest);
-    impl_opcode!(F32Sqrt);
-    impl_opcode!(F32Add);
-    impl_opcode!(F32Sub);
-    impl_opcode!(F32Mul);
-    impl_opcode!(F32Div);
-    impl_opcode!(F32Min);
-    impl_opcode!(F32Max);
-    impl_opcode!(F32Copysign);
-    impl_opcode!(F64Abs);
-    impl_opcode!(F64Neg);
-    impl_opcode!(F64Ceil);
-    impl_opcode!(F64Floor);
-    impl_opcode!(F64Trunc);
-    impl_opcode!(F64Nearest);
-    impl_opcode!(F64Sqrt);
-    impl_opcode!(F64Add);
-    impl_opcode!(F64Sub);
-    impl_opcode!(F64Mul);
-    impl_opcode!(F64Div);
-    impl_opcode!(F64Min);
-    impl_opcode!(F64Max);
-    impl_opcode!(F64Copysign);
-    impl_opcode!(I32WrapI64);
-    impl_opcode!(I32TruncF32S);
-    impl_opcode!(I32TruncF32U);
-    impl_opcode!(I32TruncF64S);
-    impl_opcode!(I32TruncF64U);
-    impl_opcode!(I64ExtendI32S);
-    impl_opcode!(I64ExtendI32U);
-    impl_opcode!(I64TruncF32S);
-    impl_opcode!(I64TruncF32U);
-    impl_opcode!(I64TruncF64S);
-    impl_opcode!(I64TruncF64U);
-    impl_opcode!(F32ConvertI32S);
-    impl_opcode!(F32ConvertI32U);
-    impl_opcode!(F32ConvertI64S);
-    impl_opcode!(F32ConvertI64U);
-    impl_opcode!(F32DemoteF64);
-    impl_opcode!(F64ConvertI32S);
-    impl_opcode!(F64ConvertI32U);
-    impl_opcode!(F64ConvertI64S);
-    impl_opcode!(F64ConvertI64U);
-    impl_opcode!(F64PromoteF32);
     impl_opcode!(I32Extend8S);
     impl_opcode!(I32Extend16S);
-    impl_opcode!(I64Extend8S);
-    impl_opcode!(I64Extend16S);
-    impl_opcode!(I64Extend32S);
+
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Load(AddressOffset));
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Load(AddressOffset));
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Store(AddressOffset));
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Store(AddressOffset));
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Eq);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Ne);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Lt);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Gt);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Le);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Ge);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Eq);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Ne);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Lt);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Gt);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Le);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Ge);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Abs);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Neg);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Ceil);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Floor);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Trunc);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Nearest);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Sqrt);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Add);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Sub);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Mul);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Div);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Min);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Max);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32Copysign);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Abs);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Neg);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Ceil);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Floor);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Trunc);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Nearest);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Sqrt);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Add);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Sub);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Mul);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Div);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Min);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Max);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64Copysign);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(I32TruncF32S);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(I32TruncF32U);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(I32TruncF64S);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(I32TruncF64U);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(I64TruncF32S);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(I64TruncF32U);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(I64TruncF64S);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(I64TruncF64U);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32ConvertI32S);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32ConvertI32U);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32ConvertI64S);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32ConvertI64U);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F32DemoteF64);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64ConvertI32S);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64ConvertI32U);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64ConvertI64S);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64ConvertI64U);
+    #[cfg(feature = "fpu")]
+    impl_opcode!(F64PromoteF32);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I32TruncSatF32S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I32TruncSatF32U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I32TruncSatF64S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I32TruncSatF64U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I64TruncSatF32S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I64TruncSatF32U);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I64TruncSatF64S);
+    #[cfg(feature = "fpu")]
     impl_opcode!(I64TruncSatF64U);
-    impl_opcode!(StackAlloc(StackAlloc));
+
+    /// Adds the given `delta` amount of fuel to the [`ConsumeFuel`] instruction `instr`.
+    ///
+    /// # Panics
+    ///
+    /// - If `instr` does not resolve to a [`ConsumeFuel`] instruction.
+    /// - If the amount of consumed fuel for `instr` overflows.
+    ///
+    /// [`ConsumeFuel`]: enum.Instruction.html#variant.ConsumeFuel
+    pub fn bump_fuel_consumption(
+        &mut self,
+        instr: u32,
+        delta: u64,
+    ) -> Result<(), CompilationError> {
+        match &mut self.instr[instr as usize] {
+            Opcode::ConsumeFuel(fuel) => fuel.bump_by(delta),
+            _ => unreachable!("instruction {} is not a `ConsumeFuel` instruction", instr),
+        }
+    }
 }
 
 #[macro_export]
@@ -317,7 +370,7 @@ macro_rules! instruction_set_internal {
     // Nothing left to do
     ($code:ident, ) => {};
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {
-        _ = crate::types::Opcode::$x;
+        _ = crate::Opcode::$x;
         paste::paste! {
             $code.[< op_ $x:snake >]($v);
         }
@@ -325,7 +378,7 @@ macro_rules! instruction_set_internal {
     };
     // Default opcode without any inputs
     ($code:ident, $x:ident $($rest:tt)*) => {
-        _ = crate::types::Opcode::$x;
+        _ = crate::Opcode::$x;
         paste::paste! {
             $code.[< op_ $x:snake >]();
         }
@@ -341,7 +394,7 @@ macro_rules! instruction_set_internal {
 #[macro_export]
 macro_rules! instruction_set {
     ($($args:tt)*) => {{
-        let mut code = $crate::types::InstructionSet::new();
+        let mut code = $crate::InstructionSet::new();
         $crate::instruction_set_internal!(code, $($args)*);
         code
     }};
@@ -352,9 +405,7 @@ impl Encode for InstructionSet {
         let length = self.instr.len() as u64;
         Encode::encode(&length, encoder)?;
         for instr in &self.instr {
-            let instr_value = instr.0 as u8;
-            Encode::encode(&instr_value, encoder)?;
-            encode_instruction_data(&instr.1, encoder)?;
+            Encode::encode(instr, encoder)?;
         }
         Ok(())
     }
@@ -362,85 +413,30 @@ impl Encode for InstructionSet {
 
 impl<Context> Decode<Context> for InstructionSet {
     fn decode<D: Decoder<Context = Context>>(decoder: &mut D) -> Result<Self, DecodeError> {
+        #[allow(dead_code)]
+        fn instruction_not_found_err(instr_value: u8) -> DecodeError {
+            static RANGE: AllowedEnumVariants = AllowedEnumVariants::Range { min: 0, max: 0xc6 };
+            DecodeError::UnexpectedVariant {
+                type_name: "Instruction",
+                allowed: &RANGE,
+                found: instr_value as u32,
+            }
+        }
         let length: u64 = Decode::decode(decoder)?;
-        let mut instr: Vec<(Opcode, OpcodeData)> = Vec::with_capacity(length as usize);
+        let mut instr: Vec<Opcode> = Vec::with_capacity(length as usize);
         for _ in 0..length as usize {
-            let instr_value: u8 = Decode::decode(decoder)?;
-            let opcode = Opcode::try_from_primitive(instr_value)
-                .map_err(|_| instruction_not_found_err(instr_value))?;
-            let opcode_data = decode_instruction_data(&opcode, decoder)?;
-            instr.push((opcode, opcode_data));
+            let opcode: Opcode = Decode::decode(decoder)?;
+            instr.push(opcode);
         }
         Ok(Self { instr })
     }
 }
 
-fn encode_instruction_data<E: Encoder>(
-    instruction_data: &OpcodeData,
-    encoder: &mut E,
-) -> Result<(), EncodeError> {
-    match instruction_data {
-        OpcodeData::EmptyData => Ok(()),
-        OpcodeData::LocalDepth(value) => Encode::encode(&value, encoder),
-        OpcodeData::BranchOffset(value) => Encode::encode(&value, encoder),
-        OpcodeData::BranchTableTargets(value) => Encode::encode(&value, encoder),
-        OpcodeData::BlockFuel(value) => Encode::encode(&value, encoder),
-        OpcodeData::DropKeep(value) => Encode::encode(&value, encoder),
-        OpcodeData::CompiledFunc(value) => Encode::encode(&value, encoder),
-        OpcodeData::FuncIdx(value) => Encode::encode(&value, encoder),
-        OpcodeData::SignatureIdx(value) => Encode::encode(&value, encoder),
-        OpcodeData::GlobalIdx(value) => Encode::encode(&value, encoder),
-        OpcodeData::AddressOffset(value) => Encode::encode(&value, encoder),
-        OpcodeData::DataSegmentIdx(value) => Encode::encode(&value, encoder),
-        OpcodeData::TableIdx(value) => Encode::encode(&value, encoder),
-        OpcodeData::ElementSegmentIdx(value) => Encode::encode(&value, encoder),
-        OpcodeData::UntypedValue(value) => Encode::encode(&value, encoder),
-        OpcodeData::StackAlloc(value) => Encode::encode(&value, encoder),
-    }
-}
-
-fn decode_instruction_data<Context, D: Decoder<Context = Context>>(
-    instruction: &Opcode,
-    decoder: &mut D,
-) -> Result<OpcodeData, DecodeError> {
-    use Opcode::*;
-    let instruction_data = match instruction {
-        LocalGet | LocalSet | LocalTee => OpcodeData::LocalDepth(Decode::decode(decoder)?),
-        Br | BrIfEqz | BrIfNez | BrAdjust | BrAdjustIfNez => {
-            OpcodeData::BranchOffset(Decode::decode(decoder)?)
+impl core::fmt::Display for InstructionSet {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        for (i, instr) in self.instr.iter().enumerate() {
+            writeln!(f, " - {:0>4x}: {}", i, instr)?;
         }
-        BrTable => OpcodeData::BranchTableTargets(Decode::decode(decoder)?),
-        ConsumeFuel => OpcodeData::BlockFuel(Decode::decode(decoder)?),
-        Return | ReturnIfNez => OpcodeData::DropKeep(Decode::decode(decoder)?),
-        ReturnCallInternal | CallInternal => OpcodeData::CompiledFunc(Decode::decode(decoder)?),
-        ReturnCall | Call | RefFunc => OpcodeData::FuncIdx(Decode::decode(decoder)?),
-        ReturnCallIndirect | CallIndirect | SignatureCheck => {
-            OpcodeData::SignatureIdx(Decode::decode(decoder)?)
-        }
-        GlobalGet | GlobalSet => OpcodeData::GlobalIdx(Decode::decode(decoder)?),
-        I32Load | I64Load | F32Load | F64Load | I32Load8S | I32Load8U | I32Load16S | I32Load16U
-        | I64Load8S | I64Load8U | I64Load16S | I64Load16U | I64Load32S | I64Load32U | I32Store
-        | I64Store | F32Store | F64Store | I32Store8 | I32Store16 | I64Store8 | I64Store16
-        | I64Store32 => OpcodeData::AddressOffset(Decode::decode(decoder)?),
-        MemoryInit | DataDrop => OpcodeData::DataSegmentIdx(Decode::decode(decoder)?),
-        TableSize | TableGrow | TableFill | TableGet | TableSet | TableCopy => {
-            OpcodeData::TableIdx(Decode::decode(decoder)?)
-        }
-        TableInit | ElemDrop => OpcodeData::ElementSegmentIdx(Decode::decode(decoder)?),
-        I32Const | I64Const | F32Const | F64Const => {
-            OpcodeData::UntypedValue(Decode::decode(decoder)?)
-        }
-        StackAlloc => OpcodeData::StackAlloc(Decode::decode(decoder)?),
-        _ => OpcodeData::EmptyData,
-    };
-    Ok(instruction_data)
-}
-
-fn instruction_not_found_err(instr_value: u8) -> DecodeError {
-    static RANGE: AllowedEnumVariants = AllowedEnumVariants::Range { min: 0, max: 0xc6 };
-    DecodeError::UnexpectedVariant {
-        type_name: "Instruction",
-        allowed: &RANGE,
-        found: instr_value as u32,
+        Ok(())
     }
 }

@@ -1,4 +1,4 @@
-name: Rust CI
+name: CI
 
 on:
   push:
@@ -38,8 +38,8 @@ jobs:
 
       - name: Run tests
         run: |
-          cargo test --no-fail-fast
-          cargo test --no-fail-fast --manifest-path=./e2e/Cargo.toml
+          rustup target add wasm32-unknown-unknown
+          make test-specific-cases
 
   lint:
     name: Lint

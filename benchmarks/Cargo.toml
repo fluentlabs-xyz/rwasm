@@ -1,5 +1,5 @@
 [package]
-name = "benchmark-fib"
+name = "fib"
 version = "0.1.0"
 edition = "2021"
 
@@ -22,4 +22,3 @@ codegen-units = 1
 [dev-dependencies]
 rwasm = { path = ".." }
 wasmi = { version = "=0.31.2" }
-sp1-core-executor = "4.2.0"

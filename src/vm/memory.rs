@@ -1,4 +1,4 @@
-use crate::types::{Pages, RwasmError, N_MAX_MEMORY_PAGES};
+use crate::types::{Pages, TrapCode, N_MAX_MEMORY_PAGES};
 use bytes::BytesMut;
 
 pub struct GlobalMemory {
@@ -40,16 +40,16 @@ impl GlobalMemory {
     ///
     /// If the linear memory grows beyond its maximum limit after
     /// the growth operation.
-    pub fn grow(&mut self, additional: Pages) -> Result<Pages, RwasmError> {
+    pub fn grow(&mut self, additional: Pages) -> Result<Pages, TrapCode> {
         let current_pages = self.current_pages();
         if additional == Pages::from(0) {
             return Ok(current_pages);
         }
         let desired_pages = current_pages
             .checked_add(additional)
-            .ok_or(RwasmError::GrowthOperationLimited)?;
+            .ok_or(TrapCode::GrowthOperationLimited)?;
         if desired_pages > MEMORY_MAX_PAGES {
-            return Err(RwasmError::GrowthOperationLimited);
+            return Err(TrapCode::GrowthOperationLimited);
         }
         // At this point, it is okay to grow the underlying virtual memory
         // by the given number of additional pages.
@@ -78,12 +78,12 @@ impl GlobalMemory {
     /// # Errors
     ///
     /// If this operation accesses out of bounds linear memory.
-    pub fn read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), RwasmError> {
+    pub fn read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let len_buffer = buffer.len();
         let slice = self
             .data()
             .get(offset..(offset + len_buffer))
-            .ok_or(RwasmError::MemoryOutOfBounds)?;
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
         buffer.copy_from_slice(slice);
         Ok(())
     }
@@ -94,12 +94,12 @@ impl GlobalMemory {
     /// # Errors
     ///
     /// If this operation accesses out of bounds linear memory.
-    pub fn write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), RwasmError> {
+    pub fn write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
         let len_buffer = buffer.len();
         let slice = self
             .data_mut()
             .get_mut(offset..(offset + len_buffer))
-            .ok_or(RwasmError::MemoryOutOfBounds)?;
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
         slice.copy_from_slice(buffer);
         Ok(())
     }

@@ -4,12 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rwasm = { path = ".." }
-rwasm-legacy = { path = "../legacy" }
+rwasm = { path = "..", features = ["fpu"] }
 anyhow = "1.0.71"
-wast = "=62.0.0"
+wast = "=64.0"
 
 [features]
-default = ["e2e"]
-e2e = ["rwasm-legacy/e2e"]
+default = []
 debug-print = ["rwasm/debug-print"]

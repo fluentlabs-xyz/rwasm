@@ -1,15 +1,16 @@
 extern crate test;
 
-use rwasm::Caller;
-use sp1_core_executor::{ExecutionState, Executor, ExecutorMode, Program};
+use rwasm::{CompilationConfig, ExecutionEngine, Store};
 use test::Bencher;
 
+const FIB_VALUE: i32 = 47;
+
 #[bench]
-fn bench_wasmi(b: &mut Bencher) {
+fn bench_wasmi_no_cache(b: &mut Bencher) {
+    use wasmi::{Engine, Linker, Module, Store};
+    let engine = Engine::default();
     b.iter(|| {
-        use wasmi::{Engine, Linker, Module, Store};
         let wasm = include_bytes!("./lib.wasm");
-        let engine = Engine::default();
         let module = Module::new(&engine, &wasm[..]).unwrap();
         let mut store = Store::new(&engine, ());
         let linker = <Linker<()>>::new(&engine);
@@ -18,78 +19,83 @@ fn bench_wasmi(b: &mut Bencher) {
             .unwrap()
             .start(&mut store)
             .unwrap();
-        let _result = instance
+        let result = instance
             .get_typed_func::<i32, i32>(&store, "main")
             .unwrap()
-            .call(&mut store, 43)
+            .call(&mut store, FIB_VALUE)
             .unwrap();
-        // assert_eq!(result, 433494437);
+        core::hint::black_box(result);
+    });
+}
+
+#[bench]
+fn bench_wasmi(b: &mut Bencher) {
+    use wasmi::{Engine, Linker, Module, Store};
+    let engine = Engine::default();
+    let wasm_binary = include_bytes!("./lib.wasm");
+    let module = Module::new(&engine, &wasm_binary[..]).unwrap();
+    let mut store = Store::new(&engine, ());
+    let linker = <Linker<()>>::new(&engine);
+    let instance = linker
+        .instantiate(&mut store, &module)
+        .unwrap()
+        .start(&mut store)
+        .unwrap();
+    b.iter(|| {
+        let result = instance
+            .get_typed_func::<i32, i32>(&store, "main")
+            .unwrap()
+            .call(&mut store, FIB_VALUE)
+            .unwrap();
+        core::hint::black_box(result);
+    });
+}
+
+#[bench]
+fn bench_rwasm_no_cache(b: &mut Bencher) {
+    use rwasm::{ExecutorConfig, RwasmModule};
+
+    let wasm_binary = include_bytes!("./lib.wasm");
+
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("main".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+    let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
+    let encoded_rwasm_module = rwasm_module.serialize();
+    let mut store = Store::new(ExecutorConfig::default(), ());
+    let mut engine = ExecutionEngine::new(&mut store);
+
+    b.iter(|| {
+        let rwasm_module = RwasmModule::new(&encoded_rwasm_module);
+        engine.value_stack().push(FIB_VALUE.into());
+        engine.execute(&rwasm_module).unwrap();
+        let result = engine.value_stack().pop();
+        core::hint::black_box(result);
+        engine.store().reset(true);
     });
 }
 
 #[bench]
 fn bench_rwasm(b: &mut Bencher) {
-    use rwasm::{
-        legacy::{engine::RwasmConfig, Config, Engine, Module},
-        ExecutorConfig,
-        RwasmExecutor,
-        RwasmModule,
-    };
-    use std::sync::Arc;
+    use rwasm::{ExecutorConfig, RwasmModule};
 
-    let wasm = include_bytes!("./lib.wasm");
+    let wasm_binary = include_bytes!("./lib.wasm");
 
-    let mut config = Config::default();
-    config
-        .wasm_mutable_global(false)
-        .wasm_saturating_float_to_int(false)
-        .wasm_sign_extension(false)
-        .wasm_multi_value(false)
-        .wasm_mutable_global(true)
-        .wasm_saturating_float_to_int(true)
-        .wasm_sign_extension(true)
-        .wasm_multi_value(true)
-        .wasm_bulk_memory(true)
-        .wasm_reference_types(true)
-        .wasm_tail_call(true)
-        .wasm_extended_const(true);
-    config.rwasm_config(RwasmConfig {
-        state_router: None,
-        entrypoint_name: Some("main".to_string()),
-        import_linker: None,
-        wrap_import_functions: true,
-        translate_drop_keep: false,
-        allow_malformed_entrypoint_func_type: true,
-        use_32bit_mode: false,
-        builtins_consume_fuel: false,
-    });
-    let engine = Engine::new(&config);
-    let wasm_module = Module::new(&engine, &wasm[..]).unwrap();
-    let rwasm_module = rwasm::legacy::rwasm::RwasmModule::from_module(&wasm_module);
-    let mut encoded_rwasm_module = Vec::new();
-    use rwasm::legacy::rwasm::BinaryFormat;
-    rwasm_module
-        .write_binary_to_vec(&mut encoded_rwasm_module)
-        .unwrap();
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("main".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+    let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
+    let encoded_rwasm_module = rwasm_module.serialize();
+    let mut store = Store::new(ExecutorConfig::default(), ());
+    let mut engine = ExecutionEngine::new(&mut store);
+    let rwasm_module = RwasmModule::new(&encoded_rwasm_module);
+
     b.iter(|| {
-        let rwasm_module = RwasmModule::new(&encoded_rwasm_module);
-        let mut vm = RwasmExecutor::new(Arc::new(rwasm_module), ExecutorConfig::default(), ());
-        Caller::new(&mut vm).stack_push(43);
-        vm.run().unwrap();
-        let _result: i32 = Caller::new(&mut vm).stack_pop_as();
-        // assert_eq!(result, 433494437);
-        // vm.reset_pc();
-    });
-}
-
-#[bench]
-fn bench_riscv(b: &mut Bencher) {
-    b.iter(|| {
-        let elf = include_bytes!("./fibonacci-program");
-        let mut executor = Executor::new(Program::from(elf).unwrap(), Default::default());
-        executor.executor_mode = ExecutorMode::Trace;
-        executor.execute().unwrap();
-        executor.state = ExecutionState::new(executor.program.pc_start);
+        engine.value_stack().push(FIB_VALUE.into());
+        engine.execute(&rwasm_module).unwrap();
+        let result = engine.value_stack().pop();
+        core::hint::black_box(result);
+        engine.store().reset(true);
     });
 }
 
@@ -105,6 +111,6 @@ fn bench_native(b: &mut Bencher) {
             }
             a
         }
-        core::hint::black_box(main(core::hint::black_box(43)));
+        core::hint::black_box(main(core::hint::black_box(FIB_VALUE)));
     });
 }

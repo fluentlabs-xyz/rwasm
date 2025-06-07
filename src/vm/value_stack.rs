@@ -1,9 +1,10 @@
-use crate::types::{
-    DropKeep,
-    RwasmError,
-    UntypedValue,
-    DEFAULT_MAX_VALUE_STACK_HEIGHT,
-    DEFAULT_MIN_VALUE_STACK_HEIGHT,
+use crate::{
+    split_i64_to_i32,
+    types::{TrapCode, UntypedValue},
+    F32,
+    F64,
+    N_DEFAULT_STACK_SIZE,
+    N_MAX_STACK_SIZE,
 };
 use alloc::{vec, vec::Vec};
 use core::fmt::Debug;
@@ -47,16 +48,6 @@ impl PartialEq for ValueStack {
 
 impl Eq for ValueStack {}
 
-impl Default for ValueStack {
-    fn default() -> Self {
-        let register_len = size_of::<UntypedValue>();
-        Self::new(
-            DEFAULT_MIN_VALUE_STACK_HEIGHT / register_len,
-            DEFAULT_MAX_VALUE_STACK_HEIGHT / register_len,
-        )
-    }
-}
-
 impl Extend<UntypedValue> for ValueStack {
     fn extend<I>(&mut self, iter: I)
     where
@@ -65,6 +56,12 @@ impl Extend<UntypedValue> for ValueStack {
         for item in iter {
             self.push(item)
         }
+    }
+}
+
+impl Default for ValueStack {
+    fn default() -> Self {
+        Self::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE)
     }
 }
 
@@ -100,9 +97,8 @@ impl ValueStack {
         self.stack_len(sp) > self.maximum_len
     }
 
-    pub fn dump_stack(&mut self, sp: ValueStackPtr) -> Vec<UntypedValue> {
-        let size = self.stack_len(sp);
-        self.entries[0..size.min(self.entries.len())].to_vec()
+    pub fn dump_stack(&mut self) -> Vec<UntypedValue> {
+        self.entries[0..self.stack_ptr].to_vec()
     }
 
     /// Returns the base [`ValueStackPtr`] of `self`.
@@ -138,7 +134,7 @@ impl ValueStack {
         );
         assert!(
             initial_len <= maximum_len,
-            "initial value stack length is greater than maximum value stack length",
+            "the initial value stack length is greater than maximum value stack length",
         );
         let entries = vec![UntypedValue::default(); initial_len];
         Self {
@@ -157,7 +153,7 @@ impl ValueStack {
     ///
     /// # Safety
     ///
-    /// This is safe since all wasmi bytecode has been validated
+    /// This is safe since all rwasm bytecode has been validated
     /// during translation and therefore cannot result in out of
     /// bounds accesses.
     ///
@@ -167,36 +163,10 @@ impl ValueStack {
     #[inline]
     fn get_release_unchecked_mut(&mut self, index: usize) -> &mut UntypedValue {
         debug_assert!(index < self.capacity());
-        // Safety: This is safe since all wasmi bytecode has been validated
+        // Safety: This is safe since all rwasm bytecode has been validated
         //         during translation and therefore cannot result in out of
         //         bounds accesses.
         unsafe { self.entries.get_unchecked_mut(index) }
-    }
-
-    /// Extends the value stack by the `additional` amount of zeros.
-    ///
-    /// # Errors
-    ///
-    /// If the value stack cannot fit `additional` stack values.
-    pub fn extend_zeros(&mut self, additional: usize) {
-        let cells = self
-            .entries
-            .get_mut(self.stack_ptr..)
-            .and_then(|slice| slice.get_mut(..additional))
-            .unwrap_or_else(|| panic!("did not reserve enough value stack space"));
-        cells.fill(UntypedValue::default());
-        self.stack_ptr += additional;
-    }
-
-    /// Prepares the [`ValueStack`] for execution of the given Wasm function.
-    pub fn prepare_wasm_call(
-        &mut self,
-        max_stack_height: usize,
-        len_locals: usize,
-    ) -> Result<(), RwasmError> {
-        self.reserve(max_stack_height)?;
-        self.extend_zeros(len_locals);
-        Ok(())
     }
 
     /// Drops the last value on the [`ValueStack`].
@@ -217,6 +187,13 @@ impl ValueStack {
     pub fn push(&mut self, entry: UntypedValue) {
         *self.get_release_unchecked_mut(self.stack_ptr) = entry;
         self.stack_ptr += 1;
+    }
+
+    #[inline]
+    pub fn pop(&mut self) -> UntypedValue {
+        debug_assert!(self.stack_ptr > 0);
+        self.stack_ptr -= 1;
+        *self.get_release_unchecked_mut(self.stack_ptr)
     }
 
     /// Returns the capacity of the [`ValueStack`].
@@ -242,12 +219,12 @@ impl ValueStack {
     /// For this to be working we need a stack-depth analysis during Wasm
     /// compilation so that we are aware of all stack-depths for every
     /// functions.
-    pub fn reserve(&mut self, additional: usize) -> Result<(), RwasmError> {
+    pub fn reserve(&mut self, additional: usize) -> Result<(), TrapCode> {
         let new_len = self
             .len()
             .checked_add(additional)
             .filter(|&new_len| new_len <= self.maximum_len)
-            .ok_or_else(|| RwasmError::StackOverflow)?;
+            .ok_or_else(|| TrapCode::StackOverflow)?;
         if new_len > self.capacity() {
             // Note: By extending the new length, we effectively double
             // the current value stack length and add the additional flat amount
@@ -298,21 +275,15 @@ impl ValueStack {
 ///
 /// [`ValueStack`]: super::ValueStack
 #[derive(Debug, Copy, Clone)]
-// #[repr(transparent)]
 pub struct ValueStackPtr {
     src: *mut UntypedValue,
     ptr: *mut UntypedValue,
-    // len: usize,
 }
 
 impl From<*mut UntypedValue> for ValueStackPtr {
     #[inline]
     fn from(ptr: *mut UntypedValue) -> Self {
-        Self {
-            src: ptr,
-            ptr,
-            // len: usize::MAX,
-        }
+        Self { src: ptr, ptr }
     }
 }
 
@@ -326,7 +297,7 @@ impl ValueStackPtr {
     #[inline]
     pub fn offset_from(self, other: Self) -> isize {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         unsafe { self.ptr.offset_from(other.ptr) }
     }
@@ -336,7 +307,7 @@ impl ValueStackPtr {
     #[inline]
     fn get(self) -> UntypedValue {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         unsafe { *self.ptr }
     }
@@ -345,7 +316,7 @@ impl ValueStackPtr {
     #[inline]
     fn set(self, value: UntypedValue) {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         *unsafe { &mut *self.ptr } = value;
     }
@@ -416,7 +387,7 @@ impl ValueStackPtr {
     #[inline]
     fn inc_by(&mut self, delta: usize) {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
         debug_assert!(self.ptr >= self.src, "stack underflow");
@@ -426,7 +397,7 @@ impl ValueStackPtr {
     #[inline]
     fn dec_by(&mut self, delta: usize) {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.sub(delta) };
         debug_assert!(self.ptr >= self.src, "stack underflow");
@@ -574,9 +545,9 @@ impl ValueStackPtr {
     ///
     /// If the closure execution fails.
     #[inline]
-    pub fn try_eval_top<F>(&mut self, f: F) -> Result<(), RwasmError>
+    pub fn try_eval_top<F>(&mut self, f: F) -> Result<(), TrapCode>
     where
-        F: FnOnce(UntypedValue) -> Result<UntypedValue, RwasmError>,
+        F: FnOnce(UntypedValue) -> Result<UntypedValue, TrapCode>,
     {
         let last = self.into_sub(1);
         last.set(f(last.get())?);
@@ -589,9 +560,9 @@ impl ValueStackPtr {
     ///
     /// If the closure execution fails.
     #[inline]
-    pub fn try_eval_top2<F>(&mut self, f: F) -> Result<(), RwasmError>
+    pub fn try_eval_top2<F>(&mut self, f: F) -> Result<(), TrapCode>
     where
-        F: FnOnce(UntypedValue, UntypedValue) -> Result<UntypedValue, RwasmError>,
+        F: FnOnce(UntypedValue, UntypedValue) -> Result<UntypedValue, TrapCode>,
     {
         let rhs = self.pop();
         let last = self.into_sub(1);
@@ -600,47 +571,43 @@ impl ValueStackPtr {
         Ok(())
     }
 
-    /// Drops some amount of entries and keeps some amount of them at the new top.
-    ///
-    /// # Note
-    ///
-    /// For an amount of entries to keep `k` and an amount of entries to drop `d`
-    /// this has the following effect on stack `s` and stack pointer `sp`.
-    ///
-    /// 1) Copy `k` elements from indices starting at `sp - k` to `sp - k - d`.
-    /// 2) Adjust stack pointer: `sp -= d`
-    ///
-    /// After this operation the value stack will have `d` fewer entries and the
-    /// top `k` entries are the top `k` entries before this operation.
-    ///
-    /// Note that `k + d` cannot be greater than the stack length.
-    pub fn drop_keep(&mut self, drop_keep: DropKeep) {
-        fn drop_keep_impl(this: ValueStackPtr, drop_keep: DropKeep) {
-            let keep = drop_keep.keep;
-            if keep == 0 {
-                // Case: no values need to be kept.
-                return;
-            }
-            let keep = keep as usize;
-            let src = this.into_sub(keep);
-            let dst = this.into_sub(keep + drop_keep.drop as usize);
-            if keep == 1 {
-                // Case: only one value needs to be kept.
-                dst.set(src.get());
-                return;
-            }
-            // Case: many values need to be kept and moved on the stack.
-            for i in 0..keep {
-                dst.into_add(i).set(src.into_add(i).get());
-            }
-        }
+    pub fn push_f32(&mut self, value: F32) {
+        self.push(value.into());
+    }
 
-        let drop = drop_keep.drop;
-        if drop == 0 {
-            // Nothing to do in this case.
-            return;
-        }
-        drop_keep_impl(*self, drop_keep);
-        self.dec_by(drop as usize);
+    pub fn pop_f32(&mut self) -> F32 {
+        self.pop().as_f32()
+    }
+
+    pub fn push_f64(&mut self, value: F64) {
+        let bits = value.to_bits();
+        let lo = bits as i32;
+        self.push(lo.into());
+        let hi = (bits >> 32) as i32;
+        self.push(hi.into());
+    }
+
+    pub fn pop_f64(&mut self) -> F64 {
+        let (lo, hi) = self.pop2();
+        F64::from_bits(((hi.as_u64()) << 32) | (lo.as_u64()))
+    }
+
+    pub fn push_i32(&mut self, value: i32) {
+        self.push(value.into());
+    }
+
+    pub fn pop_i32(&mut self) -> i32 {
+        self.pop().as_i32()
+    }
+
+    pub fn push_i64(&mut self, value: i64) {
+        let (lo, hi) = split_i64_to_i32(value);
+        self.push(lo.into());
+        self.push(hi.into());
+    }
+
+    pub fn pop_i64(&mut self) -> i64 {
+        let (lo, hi) = self.pop2();
+        (hi.as_i64() << 32) | lo.as_i64()
     }
 }

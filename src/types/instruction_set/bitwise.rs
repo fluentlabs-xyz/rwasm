@@ -1,0 +1,325 @@
+use crate::InstructionSet;
+
+impl InstructionSet {
+    /// Max stack height: 3
+    pub fn op_i64_clz(&mut self) {
+        self.op_i32_clz();
+        self.op_local_get(1);
+        self.op_i32_const(32);
+        self.op_i32_eq();
+        self.op_br_if_eqz(4);
+        self.op_local_get(2);
+        self.op_i32_clz();
+        self.op_i32_add();
+        self.op_local_set(1);
+        self.op_i32_const(0);
+    }
+
+    /// Max stack height: 3
+    pub fn op_i64_ctz(&mut self) {
+        self.op_local_get(2);
+        self.op_i32_ctz();
+        self.op_local_get(1);
+        self.op_i32_const(32);
+        self.op_i32_eq();
+        self.op_br_if_eqz(5);
+        self.op_local_set(2);
+        self.op_i32_ctz();
+        self.op_i32_add();
+        self.op_br(3);
+        self.op_local_set(2);
+        self.op_drop();
+        self.op_i32_const(0);
+    }
+
+    /// Max stack height: 1
+    pub fn op_i64_popcnt(&mut self) {
+        self.op_i32_popcnt();
+        self.op_local_get(2);
+        self.op_i32_popcnt();
+        self.op_local_set(2);
+        self.op_i32_add();
+        self.op_i32_const(0);
+    }
+
+    /// Max stack height: 1
+    pub fn op_i64_and(&mut self) {
+        self.op_local_get(3);
+        self.op_i32_and();
+        self.op_local_set(2);
+        self.op_local_get(3);
+        self.op_i32_and();
+        self.op_local_set(2);
+    }
+
+    /// Max stack height: 1
+    pub fn op_i64_or(&mut self) {
+        self.op_local_get(3);
+        self.op_i32_or();
+        self.op_local_set(2);
+        self.op_local_get(3);
+        self.op_i32_or();
+        self.op_local_set(2);
+    }
+
+    /// Max stack height: 1
+    pub fn op_i64_xor(&mut self) {
+        self.op_local_get(3);
+        self.op_i32_xor();
+        self.op_local_set(2);
+        self.op_local_get(3);
+        self.op_i32_xor();
+        self.op_local_set(2);
+    }
+
+    /// Max stack height:
+    pub fn op_i64_shl(&mut self) {
+        self.op_local_get(2);
+        self.op_i32_const(63);
+        self.op_i32_and();
+        self.op_local_set(2);
+        self.op_local_get(2);
+        self.op_br_if_eqz(32);
+        self.op_local_get(2);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_br_if_eqz(10);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_const(32);
+        self.op_i32_sub();
+        self.op_i32_shl();
+        self.op_local_set(3);
+        self.op_i32_const(0);
+        self.op_local_set(4);
+        self.op_br(19);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_shl();
+        self.op_local_set(4);
+        self.op_local_get(3);
+        self.op_local_get(3);
+        self.op_i32_shl();
+        self.op_local_set(3);
+        self.op_local_get(4);
+        self.op_i32_const(32);
+        self.op_local_get(4);
+        self.op_i32_const(31);
+        self.op_i32_and();
+        self.op_i32_sub();
+        self.op_i32_shr_u();
+        self.op_local_get(4);
+        self.op_i32_or();
+        self.op_local_set(3);
+        self.op_drop();
+        self.op_drop();
+    }
+
+    pub fn op_i64_shr_s(&mut self) {
+        self.op_local_get(2);
+        self.op_i32_const(63);
+        self.op_i32_and();
+        self.op_local_set(2);
+        self.op_local_get(2);
+        self.op_br_if_eqz(34);
+        self.op_local_get(2);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_br_if_eqz(12);
+        self.op_local_get(3);
+        self.op_local_get(3);
+        self.op_i32_const(32);
+        self.op_i32_sub();
+        self.op_i32_shr_s();
+        self.op_local_set(4);
+        self.op_local_get(3);
+        self.op_i32_const(31);
+        self.op_i32_shr_s();
+        self.op_local_set(3);
+        self.op_br(19);
+        self.op_local_get(3);
+        self.op_local_get(3);
+        self.op_i32_shr_s();
+        self.op_local_set(3);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_shr_s();
+        self.op_local_set(4);
+        self.op_local_get(3);
+        self.op_i32_const(32);
+        self.op_local_get(4);
+        self.op_i32_const(31);
+        self.op_i32_and();
+        self.op_i32_sub();
+        self.op_i32_shl();
+        self.op_local_get(5);
+        self.op_i32_or();
+        self.op_local_set(4);
+        self.op_drop();
+        self.op_drop();
+    }
+
+    pub fn op_i64_shr_u(&mut self) {
+        self.op_local_get(2);
+        self.op_i32_const(63);
+        self.op_i32_and();
+        self.op_local_set(2);
+        self.op_local_get(2);
+        self.op_br_if_eqz(32);
+        self.op_local_get(2);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_br_if_eqz(10);
+        self.op_local_get(3);
+        self.op_local_get(3);
+        self.op_i32_const(32);
+        self.op_i32_sub();
+        self.op_i32_shr_u();
+        self.op_local_set(4);
+        self.op_i32_const(0);
+        self.op_local_set(3);
+        self.op_br(19);
+        self.op_local_get(3);
+        self.op_local_get(3);
+        self.op_i32_shr_u();
+        self.op_local_set(3);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_shr_u();
+        self.op_local_set(4);
+        self.op_local_get(3);
+        self.op_i32_const(32);
+        self.op_local_get(4);
+        self.op_i32_const(31);
+        self.op_i32_and();
+        self.op_i32_sub();
+        self.op_i32_shl();
+        self.op_local_get(5);
+        self.op_i32_or();
+        self.op_local_set(4);
+        self.op_drop();
+        self.op_drop();
+    }
+
+    /// Max stack height: 6
+    pub fn op_i64_rotl(&mut self) {
+        self.op_local_get(2);
+        self.op_i32_const(63);
+        self.op_i32_and();
+        self.op_local_set(2);
+        self.op_local_get(2);
+        self.op_br_if_eqz(32 + 10 + 2 + 6);
+        self.op_local_get(2);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_br_if_eqz(26);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_const(32);
+        self.op_i32_sub();
+        self.op_i32_shl();
+        self.op_local_get(4);
+        self.op_i32_const(64);
+        self.op_local_get(5);
+        self.op_i32_sub();
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_get(5);
+        self.op_i32_const(64);
+        self.op_local_get(5);
+        self.op_i32_sub();
+        self.op_i32_shr_u();
+        self.op_local_get(5);
+        self.op_local_get(5);
+        self.op_i32_const(32);
+        self.op_i32_sub();
+        self.op_i32_shl();
+        self.op_i32_or();
+        self.op_local_set(5);
+        self.op_local_set(3);
+        self.op_br(19 + 2);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_shl();
+        self.op_local_get(4);
+        self.op_i32_const(32);
+        self.op_local_get(5);
+        self.op_i32_sub();
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_get(5);
+        self.op_i32_const(32);
+        self.op_local_get(5);
+        self.op_i32_sub();
+        self.op_i32_shr_u();
+        self.op_local_get(5);
+        self.op_local_get(5);
+        self.op_i32_shl();
+        self.op_i32_or();
+        self.op_local_set(4);
+        self.op_local_set(4);
+        self.op_drop();
+        self.op_drop();
+    }
+
+    /// Max stack height: 6
+    pub fn op_i64_rotr(&mut self) {
+        self.op_local_get(2);
+        self.op_i32_const(63);
+        self.op_i32_and();
+        self.op_local_set(2);
+        self.op_local_get(2);
+        self.op_br_if_eqz(32 + 10 + 2 + 6);
+        self.op_local_get(2);
+        self.op_i32_const(31);
+        self.op_i32_gt_u();
+        self.op_br_if_eqz(26);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_const(32);
+        self.op_i32_sub();
+        self.op_i32_shr_u();
+        self.op_local_get(4);
+        self.op_i32_const(64);
+        self.op_local_get(5);
+        self.op_i32_sub();
+        self.op_i32_shl();
+        self.op_i32_or();
+        self.op_local_get(5);
+        self.op_i32_const(64);
+        self.op_local_get(5);
+        self.op_i32_sub();
+        self.op_i32_shl();
+        self.op_local_get(5);
+        self.op_local_get(5);
+        self.op_i32_const(32);
+        self.op_i32_sub();
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(5);
+        self.op_local_set(3);
+        self.op_br(19 + 2);
+        self.op_local_get(4);
+        self.op_local_get(3);
+        self.op_i32_shr_u();
+        self.op_local_get(4);
+        self.op_i32_const(32);
+        self.op_local_get(5);
+        self.op_i32_sub();
+        self.op_i32_shl();
+        self.op_i32_or();
+        self.op_local_get(5);
+        self.op_i32_const(32);
+        self.op_local_get(5);
+        self.op_i32_sub();
+        self.op_i32_shl();
+        self.op_local_get(5);
+        self.op_local_get(5);
+        self.op_i32_shr_u();
+        self.op_i32_or();
+        self.op_local_set(4);
+        self.op_local_set(4);
+        self.op_drop();
+        self.op_drop();
+    }
+}

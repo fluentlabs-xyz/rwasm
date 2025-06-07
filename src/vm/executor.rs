@@ -1,38 +1,33 @@
+mod alu;
+mod control_flow;
+#[cfg(feature = "fpu")]
+mod fpu;
+mod memory;
+mod stack;
+mod system;
+mod table;
+
 use crate::{
-    types::{
-        AddressOffset,
-        DropKeep,
-        FuelCosts,
-        GlobalIdx,
-        OpcodeData,
-        Pages,
-        RwasmError,
-        RwasmModule,
-        SignatureIdx,
-        TableIdx,
-        UntypedValue,
-        FUNC_REF_OFFSET,
-        N_DEFAULT_STACK_SIZE,
-        N_MAX_DATA_SEGMENTS,
-        N_MAX_RECURSION_DEPTH,
-        N_MAX_STACK_SIZE,
-        N_MAX_TABLE_SIZE,
-    },
-    vm::{
-        config::ExecutorConfig,
-        handler::{always_failing_syscall_handler, SyscallHandler},
-        instr_ptr::InstructionPtr,
-        memory::GlobalMemory,
-        opcodes::run_the_loop,
-        table_entity::TableEntity,
-        tracer::Tracer,
-        value_stack::{ValueStack, ValueStackPtr},
-    },
+    types::{AddressOffset, RwasmModule, TableIdx, UntypedValue},
+    CallStack,
     Caller,
+    InstructionPtr,
+    Opcode,
+    Store,
+    SysFuncIdx,
+    TrapCode,
+    ValueStack,
+    ValueStackPtr,
 };
-use alloc::{sync::Arc, vec, vec::Vec};
-use bitvec::{bitvec, prelude::BitVec};
-use hashbrown::HashMap;
+
+pub fn execute_rwasm_module<'a, T>(
+    module: &'a RwasmModule,
+    value_stack: &'a mut ValueStack,
+    call_stack: &'a mut CallStack,
+    store: &'a mut Store<T>,
+) -> Result<(), TrapCode> {
+    RwasmExecutor::new(&module, value_stack, call_stack, store).run()
+}
 
 /// The `RwasmExecutor` struct represents the state and functionality required to execute
 /// WebAssembly (WASM) instructions within an embedded WASM runtime environment.
@@ -73,7 +68,7 @@ use hashbrown::HashMap;
 /// - `last_signature`: Optionally stores the last used signature index, needed for validating
 ///   indirect function calls.
 /// - `next_result`: Optionally stores the result of the next operation, either a valid result or an
-///   error of type `RwasmError`.
+///   error of type `TrapCode`.
 /// - `stop_exec`: A boolean flag indicating whether the execution should halt prematurely.
 /// - `syscall_handler`: A handler of type `SyscallHandler<T>` to execute host function calls or
 ///   system calls invoked by the WASM module.
@@ -93,204 +88,257 @@ use hashbrown::HashMap;
 ///
 /// Note: This struct is intended as part of an internal runtime and may not expose all fields to
 /// public interfaces.
-pub struct RwasmExecutor<T> {
-    // function segments
-    pub(crate) module: Arc<RwasmModule>,
-    pub(crate) config: ExecutorConfig,
-    // execution context information
-    pub(crate) consumed_fuel: u64,
-    pub(crate) refunded_fuel: i64,
-    pub(crate) value_stack: ValueStack,
+pub struct RwasmExecutor<'a, T> {
+    pub(crate) module: &'a RwasmModule,
+    pub(crate) value_stack: &'a mut ValueStack,
     pub(crate) sp: ValueStackPtr,
-    pub(crate) global_memory: GlobalMemory,
+    pub(crate) call_stack: &'a mut CallStack,
     pub(crate) ip: InstructionPtr,
-    pub(crate) context: T,
-    pub(crate) tracer: Option<Tracer>,
-    pub(crate) fuel_costs: FuelCosts,
-    // rwasm modified segments
-    pub(crate) tables: HashMap<TableIdx, TableEntity>,
-    pub(crate) default_elements_segment: Vec<UntypedValue>,
-    pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
-    pub(crate) empty_elements_segments: BitVec,
-    pub(crate) empty_data_segments: BitVec,
-    // list of nested calls return pointers
-    pub(crate) call_stack: Vec<InstructionPtr>,
-    // the last used signature (needed for indirect calls type checks)
-    pub(crate) last_signature: Option<SignatureIdx>,
-    pub(crate) next_result: Option<Result<i32, RwasmError>>,
-    pub(crate) stop_exec: bool,
-    pub(crate) syscall_handler: SyscallHandler<T>,
+    pub(crate) store: &'a mut Store<T>,
 }
 
-impl<T> RwasmExecutor<T> {
-    pub fn parse(
-        rwasm_bytecode: &[u8],
-        config: ExecutorConfig,
-        context: T,
-    ) -> Result<Self, RwasmError> {
-        Ok(Self::new(
-            Arc::new(RwasmModule::new(rwasm_bytecode)),
-            config,
-            context,
-        ))
-    }
-
-    pub fn new(module: Arc<RwasmModule>, config: ExecutorConfig, context: T) -> Self {
-        // create a stack with sp
-        let mut value_stack = ValueStack::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE);
+impl<'a, T> RwasmExecutor<'a, T> {
+    pub fn new(
+        module: &'a RwasmModule,
+        value_stack: &'a mut ValueStack,
+        call_stack: &'a mut CallStack,
+        store: &'a mut Store<T>,
+    ) -> Self {
         let sp = value_stack.stack_ptr();
-
-        // assign sp to the position inside a code section
-        let mut ip = InstructionPtr::new(module.code_section.instr.as_ptr());
-        ip.add(module.source_pc as usize);
-
-        // create global memory
-        let global_memory = GlobalMemory::new(Pages::default());
-
-        let dropped_elements = bitvec![0; N_MAX_TABLE_SIZE];
-        let empty_data_segments = bitvec![0; N_MAX_DATA_SEGMENTS];
-
-        let tracer = if config.trace_enabled {
-            Some(Tracer::default())
-        } else {
-            None
-        };
-
-        let module_elements_section = module
-            .element_section
-            .iter()
-            .copied()
-            .map(|v| UntypedValue::from(v + FUNC_REF_OFFSET))
-            .collect::<Vec<_>>();
-
+        let ip = InstructionPtr::new(module.code_section.instr.as_ptr());
         Self {
             module,
-            config,
-            consumed_fuel: 0,
-            refunded_fuel: 0,
             value_stack,
             sp,
-            global_memory,
+            call_stack,
             ip,
-            context,
-            tracer,
-            fuel_costs: Default::default(),
-            global_variables: Default::default(),
-            tables: Default::default(),
-            call_stack: vec![],
-            last_signature: None,
-            next_result: None,
-            stop_exec: false,
-            syscall_handler: always_failing_syscall_handler,
-            default_elements_segment: module_elements_section,
-            empty_elements_segments: dropped_elements,
-            empty_data_segments,
+            store,
         }
+    }
+
+    pub fn advance_ip(&mut self, offset: usize) {
+        self.ip.add(offset)
     }
 
     pub fn caller(&mut self) -> Caller<T> {
-        Caller::new(self)
-    }
-
-    pub fn set_syscall_handler(&mut self, handler: SyscallHandler<T>) {
-        self.syscall_handler = handler;
+        let program_counter = self.program_counter();
+        Caller::new(self.store, &mut self.sp, program_counter)
     }
 
     pub fn program_counter(&self) -> u32 {
-        self.ip.pc()
+        let diff = self.ip.ptr as u32 - self.module.code_section.instr.as_ptr() as u32;
+        diff / size_of::<Opcode>() as u32
     }
 
-    pub fn reset(&mut self, pc: Option<usize>) {
-        let mut ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
-        ip.add(pc.unwrap_or(self.module.source_pc as usize));
-        self.ip = ip;
-        self.consumed_fuel = 0;
-        self.value_stack.drain();
-        self.sp = self.value_stack.stack_ptr();
-        self.call_stack.clear();
-        self.last_signature = None;
-    }
-
-    pub fn reset_last_signature(&mut self) {
-        self.last_signature = None;
-    }
-
-    pub fn try_consume_fuel(&mut self, fuel: u64) -> Result<(), RwasmError> {
-        let consumed_fuel = self.consumed_fuel.checked_add(fuel).unwrap_or(u64::MAX);
-        if let Some(fuel_limit) = self.config.fuel_limit {
+    pub fn try_consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
+        let consumed_fuel = self
+            .store
+            .consumed_fuel
+            .checked_add(fuel)
+            .unwrap_or(u64::MAX);
+        if let Some(fuel_limit) = self.store.config.fuel_limit {
             if consumed_fuel > fuel_limit {
-                return Err(RwasmError::OutOfFuel);
+                return Err(TrapCode::OutOfFuel);
             }
         }
-        self.consumed_fuel = consumed_fuel;
+        self.store.consumed_fuel = consumed_fuel;
         Ok(())
     }
 
     pub fn refund_fuel(&mut self, fuel: i64) {
-        self.refunded_fuel += fuel;
-    }
-
-    pub fn adjust_fuel_limit(&mut self) -> u64 {
-        let consumed_fuel = self.consumed_fuel;
-        if let Some(fuel_limit) = self.config.fuel_limit.as_mut() {
-            *fuel_limit -= self.consumed_fuel;
-        }
-        self.consumed_fuel = 0;
-        consumed_fuel
+        self.store.refunded_fuel += fuel;
     }
 
     pub fn remaining_fuel(&self) -> Option<u64> {
-        Some(self.config.fuel_limit? - self.consumed_fuel)
+        Some(self.store.config.fuel_limit? - self.store.consumed_fuel)
     }
 
     pub fn fuel_consumed(&self) -> u64 {
-        self.consumed_fuel
+        self.store.consumed_fuel
     }
 
     pub fn fuel_refunded(&self) -> i64 {
-        self.refunded_fuel
+        self.store.refunded_fuel
     }
 
-    pub fn tracer(&self) -> Option<&Tracer> {
+    #[cfg(feature = "tracing")]
+    pub fn tracer(&self) -> Option<&crate::vm::Tracer> {
         self.tracer.as_ref()
     }
 
-    pub fn tracer_mut(&mut self) -> Option<&mut Tracer> {
+    #[cfg(feature = "tracing")]
+    pub fn tracer_mut(&mut self) -> Option<&mut crate::vm::Tracer> {
         self.tracer.as_mut()
     }
 
     pub fn context(&self) -> &T {
-        &self.context
+        &self.store.context
     }
 
     pub fn context_mut(&mut self) -> &mut T {
-        &mut self.context
+        &mut self.store.context
     }
 
-    pub fn run(&mut self) -> Result<i32, RwasmError> {
-        match run_the_loop(self) {
-            Ok(exit_code) => Ok(exit_code),
-            Err(err) => match err {
-                RwasmError::ExecutionHalted(exit_code) => Ok(exit_code),
-                _ => Err(err),
+    pub fn run(mut self) -> Result<(), TrapCode> {
+        use Opcode::*;
+        loop {
+            let instr = self.ip.get();
+            #[cfg(feature = "debug-print")]
+            self.debug_print(&instr);
+            #[cfg(feature = "tracing")]
+            self.trace_instr(&instr);
+            match instr {
+                // stack
+                Unreachable => self.visit_unreachable()?,
+                Trap(imm) => self.visit_trap_code(imm)?,
+                LocalGet(imm) => self.visit_local_get(imm),
+                LocalSet(imm) => self.visit_local_set(imm),
+                LocalTee(imm) => self.visit_local_tee(imm),
+                Br(imm) => self.visit_br(imm),
+                BrIfEqz(imm) => self.visit_br_if(imm),
+                BrIfNez(imm) => self.visit_br_if_nez(imm),
+                BrTable(imm) => self.visit_br_table(imm),
+                ConsumeFuel(imm) => self.visit_consume_fuel(imm)?,
+                ConsumeFuelStack => self.visit_consume_fuel_stack()?,
+                Return => {
+                    if self.visit_return() {
+                        break Ok(());
+                    }
+                }
+                ReturnCallInternal(imm) => self.visit_return_call_internal(imm),
+                ReturnCall(imm) => {
+                    if self.visit_return_call(imm)? {
+                        break Ok(());
+                    }
+                }
+                ReturnCallIndirect(imm) => self.visit_return_call_indirect(imm)?,
+                CallInternal(imm) => self.visit_call_internal(imm)?,
+                Call(imm) => {
+                    if self.visit_call(imm)? {
+                        break Ok(());
+                    }
+                }
+                CallIndirect(imm) => self.visit_call_indirect(imm)?,
+                SignatureCheck(imm) => self.visit_signature_check(imm)?,
+                StackCheck(imm) => self.visit_stack_check(imm)?,
+                Drop => self.visit_drop(),
+                Select => self.visit_select(),
+                GlobalGet(imm) => self.visit_global_get(imm),
+                GlobalSet(imm) => self.visit_global_set(imm),
+                RefFunc(imm) => self.visit_ref_func(imm),
+                I32Const(imm) => self.visit_i32_const(imm),
+
+                // alu
+                I32Eqz => self.visit_i32_eqz(),
+                I32Eq => self.visit_i32_eq(),
+                I32Ne => self.visit_i32_ne(),
+                I32LtS => self.visit_i32_lt_s(),
+                I32LtU => self.visit_i32_lt_u(),
+                I32GtS => self.visit_i32_gt_s(),
+                I32GtU => self.visit_i32_gt_u(),
+                I32LeS => self.visit_i32_le_s(),
+                I32LeU => self.visit_i32_le_u(),
+                I32GeS => self.visit_i32_ge_s(),
+                I32GeU => self.visit_i32_ge_u(),
+                I32Clz => self.visit_i32_clz(),
+                I32Ctz => self.visit_i32_ctz(),
+                I32Popcnt => self.visit_i32_popcnt(),
+                I32Add => self.visit_i32_add(),
+                I32Sub => self.visit_i32_sub(),
+                I32Mul => self.visit_i32_mul(),
+                I32DivS => self.visit_i32_div_s()?,
+                I32DivU => self.visit_i32_div_u()?,
+                I32RemS => self.visit_i32_rem_s()?,
+                I32RemU => self.visit_i32_rem_u()?,
+                I32And => self.visit_i32_and(),
+                I32Or => self.visit_i32_or(),
+                I32Xor => self.visit_i32_xor(),
+                I32Shl => self.visit_i32_shl(),
+                I32ShrS => self.visit_i32_shr_s(),
+                I32ShrU => self.visit_i32_shr_u(),
+                I32Rotl => self.visit_i32_rotl(),
+                I32Rotr => self.visit_i32_rotr(),
+                I32WrapI64 => self.visit_i32_wrap_i64(),
+                I32Extend8S => self.visit_i32_extend8_s(),
+                I32Extend16S => self.visit_i32_extend16_s(),
+
+                // memory
+                MemorySize => self.visit_memory_size(),
+                MemoryGrow => self.visit_memory_grow()?,
+                MemoryFill => self.visit_memory_fill()?,
+                MemoryCopy => self.visit_memory_copy()?,
+                MemoryInit(imm) => self.visit_memory_init(imm)?,
+                DataDrop(imm) => self.visit_data_drop(imm),
+                I32Load(imm) => self.visit_i32_load(imm)?,
+                I32Load8S(imm) => self.visit_i32_load_i8_s(imm)?,
+                I32Load8U(imm) => self.visit_i32_load_i8_u(imm)?,
+                I32Load16S(imm) => self.visit_i32_load_i16_s(imm)?,
+                I32Load16U(imm) => self.visit_i32_load_i16_u(imm)?,
+                I32Store(imm) => self.visit_i32_store(imm)?,
+                I32Store8(imm) => self.visit_i32_store_8(imm)?,
+                I32Store16(imm) => self.visit_i32_store_16(imm)?,
+
+                // table
+                TableSize(imm) => self.visit_table_size(imm),
+                TableGrow(imm) => self.visit_table_grow(imm)?,
+                TableFill(imm) => self.visit_table_fill(imm)?,
+                TableGet(imm) => self.visit_table_get(imm)?,
+                TableSet(imm) => self.visit_table_set(imm)?,
+                TableCopy(imm) => self.visit_table_copy(imm)?,
+                TableInit(imm) => self.visit_table_init(imm)?,
+                ElemDrop(imm) => self.visit_element_drop(imm),
+
+                // fpu
+                #[cfg(feature = "fpu")]
+                opcode => self.exec_fpu_opcode(opcode)?,
+            }
+        }
+    }
+
+    #[cfg(feature = "debug-print")]
+    fn debug_print(&mut self, instr: &Opcode) {
+        let stack = self.value_stack.dump_stack();
+        println!(
+            "{:04}:\t {} \tstack({}):{:?}",
+            self.program_counter(),
+            instr,
+            stack.len(),
+            stack
+                .iter()
+                .rev()
+                .take(10)
+                .map(|v| v.as_usize())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[cfg(feature = "tracing")]
+    fn trace_instr(&self, instr: &Opcode) {
+        let Some(tracer) = self.store.tracer.as_ref() else {
+            return;
+        };
+        let memory_size: u32 = self.store.global_memory.current_pages().into();
+        let consumed_fuel = self.fuel_consumed();
+        let stack = self.value_stack.dump_stack();
+        self.store.tracer.as_mut().unwrap().pre_opcode_state(
+            self.program_counter(),
+            *instr,
+            stack,
+            &crate::OpcodeMeta {
+                index: 0,
+                pos: 0,
+                opcode: 0,
             },
-        }
-    }
-
-    pub(crate) fn fetch_drop_keep(&self, offset: usize) -> DropKeep {
-        let mut addr: InstructionPtr = self.ip;
-        addr.add(offset);
-        match addr.data() {
-            OpcodeData::DropKeep(drop_keep) => *drop_keep,
-            _ => unreachable!("rwasm: can't extract drop keep"),
-        }
+            memory_size,
+            consumed_fuel,
+        );
     }
 
     pub(crate) fn fetch_table_index(&self, offset: usize) -> TableIdx {
         let mut addr: InstructionPtr = self.ip;
         addr.add(offset);
-        match addr.data() {
-            OpcodeData::TableIdx(table_idx) => *table_idx,
+        match addr.get() {
+            Opcode::TableGet(table_idx) => table_idx,
             _ => unreachable!("rwasm: can't extract table index"),
         }
     }
@@ -303,11 +351,11 @@ impl<T> RwasmExecutor<T> {
             memory: &[u8],
             address: UntypedValue,
             offset: u32,
-        ) -> Result<UntypedValue, RwasmError>,
-    ) -> Result<(), RwasmError> {
+        ) -> Result<UntypedValue, TrapCode>,
+    ) -> Result<(), TrapCode> {
         self.sp.try_eval_top(|address| {
-            let memory = self.global_memory.data();
-            let value = load_extend(memory, address, offset.into_inner())?;
+            let memory = self.store.global_memory.data();
+            let value = load_extend(memory, address, offset)?;
             Ok(value)
         })?;
         self.ip.add(1);
@@ -323,16 +371,15 @@ impl<T> RwasmExecutor<T> {
             address: UntypedValue,
             offset: u32,
             value: UntypedValue,
-        ) -> Result<(), RwasmError>,
-        len: u32,
-    ) -> Result<(), RwasmError> {
+        ) -> Result<(), TrapCode>,
+        #[allow(unused_variables)] len: u32,
+    ) -> Result<(), TrapCode> {
         let (address, value) = self.sp.pop2();
-        let memory = self.global_memory.data_mut();
-        store_wrap(memory, address, offset.into_inner(), value)?;
-        self.ip.offset(0);
-        let address = u32::from(address);
-        let base_address = offset.into_inner() + address;
-        if let Some(tracer) = self.tracer.as_mut() {
+        let memory = self.store.global_memory.data_mut();
+        store_wrap(memory, address, offset, value)?;
+        #[cfg(feature = "tracing")]
+        if let Some(tracer) = self.store.tracer.as_mut() {
+            let base_address = offset + u32::from(address);
             tracer.memory_change(
                 base_address,
                 len,
@@ -343,62 +390,11 @@ impl<T> RwasmExecutor<T> {
         Ok(())
     }
 
-    #[inline(always)]
-    pub(crate) fn execute_unary(&mut self, f: fn(UntypedValue) -> UntypedValue) {
-        self.sp.eval_top(f);
-        self.ip.add(1);
-    }
-
-    #[inline(always)]
-    pub(crate) fn execute_binary(&mut self, f: fn(UntypedValue, UntypedValue) -> UntypedValue) {
-        self.sp.eval_top2(f);
-        self.ip.add(1);
-    }
-
-    #[inline(always)]
-    pub(crate) fn try_execute_unary(
-        &mut self,
-        f: fn(UntypedValue) -> Result<UntypedValue, RwasmError>,
-    ) -> Result<(), RwasmError> {
-        self.sp.try_eval_top(f)?;
-        self.ip.add(1);
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub(crate) fn try_execute_binary(
-        &mut self,
-        f: fn(UntypedValue, UntypedValue) -> Result<UntypedValue, RwasmError>,
-    ) -> Result<(), RwasmError> {
-        self.sp.try_eval_top2(f)?;
-        self.ip.add(1);
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub(crate) fn execute_call_internal(
-        &mut self,
-        is_nested_call: bool,
-        skip: usize,
-        func_idx: u32,
-    ) -> Result<(), RwasmError> {
-        self.ip.add(skip);
-        self.value_stack.sync_stack_ptr(self.sp);
-        if is_nested_call {
-            if self.call_stack.len() > N_MAX_RECURSION_DEPTH {
-                return Err(RwasmError::StackOverflow);
-            }
-            self.call_stack.push(self.ip);
+    pub(crate) fn invoke_syscall(&mut self, sys_func_idx: SysFuncIdx) -> Result<bool, TrapCode> {
+        match (self.store.syscall_handler)(self.caller(), sys_func_idx) {
+            Ok(_) => Ok(false),
+            Err(TrapCode::ExecutionHalted) => Ok(true),
+            Err(err) => Err(err),
         }
-        let instr_ref = self
-            .module
-            .func_section
-            .get(func_idx as usize)
-            .copied()
-            .expect("rwasm: unknown internal function");
-        self.sp = self.value_stack.stack_ptr();
-        self.ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
-        self.ip.add(instr_ref as usize);
-        Ok(())
     }
 }

@@ -1,4 +1,4 @@
-#![allow(unused)]
+#![cfg(test)]
 
 mod context;
 mod descriptor;
@@ -13,7 +13,6 @@ use self::{
     error::TestError,
     profile::TestProfile,
 };
-use ::rwasm_legacy::{engine::RwasmConfig, Config};
 
 macro_rules! define_tests {
     (
@@ -50,8 +49,6 @@ macro_rules! define_spec_tests {
     };
 }
 
-pub(crate) const ENABLE_32_BIT_TRANSLATOR: bool = false;
-
 define_spec_tests! {
     let runner = run::run_wasm_spec_test;
 
@@ -62,7 +59,7 @@ define_spec_tests! {
     fn wasm_block("block");
     fn wasm_br("br");
     fn wasm_br_if("br_if");
-    fn wasm_br_table("br_table");
+    fn wasm_br_table("br_table"); // BrTableDropKeep
     fn wasm_bulk("bulk");
     fn wasm_call("call");
     fn wasm_call_indirect("call_indirect");
@@ -85,7 +82,7 @@ define_spec_tests! {
     fn wasm_f64("f64");
     fn wasm_f64_bitwise("f64_bitwise");
     fn wasm_f64_cmp("f64_cmp");
-    fn wasm_fac("fac"); //wrong branch
+    fn wasm_fac("fac");
     fn wasm_float_exprs("float_exprs");
     fn wasm_float_literals("float_literals");
     fn wasm_float_memory("float_memory");
@@ -128,7 +125,7 @@ define_spec_tests! {
     fn wasm_stack("stack");
     fn wasm_start("start");
     fn wasm_store("store");
-    fn wasm_switch("switch");
+    fn wasm_switch("switch"); //  // BrTableDropKeep
     fn wasm_table_sub("table-sub");
     fn wasm_table("table");
     // fn wasm_table_copy("table_copy"); // UnknownImport

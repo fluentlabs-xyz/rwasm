@@ -1,4 +1,4 @@
-use super::{TestDescriptor, TestError, TestProfile, TestSpan, ENABLE_32_BIT_TRANSLATOR};
+use super::{TestDescriptor, TestError, TestProfile, TestSpan};
 use crate::handler::{
     testing_context_syscall_handler,
     TestingContext,
@@ -13,34 +13,53 @@ use crate::handler::{
 };
 use anyhow::Result;
 use rwasm::{
-    make_instruction_table,
-    Caller,
-    ExecutorConfig,
-    InstructionTable,
-    RwasmError,
+    instruction_set,
+    split_i64_to_i32_arr,
+    CallStack,
+    CompilationConfig,
+    FuncType,
+    ImportLinker,
+    ImportLinkerEntity,
+    ImportName,
+    ModuleParser,
+    Opcode,
     RwasmExecutor,
-    RwasmModule as RwasmModule2,
     RwasmModule,
+    StateRouterConfig,
+    Store,
+    ValType,
     Value,
+    ValueStack,
 };
-use rwasm_legacy::{
-    core::{ImportLinker, ImportLinkerEntity, ValueType},
-    module::ImportName,
-};
-use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc, sync::Arc};
-use rwasm_legacy::engine::RwasmConfig;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use wast::token::{Id, Span};
 
-type TestingRwasmExecutor = RwasmExecutor<TestingContext>;
-type Instance = Rc<RefCell<TestingRwasmExecutor>>;
+pub struct InstanceInner {
+    module: RwasmModule,
+    store: Store<TestingContext>,
+    value_stack: ValueStack,
+    call_stack: CallStack,
+    program_counter: usize,
+}
+
+impl InstanceInner {
+    fn new_executor(&mut self) -> RwasmExecutor<TestingContext> {
+        RwasmExecutor::new(
+            &self.module,
+            &mut self.value_stack,
+            &mut self.call_stack,
+            &mut self.store,
+        )
+    }
+}
+
+type Instance = Rc<RefCell<InstanceInner>>;
 
 /// The context of a single Wasm test spec suite run.
 pub struct TestContext<'a> {
-    /// The list of all encountered Wasm modules belonging to the test.
-    modules: Vec<RwasmModule>,
     /// The list of all instantiated modules.
     instances: HashMap<String, Instance>,
-    extern_types: HashMap<String, rwasm_legacy::FuncType>,
+    extern_types: HashMap<String, FuncType>,
     extern_state: HashMap<String, u32>,
     /// The last touched module instance.
     last_instance: Option<Instance>,
@@ -58,7 +77,6 @@ impl<'a> TestContext<'a> {
     /// Creates a new [`TestContext`] with the given [`TestDescriptor`].
     pub fn new(descriptor: &'a TestDescriptor) -> Self {
         TestContext {
-            modules: Vec::new(),
             instances: HashMap::new(),
             extern_types: Default::default(),
             extern_state: Default::default(),
@@ -70,12 +88,15 @@ impl<'a> TestContext<'a> {
     }
 
     pub fn import_linker() -> ImportLinker {
+        let block_fuel = instruction_set! {
+            .op_i32_const(0)
+        };
         ImportLinker::from([
             (
                 ImportName::new("spectest", "print"),
                 ImportLinkerEntity {
-                    func_idx: FUNC_PRINT,
-                    fuel_procedure: &[],
+                    sys_func_idx: FUNC_PRINT,
+                    block_fuel: block_fuel.clone(),
                     params: &[],
                     result: &[],
                 },
@@ -83,71 +104,54 @@ impl<'a> TestContext<'a> {
             (
                 ImportName::new("spectest", "print_i32"),
                 ImportLinkerEntity {
-                    func_idx: FUNC_PRINT_I32,
-                    fuel_procedure: &[],
-                    params: &[ValueType::I32],
+                    sys_func_idx: FUNC_PRINT_I32,
+                    block_fuel: block_fuel.clone(),
+                    params: &[ValType::I32],
                     result: &[],
                 },
             ),
             (
                 ImportName::new("spectest", "print_i64"),
                 ImportLinkerEntity {
-                    func_idx: FUNC_PRINT_I64,
-                    fuel_procedure: &[],
-                    params: if ENABLE_32_BIT_TRANSLATOR {
-                        &[ValueType::I32; 2]
-                    } else {
-                        &[ValueType::I64]
-                    },
+                    sys_func_idx: FUNC_PRINT_I64,
+                    block_fuel: block_fuel.clone(),
+                    params: &[ValType::I32; 2],
                     result: &[],
                 },
             ),
             (
                 ImportName::new("spectest", "print_f32"),
                 ImportLinkerEntity {
-                    func_idx: FUNC_PRINT_F32.into(),
-                    fuel_procedure: &[],
-                    params: &[ValueType::F32],
+                    sys_func_idx: FUNC_PRINT_F32.into(),
+                    block_fuel: block_fuel.clone(),
+                    params: &[ValType::F32],
                     result: &[],
                 },
             ),
             (
                 ImportName::new("spectest", "print_f64"),
                 ImportLinkerEntity {
-                    func_idx: FUNC_PRINT_F64,
-                    fuel_procedure: &[],
-                    params: if ENABLE_32_BIT_TRANSLATOR {
-                        &[ValueType::F32; 2]
-                    } else {
-                        &[ValueType::F64]
-                    },
+                    sys_func_idx: FUNC_PRINT_F64,
+                    block_fuel: block_fuel.clone(),
+                    params: &[ValType::F32; 2],
                     result: &[],
                 },
             ),
             (
                 ImportName::new("spectest", "print_i32_f32"),
                 ImportLinkerEntity {
-                    func_idx: FUNC_PRINT_I32_F32,
-                    fuel_procedure: &[],
-                    params: &[ValueType::I32, ValueType::F32],
+                    sys_func_idx: FUNC_PRINT_I32_F32,
+                    block_fuel: block_fuel.clone(),
+                    params: &[ValType::I32, ValType::F32],
                     result: &[],
                 },
             ),
             (
                 ImportName::new("spectest", "print_i64_f64"),
                 ImportLinkerEntity {
-                    func_idx: FUNC_PRINT_I64_F64,
-                    fuel_procedure: &[],
-                    params: if ENABLE_32_BIT_TRANSLATOR {
-                        &[
-                            ValueType::I32,
-                            ValueType::I32,
-                            ValueType::F32,
-                            ValueType::F32,
-                        ]
-                    } else {
-                        &[ValueType::I64, ValueType::F64]
-                    },
+                    sys_func_idx: FUNC_PRINT_I64_F64,
+                    block_fuel: block_fuel.clone(),
+                    params: &[ValType::I32, ValType::I32, ValType::F32, ValType::F32],
                     result: &[],
                 },
             ),
@@ -189,108 +193,65 @@ impl TestContext<'_> {
             )
         });
 
-        let mut config = rwasm_legacy::Config::default();
-        config
-            .wasm_mutable_global(false)
-            .wasm_saturating_float_to_int(false)
-            .wasm_sign_extension(false)
-            .wasm_multi_value(false)
-            .wasm_mutable_global(true)
-            .wasm_saturating_float_to_int(true)
-            .wasm_sign_extension(true)
-            .wasm_multi_value(true)
-            .wasm_bulk_memory(true)
-            .wasm_reference_types(true)
-            .wasm_tail_call(true)
-            .wasm_extended_const(true);
+        let config = CompilationConfig::default()
+            .with_import_linker(Self::import_linker())
+            .with_wrap_import_functions(true)
+            .with_allow_malformed_entrypoint_func_type(true)
+            .with_builtins_consume_fuel(false)
+            .with_default_imported_global_value(666.into());
 
         // extract all exports first to calculate rwasm config
-        let rwasm_config = {
-            if ENABLE_32_BIT_TRANSLATOR {
-                config.rwasm_config(RwasmConfig{
-                    state_router: None,
-                    entrypoint_name: None,
-                    import_linker: None,
-                    wrap_import_functions: false,
-                    translate_drop_keep: false,
-                    allow_malformed_entrypoint_func_type: false,
-                    use_32bit_mode: true,
-                    builtins_consume_fuel: false,
-                });
-            }
-            let engine = rwasm_legacy::Engine::new(&config);
-            let wasm_module = rwasm_legacy::Module::new(&engine, &wasm[..])?;
-            let mut states = Vec::<(String, u32)>::new();
-            for (k, v) in wasm_module.exports.iter() {
-                let func_idx = v.into_func_idx();
-                if func_idx.is_none() {
-                    continue;
-                }
-                let func_idx = func_idx.unwrap();
-                let func_typ = wasm_module.get_export(k).unwrap();
-                let func_typ = func_typ.func().unwrap();
-                let state_value = 10000 + func_idx.into_u32();
-                self.extern_types.insert(k.to_string(), func_typ.clone());
-                self.extern_state.insert(k.to_string(), state_value);
-                states.push((k.to_string(), state_value));
-            }
-            rwasm_legacy::engine::RwasmConfig {
-                state_router: Some(rwasm_legacy::engine::StateRouterConfig {
-                    states: states.into(),
-                    opcode: rwasm_legacy::engine::bytecode::Instruction::Call(u32::MAX.into()),
-                }),
-                entrypoint_name: None,
-                import_linker: Some(Self::import_linker()),
-                wrap_import_functions: true,
-                translate_drop_keep: false,
-                allow_malformed_entrypoint_func_type: true,
-                use_32bit_mode: ENABLE_32_BIT_TRANSLATOR,
-                builtins_consume_fuel: false,
-            }
-        };
-
-        config.rwasm_config(rwasm_config);
-        let engine = rwasm_legacy::Engine::new(&config);
-        let wasm_module = rwasm_legacy::Module::new(&engine, &wasm[..])?;
-        let rwasm_module = rwasm_legacy::rwasm::RwasmModule::from_module(&wasm_module);
-        let mut encoded_rwasm_module = Vec::new();
-        use rwasm_legacy::rwasm::BinaryFormat;
-        rwasm_module
-            .write_binary_to_vec(&mut encoded_rwasm_module)
-            .unwrap();
-        let rwasm_module = RwasmModule2::new(&encoded_rwasm_module);
-
-        println!();
-        #[allow(unused)]
-        fn trace_rwasm(rwasm_bytecode: &[u8]) {
-            let rwasm_module = RwasmModule::new(rwasm_bytecode);
-            let mut func_index = 0usize;
-            println!("\n -- function #{} -- ", func_index);
-            for (i, instr) in rwasm_module.code_section.instr.iter().enumerate() {
-                println!("{:02}: {:?}", i, instr);
-                if rwasm_module.func_section.contains(&(i as u32 + 1)) {
-                    func_index += 1;
-                    println!("\n -- function #{} -- ", func_index);
-                }
-            }
-            println!("\n")
+        let mut states = Vec::<(Box<str>, u32)>::new();
+        let exports = ModuleParser::parse_function_exports(config.clone(), &wasm[..])?;
+        for (k, func_idx, func_type) in exports.into_iter() {
+            self.extern_types.insert(k.to_string(), func_type);
+            let state_value = 10_000 + func_idx;
+            self.extern_state.insert(k.to_string(), state_value);
+            states.push((k.into(), state_value));
         }
-        trace_rwasm(&encoded_rwasm_module);
-        println!();
+        let config = config.with_state_router(StateRouterConfig {
+            states: states.into(),
+            opcode: Some(Opcode::Call(u32::MAX)),
+        });
 
-        let mut executor = TestingRwasmExecutor::new(
-            rwasm_module.into(),
-            ExecutorConfig::new().floats_enabled(true),
-            TestingContext::default(),
+        let (rwasm_module, _) =
+            RwasmModule::compile(config, &wasm[..]).map_err(|err| TestError::Rwasm(err.into()))?;
+
+        // {
+        //     let buffer = rwasm_module.serialize();
+        //     let parsed_module = RwasmModule::new(&buffer);
+        //     assert_eq!(rwasm_module, parsed_module);
+        // }
+
+        #[cfg(feature = "debug-print")]
+        println!("{}", rwasm_module);
+
+        let mut store = Store::default();
+        store.set_syscall_handler(testing_context_syscall_handler);
+        let mut instance_inner = InstanceInner {
+            module: rwasm_module,
+            store,
+            value_stack: ValueStack::default(),
+            call_stack: CallStack::default(),
+            program_counter: 0,
+        };
+        let mut executor = RwasmExecutor::<TestingContext>::new(
+            &instance_inner.module,
+            &mut instance_inner.value_stack,
+            &mut instance_inner.call_stack,
+            &mut instance_inner.store,
         );
-        executor.set_syscall_handler(testing_context_syscall_handler);
         executor.context_mut().state = ENTRYPOINT_FUNC_IDX;
+        #[cfg(feature = "debug-print")]
         println!(" --- entrypoint ---");
-        let exit_code = executor.run().map_err(|err| TestError::Rwasm(err))?;
-        assert_eq!(exit_code, 0);
+        executor.run()?;
+        #[cfg(feature = "debug-print")]
         println!();
+        instance_inner.value_stack.reset();
+        instance_inner.call_stack.reset();
+        instance_inner.store.reset(true);
 
-        let instance = Rc::new(RefCell::new(executor));
+        let instance = Rc::new(RefCell::new(instance_inner));
 
         if let Some(module_name) = module_name {
             self.instances
@@ -335,18 +296,6 @@ impl TestContext<'_> {
             return;
         }
         self.instances.insert(name.to_string(), instance.clone());
-        // for export in instance.exports(&self.store) {
-        //     self.linker
-        //         .define(name, export.name(), export.clone().into_extern())
-        //         .unwrap_or_else(|error| {
-        //             let field_name = export.name();
-        //             let export = export.clone().into_extern();
-        //             panic!(
-        //                 "failed to define export {name}::{field_name}: \
-        //                 {export:?}: {error}",
-        //             )
-        //         });
-        // }
         self.last_instance = Some(instance);
     }
 
@@ -363,24 +312,25 @@ impl TestContext<'_> {
     ///
     /// - If no module instances can be found.
     /// - If no function identified with `func_name` can be found.
-    /// - If function invokation returned an error.
+    /// - If function invocation returned an error.
     pub fn invoke(
         &mut self,
         module_name: Option<&str>,
         func_name: &str,
         args: &[Value],
     ) -> Result<&[Value], TestError> {
+        #[cfg(feature = "debug-print")]
         println!("\n --- {} ---", func_name);
 
-        let mut instance = self.instance_by_name_or_last(module_name)?;
+        let instance = self.instance_by_name_or_last(module_name)?;
         let mut instance = instance.borrow_mut();
 
         // We reset an instruction pointer to the state function position to re-invoke the function.
         // However, with different states.
         // Some tests might fail, and we might keep outdated signature value in the state,
         // make sure the state is clear before every new call.
-        let pc = instance.context().program_counter as usize;
-        instance.reset(Some(pc));
+        instance.program_counter = instance.store.context().program_counter as usize;
+        instance.store.reset(true);
 
         let func_state = self
             .extern_state
@@ -388,48 +338,52 @@ impl TestContext<'_> {
             .unwrap()
             .clone();
 
-        let mut caller = Caller::new(&mut instance);
+        let binding = args
+            .iter()
+            .cloned()
+            .flat_map(|v| match v {
+                Value::I64(v) => split_i64_to_i32_arr(v)
+                    .into_iter()
+                    .map(|v| Value::I32(v))
+                    .collect(),
+                Value::F64(v) => split_i64_to_i32_arr(v.to_bits() as i64)
+                    .into_iter()
+                    .map(|v| Value::I32(v))
+                    .collect(),
+                v => vec![v],
+            })
+            .collect::<Vec<_>>();
+        let args = binding.as_slice();
 
-        let flat_args: Vec<Value>;
-        let args = if ENABLE_32_BIT_TRANSLATOR {
-            flat_args = args
-                .iter()
-                .cloned()
-                .flat_map(|v| match v {
-                    Value::I64(v) => rwasm_legacy::value::split_i64_to_i32(v)
-                        .into_iter()
-                        .map(|v| Value::I32(v))
-                        .collect(),
-                    v => vec![v],
-                })
-                .collect();
-            flat_args.as_slice()
-        } else {
-            args
-        };
-
+        // reset PC and other state values
+        instance.value_stack.reset();
+        instance.call_stack.reset();
+        instance.store.reset(true);
+        // insert input params
         for value in args {
-            caller.stack_push(value.clone());
+            instance.value_stack.push(value.clone().into());
         }
-
         // change function state for router
-        instance.context_mut().state = func_state;
-        let exit_code = instance.run().map_err(|err| TestError::Rwasm(err))?;
+        instance.store.context_mut().state = func_state;
+
+        let pc = instance.program_counter;
+        let mut vm = instance.new_executor();
+        vm.advance_ip(pc);
+        vm.run()?;
         // copy results
         let func_type = self.extern_types.get(func_name).unwrap();
         let len_results = func_type.results().len();
         self.results.clear();
         self.results.resize(len_results, Value::I32(0));
-        let mut caller = Caller::new(&mut instance);
         for (i, val_type) in func_type.results().iter().rev().enumerate() {
-            let popped_value = caller.stack_pop();
+            let popped_value = instance.value_stack.pop();
             self.results[len_results - 1 - i] = match val_type {
-                ValueType::I32 => Value::I32(popped_value.into()),
-                ValueType::I64 => Value::I64(popped_value.into()),
-                ValueType::F32 => Value::F32(popped_value.into()),
-                ValueType::F64 => Value::F64(popped_value.into()),
-                ValueType::FuncRef => Value::FuncRef(popped_value.into()),
-                ValueType::ExternRef => Value::ExternRef(popped_value.into()),
+                ValType::I32 => Value::I32(popped_value.into()),
+                ValType::I64 => Value::I64(popped_value.into()),
+                ValType::F32 => Value::F32(popped_value.into()),
+                ValType::F64 => Value::F64(popped_value.into()),
+                ValType::FuncRef => Value::FuncRef(popped_value.into()),
+                ValType::ExternRef => Value::ExternRef(popped_value.into()),
                 _ => unreachable!("unsupported result type: {:?}", val_type),
             };
         }

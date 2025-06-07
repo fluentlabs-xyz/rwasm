@@ -1,11 +1,11 @@
-use crate::types::{Opcode, OpcodeData};
+use crate::types::Opcode;
 
 /// The instruction pointer to the instruction of a function on the call stack.
 #[derive(Debug, Copy, Clone, PartialEq)]
+#[repr(transparent)]
 pub struct InstructionPtr {
     /// The pointer to the instruction.
-    pub(crate) ptr: *const (Opcode, OpcodeData),
-    pub(crate) src: *const (Opcode, OpcodeData),
+    pub(crate) ptr: *const Opcode,
 }
 
 /// It is safe to send an [`rwasm::engine::code_map::InstructionPtr`] to another thread.
@@ -21,15 +21,8 @@ unsafe impl Send for InstructionPtr {}
 impl InstructionPtr {
     /// Creates a new [`rwasm::engine::code_map::InstructionPtr`] for `instr`.
     #[inline]
-    pub fn new(ptr: *const (Opcode, OpcodeData)) -> Self {
-        Self { ptr, src: ptr }
-    }
-
-    #[inline(always)]
-    pub fn pc(&self) -> u32 {
-        let size = size_of::<(Opcode, OpcodeData)>() as u32;
-        let diff = self.ptr as u32 - self.src as u32;
-        diff / size
+    pub fn new(ptr: *const Opcode) -> Self {
+        Self { ptr }
     }
 
     /// Offset the [`rwasm::engine::code_map::InstructionPtr`] by the given value.
@@ -42,7 +35,7 @@ impl InstructionPtr {
     #[inline(always)]
     pub fn offset(&mut self, by: isize) {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.offset(by) };
     }
@@ -50,7 +43,7 @@ impl InstructionPtr {
     #[inline(always)]
     pub fn add(&mut self, delta: usize) {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
     }
@@ -65,16 +58,8 @@ impl InstructionPtr {
     #[inline(always)]
     pub fn get(&self) -> Opcode {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
+        //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
-        unsafe { &*self.ptr }.0
-    }
-
-    #[inline(always)]
-    pub fn data(&self) -> &OpcodeData {
-        // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `wasmi` codegen to never run out
-        //         of valid bounds using this method.
-        &unsafe { &*self.ptr }.1
+        unsafe { *self.ptr }
     }
 }

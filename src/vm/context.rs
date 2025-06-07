@@ -1,34 +1,39 @@
 use crate::{
-    types::{RwasmError, UntypedValue},
-    vm::executor::RwasmExecutor,
+    types::{TrapCode, UntypedValue},
+    vm::store::Store,
+    ValueStackPtr,
 };
 use alloc::{vec, vec::Vec};
 
 pub struct Caller<'a, T> {
-    vm: &'a mut RwasmExecutor<T>,
+    store: &'a mut Store<T>,
+    sp: &'a mut ValueStackPtr,
+    program_counter: u32,
 }
 
 impl<'a, T> Caller<'a, T> {
-    pub fn new(store: &'a mut RwasmExecutor<T>) -> Self {
-        Self { vm: store }
+    pub fn new(store: &'a mut Store<T>, sp: &'a mut ValueStackPtr, program_counter: u32) -> Self {
+        Self {
+            store,
+            sp,
+            program_counter,
+        }
     }
 
     pub fn stack_push<I: Into<UntypedValue>>(&mut self, value: I) {
-        self.vm.sp.push_as(value);
+        self.sp.push_as(value);
     }
 
     pub fn stack_pop(&mut self) -> UntypedValue {
-        self.vm.sp.pop()
+        self.sp.pop()
     }
 
     pub fn stack_pop_as<I: From<UntypedValue>>(&mut self) -> I {
-        I::from(self.vm.sp.pop())
+        self.sp.pop_as()
     }
 
     pub fn stack_pop2(&mut self) -> (UntypedValue, UntypedValue) {
-        let rhs = self.vm.sp.pop();
-        let lhs = self.vm.sp.pop();
-        (lhs, rhs)
+        self.sp.pop2()
     }
 
     pub fn stack_pop2_as<I: From<UntypedValue>>(&mut self) -> (I, I) {
@@ -39,53 +44,46 @@ impl<'a, T> Caller<'a, T> {
     pub fn stack_pop_n<const N: usize>(&mut self) -> [UntypedValue; N] {
         let mut result: [UntypedValue; N] = [UntypedValue::default(); N];
         for i in 0..N {
-            result[N - i - 1] = self.vm.sp.pop();
+            result[N - i - 1] = self.sp.pop();
         }
         result
     }
 
-    pub fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), RwasmError> {
-        self.vm.global_memory.read(offset, buffer)?;
+    pub fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+        self.store.global_memory.read(offset, buffer)?;
         Ok(())
     }
 
-    pub fn memory_read_fixed<const N: usize>(&self, offset: usize) -> Result<[u8; N], RwasmError> {
+    pub fn memory_read_fixed<const N: usize>(&self, offset: usize) -> Result<[u8; N], TrapCode> {
         let mut buffer = [0u8; N];
-        self.vm.global_memory.read(offset, &mut buffer)?;
+        self.store.global_memory.read(offset, &mut buffer)?;
         Ok(buffer)
     }
 
-    pub fn memory_read_vec(&self, offset: usize, length: usize) -> Result<Vec<u8>, RwasmError> {
+    pub fn memory_read_vec(&self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
         let mut buffer = vec![0u8; length];
-        self.vm.global_memory.read(offset, &mut buffer)?;
+        self.store.global_memory.read(offset, &mut buffer)?;
         Ok(buffer)
     }
 
-    pub fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), RwasmError> {
-        self.vm.global_memory.write(offset, buffer)?;
+    pub fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
+        self.store.global_memory.write(offset, buffer)?;
+        #[cfg(feature = "tracing")]
         if let Some(tracer) = self.vm.tracer.as_mut() {
             tracer.memory_change(offset as u32, buffer.len() as u32, buffer);
         }
         Ok(())
     }
 
-    pub fn vm_mut(&mut self) -> &mut RwasmExecutor<T> {
-        &mut self.vm
-    }
-
-    pub fn vm(&self) -> &RwasmExecutor<T> {
-        &self.vm
+    pub fn program_counter(&self) -> u32 {
+        self.program_counter
     }
 
     pub fn context_mut(&mut self) -> &mut T {
-        self.vm.context_mut()
+        &mut self.store.context
     }
 
     pub fn context(&self) -> &T {
-        self.vm.context()
-    }
-
-    pub fn dump_stack(&mut self) -> Vec<UntypedValue> {
-        self.vm.value_stack.dump_stack(self.vm.sp)
+        &self.store.context
     }
 }

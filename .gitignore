@@ -16,3 +16,6 @@ legacy/spec/target
 
 target
 Cargo.lock
+
+# coverage
+lcov*.info

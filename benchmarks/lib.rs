@@ -2,8 +2,6 @@
 
 #[cfg(test)]
 mod bench;
-#[cfg(test)]
-mod test;
 
 #[cfg(target_arch = "wasm32")]
 #[no_mangle]

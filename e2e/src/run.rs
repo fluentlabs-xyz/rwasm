@@ -1,5 +1,4 @@
 use super::{error::TestError, TestContext, TestDescriptor};
-use crate::ENABLE_32_BIT_TRANSLATOR;
 use anyhow::Result;
 use rwasm::{split_i64_to_i32, ExternRef, FuncRef, Value, F32, F64};
 use wast::{
@@ -62,10 +61,10 @@ fn execute_directives(wast: Wast, test_context: &mut TestContext) -> Result<()> 
             }
             WastDirective::Wat(_) => {
                 test_context.profile().bump_quote_module();
-                // For the purpose of testing `wasmi` we are not
+                // For the purpose of testing `rwasm` we are not
                 // interested in parsing `.wat` files, therefore
                 // we silently ignore this case for now.
-                // This might change once wasmi supports `.wat` files.
+                // This might change once rwasm supports `.wat` files.
                 continue 'outer;
             }
             WastDirective::AssertMalformed {
@@ -200,17 +199,6 @@ fn execute_directives(wast: Wast, test_context: &mut TestContext) -> Result<()> 
 /// - If the trap message of the `error` is not as expected.
 fn assert_trap(test_context: &TestContext, span: Span, error: TestError, message: &str) {
     match error {
-        TestError::Wasmi(error) => {
-            assert!(
-                error.to_string().contains(message),
-                "{}: the directive trapped as expected but with an unexpected message\n\
-                    expected: {},\n\
-                    encountered: {}",
-                test_context.spanned(span),
-                message,
-                error,
-            );
-        }
         TestError::Rwasm(error) => {
             assert!(
                 error.to_string().contains(message),
@@ -233,23 +221,22 @@ fn assert_trap(test_context: &TestContext, span: Span, error: TestError, message
 
 /// Asserts that `results` match the `expected` values.
 fn assert_results(context: &TestContext, span: Span, results: &[Value], expected: &[WastRet]) {
-    if ENABLE_32_BIT_TRANSLATOR {
-        assert_eq!(
-            results.len(),
-            expected.len()
-                + expected
-                    .iter()
-                    .filter(|c| matches!(c, WastRet::Core(WastRetCore::I64(_))))
-                    .count()
-        );
-    } else {
-        assert_eq!(results.len(), expected.len());
-    }
+    assert_eq!(
+        results.len(),
+        expected.len()
+            + expected
+                .iter()
+                .filter(|c| matches!(
+                    c,
+                    WastRet::Core(WastRetCore::I64(_)) | WastRet::Core(WastRetCore::F64(_))
+                ))
+                .count()
+    );
 
     let expected = expected.iter().map(|expected| match expected {
         WastRet::Core(expected) => expected,
         WastRet::Component(expected) => panic!(
-            "{:?}: `wasmi` does not support the Wasm `component-model` proposal but found {expected:?}",
+            "{:?}: `rwasm` does not support the Wasm `component-model` proposal but found {expected:?}",
             context.spanned(span),
         ),
     }).collect::<Vec<_>>();
@@ -265,20 +252,36 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
             (Value::I64(result), WastRetCore::I64(expected)) => {
                 assert_eq!(result, expected, "in {}", context.spanned(span))
             }
-            // in rWASM we support only 64 bit globals, but technically both these types are having
-            // 64 bit representation, so there is no diff, and we can safely compare them
             (Value::I32(result), WastRetCore::I64(expected)) => {
-                if ENABLE_32_BIT_TRANSLATOR {
-                    let low = result;
-                    let high = &results[i + shift + 1]
-                        .i32()
-                        .expect("Failed to find low part of i64");
-                    shift += 1;
-                    let [expected_low, expected_high] = split_i64_to_i32(*expected);
-                    assert_eq!(*high, expected_high, "in {}", context.spanned(span));
-                    assert_eq!(*low, expected_low, "in {}", context.spanned(span));
-                } else {
-                    assert_eq!(*result as i64, *expected, "in {}", context.spanned(span));
+                let low = result;
+                let high = &results[i + shift + 1]
+                    .i32()
+                    .expect("Failed to find the low part of i64");
+                shift += 1;
+                let (expected_low, expected_high) = split_i64_to_i32(*expected);
+                assert_eq!(*high, expected_high, "in {}", context.spanned(span));
+                assert_eq!(*low, expected_low, "in {}", context.spanned(span));
+            }
+            (Value::I32(result), WastRetCore::F64(expected)) => {
+                let low = *result as u32;
+                let high = results[i + shift + 1]
+                    .i32()
+                    .expect("Failed to find the low part of i64") as u32;
+                let bits = (high as u64) << 32 | (low as u64);
+                let result = F64::from_bits(bits);
+                shift += 1;
+                match expected {
+                    NanPattern::CanonicalNan | NanPattern::ArithmeticNan => {
+                        assert!(result.is_nan(), "in {}", context.spanned(span))
+                    }
+                    NanPattern::Value(expected) => {
+                        assert_eq!(
+                            result.to_bits(),
+                            expected.bits,
+                            "in {}",
+                            context.spanned(span)
+                        );
+                    }
                 }
             }
             (Value::I64(result), WastRetCore::I32(expected)) => {
@@ -316,7 +319,7 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
             }
             (Value::ExternRef(externref), WastRetCore::RefExtern(expected)) => {
                 let value = externref.resolve_index();
-                assert_eq!(value, *expected);
+                assert_eq!(value, *expected + 1);
             }
             (result, expected) => panic!(
                 "{}: encountered mismatch in evaluation. expected {:?} but found {:?}",
@@ -348,7 +351,7 @@ fn module_compilation_succeeds(context: &mut TestContext, span: Span, module: wa
     match context.compile_and_instantiate(module) {
         Ok(_) => {}
         Err(error) => panic!(
-            "{}: failed to instantiate module but should have suceeded: {:?}",
+            "{}: failed to instantiate module but should have succeeded: {:?}",
             context.spanned(span),
             error
         ),
@@ -409,7 +412,7 @@ fn execute_wast_invoke(
                 )
             }),
             wast::WastArg::Component(arg) => panic!(
-                "{}: `wasmi` does not support the Wasm `component-model` but found {arg:?}",
+                "{}: `rwasm` does not support the Wasm `component-model` but found {arg:?}",
                 context.spanned(span)
             ),
         };
@@ -420,7 +423,7 @@ fn execute_wast_invoke(
         .map(|results| results.to_vec())
 }
 
-/// Converts the [`WastArgCore`][`wast::core::WastArgCore`] into a [`wasmi::Value`] if possible.
+/// Converts the [`WastArgCore`][`wast::core::WastArgCore`] into a [`rwasm::Value`] if possible.
 fn value(value: &wast::core::WastArgCore) -> Option<Value> {
     Some(match value {
         wast::core::WastArgCore::I32(arg) => Value::I32(*arg),
@@ -429,7 +432,10 @@ fn value(value: &wast::core::WastArgCore) -> Option<Value> {
         wast::core::WastArgCore::F64(arg) => Value::F64(F64::from_bits(arg.bits)),
         wast::core::WastArgCore::RefNull(HeapType::Func) => Value::FuncRef(FuncRef::null()),
         wast::core::WastArgCore::RefNull(HeapType::Extern) => Value::ExternRef(ExternRef::null()),
-        wast::core::WastArgCore::RefExtern(value) => Value::ExternRef(ExternRef::new(*value)),
+        wast::core::WastArgCore::RefExtern(value) => {
+            // We add +1 here because 0 is reserved for null
+            Value::ExternRef(ExternRef::new(*value + 1))
+        }
         _ => return None,
     })
 }

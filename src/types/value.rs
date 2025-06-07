@@ -1,45 +1,12 @@
 use crate::{
-    types::{error::RwasmError, F32, F64},
+    types::{F32, F64},
     ExternRef,
     FuncRef,
+    TrapCode,
     UntypedValue,
 };
 use core::{f32, i32, i64, u32, u64};
-
-/// Type of a value.
-///
-/// See [`Value`] for details.
-///
-/// [`Value`]: enum.Value.html
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ValueType {
-    /// 32-bit signed or unsigned integer.
-    I32,
-    /// 64-bit signed or unsigned integer.
-    I64,
-    /// 32-bit IEEE 754-2008 floating point number.
-    F32,
-    /// 64-bit IEEE 754-2008 floating point number.
-    F64,
-    /// A nullable function reference.
-    FuncRef,
-    /// A nullable external reference.
-    ExternRef,
-}
-
-impl From<wasmparser::ValType> for ValueType {
-    fn from(value: wasmparser::ValType) -> Self {
-        match value {
-            wasmparser::ValType::I32 => Self::I32,
-            wasmparser::ValType::I64 => Self::I64,
-            wasmparser::ValType::F32 => Self::F32,
-            wasmparser::ValType::F64 => Self::F64,
-            wasmparser::ValType::V128 => unreachable!("rwasm: not supported v128 type"),
-            wasmparser::ValType::FuncRef => Self::FuncRef,
-            wasmparser::ValType::ExternRef => Self::ExternRef,
-        }
-    }
-}
+use wasmparser::ValType;
 
 /// Convert one type to another by wrapping.
 pub trait WrapInto<T> {
@@ -104,17 +71,17 @@ pub trait LoadInto {
     /// # Errors
     ///
     /// Traps if the `memory` access is out of bounds.
-    fn load_into(&mut self, memory: &[u8], address: usize) -> Result<(), RwasmError>;
+    fn load_into(&mut self, memory: &[u8], address: usize) -> Result<(), TrapCode>;
 }
 
 impl<const N: usize> LoadInto for [u8; N] {
     #[inline]
-    fn load_into(&mut self, memory: &[u8], address: usize) -> Result<(), RwasmError> {
+    fn load_into(&mut self, memory: &[u8], address: usize) -> Result<(), TrapCode> {
         let slice: &Self = memory
             .get(address..)
             .and_then(|slice| slice.get(..N))
             .and_then(|slice| slice.try_into().ok())
-            .ok_or(RwasmError::MemoryOutOfBounds)?;
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
         *self = *slice;
         Ok(())
     }
@@ -127,17 +94,17 @@ pub trait StoreFrom {
     /// # Errors
     ///
     /// Traps if the `memory` access is out of bounds.
-    fn store_from(&self, memory: &mut [u8], address: usize) -> Result<(), RwasmError>;
+    fn store_from(&self, memory: &mut [u8], address: usize) -> Result<(), TrapCode>;
 }
 
 impl<const N: usize> StoreFrom for [u8; N] {
     #[inline]
-    fn store_from(&self, memory: &mut [u8], address: usize) -> Result<(), RwasmError> {
+    fn store_from(&self, memory: &mut [u8], address: usize) -> Result<(), TrapCode> {
         let slice: &mut Self = memory
             .get_mut(address..)
             .and_then(|slice| slice.get_mut(..N))
             .and_then(|slice| slice.try_into().ok())
-            .ok_or(RwasmError::MemoryOutOfBounds)?;
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
         *slice = *self;
         Ok(())
     }
@@ -227,13 +194,13 @@ pub trait Integer<T>: ArithmeticOps<T> {
     /// # Errors
     ///
     /// If `other` is equal to zero.
-    fn div(self, other: T) -> Result<T, RwasmError>;
+    fn div(self, other: T) -> Result<T, TrapCode>;
     /// Get division remainder.
     ///
     /// # Errors
     ///
     /// If `other` is equal to zero.
-    fn rem(self, other: T) -> Result<T, RwasmError>;
+    fn rem(self, other: T) -> Result<T, TrapCode>;
 }
 
 /// Float-point value.
@@ -308,14 +275,14 @@ impl WrapInto<F32> for F64 {
 
 macro_rules! impl_try_truncate_into {
     (@primitive $from: ident, $into: ident, $to_primitive:path, $rmin:literal, $rmax:literal) => {
-        impl TryTruncateInto<$into, RwasmError> for $from {
+        impl TryTruncateInto<$into, TrapCode> for $from {
             #[inline]
-            fn try_truncate_into(self) -> Result<$into, RwasmError> {
+            fn try_truncate_into(self) -> Result<$into, TrapCode> {
                 if self.is_nan() {
-                    return Err(RwasmError::BadConversionToInteger);
+                    return Err(TrapCode::BadConversionToInteger);
                 }
                 if self <= $rmin || self >= $rmax {
-                    return Err(RwasmError::IntegerOverflow);
+                    return Err(TrapCode::IntegerOverflow);
                 }
                 Ok(self as _)
             }
@@ -338,9 +305,9 @@ macro_rules! impl_try_truncate_into {
         }
     };
     (@wrapped $from:ident, $intermediate:ident, $into:ident) => {
-        impl TryTruncateInto<$into, RwasmError> for $from {
+        impl TryTruncateInto<$into, TrapCode> for $from {
             #[inline]
-            fn try_truncate_into(self) -> Result<$into, RwasmError> {
+            fn try_truncate_into(self) -> Result<$into, TrapCode> {
                 $intermediate::from(self).try_truncate_into()
             }
         }
@@ -639,19 +606,19 @@ macro_rules! impl_integer {
                 self.rotate_right(other as u32)
             }
             #[inline]
-            fn div(self, other: Self) -> Result<Self, RwasmError> {
+            fn div(self, other: Self) -> Result<Self, TrapCode> {
                 if other == 0 {
-                    return Err(RwasmError::IntegerDivisionByZero);
+                    return Err(TrapCode::IntegerDivisionByZero);
                 }
                 match self.overflowing_div(other) {
                     (result, false) => Ok(result),
-                    _ => Err(RwasmError::IntegerOverflow),
+                    _ => Err(TrapCode::IntegerOverflow),
                 }
             }
             #[inline]
-            fn rem(self, other: Self) -> Result<Self, RwasmError> {
+            fn rem(self, other: Self) -> Result<Self, TrapCode> {
                 if other == 0 {
-                    return Err(RwasmError::IntegerDivisionByZero);
+                    return Err(TrapCode::IntegerDivisionByZero);
                 }
                 Ok(self.wrapping_rem(other))
             }
@@ -912,23 +879,23 @@ pub trait WithType {
     type Output;
 
     /// Converts `self` to [`Self::Output`] using `ty`.
-    fn with_type(self, ty: ValueType) -> Self::Output;
+    fn with_type(self, ty: ValType) -> Self::Output;
 }
 
-impl WithType for UntypedValue {
-    type Output = Value;
-
-    fn with_type(self, ty: ValueType) -> Self::Output {
-        match ty {
-            ValueType::I32 => Value::I32(self.into()),
-            ValueType::I64 => Value::I64(self.into()),
-            ValueType::F32 => Value::F32(self.into()),
-            ValueType::F64 => Value::F64(self.into()),
-            ValueType::FuncRef => Value::FuncRef(self.into()),
-            ValueType::ExternRef => Value::ExternRef(self.into()),
-        }
-    }
-}
+// impl WithType for UntypedValue {
+//     type Output = Value;
+//
+//     fn with_type(self, ty: ValType) -> Self::Output {
+//         match ty {
+//             ValType::I32 => Value::I32(self.into()),
+//             ValType::I64 => Value::I64(self.into()),
+//             ValType::F32 => Value::F32(self.into()),
+//             ValType::F64 => Value::F64(self.into()),
+//             ValType::FuncRef => Value::FuncRef(self.into()),
+//             ValType::ExternRef => Value::ExternRef(self.into()),
+//         }
+//     }
+// }
 
 impl From<Value> for UntypedValue {
     fn from(value: Value) -> Self {
@@ -968,29 +935,29 @@ pub enum Value {
 }
 
 impl Value {
-    /// Creates new default value of given type.
-    #[inline]
-    pub fn default(value_type: ValueType) -> Self {
-        match value_type {
-            ValueType::I32 => Self::I32(0),
-            ValueType::I64 => Self::I64(0),
-            ValueType::F32 => Self::F32(0f32.into()),
-            ValueType::F64 => Self::F64(0f64.into()),
-            ValueType::FuncRef => Self::FuncRef(FuncRef::null()),
-            ValueType::ExternRef => Self::ExternRef(ExternRef::null()),
-        }
-    }
+    // /// Creates new default value of given type.
+    // #[inline]
+    // pub fn default(value_type: ValType) -> Self {
+    //     match value_type {
+    //         ValType::I32 => Self::I32(0),
+    //         ValType::I64 => Self::I64(0),
+    //         ValType::F32 => Self::F32(0f32.into()),
+    //         ValType::F64 => Self::F64(0f64.into()),
+    //         ValType::FuncRef => Self::FuncRef(FuncRef::null()),
+    //         ValType::ExternRef => Self::ExternRef(ExternRef::null()),
+    //     }
+    // }
 
-    /// Get variable type for this value.
+    /// Get a variable type for this value.
     #[inline]
-    pub fn ty(&self) -> ValueType {
+    pub fn ty(&self) -> ValType {
         match *self {
-            Self::I32(_) => ValueType::I32,
-            Self::I64(_) => ValueType::I64,
-            Self::F32(_) => ValueType::F32,
-            Self::F64(_) => ValueType::F64,
-            Self::FuncRef(_) => ValueType::FuncRef,
-            Self::ExternRef(_) => ValueType::ExternRef,
+            Self::I32(_) => ValType::I32,
+            Self::I64(_) => ValType::I64,
+            Self::F32(_) => ValType::F32,
+            Self::F64(_) => ValType::F64,
+            Self::FuncRef(_) => ValType::FuncRef,
+            Self::ExternRef(_) => ValType::ExternRef,
         }
     }
 
@@ -1078,8 +1045,14 @@ impl From<FuncRef> for Value {
     }
 }
 
-pub fn split_i64_to_i32(value: i64) -> [i32; 2] {
-    let lower = (value & 0xFFFF_FFFF) as i32; // Extract lower 32 bits
-    let upper = (value >> 32) as i32; // Extract upper 32 bits
+pub fn split_i64_to_i32(value: i64) -> (i32, i32) {
+    let lower = (value & 0xFFFF_FFFF) as i32; // extract lower 32 bits
+    let upper = (value >> 32) as i32; // extract upper 32 bits
+    (lower, upper)
+}
+
+pub fn split_i64_to_i32_arr(value: i64) -> [i32; 2] {
+    let lower = (value & 0xFFFF_FFFF) as i32; // extract lower 32 bits
+    let upper = (value >> 32) as i32; // extract upper 32 bits
     [lower, upper]
 }
