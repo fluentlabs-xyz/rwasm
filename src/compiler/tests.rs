@@ -7,9 +7,9 @@ fn test_fib() {
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = Store::<()>::default();
-    let mut engine = ExecutionEngine::new(&mut store);
+    let mut engine = ExecutionEngine::new();
     engine.value_stack().push(43.into());
-    engine.execute(&rwasm_module).unwrap();
+    engine.execute(&mut store, &rwasm_module).unwrap();
     let result = engine.value_stack().pop();
     assert_eq!(result.as_i64(), 433494437);
 }
@@ -32,10 +32,10 @@ fn test_block() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = Store::<()>::default();
-    let mut engine = ExecutionEngine::new(&mut store);
+    let mut engine = ExecutionEngine::new();
     engine.value_stack().push(0x132.into());
     engine.value_stack().push(0.into());
-    engine.execute(&rwasm_module).unwrap();
+    engine.execute(&mut store, &rwasm_module).unwrap();
     let result = engine.value_stack().pop();
     let result = engine.value_stack().pop();
     // assert_eq!(result.as_i64(), 433494437);
