@@ -22,11 +22,13 @@ use core::{
     ops::{Neg, Shl, Shr},
 };
 use paste::paste;
+use serde::{Deserialize, Serialize};
 use wasmparser::ValType;
 
 /// An untyped value.
 ///
 /// Provides a dense and simple interface to all functional Wasm operations.
+#[cfg_attr(feature = "tracing", derive(Serialize, Deserialize))]
 #[derive(Debug, Copy, Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
 pub struct UntypedValue {
