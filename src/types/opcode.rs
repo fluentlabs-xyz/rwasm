@@ -509,7 +509,11 @@ pub struct OpcodeMeta {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    #[test]
+    fn test_opcode_serialize() {
+        let op = Opcode::I32Or;
+        op.serialize(serializer)
+    }
     #[test]
     fn test_opcode_encoding() {
         let opcode = Opcode::LocalGet(7);

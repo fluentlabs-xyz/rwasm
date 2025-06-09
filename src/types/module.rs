@@ -14,6 +14,7 @@ use bincode::{
     Decode,
     Encode,
 };
+use serde::{Deserialize, Serialize};
 
 /// Represents a compiled rWasm module.
 ///

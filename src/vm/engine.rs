@@ -1,4 +1,12 @@
-use crate::{execute_rwasm_module, CallStack, RwasmModule, Store, TrapCode, ValueStack};
+use crate::{
+    execute_rwasm_module,
+    CallStack,
+    RwasmExecutor,
+    RwasmModule,
+    Store,
+    TrapCode,
+    ValueStack,
+};
 
 pub struct ExecutionEngine<'a, T> {
     store: &'a mut Store<T>,
