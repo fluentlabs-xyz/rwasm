@@ -204,7 +204,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     #[inline(always)]
-    fn exec_opcode(&mut self, instr: Opcode) -> Result<bool, TrapCode> {
+    pub fn exec_opcode(&mut self, instr: Opcode) -> Result<bool, TrapCode> {
         use Opcode::*;
         match instr {
             // stack
