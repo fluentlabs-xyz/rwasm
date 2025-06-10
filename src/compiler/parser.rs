@@ -432,7 +432,7 @@ impl ModuleParser {
             let func_type = self
                 .allocations
                 .translation
-                .func_types
+                .original_func_types
                 .get(func_type_index as usize)
                 .expect("missing function type");
             if !import_linker_entity.matches_func_type(func_type) {
