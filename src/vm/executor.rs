@@ -161,14 +161,12 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.store.refunded_fuel
     }
 
-    #[cfg(feature = "tracing")]
-    pub fn tracer(&self) -> Option<&crate::vm::Tracer> {
-        self.tracer.as_ref()
+    pub fn store(&self) -> &Store<T> {
+        &self.store
     }
 
-    #[cfg(feature = "tracing")]
-    pub fn tracer_mut(&mut self) -> Option<&mut crate::vm::Tracer> {
-        self.tracer.as_mut()
+    pub fn store_mut(&mut self) -> &mut Store<T> {
+        &mut self.store
     }
 
     pub fn context(&self) -> &T {
