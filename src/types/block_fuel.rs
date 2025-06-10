@@ -6,7 +6,7 @@ use bincode::{Decode, Encode};
 /// [`Instruction::ConsumeFuel`]: [`super::Instruction::ConsumeFuel`]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
-pub struct BlockFuel(pub u32);
+pub struct BlockFuel(u32);
 
 impl TryFrom<u64> for BlockFuel {
     type Error = CompilationError;
@@ -26,6 +26,10 @@ impl From<u32> for BlockFuel {
 }
 
 impl BlockFuel {
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
     /// Bump the fuel by `amount` if possible.
     ///
     /// # Errors

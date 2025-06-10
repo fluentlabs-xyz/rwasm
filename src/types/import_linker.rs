@@ -1,4 +1,5 @@
 use crate::{ImportName, InstructionSet};
+use alloc::vec::Vec;
 use core::ops::{Deref, DerefMut};
 use hashbrown::HashMap;
 use wasmparser::{FuncType, ValType};
@@ -87,6 +88,12 @@ impl ImportLinker {
             },
         );
         assert!(last_value.is_none(), "rwasm: import linker name collision");
+    }
+
+    pub fn find_symbols(&self) -> Vec<ImportName> {
+        let mut symbols: Vec<ImportName> = self.keys().cloned().collect();
+        symbols.sort();
+        symbols
     }
 
     pub fn resolve_by_import_name(&self, import_name: &ImportName) -> Option<&ImportLinkerEntity> {
