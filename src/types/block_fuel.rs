@@ -6,7 +6,7 @@ use bincode::{Decode, Encode};
 /// [`Instruction::ConsumeFuel`]: [`super::Instruction::ConsumeFuel`]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 #[repr(transparent)]
-pub struct BlockFuel(u32);
+pub struct BlockFuel(pub u32);
 
 impl TryFrom<u64> for BlockFuel {
     type Error = CompilationError;
