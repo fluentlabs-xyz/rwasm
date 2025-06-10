@@ -324,7 +324,7 @@ macro_rules! instruction_set_internal {
     // Nothing left to do
     ($code:ident, ) => {};
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {
-        _ = crate::Opcode::$x;
+        _ = $crate::Opcode::$x;
         paste::paste! {
             $code.[< op_ $x:snake >]($v);
         }
@@ -332,7 +332,7 @@ macro_rules! instruction_set_internal {
     };
     // Default opcode without any inputs
     ($code:ident, $x:ident $($rest:tt)*) => {
-        _ = crate::Opcode::$x;
+        _ = $crate::Opcode::$x;
         paste::paste! {
             $code.[< op_ $x:snake >]();
         }
