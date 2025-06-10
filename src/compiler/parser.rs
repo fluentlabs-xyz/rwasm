@@ -1,5 +1,8 @@
 use crate::{
-    compiler::{func_builder::FuncBuilder, translator::ReusableAllocations},
+    compiler::{
+        func_builder::FuncBuilder,
+        translator::{InstructionTranslator, ReusableAllocations},
+    },
     CompilationConfig,
     CompilationError,
     CompiledExpr,
@@ -8,7 +11,6 @@ use crate::{
     ElementSegmentIdx,
     FuncIdx,
     FuncRef,
-    FuncTypeIdx,
     GlobalIdx,
     GlobalVariable,
     ImportName,
@@ -438,11 +440,39 @@ impl ModuleParser {
             if !import_linker_entity.matches_func_type(func_type) {
                 return Err(CompilationError::MalformedImportFunctionType);
             }
-            // add import to the module
+            // inject an import function trampoline to support reffunc
+            let func_idx = self.next_func();
             self.allocations
                 .translation
-                .imported_funcs
-                .push((import_linker_entity, func_type_index as FuncTypeIdx));
+                .compiled_funcs
+                .push(func_type_index);
+            #[cfg(feature = "debug-print")]
+            println!("\nfunc_idx={}", func_idx);
+            let allocations = take(&mut self.allocations);
+            let mut translator =
+                InstructionTranslator::new(allocations.translation, self.config.consume_fuel);
+            translator.prepare(func_idx)?;
+            let signature_index = translator
+                .alloc
+                .resolve_func_type_signature(func_type_index);
+            translator
+                .alloc
+                .instruction_set
+                .op_signature_check(signature_index);
+            translator.alloc.instruction_set.op_stack_check(u32::MAX);
+            translator
+                .alloc
+                .instruction_set
+                .op_call(import_linker_entity.sys_func_idx);
+            translator.alloc.instruction_set.op_return();
+            translator.finish()?;
+            let _ = replace(
+                &mut self.allocations,
+                ReusableAllocations {
+                    translation: take(&mut translator.alloc),
+                    validation: allocations.validation,
+                },
+            );
         }
         Ok(())
     }
@@ -791,11 +821,7 @@ impl ModuleParser {
     fn next_func(&mut self) -> FuncIdx {
         let compiled_func = self.compiled_funcs;
         self.compiled_funcs += 1;
-        // We have to adjust the initial func reference to the first
-        // internal function before we process any of the internal functions.
-        let len_func_imports = u32::try_from(self.allocations.translation.imported_funcs.len())
-            .unwrap_or_else(|_| panic!("too many imported functions"));
-        FuncIdx::from(compiled_func + len_func_imports)
+        FuncIdx::from(compiled_func)
     }
 
     /// Process a single module code section entry.

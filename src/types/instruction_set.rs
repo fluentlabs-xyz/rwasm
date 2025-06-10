@@ -82,6 +82,29 @@ macro_rules! impl_opcode {
     };
 }
 
+macro_rules! impl_fpu_emitter {
+    ($opcode:ident($data_type:ident)) => {
+        paste::paste! {
+            pub fn [< op_ $opcode:snake >]<I: TryInto<$data_type>>(&mut self, value: I) {
+                #[cfg(feature = "fpu")]
+                self.push(Opcode::$opcode(value.try_into().unwrap_or_else(|_| unreachable!())));
+                #[cfg(not(feature = "fpu"))]
+                self.push(Opcode::Trap(TrapCode::IllegalOpcode));
+            }
+        }
+    };
+    ($opcode:ident) => {
+        paste::paste! {
+            pub fn [< op_ $opcode:snake >](&mut self) {
+                #[cfg(feature = "fpu")]
+                self.push(Opcode::$opcode);
+                #[cfg(not(feature = "fpu"))]
+                self.push(Opcode::Trap(TrapCode::IllegalOpcode));
+            }
+        }
+    };
+}
+
 impl InstructionSet {
     pub fn new() -> Self {
         Self { instr: vec![] }
@@ -204,146 +227,77 @@ impl InstructionSet {
     impl_opcode!(I32Extend8S);
     impl_opcode!(I32Extend16S);
 
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Load(AddressOffset));
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Load(AddressOffset));
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Store(AddressOffset));
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Store(AddressOffset));
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Eq);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Ne);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Lt);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Gt);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Le);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Ge);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Eq);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Ne);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Lt);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Gt);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Le);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Ge);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Abs);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Neg);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Ceil);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Floor);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Trunc);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Nearest);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Sqrt);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Add);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Sub);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Mul);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Div);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Min);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Max);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32Copysign);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Abs);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Neg);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Ceil);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Floor);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Trunc);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Nearest);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Sqrt);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Add);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Sub);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Mul);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Div);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Min);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Max);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64Copysign);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I32TruncF32S);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I32TruncF32U);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I32TruncF64S);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I32TruncF64U);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I64TruncF32S);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I64TruncF32U);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I64TruncF64S);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I64TruncF64U);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32ConvertI32S);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32ConvertI32U);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32ConvertI64S);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32ConvertI64U);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F32DemoteF64);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64ConvertI32S);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64ConvertI32U);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64ConvertI64S);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64ConvertI64U);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(F64PromoteF32);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I32TruncSatF32S);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I32TruncSatF32U);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I32TruncSatF64S);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I32TruncSatF64U);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I64TruncSatF32S);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I64TruncSatF32U);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I64TruncSatF64S);
-    #[cfg(feature = "fpu")]
-    impl_opcode!(I64TruncSatF64U);
+    // fpu opcodes (emits trap for disable fpu feature flag)
+    impl_fpu_emitter!(F32Load(AddressOffset));
+    impl_fpu_emitter!(F64Load(AddressOffset));
+    impl_fpu_emitter!(F32Store(AddressOffset));
+    impl_fpu_emitter!(F64Store(AddressOffset));
+    impl_fpu_emitter!(F32Eq);
+    impl_fpu_emitter!(F32Ne);
+    impl_fpu_emitter!(F32Lt);
+    impl_fpu_emitter!(F32Gt);
+    impl_fpu_emitter!(F32Le);
+    impl_fpu_emitter!(F32Ge);
+    impl_fpu_emitter!(F64Eq);
+    impl_fpu_emitter!(F64Ne);
+    impl_fpu_emitter!(F64Lt);
+    impl_fpu_emitter!(F64Gt);
+    impl_fpu_emitter!(F64Le);
+    impl_fpu_emitter!(F64Ge);
+    impl_fpu_emitter!(F32Abs);
+    impl_fpu_emitter!(F32Neg);
+    impl_fpu_emitter!(F32Ceil);
+    impl_fpu_emitter!(F32Floor);
+    impl_fpu_emitter!(F32Trunc);
+    impl_fpu_emitter!(F32Nearest);
+    impl_fpu_emitter!(F32Sqrt);
+    impl_fpu_emitter!(F32Add);
+    impl_fpu_emitter!(F32Sub);
+    impl_fpu_emitter!(F32Mul);
+    impl_fpu_emitter!(F32Div);
+    impl_fpu_emitter!(F32Min);
+    impl_fpu_emitter!(F32Max);
+    impl_fpu_emitter!(F32Copysign);
+    impl_fpu_emitter!(F64Abs);
+    impl_fpu_emitter!(F64Neg);
+    impl_fpu_emitter!(F64Ceil);
+    impl_fpu_emitter!(F64Floor);
+    impl_fpu_emitter!(F64Trunc);
+    impl_fpu_emitter!(F64Nearest);
+    impl_fpu_emitter!(F64Sqrt);
+    impl_fpu_emitter!(F64Add);
+    impl_fpu_emitter!(F64Sub);
+    impl_fpu_emitter!(F64Mul);
+    impl_fpu_emitter!(F64Div);
+    impl_fpu_emitter!(F64Min);
+    impl_fpu_emitter!(F64Max);
+    impl_fpu_emitter!(F64Copysign);
+    impl_fpu_emitter!(I32TruncF32S);
+    impl_fpu_emitter!(I32TruncF32U);
+    impl_fpu_emitter!(I32TruncF64S);
+    impl_fpu_emitter!(I32TruncF64U);
+    impl_fpu_emitter!(I64TruncF32S);
+    impl_fpu_emitter!(I64TruncF32U);
+    impl_fpu_emitter!(I64TruncF64S);
+    impl_fpu_emitter!(I64TruncF64U);
+    impl_fpu_emitter!(F32ConvertI32S);
+    impl_fpu_emitter!(F32ConvertI32U);
+    impl_fpu_emitter!(F32ConvertI64S);
+    impl_fpu_emitter!(F32ConvertI64U);
+    impl_fpu_emitter!(F32DemoteF64);
+    impl_fpu_emitter!(F64ConvertI32S);
+    impl_fpu_emitter!(F64ConvertI32U);
+    impl_fpu_emitter!(F64ConvertI64S);
+    impl_fpu_emitter!(F64ConvertI64U);
+    impl_fpu_emitter!(F64PromoteF32);
+    impl_fpu_emitter!(I32TruncSatF32S);
+    impl_fpu_emitter!(I32TruncSatF32U);
+    impl_fpu_emitter!(I32TruncSatF64S);
+    impl_fpu_emitter!(I32TruncSatF64U);
+    impl_fpu_emitter!(I64TruncSatF32S);
+    impl_fpu_emitter!(I64TruncSatF32U);
+    impl_fpu_emitter!(I64TruncSatF64S);
+    impl_fpu_emitter!(I64TruncSatF64U);
 
     /// Adds the given `delta` amount of fuel to the [`ConsumeFuel`] instruction `instr`.
     ///
