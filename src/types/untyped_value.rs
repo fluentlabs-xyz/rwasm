@@ -22,6 +22,7 @@ use core::{
     ops::{Neg, Shl, Shr},
 };
 use paste::paste;
+#[cfg(feature = "tracing")]
 use serde::{Deserialize, Serialize};
 use wasmparser::ValType;
 

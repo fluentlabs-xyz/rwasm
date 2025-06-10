@@ -1,5 +1,6 @@
 use crate::CompilationError;
 use bincode::{Decode, Encode};
+#[cfg(feature = "tracing")]
 use serde::{Deserialize, Serialize};
 
 /// The accumulated fuel to execute a block via [`Instruction::ConsumeFuel`].
@@ -28,6 +29,10 @@ impl From<u32> for BlockFuel {
 }
 
 impl BlockFuel {
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
     /// Bump the fuel by `amount` if possible.
     ///
     /// # Errors

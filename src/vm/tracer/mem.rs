@@ -1,3 +1,4 @@
+#[cfg(feature = "tracing")]
 use serde::{Deserialize, Serialize};
 
 /// Memory Record.

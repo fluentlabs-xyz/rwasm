@@ -7,11 +7,19 @@ mod tests {
         is.op_return();
         let rwasm_module = RwasmModule::with_one_function(is);
         let mut store = Store::<()>::default();
+<<<<<<< HEAD
         let mut engine = ExecutionEngine::new(&mut store);
         for i in inputs {
             engine.value_stack().push(i.into());
         }
         engine.execute(&rwasm_module)?;
+=======
+        let mut engine = ExecutionEngine::new();
+        for i in inputs {
+            engine.value_stack().push(i.into());
+        }
+        engine.execute(&mut store, &rwasm_module)?;
+>>>>>>> devel
         let output = engine
             .value_stack()
             .dump_stack()

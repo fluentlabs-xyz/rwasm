@@ -39,6 +39,7 @@ use bincode::{
     Encode,
 };
 use core::ops::{Deref, DerefMut};
+#[cfg(feature = "tracing")]
 use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "tracing", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]

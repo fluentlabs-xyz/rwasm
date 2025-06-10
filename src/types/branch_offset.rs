@@ -1,4 +1,5 @@
 use bincode::{Decode, Encode};
+#[cfg(feature = "tracing")]
 use serde::{Deserialize, Serialize};
 
 /// A signed offset for branch instructions.

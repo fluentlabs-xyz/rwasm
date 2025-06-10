@@ -19,6 +19,7 @@ use crate::{
 };
 use alloc::{format, vec::Vec};
 use bincode::{Decode, Encode};
+#[cfg(feature = "tracing")]
 use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "tracing", derive(Serialize, Deserialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
@@ -510,14 +511,14 @@ pub struct OpcodeMeta {
 mod tests {
     use super::*;
     #[test]
-    fn test_opcode_serialize() {
-        let op = Opcode::I32Or;
-        op.serialize(serializer)
-    }
-    #[test]
     fn test_opcode_encoding() {
         let opcode = Opcode::LocalGet(7);
         let data = bincode::encode_to_vec(&opcode, bincode::config::legacy()).unwrap();
         println!("{:?}", data);
+    }
+
+    #[test]
+    fn test_opcode_size() {
+        assert_eq!(size_of::<Opcode>(), 8);
     }
 }

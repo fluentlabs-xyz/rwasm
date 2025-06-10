@@ -69,9 +69,10 @@ impl<'a, T> Caller<'a, T> {
     pub fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
         self.store.global_memory.write(offset, buffer)?;
         #[cfg(feature = "tracing")]
-        if let Some(tracer) = self.store.tracer.as_mut() {
-            tracer.memory_change(offset as u32, buffer.len() as u32, buffer);
-        }
+        self.store
+            .tracer
+            .memory_change(offset as u32, buffer.len() as u32, buffer);
+
         Ok(())
     }
 

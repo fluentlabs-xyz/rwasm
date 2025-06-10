@@ -21,6 +21,7 @@ pub use self::{
     fuel_costs::FuelCosts,
     parser::ModuleParser,
 };
+use crate::RwasmModule;
 use alloc::vec::Vec;
 
 pub struct RwasmCompilationResult {
@@ -32,9 +33,7 @@ pub fn compile_wasm_to_rwasm(
     wasm_binary: &[u8],
     compilation_config: CompilationConfig,
 ) -> Result<RwasmCompilationResult, CompilationError> {
-    let mut parser = ModuleParser::new(compilation_config);
-    parser.parse(wasm_binary)?;
-    let (module, params) = parser.finalize()?;
+    let (module, params) = RwasmModule::compile(compilation_config, wasm_binary)?;
     let rwasm_bytecode = bincode::encode_to_vec(&module, bincode::config::legacy()).unwrap();
     Ok(RwasmCompilationResult {
         rwasm_bytecode,

@@ -162,13 +162,13 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     #[cfg(feature = "tracing")]
-    pub fn tracer(&self) -> Option<&crate::vm::Tracer> {
-        self.store.tracer.as_ref()
+    pub fn tracer(&self) -> &crate::vm::Tracer {
+        &self.store.tracer
     }
 
     #[cfg(feature = "tracing")]
-    pub fn tracer_mut(&mut self) -> Option<&mut crate::vm::Tracer> {
-        self.store.tracer.as_mut()
+    pub fn tracer_mut(&mut self) -> &mut crate::vm::Tracer {
+        &mut self.store.tracer
     }
 
     pub fn context(&self) -> &T {
@@ -337,19 +337,17 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let memory_size: u32 = self.store.global_memory.current_pages().into();
         let consumed_fuel = self.fuel_consumed();
         let stack = self.value_stack.dump_stack();
-        let tracer = self.store.tracer.as_mut().unwrap();
-        tracer.pre_opcode_state(pc, self.sp, *instr);
+        self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
     }
 
     #[cfg(feature = "tracing")]
     fn trace_instr_post(&mut self, instr: &Opcode, trap_code: Option<TrapCode>) {
         // TODO(wangyao): "track trap codes"
-        let tracer = self.tracer_mut().unwrap();
-        let log = tracer.logs.last();
+
         let sp = self.sp.to_position();
         let pc = self.program_counter();
         let stack = self.value_stack.dump_stack();
-        self.tracer_mut().unwrap().post_opcode_state(pc, sp, stack);
+        self.tracer_mut().post_opcode_state(pc, sp, stack);
     }
 
     pub(crate) fn fetch_table_index(&self, offset: usize) -> TableIdx {
@@ -396,9 +394,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let memory = self.store.global_memory.data_mut();
         store_wrap(memory, address, offset, value)?;
         #[cfg(feature = "tracing")]
-        if let Some(tracer) = self.store.tracer.as_mut() {
+        {
             let base_address = offset + u32::from(address);
-            tracer.memory_change(
+            self.store.tracer.memory_change(
                 base_address,
                 len,
                 &memory[base_address as usize..(base_address + len) as usize],

@@ -53,7 +53,7 @@ pub const N_BYTES_PER_MEMORY_PAGE: u32 = 65536;
 #[cfg(not(feature = "more-max-pages"))]
 pub const N_MAX_MEMORY_PAGES: u32 = 1024;
 #[cfg(feature = "more-max-pages")]
-pub const N_MAX_MEMORY_PAGES: u32 = 2048;
+pub const N_MAX_MEMORY_PAGES: u32 = 1024 * 10;
 
 /// A default memory index in a Wasm binary.
 /// According to Wasm validation rules, this value is always 0,

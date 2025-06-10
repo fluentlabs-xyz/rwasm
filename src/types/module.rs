@@ -14,6 +14,7 @@ use bincode::{
     Decode,
     Encode,
 };
+#[cfg(feature = "tracing")]
 use serde::{Deserialize, Serialize};
 
 /// Represents a compiled rWasm module.
@@ -36,6 +37,9 @@ pub struct RwasmModule {
 
     /// Table initializers, function refs for the module's table section.
     pub elem_section: Vec<u32>,
+
+    /// An original Wasm bytecode used during compilation
+    pub wasm_section: Vec<u8>,
 }
 
 impl RwasmModule {
@@ -53,7 +57,7 @@ impl RwasmModule {
     ) -> Result<(Self, ConstructorParams), CompilationError> {
         let mut parser = ModuleParser::new(config);
         parser.parse(wasm_binary)?;
-        parser.finalize()
+        parser.finalize(wasm_binary)
     }
 
     pub fn empty() -> Self {
@@ -61,6 +65,7 @@ impl RwasmModule {
             code_section: InstructionSet::default(),
             data_section: vec![],
             elem_section: vec![],
+            wasm_section: vec![],
         }
     }
 
@@ -69,6 +74,7 @@ impl RwasmModule {
             code_section,
             data_section: vec![],
             elem_section: vec![],
+            wasm_section: vec![],
         }
     }
 
@@ -100,6 +106,7 @@ impl Encode for RwasmModule {
         Encode::encode(&self.code_section, encoder)?;
         Encode::encode(&self.data_section, encoder)?;
         Encode::encode(&self.elem_section, encoder)?;
+        Encode::encode(&self.wasm_section, encoder)?;
         Ok(())
     }
 }
@@ -118,10 +125,12 @@ impl<Context> Decode<Context> for RwasmModule {
         let code_section: InstructionSet = Decode::decode(decoder)?;
         let data_section: Vec<u8> = Decode::decode(decoder)?;
         let elem_section: Vec<u32> = Decode::decode(decoder)?;
+        let wasm_section: Vec<u8> = Decode::decode(decoder)?;
         Ok(Self {
             code_section,
             data_section,
             elem_section,
+            wasm_section,
         })
     }
 }
@@ -166,6 +175,7 @@ mod tests {
             },
             data_section: Default::default(),
             elem_section: vec![5, 6, 7, 8, 9],
+            wasm_section: vec![],
         };
         let encoded_module = bincode::encode_to_vec(&module, bincode::config::legacy()).unwrap();
         let module2: RwasmModule;
@@ -175,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn test_endianess() {
+    fn test_endianness() {
         let module = vec![1, 2, 3];
         let encoded_module = bincode::encode_to_vec(&module, bincode::config::legacy()).unwrap();
         println!("{:?}", encoded_module);
