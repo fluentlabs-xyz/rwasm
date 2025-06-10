@@ -14,16 +14,15 @@ pub enum TrapCode {
     BadSignature = 0x08,
     OutOfFuel = 0x09,
     UnknownExternalFunction = 0x0a,
+    IllegalOpcode = 0x0b,
     // this trap code is only used for external calls to terminate the execution,
     // but this error can't be returned from an execution cycle
-    ExecutionHalted = 0x0b,
+    ExecutionHalted = 0xff,
 }
 
 impl core::fmt::Display for TrapCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
-            TrapCode::UnknownExternalFunction => write!(f, "unknown external function"),
-            TrapCode::ExecutionHalted => write!(f, "execution halted"),
             TrapCode::UnreachableCodeReached => write!(f, "unreachable code reached"),
             TrapCode::MemoryOutOfBounds => write!(f, "out of bounds memory access"),
             TrapCode::TableOutOfBounds => {
@@ -36,6 +35,9 @@ impl core::fmt::Display for TrapCode {
             TrapCode::StackOverflow => write!(f, "call stack exhausted"),
             TrapCode::BadSignature => write!(f, "indirect call type mismatch"),
             TrapCode::OutOfFuel => write!(f, "out of fuel"),
+            TrapCode::UnknownExternalFunction => write!(f, "unknown external function"),
+            TrapCode::IllegalOpcode => write!(f, "illegal opcode"),
+            TrapCode::ExecutionHalted => write!(f, "execution halted"),
         }
     }
 }

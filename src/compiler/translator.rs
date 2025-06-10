@@ -1446,7 +1446,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_load(memarg, ValType::F32, InstructionSet::op_f32_load, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_load(&mut self, memarg: MemArg) -> Self::Output {
@@ -1455,7 +1461,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_load(memarg, ValType::F64, InstructionSet::op_f64_load, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i32_load8_s(&mut self, memarg: MemArg) -> Self::Output {
@@ -1512,7 +1524,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_store(memarg, ValType::F32, InstructionSet::op_f32_store, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_store(&mut self, memarg: MemArg) -> Self::Output {
@@ -1521,7 +1539,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_store(memarg, ValType::F64, InstructionSet::op_f64_store, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i32_store8(&mut self, memarg: MemArg) -> Self::Output {
@@ -1620,7 +1644,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             })
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_const(&mut self, value: Ieee64) -> Self::Output {
@@ -1636,7 +1666,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             })
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_ref_null(&mut self, _ty: ValType) -> Self::Output {
@@ -1761,7 +1797,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary_compare(InstructionSet::op_f32_eq, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_ne(&mut self) -> Self::Output {
@@ -1770,7 +1812,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary_compare(InstructionSet::op_f32_ne, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_lt(&mut self) -> Self::Output {
@@ -1779,7 +1827,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary_compare(InstructionSet::op_f32_lt, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_gt(&mut self) -> Self::Output {
@@ -1788,7 +1842,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary_compare(InstructionSet::op_f32_gt, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_le(&mut self) -> Self::Output {
@@ -1797,7 +1857,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary_compare(InstructionSet::op_f32_le, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_ge(&mut self) -> Self::Output {
@@ -1806,7 +1872,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary_compare(InstructionSet::op_f32_ge, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_eq(&mut self) -> Self::Output {
@@ -1815,7 +1887,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary_compare(InstructionSet::op_f64_eq, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_ne(&mut self) -> Self::Output {
@@ -1824,7 +1902,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary_compare(InstructionSet::op_f64_ne, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_lt(&mut self) -> Self::Output {
@@ -1833,7 +1917,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary_compare(InstructionSet::op_f64_lt, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_gt(&mut self) -> Self::Output {
@@ -1842,7 +1932,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary_compare(InstructionSet::op_f64_gt, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_le(&mut self) -> Self::Output {
@@ -1851,7 +1947,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary_compare(InstructionSet::op_f64_le, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_ge(&mut self) -> Self::Output {
@@ -1860,7 +1962,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary_compare(InstructionSet::op_f64_ge, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i32_clz(&mut self) -> Self::Output {
@@ -2013,7 +2121,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f32_abs, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_neg(&mut self) -> Self::Output {
@@ -2022,7 +2136,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f32_neg, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_ceil(&mut self) -> Self::Output {
@@ -2031,7 +2151,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f32_ceil, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_floor(&mut self) -> Self::Output {
@@ -2040,7 +2166,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f32_floor, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_trunc(&mut self) -> Self::Output {
@@ -2049,7 +2181,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f32_trunc, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_nearest(&mut self) -> Self::Output {
@@ -2058,7 +2196,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f32_nearest, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_sqrt(&mut self) -> Self::Output {
@@ -2067,7 +2211,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f32_sqrt, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_add(&mut self) -> Self::Output {
@@ -2076,7 +2226,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f32_add, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_sub(&mut self) -> Self::Output {
@@ -2085,7 +2241,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f32_sub, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_mul(&mut self) -> Self::Output {
@@ -2094,7 +2256,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f32_mul, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_div(&mut self) -> Self::Output {
@@ -2103,7 +2271,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f32_div, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_min(&mut self) -> Self::Output {
@@ -2112,7 +2286,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f32_min, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_max(&mut self) -> Self::Output {
@@ -2121,7 +2301,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f32_max, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_copysign(&mut self) -> Self::Output {
@@ -2130,7 +2316,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f32_copysign, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_abs(&mut self) -> Self::Output {
@@ -2139,7 +2331,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f64_abs, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_neg(&mut self) -> Self::Output {
@@ -2148,7 +2346,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f64_neg, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_ceil(&mut self) -> Self::Output {
@@ -2157,7 +2361,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f64_ceil, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_floor(&mut self) -> Self::Output {
@@ -2166,7 +2376,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f64_floor, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_trunc(&mut self) -> Self::Output {
@@ -2175,7 +2391,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f64_trunc, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_nearest(&mut self) -> Self::Output {
@@ -2184,7 +2406,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f64_nearest, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_sqrt(&mut self) -> Self::Output {
@@ -2193,7 +2421,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_unary(InstructionSet::op_f64_sqrt, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_add(&mut self) -> Self::Output {
@@ -2202,7 +2436,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f64_add, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_sub(&mut self) -> Self::Output {
@@ -2211,7 +2451,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f64_sub, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_mul(&mut self) -> Self::Output {
@@ -2220,7 +2466,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f64_mul, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_div(&mut self) -> Self::Output {
@@ -2229,7 +2481,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f64_div, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_min(&mut self) -> Self::Output {
@@ -2238,7 +2496,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f64_min, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_max(&mut self) -> Self::Output {
@@ -2247,7 +2511,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f64_max, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_copysign(&mut self) -> Self::Output {
@@ -2256,7 +2526,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.translate_binary(InstructionSet::op_f64_copysign, 0)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i32_wrap_i64(&mut self) -> Self::Output {
@@ -2282,7 +2558,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i32_trunc_f32_u(&mut self) -> Self::Output {
@@ -2296,7 +2578,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i32_trunc_f64_s(&mut self) -> Self::Output {
@@ -2310,7 +2598,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i32_trunc_f64_u(&mut self) -> Self::Output {
@@ -2324,7 +2618,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i64_extend_i32_s(&mut self) -> Self::Output {
@@ -2356,7 +2656,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i64_trunc_f32_u(&mut self) -> Self::Output {
@@ -2370,7 +2676,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i64_trunc_f64_s(&mut self) -> Self::Output {
@@ -2384,7 +2696,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i64_trunc_f64_u(&mut self) -> Self::Output {
@@ -2398,7 +2716,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_convert_i32_s(&mut self) -> Self::Output {
@@ -2412,7 +2736,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_convert_i32_u(&mut self) -> Self::Output {
@@ -2426,7 +2756,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_convert_i64_s(&mut self) -> Self::Output {
@@ -2440,7 +2776,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_convert_i64_u(&mut self) -> Self::Output {
@@ -2454,7 +2796,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_demote_f64(&mut self) -> Self::Output {
@@ -2468,7 +2816,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_convert_i32_s(&mut self) -> Self::Output {
@@ -2482,7 +2836,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_convert_i32_u(&mut self) -> Self::Output {
@@ -2496,7 +2856,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_convert_i64_s(&mut self) -> Self::Output {
@@ -2510,7 +2876,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_convert_i64_u(&mut self) -> Self::Output {
@@ -2524,7 +2896,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_promote_f32(&mut self) -> Self::Output {
@@ -2538,7 +2916,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i32_reinterpret_f32(&mut self) -> Self::Output {
@@ -2547,7 +2931,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.visit_reinterpret(ValType::F32, ValType::I32)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i64_reinterpret_f64(&mut self) -> Self::Output {
@@ -2556,7 +2946,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.visit_reinterpret(ValType::F64, ValType::I64)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f32_reinterpret_i32(&mut self) -> Self::Output {
@@ -2565,7 +2961,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.visit_reinterpret(ValType::I32, ValType::F32)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_f64_reinterpret_i64(&mut self) -> Self::Output {
@@ -2574,7 +2976,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.visit_reinterpret(ValType::I64, ValType::F64)
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i32_extend8_s(&mut self) -> Self::Output {
@@ -2608,7 +3016,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i32_trunc_sat_f32_u(&mut self) -> Self::Output {
@@ -2622,7 +3036,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i32_trunc_sat_f64_s(&mut self) -> Self::Output {
@@ -2636,7 +3056,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i32_trunc_sat_f64_u(&mut self) -> Self::Output {
@@ -2650,7 +3076,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i64_trunc_sat_f32_s(&mut self) -> Self::Output {
@@ -2664,7 +3096,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i64_trunc_sat_f32_u(&mut self) -> Self::Output {
@@ -2678,7 +3116,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i64_trunc_sat_f64_s(&mut self) -> Self::Output {
@@ -2692,7 +3136,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     fn visit_i64_trunc_sat_f64_u(&mut self) -> Self::Output {
@@ -2706,7 +3156,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             )
         }
         #[cfg(not(feature = "fpu"))]
-        Err(CompilationError::FloatsAreNotSupported)
+        self.translate_if_reachable(|builder| {
+            builder
+                .alloc
+                .instruction_set
+                .op_trap(crate::TrapCode::IllegalOpcode);
+            Ok(())
+        })
     }
 
     /// MemoryInit opcode reads 3 elements from the stack (dst, src, len), where:
