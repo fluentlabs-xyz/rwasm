@@ -130,53 +130,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
         diff / size_of::<Opcode>() as u32
     }
 
-    pub fn try_consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
-        let consumed_fuel = self
-            .store
-            .consumed_fuel
-            .checked_add(fuel)
-            .unwrap_or(u64::MAX);
-        if let Some(fuel_limit) = self.store.config.fuel_limit {
-            if consumed_fuel > fuel_limit {
-                return Err(TrapCode::OutOfFuel);
-            }
-        }
-        self.store.consumed_fuel = consumed_fuel;
-        Ok(())
-    }
-
-    pub fn refund_fuel(&mut self, fuel: i64) {
-        self.store.refunded_fuel += fuel;
-    }
-
-    pub fn remaining_fuel(&self) -> Option<u64> {
-        Some(self.store.config.fuel_limit? - self.store.consumed_fuel)
-    }
-
-    pub fn fuel_consumed(&self) -> u64 {
-        self.store.consumed_fuel
-    }
-
-    pub fn fuel_refunded(&self) -> i64 {
-        self.store.refunded_fuel
-    }
-
-    pub fn store(&self) -> &Store<T> {
-        &self.store
-    }
-
-    pub fn store_mut(&mut self) -> &mut Store<T> {
-        &mut self.store
-    }
-
-    pub fn context(&self) -> &T {
-        &self.store.context
-    }
-
-    pub fn context_mut(&mut self) -> &mut T {
-        &mut self.store.context
-    }
-
     pub fn run(mut self) -> Result<(), TrapCode> {
         use Opcode::*;
         loop {
@@ -394,5 +347,21 @@ impl<'a, T> RwasmExecutor<'a, T> {
             Err(TrapCode::ExecutionHalted) => Ok(true),
             Err(err) => Err(err),
         }
+    }
+
+    pub fn store(&self) -> &Store<T> {
+        &self.store
+    }
+
+    pub fn store_mut(&mut self) -> &mut Store<T> {
+        &mut self.store
+    }
+
+    pub fn context(&self) -> &T {
+        &self.store.context
+    }
+
+    pub fn context_mut(&mut self) -> &mut T {
+        &mut self.store.context
     }
 }

@@ -18,7 +18,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let (init, delta) = self.sp.pop2();
         let delta: u32 = delta.into();
         if self.store.config.fuel_enabled {
-            self.try_consume_fuel(self.store.fuel_costs.fuel_for_elements(delta as u64))?;
+            self.store
+                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(delta as u64))?;
         }
         let table = self
             .store
@@ -28,8 +29,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let result = table.grow_untyped(delta, init);
         self.sp.push_as(result);
         #[cfg(feature = "tracing")]
-        if let Some(tracer) = self.tracer.as_mut() {
-            tracer.table_size_change(table_idx, init.into(), delta);
+        if let Some(tracer) = self.store.tracer.as_mut() {
+            tracer.table_size_change(table_idx as u32, init.into(), delta);
         }
         self.ip.add(1);
         Ok(())
@@ -39,7 +40,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
     pub(crate) fn visit_table_fill(&mut self, table_idx: TableIdx) -> Result<(), TrapCode> {
         let (i, val, n) = self.sp.pop3();
         if self.store.config.fuel_enabled {
-            self.try_consume_fuel(self.store.fuel_costs.fuel_for_elements(n.into()))?;
+            self.store
+                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(n.into()))?;
         }
         self.store
             .tables
@@ -75,8 +77,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .set_untyped(index.into(), value)
             .map_err(|_| TrapCode::TableOutOfBounds)?;
         #[cfg(feature = "tracing")]
-        if let Some(tracer) = self.tracer.as_mut() {
-            tracer.table_change(table_idx, index.into(), value);
+        if let Some(tracer) = self.store.tracer.as_mut() {
+            tracer.table_change(table_idx as u32, index.into(), value);
         }
         self.ip.add(1);
         Ok(())
@@ -90,7 +92,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let src_index = u32::from(s);
         let dst_index = u32::from(d);
         if self.store.config.fuel_enabled {
-            self.try_consume_fuel(self.store.fuel_costs.fuel_for_elements(len as u64))?;
+            self.store
+                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(len as u64))?;
         }
         // Query both tables and check if they are the same:
         if src_table_idx != dst_table_idx {
@@ -125,7 +128,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let dst_index = u32::from(d);
 
         if self.store.config.fuel_enabled {
-            self.try_consume_fuel(self.store.fuel_costs.fuel_for_elements(len as u64))?;
+            self.store
+                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(len as u64))?;
         }
 
         // There is a trick with `element_segment_idx`:

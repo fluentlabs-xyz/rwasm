@@ -14,6 +14,8 @@ pub enum TrapCode {
     BadSignature = 0x08,
     OutOfFuel = 0x09,
     UnknownExternalFunction = 0x0a,
+    // this trap code is only used for external calls to terminate the execution,
+    // but this error can't be returned from an execution cycle
     ExecutionHalted = 0x0b,
 }
 
