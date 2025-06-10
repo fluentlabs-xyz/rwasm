@@ -1,13 +1,4 @@
-use crate::{
-    CompilationConfig,
-    ExecutionEngine,
-    ImportLinker,
-    ImportName,
-    InstructionSet,
-    RwasmModule,
-    Store,
-};
-use wasmparser::ValType;
+use crate::{CompilationConfig, ExecutionEngine, RwasmModule, Store};
 
 #[test]
 fn test_fib() {
