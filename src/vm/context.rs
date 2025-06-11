@@ -1,6 +1,7 @@
 use crate::{
     types::{TrapCode, UntypedValue},
     vm::store::Store,
+    InstructionPtr,
     ValueStackPtr,
 };
 use alloc::{vec, vec::Vec};
@@ -9,14 +10,21 @@ pub struct Caller<'a, T> {
     store: &'a mut Store<T>,
     sp: &'a mut ValueStackPtr,
     program_counter: u32,
+    ip: InstructionPtr,
 }
 
 impl<'a, T> Caller<'a, T> {
-    pub fn new(store: &'a mut Store<T>, sp: &'a mut ValueStackPtr, program_counter: u32) -> Self {
+    pub fn new(
+        store: &'a mut Store<T>,
+        sp: &'a mut ValueStackPtr,
+        program_counter: u32,
+        ip: InstructionPtr,
+    ) -> Self {
         Self {
             store,
             sp,
             program_counter,
+            ip,
         }
     }
 
@@ -72,12 +80,23 @@ impl<'a, T> Caller<'a, T> {
         self.store
             .tracer
             .memory_change(offset as u32, buffer.len() as u32, buffer);
-
         Ok(())
     }
 
     pub fn program_counter(&self) -> u32 {
         self.program_counter
+    }
+
+    pub fn instruction_ptr(&self) -> InstructionPtr {
+        self.ip
+    }
+
+    pub fn store_mut(&mut self) -> &mut Store<T> {
+        &mut self.store
+    }
+
+    pub fn store(&self) -> &Store<T> {
+        &self.store
     }
 
     pub fn context_mut(&mut self) -> &mut T {

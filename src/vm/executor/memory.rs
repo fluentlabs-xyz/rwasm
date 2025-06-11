@@ -74,7 +74,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let offset = i32::from(d) as usize;
         let byte = u8::from(val);
         if self.store.config.fuel_enabled {
-            self.try_consume_fuel(self.store.fuel_costs.fuel_for_bytes(n as u64))?;
+            self.store
+                .try_consume_fuel(self.store.fuel_costs.fuel_for_bytes(n as u64))?;
         }
         let memory = self
             .store
@@ -85,11 +86,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         memory.fill(byte);
         #[cfg(feature = "tracing")]
-        {
-            self.store
-                .tracer
-                .memory_change(offset as u32, n as u32, memory);
-        }
+        self.store
+            .tracer
+            .memory_change(offset as u32, n as u32, memory);
         self.ip.add(1);
         Ok(())
     }
@@ -101,7 +100,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let src_offset = i32::from(s) as usize;
         let dst_offset = i32::from(d) as usize;
         if self.store.config.fuel_enabled {
-            self.try_consume_fuel(self.store.fuel_costs.fuel_for_bytes(n as u64))?;
+            self.store
+                .try_consume_fuel(self.store.fuel_costs.fuel_for_bytes(n as u64))?;
         }
         // these accesses just perform the bound checks required by the Wasm spec.
         let data = self.store.global_memory.data_mut();
@@ -113,13 +113,11 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         data.copy_within(src_offset..src_offset.wrapping_add(n), dst_offset);
         #[cfg(feature = "tracing")]
-        {
-            self.store.tracer.memory_change(
-                dst_offset as u32,
-                n as u32,
-                &data[dst_offset..(dst_offset + n)],
-            );
-        }
+        self.store.tracer.memory_change(
+            dst_offset as u32,
+            n as u32,
+            &data[dst_offset..(dst_offset + n)],
+        );
         self.ip.add(1);
         Ok(())
     }
@@ -141,7 +139,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let src_offset = i32::from(s) as usize;
         let dst_offset = i32::from(d) as usize;
         if self.store.config.fuel_enabled {
-            self.try_consume_fuel(self.store.fuel_costs.fuel_for_bytes(n as u64))?;
+            self.store
+                .try_consume_fuel(self.store.fuel_costs.fuel_for_bytes(n as u64))?;
         }
         let memory = self
             .store
@@ -160,11 +159,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         memory.copy_from_slice(data);
         #[cfg(feature = "tracing")]
-        {
-            self.store
-                .tracer
-                .global_memory(dst_offset as u32, n as u32, memory);
-        }
+        self.store
+            .tracer
+            .global_memory(dst_offset as u32, n as u32, memory);
         self.ip.add(1);
         Ok(())
     }

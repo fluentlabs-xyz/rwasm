@@ -40,16 +40,14 @@ impl GlobalMemory {
     ///
     /// If the linear memory grows beyond its maximum limit after
     /// the growth operation.
-    pub fn grow(&mut self, additional: Pages) -> Result<Pages, TrapCode> {
+    pub fn grow(&mut self, additional: Pages) -> Option<Pages> {
         let current_pages = self.current_pages();
         if additional == Pages::from(0) {
-            return Ok(current_pages);
+            return Some(current_pages);
         }
-        let desired_pages = current_pages
-            .checked_add(additional)
-            .ok_or(TrapCode::GrowthOperationLimited)?;
+        let desired_pages = current_pages.checked_add(additional)?;
         if desired_pages > MEMORY_MAX_PAGES {
-            return Err(TrapCode::GrowthOperationLimited);
+            return None;
         }
         // At this point, it is okay to grow the underlying virtual memory
         // by the given number of additional pages.
@@ -59,7 +57,7 @@ impl GlobalMemory {
         assert!(new_size >= self.shared_memory.len());
         self.shared_memory.resize(new_size, 0);
         self.current_pages = desired_pages;
-        Ok(current_pages)
+        Some(current_pages)
     }
 
     /// Returns a shared slice to the bytes underlying to the byte buffer.

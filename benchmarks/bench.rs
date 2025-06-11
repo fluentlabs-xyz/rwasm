@@ -63,26 +63,15 @@ fn bench_rwasm_no_cache(b: &mut Bencher) {
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     let encoded_rwasm_module = rwasm_module.serialize();
     let mut store = Store::new(ExecutorConfig::default(), ());
-<<<<<<< HEAD
-    let mut engine = ExecutionEngine::new(&mut store);
-=======
     let mut engine = ExecutionEngine::new();
->>>>>>> devel
 
     b.iter(|| {
         let rwasm_module = RwasmModule::new(&encoded_rwasm_module);
         engine.value_stack().push(FIB_VALUE.into());
-<<<<<<< HEAD
-        engine.execute(&rwasm_module).unwrap();
-        let result = engine.value_stack().pop();
-        core::hint::black_box(result);
-        engine.store().reset(true);
-=======
         engine.execute(&mut store, &rwasm_module).unwrap();
         let result = engine.value_stack().pop();
         core::hint::black_box(result);
         store.reset(true);
->>>>>>> devel
     });
 }
 
@@ -98,26 +87,15 @@ fn bench_rwasm(b: &mut Bencher) {
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     let encoded_rwasm_module = rwasm_module.serialize();
     let mut store = Store::new(ExecutorConfig::default(), ());
-<<<<<<< HEAD
-    let mut engine = ExecutionEngine::new(&mut store);
-=======
     let mut engine = ExecutionEngine::new();
->>>>>>> devel
     let rwasm_module = RwasmModule::new(&encoded_rwasm_module);
 
     b.iter(|| {
         engine.value_stack().push(FIB_VALUE.into());
-<<<<<<< HEAD
-        engine.execute(&rwasm_module).unwrap();
-        let result = engine.value_stack().pop();
-        core::hint::black_box(result);
-        engine.store().reset(true);
-=======
         engine.execute(&mut store, &rwasm_module).unwrap();
         let result = engine.value_stack().pop();
         core::hint::black_box(result);
         store.reset(true);
->>>>>>> devel
     });
 }
 

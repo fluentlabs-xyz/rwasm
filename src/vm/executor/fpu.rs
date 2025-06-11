@@ -73,7 +73,13 @@ impl<'a, T> RwasmExecutor<'a, T> {
 
     #[inline(always)]
     pub(crate) fn visit_f32_load(&mut self, address_offset: AddressOffset) -> Result<(), TrapCode> {
-        self.execute_load_extend(address_offset, UntypedValue::f32_load)
+        self.sp.try_eval_top(|address| {
+            let memory = self.store.global_memory.data();
+            let value = UntypedValue::f32_load(memory, address, address_offset)?;
+            Ok(value)
+        })?;
+        self.ip.add(1);
+        Ok(())
     }
 
     #[inline(always)]
@@ -91,7 +97,20 @@ impl<'a, T> RwasmExecutor<'a, T> {
         &mut self,
         address_offset: AddressOffset,
     ) -> Result<(), TrapCode> {
-        self.execute_store_wrap(address_offset, UntypedValue::f32_store, 4)
+        let (address, value) = self.sp.pop2();
+        let memory = self.store.global_memory.data_mut();
+        UntypedValue::f32_store(memory, address, address_offset, value)?;
+        #[cfg(feature = "tracing")]
+        {
+            let base_address = address_offset + u32::from(address);
+            self.store.tracer.memory_change(
+                base_address,
+                4,
+                &memory[base_address as usize..(base_address + 4) as usize],
+            );
+        }
+        self.ip.add(1);
+        Ok(())
     }
 
     #[inline(always)]

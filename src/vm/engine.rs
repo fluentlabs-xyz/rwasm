@@ -1,4 +1,12 @@
-use crate::{execute_rwasm_module, CallStack, RwasmModule, Store, TrapCode, ValueStack};
+use crate::{
+    execute_rwasm_module,
+    CallStack,
+    RwasmExecutor,
+    RwasmModule,
+    Store,
+    TrapCode,
+    ValueStack,
+};
 
 pub struct ExecutionEngine {
     value_stack: ValueStack,
@@ -19,6 +27,14 @@ impl ExecutionEngine {
 
     pub fn call_stack(&mut self) -> &mut CallStack {
         &mut self.call_stack
+    }
+
+    pub fn create_executor<'a, T>(
+        &'a mut self,
+        store: &'a mut Store<T>,
+        module: &'a RwasmModule,
+    ) -> RwasmExecutor<'a, T> {
+        RwasmExecutor::new(&module, &mut self.value_stack, &mut self.call_stack, store)
     }
 
     pub fn execute<T>(

@@ -1,5 +1,3 @@
-#[cfg(feature = "tracing")]
-use crate::Tracer;
 use crate::{
     always_failing_syscall_handler,
     ExecutorConfig,
@@ -11,6 +9,7 @@ use crate::{
     SyscallHandler,
     TableEntity,
     TableIdx,
+    TrapCode,
     UntypedValue,
     N_MAX_DATA_SEGMENTS,
     N_MAX_DATA_SEGMENTS_BITS,
@@ -28,7 +27,6 @@ pub struct Store<T> {
     pub(crate) config: ExecutorConfig,
     // the last used signature (needed for indirect calls type checks)
     pub(crate) last_signature: Option<SignatureIdx>,
-
     // rwasm modified segments
     pub(crate) tables: HashMap<TableIdx, TableEntity>,
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
@@ -39,7 +37,7 @@ pub struct Store<T> {
     pub(crate) syscall_handler: SyscallHandler<T>,
     pub(crate) fuel_costs: FuelCosts,
     #[cfg(feature = "tracing")]
-    pub(crate) tracer: crate::vm::Tracer,
+    pub(crate) tracer: crate::Tracer,
 }
 
 impl<T: Default> Default for Store<T> {
@@ -56,14 +54,13 @@ impl<T> Store<T> {
         let empty_data_segments = bitarr![0; N_MAX_DATA_SEGMENTS];
         let empty_elem_segments = bitarr![0; N_MAX_ELEM_SEGMENTS];
 
-        #[cfg(feature = "tracing")]
         Self {
             consumed_fuel: 0,
             refunded_fuel: 0,
             global_memory,
             context,
             #[cfg(feature = "tracing")]
-            tracer: Tracer::default(),
+            tracer: crate::Tracer::default(),
             global_variables: Default::default(),
             tables: Default::default(),
             last_signature: None,
@@ -111,8 +108,31 @@ impl<T> Store<T> {
         self.last_signature = None;
     }
 
-    pub fn consumed_fuel(&self) -> u64 {
+    pub fn fuel_consumed(&self) -> u64 {
         self.consumed_fuel
+    }
+
+    pub fn fuel_refunded(&self) -> i64 {
+        self.refunded_fuel
+    }
+
+    pub fn try_consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
+        let consumed_fuel = self.consumed_fuel.checked_add(fuel).unwrap_or(u64::MAX);
+        if let Some(fuel_limit) = self.config.fuel_limit {
+            if consumed_fuel > fuel_limit {
+                return Err(TrapCode::OutOfFuel);
+            }
+        }
+        self.consumed_fuel = consumed_fuel;
+        Ok(())
+    }
+
+    pub fn refund_fuel(&mut self, fuel: i64) {
+        self.refunded_fuel += fuel;
+    }
+
+    pub fn remaining_fuel(&self) -> Option<u64> {
+        Some(self.config.fuel_limit? - self.consumed_fuel)
     }
 
     pub fn context(&self) -> &T {

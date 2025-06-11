@@ -19,10 +19,9 @@ use crate::{
 };
 use alloc::{format, vec::Vec};
 use bincode::{Decode, Encode};
-#[cfg(feature = "tracing")]
-use serde::{Deserialize, Serialize};
-#[cfg_attr(feature = "tracing", derive(Serialize, Deserialize))]
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u16)]
 pub enum Opcode {
     // stack/system
@@ -510,6 +509,7 @@ pub struct OpcodeMeta {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn test_opcode_encoding() {
         let opcode = Opcode::LocalGet(7);
