@@ -250,7 +250,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
             #[cfg(feature = "tracing")]
             {
                 self.trace_instr_pre(&instr);
-                let wrapper = |instr: Opcode| -> Result<bool, TrapCode> {
+                let mut wrapper = |instr: Opcode| -> Result<bool, TrapCode> {
                     exec_opcode!(instr, return Ok(true));
                     Ok(false)
                 };
