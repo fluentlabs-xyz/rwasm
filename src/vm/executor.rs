@@ -271,7 +271,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let pc = self.program_counter();
         let memory_size: u32 = self.store.global_memory.current_pages().into();
         let consumed_fuel = self.store.fuel_consumed();
-        let stack = self.value_stack.dump_stack();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
     }
 
@@ -286,13 +285,13 @@ impl<'a, T> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "debug-print")]
     fn debug_print(&mut self, instr: &Opcode) {
-        let stack = self.value_stack.dump_stack();
         println!(
             "{:04}:\t {} \tstack({}):{:?}",
             self.program_counter(),
             instr,
             stack.len(),
-            stack
+            self.value_stack
+                .as_slice()
                 .iter()
                 .rev()
                 .take(10)
