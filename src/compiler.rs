@@ -34,9 +34,8 @@ pub fn compile_wasm_to_rwasm(
     compilation_config: CompilationConfig,
 ) -> Result<RwasmCompilationResult, CompilationError> {
     let (module, params) = RwasmModule::compile(compilation_config, wasm_binary)?;
-    let rwasm_bytecode = bincode::encode_to_vec(&module, bincode::config::legacy()).unwrap();
     Ok(RwasmCompilationResult {
-        rwasm_bytecode,
-        constructor_params: params.into(),
+        rwasm_bytecode: module.serialize(),
+        constructor_params: params.into_vec(),
     })
 }
