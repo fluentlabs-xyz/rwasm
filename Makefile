@@ -8,6 +8,11 @@ test-specific-cases:
 	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml
 	cargo test --color=always --no-fail-fast --manifest-path e2e/Cargo.toml
 	cargo test --color=always --no-fail-fast --manifest-path snippets/Cargo.toml
+	cargo test --features tracing --color=always --no-fail-fast --manifest-path Cargo.toml
+	cargo test --features tracing --color=always --no-fail-fast --manifest-path e2e/Cargo.toml
+	cargo test --features tracing --color=always --no-fail-fast --manifest-path snippets/Cargo.toml
+
+
 
 .PHONY: coverage
 coverage:

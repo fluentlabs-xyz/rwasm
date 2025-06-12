@@ -54,6 +54,7 @@ impl<T> Store<T> {
         let empty_data_segments = bitarr![0; N_MAX_DATA_SEGMENTS];
         let empty_elem_segments = bitarr![0; N_MAX_ELEM_SEGMENTS];
 
+        
         Self {
             consumed_fuel: 0,
             refunded_fuel: 0,

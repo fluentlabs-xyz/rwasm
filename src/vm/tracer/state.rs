@@ -17,7 +17,14 @@ impl VMState {
         }
     }
 
-    pub fn next_shard(&mut self) {
+    pub fn check_shard(&mut self) {
+        if self.shard==0{
+            self.shard+=1;
+
+        };
+    }
+
+    pub fn next_shard(&mut self){
         unimplemented!()
     }
 }

@@ -18,7 +18,7 @@ use core::fmt::Debug;
 #[derive(Clone)]
 pub struct ValueStack {
     /// All currently live stack entries.
-    entries: Vec<UntypedValue>,
+    pub entries: Vec<UntypedValue>,
     /// Index of the first free place in the stack.
     stack_ptr: usize,
     /// The maximum value stack height.
@@ -286,8 +286,8 @@ impl ValueStack {
 /// [`ValueStack`]: super::ValueStack
 #[derive(Debug, Copy, Clone)]
 pub struct ValueStackPtr {
-    src: *mut UntypedValue,
-    ptr: *mut UntypedValue,
+    pub src: *mut UntypedValue,
+    pub ptr: *mut UntypedValue,
 }
 
 impl From<*mut UntypedValue> for ValueStackPtr {

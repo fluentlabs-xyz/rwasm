@@ -272,14 +272,45 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let memory_size: u32 = self.store.global_memory.current_pages().into();
         let consumed_fuel = self.store.fuel_consumed();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
+        
     }
 
     #[cfg(feature = "tracing")]
     fn trace_instr_post(&mut self, instr: &Opcode, trap_code: Option<TrapCode>) {
         // TODO(wangyao): "track trap codes"
+        let src = self.sp.src.clone();
+        let mut ptr = self.sp.ptr.clone();
+       
+        if ptr!=src{
+             
+             println!("stack src:{:?}stack_ptr:{:?}",src,ptr);
+            println!("=====stack start==========");
+        
+        while ptr>src{
+
+            println!("stack idx:{:?},stack_value:{},",ptr,unsafe {
+                *ptr
+            });
+            unsafe{ptr =ptr.sub(1);}
+        }
+         println!("======stack end==========");
+        println!("==========");
+         let stack = self.value_stack.dump_stack(self.sp);
+        // let top_5:Vec<UntypedValue>=self.value_stack.entries.iter().take(5).map(|x| *x).collect();
+        // println!("value stack len:{:?}",top_5);
+        println!("stack:{:?}",stack);
+        println!("=======-----------==========");
+        println!("=======-----------==========");
+        println!("=======-----------==========");
+         println!("                            ");
+           println!("                            ");
+             println!("                            ");
+       
+        }
         let sp = self.sp.to_position();
         let pc = self.program_counter();
-        let stack = self.value_stack.dump_stack();
+        let stack = self.value_stack.dump_stack(self.sp);
+       
         self.store.tracer.post_opcode_state(pc, sp, stack);
     }
 

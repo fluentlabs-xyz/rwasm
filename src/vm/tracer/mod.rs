@@ -119,6 +119,8 @@ impl Tracer {
 
     pub fn pre_opcode_state(&mut self, program_counter: u32, sp: ValueStackPtr, opcode: Opcode) {
         // TODO(wangyao): "determine clk and shard here using counters,will do it in post opcode"
+        self.state.check_shard();
+        self.state.next_cycle();
         let memory_changes = take(&mut self.memory_changes);
         let table_changes = take(&mut self.table_changes);
         let table_size_changes = take(&mut self.table_size_changes);
@@ -146,7 +148,7 @@ impl Tracer {
         let op_state = self.logs.last().unwrap();
         let opcode = op_state.opcode;
         let mut memory_access = op_state.memory_access;
-        self.record_mw(opcode, new_sp, stack, &mut memory_access);
+        // self.record_mw(opcode, new_sp, stack, &mut memory_access);
     }
 
     pub fn remember_next_table(&mut self, table_idx: TableIdx) {
