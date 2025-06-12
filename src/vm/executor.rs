@@ -268,6 +268,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "tracing")]
     fn trace_instr_pre(&mut self, instr: &Opcode) {
+        self.store.tracer.state.next_cycle();
         let pc = self.program_counter();
         let memory_size: u32 = self.store.global_memory.current_pages().into();
         let consumed_fuel = self.store.fuel_consumed();
@@ -279,19 +280,19 @@ impl<'a, T> RwasmExecutor<'a, T> {
         // TODO(wangyao): "track trap codes"
         let sp = self.sp.to_position();
         let pc = self.program_counter();
-        let stack = self.value_stack.dump_stack();
+        let stack = self.value_stack.dump_stack(self.sp);
         self.store.tracer.post_opcode_state(pc, sp, stack);
     }
 
     #[cfg(feature = "debug-print")]
     fn debug_print(&mut self, instr: &Opcode) {
+        let stack = self.value_stack.dump_stack(self.sp);
         println!(
             "{:04}:\t {} \tstack({}):{:?}",
             self.program_counter(),
             instr,
             stack.len(),
-            self.value_stack
-                .as_slice()
+            stack
                 .iter()
                 .rev()
                 .take(10)

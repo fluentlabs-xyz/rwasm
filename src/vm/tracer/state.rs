@@ -18,6 +18,6 @@ impl VMState {
     }
 
     pub fn next_shard(&mut self) {
-        unimplemented!()
+        self.shard += 1;
     }
 }

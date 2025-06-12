@@ -165,7 +165,7 @@ impl MemoryReadRecord {
 impl MemoryWriteRecord {
     /// Creates a new [``MemoryWriteRecord``].
     #[must_use]
-    pub const fn new(
+    pub fn new(
         value: u32,
         shard: u32,
         timestamp: u32,
@@ -173,7 +173,14 @@ impl MemoryWriteRecord {
         prev_shard: u32,
         prev_timestamp: u32,
     ) -> Self {
-        assert!(shard > prev_shard || ((shard == prev_shard) && (timestamp > prev_timestamp)),);
+        assert!(
+            shard > prev_shard || ((shard == prev_shard) && (timestamp > prev_timestamp)),
+            "shard not in prev shard: shard={} prev_shared={} timestamp={} prev_timestamp={}",
+            shard,
+            prev_shard,
+            timestamp,
+            prev_timestamp
+        );
         Self {
             value,
             shard,
