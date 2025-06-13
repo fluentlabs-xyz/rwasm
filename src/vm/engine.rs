@@ -43,31 +43,23 @@ impl ExecutionEngine {
         &mut self.call_stack
     }
 
-    pub fn create_executor<'a, T>(
+    pub fn create_callable_executor<'a, T>(
         &'a mut self,
         store: &'a mut Store<T>,
         module: &'a RwasmModule,
     ) -> RwasmExecutor<'a, T> {
-        RwasmExecutor::new(&module, &mut self.value_stack, &mut self.call_stack, store)
-    }
-
-    pub fn execute<T>(
-        &mut self,
-        store: &mut Store<T>,
-        module: &RwasmModule,
-    ) -> Result<(), TrapCode> {
         debug_assert!(
             self.call_stack.is_empty(),
             "the call stack must be empty before an execution, use `resume` instead"
         );
-        RwasmExecutor::new(&module, &mut self.value_stack, &mut self.call_stack, store).run()
+        RwasmExecutor::new(&module, &mut self.value_stack, &mut self.call_stack, store)
     }
 
-    pub fn resume<T>(
-        &mut self,
-        store: &mut Store<T>,
-        module: &RwasmModule,
-    ) -> Result<(), TrapCode> {
+    pub fn create_resumable_executor<'a, T>(
+        &'a mut self,
+        store: &'a mut Store<T>,
+        module: &'a RwasmModule,
+    ) -> RwasmExecutor<'a, T> {
         let (ip, sp) = self.call_stack.pop().unwrap_or_else(|| {
             unreachable!("resume calling without a remaining call stack");
         });
@@ -79,7 +71,22 @@ impl ExecutionEngine {
             ip,
             store,
         )
-        .run()
+    }
+
+    pub fn execute<T>(
+        &mut self,
+        store: &mut Store<T>,
+        module: &RwasmModule,
+    ) -> Result<(), TrapCode> {
+        self.create_callable_executor(store, module).run()
+    }
+
+    pub fn resume<T>(
+        &mut self,
+        store: &mut Store<T>,
+        module: &RwasmModule,
+    ) -> Result<(), TrapCode> {
+        self.create_resumable_executor(store, module).run()
     }
 
     pub fn reset<T>(&mut self, store: &mut Store<T>, keep_flags: bool) {
