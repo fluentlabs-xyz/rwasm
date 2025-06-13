@@ -1,4 +1,5 @@
 use rwasm::{ExecutionEngine, InstructionSet, RwasmModule, Store, TrapCode};
+use std::ops::{BitAnd, BitOr, BitXor, Shl, Shr};
 
 fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Result<Vec<u32>, TrapCode> {
     is.op_return();
@@ -31,8 +32,16 @@ fn run_binary_test_case(is: &InstructionSet, a: u64, b: u64, c: u64) -> Result<(
 
 fn run_unary_test_case(is: &InstructionSet, a: u64, c: u64) -> Result<(), TrapCode> {
     let output = run_vm_instr(is.clone(), vec![a as u32, (a >> 32) as u32])?;
+    assert_eq!(output.len(), 2);
+    let r = (output[1] as u64) << 32 | output[0] as u64;
+    assert_eq!(c, r);
+    Ok(())
+}
+
+fn run_cmp_test_case(is: &InstructionSet, a: u64, c: u32) -> Result<(), TrapCode> {
+    let output = run_vm_instr(is.clone(), vec![a as u32, (a >> 32) as u32])?;
     assert_eq!(output.len(), 1);
-    let r = output[0] as u64;
+    let r = output[0];
     assert_eq!(c, r);
     Ok(())
 }
@@ -61,17 +70,6 @@ fn test_i64_const() {
     test_case_u64(0xDEAD_BEEF_DEAD_BEEFu64 as i64); // repeated
     test_case_u64(0x8000_0001_0000_0001u64 as i64); // hi/lo with sign and 1
     test_case_u64(0x0123_4567_89AB_CDEF); // pattern
-
-    // random test cases
-    // for _ in 0..100_000 {
-    //     use rand::Rng;
-    //     let a = rand::rng().random::<u64>();
-    //     let b = rand::rng().random::<u64>();
-    //     test_case_u64(a, b);
-    //     let a = rand::rng().random::<i64>();
-    //     let b = rand::rng().random::<i64>();
-    //     test_case_u64(a as u64, b as u64);
-    // }
 }
 
 #[test]
@@ -112,24 +110,6 @@ fn test_i64_mul() {
     test_case_i64(-81_985_529_216_486_895, 538_030_035_483_195_255); // mixed signs, dense
     test_case_i64(-81_985_529_216_486_895, -538_030_035_483_195_255); // neg × neg → pos
     test_case_i64(81_985_529_216_486_895, -81_985_529_216_486_895); // pos × neg
-
-    // let mut rng = StdRng::seed_from_u64(42); // deterministic randomness
-    // for _ in 0..100 {
-    //     let a: u64 = rng.gen();
-    //     let b: u64 = rng.gen();
-    //     test_case_u64(a, b);
-    // }
-
-    // // random test cases
-    // for _ in 0..100_000 {
-    //     use rand::Rng;
-    //     let a = rand::rng().random::<u64>();
-    //     let b = rand::rng().random::<u64>();
-    //     test_case_u64(a, b);
-    //     let a = rand::rng().random::<i64>();
-    //     let b = rand::rng().random::<i64>();
-    //     test_case_u64(a as u64, b as u64);
-    // }
 }
 
 #[test]
@@ -138,8 +118,8 @@ fn test_i64_eqz() {
     is.op_i64_eqz();
 
     let test_case_u64 = |a: u64| {
-        let c = (a == 0) as u64;
-        run_unary_test_case(&is, a, c).unwrap();
+        let c = (a == 0) as u32;
+        run_cmp_test_case(&is, a, c).unwrap();
     };
 
     test_case_u64(0x0000_0000_0000_0000); // zero
@@ -162,13 +142,6 @@ fn test_i64_eqz() {
     test_case_u64(0xFFFF_FFFF_FFFF_0000); // upper max, lower zeros
     test_case_u64(0x0000_0000_8000_0000); // only lo sign bit
     test_case_u64(0x8000_0000_0000_8000); // sign bit and small lo
-
-    // // random test cases
-    // for _ in 0..100_000 {
-    //     use rand::Rng;
-    //     let a = rand::rng().random::<u64>();
-    //     test_case_u64(a);
-    // }
 }
 
 #[test]
@@ -195,17 +168,6 @@ fn test_i64_sub() {
     test_case_u64(0x1234_5678_9ABC_DEF0, 0x1111_1111_1111_1111);
     test_case_u64(0, u64::MAX); // 0 - max = 1 (wrap)
     test_case_u64(0xDEAD_BEEF_DEAD_BEEF, 0xCAFEBABE_CAFEBABE);
-
-    // random test cases
-    // for _ in 0..100_000 {
-    //     use rand::Rng;
-    //     let a = rand::rng().random::<u64>();
-    //     let b = rand::rng().random::<u64>();
-    //     test_case_u64(a, b);
-    //     let a = rand::rng().random::<i64>();
-    //     let b = rand::rng().random::<i64>();
-    //     test_case_u64(a as u64, b as u64);
-    // }
 }
 
 #[test]
@@ -239,17 +201,6 @@ fn test_i64_le_u() {
     test_case_u64(0x1234_5678_9ABC_DEF0, 0x1111_1111_1111_1111);
     test_case_u64(0, u64::MAX); // 0 - max = 1 (wrap)
     test_case_u64(0xDEAD_BEEF_DEAD_BEEF, 0xCAFEBABE_CAFEBABE);
-
-    // random test cases
-    // for _ in 0..100_000 {
-    //     use rand::Rng;
-    //     let a = rand::rng().random::<u64>();
-    //     let b = rand::rng().random::<u64>();
-    //     test_case_u64(a, b);
-    //     let a = rand::rng().random::<i64>();
-    //     let b = rand::rng().random::<i64>();
-    //     test_case_u64(a as u64, b as u64);
-    // }
 }
 
 #[test]
@@ -276,17 +227,6 @@ fn test_i64_add() {
     test_case_u64(0x1234_5678_9ABC_DEF0, 0x1111_1111_1111_1111);
     test_case_u64(0, u64::MAX); // 0 - max = 1 (wrap)
     test_case_u64(0xDEAD_BEEF_DEAD_BEEF, 0xCAFEBABE_CAFEBABE);
-
-    // random test cases
-    // for _ in 0..100_000 {
-    //     use rand::Rng;
-    //     let a = rand::rng().random::<u64>();
-    //     let b = rand::rng().random::<u64>();
-    //     test_case_u64(a, b);
-    //     let a = rand::rng().random::<i64>();
-    //     let b = rand::rng().random::<i64>();
-    //     test_case_u64(a as u64, b as u64);
-    // }
 }
 
 #[test]
@@ -445,4 +385,442 @@ fn test_i64_rem_u() {
     test_case_i64_trap(0, 0, TrapCode::IntegerDivisionByZero);
     test_case_i64_trap(1, 0, TrapCode::IntegerDivisionByZero);
     test_case_i64_trap(u64::MAX, 0, TrapCode::IntegerDivisionByZero);
+}
+
+#[test]
+fn test_i64_shr_u() {
+    let mut is = InstructionSet::new();
+    is.op_i64_shr_u();
+
+    let test_case_u64 = |a: u64, b: u64| {
+        let c = a.shr(b & 0x3F);
+        run_binary_test_case(&is, a, b, c).unwrap();
+    };
+
+    // 0 shifted by any amount
+    test_case_u64(0, 0);
+    test_case_u64(0, 1);
+    test_case_u64(0, 63);
+    // Shift by 0 does nothing
+    test_case_u64(0x123456789abcdef0, 0);
+    // normal right shifts
+    test_case_u64(0b1000, 3);
+    test_case_u64(0b1111, 2);
+    test_case_u64(0x8000000000000000, 63);
+    // all ones, shifts
+    test_case_u64(u64::MAX, 1);
+    test_case_u64(u64::MAX, 63);
+    // shift amount uses only low 6 bits (modulo 64)
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 64); // shift 0
+    test_case_u64(0x8000000000000000, 64); // shift 0
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 65); // shift 1
+    test_case_u64(0x8000000000000000, 127);
+    // additional patterns
+    test_case_u64(0x123456789abcdef0, 6);
+    test_case_u64(0x123456789abcdef0, 70); // shift 70 == shift 6
+}
+
+#[test]
+fn test_i64_shr_s() {
+    let mut is = InstructionSet::new();
+    is.op_i64_shr_s();
+
+    let test_case_i64 = |a: i64, b: i64| {
+        let c = a.shr(b & 0x3F);
+        run_binary_test_case(&is, a as u64, b as u64, c as u64).unwrap();
+    };
+
+    // no shift, value unchanged
+    test_case_i64(0x0000000000000001, 0);
+    test_case_i64(0x7FFFFFFFFFFFFFFF, 0);
+    test_case_i64(-1, 0);
+    test_case_i64(i64::MIN, 0);
+    // shift 1, positive/negative
+    test_case_i64(0x0000000000000002, 1); // 2 >> 1 = 1
+    test_case_i64(-2, 1); // -2 >> 1 = -1
+    test_case_i64(0x7FFFFFFFFFFFFFFF, 1); // max i64 >> 1
+    test_case_i64(i64::MIN, 1); // min i64 >> 1 (remains negative, top bit stays 1)
+    test_case_i64(-1, 1);
+    // shift by 31
+    test_case_i64(0x7FFFFFFF00000000, 31);
+    test_case_i64(-0x80000000, 31);
+    test_case_i64(-1, 31);
+    // shift by 32
+    test_case_i64(0x7FFFFFFF00000000, 32);
+    test_case_i64(0x8000000000000000u64 as i64, 32);
+    test_case_i64(-1, 32);
+    // shift by 33
+    test_case_i64(0x7FFFFFFF00000000, 33);
+    test_case_i64(0x8000000000000000u64 as i64, 33);
+    test_case_i64(-1, 33);
+    // shift by 63
+    test_case_i64(1, 63); // only the lowest bit, a result is 0
+    test_case_i64(-1, 63); // -1 >> 63 = -1 (all bits 1)
+    test_case_i64(i64::MIN, 63);
+    // shift by more than 63 (masked to 0-63)
+    test_case_i64(0x4000000000000000, 64); // treated as shift 0 (identity)
+    test_case_i64(-123456789, 128);
+    // random bit patterns
+    test_case_i64(0xAAAAAAAAAAAAAAAAu64 as i64, 4);
+    test_case_i64(0x5555555555555555, 4);
+    test_case_i64(0x123456789ABCDEF0, 8);
+    test_case_i64(-0x123456789ABCDEF, 8);
+    // zero shifted any amount is zero
+    test_case_i64(0, 1);
+    test_case_i64(0, 63);
+    test_case_i64(0, 64);
+    // single sign bit
+    test_case_i64(0x8000000000000000u64 as i64, 1);
+    test_case_i64(0x8000000000000000u64 as i64, 63);
+}
+
+#[test]
+fn test_i64_shl() {
+    let mut is = InstructionSet::new();
+    is.op_i64_shl();
+
+    let test_case_u64 = |a: u64, b: u64| {
+        let c = a.shl(b & 0x3F);
+        run_binary_test_case(&is, a, b, c).unwrap();
+    };
+
+    // no shift: identity
+    test_case_u64(0x0000000000000001, 0);
+    test_case_u64(0x123456789ABCDEF0, 0);
+    // small shifts
+    test_case_u64(0x0000000000000001, 1); // 1 << 1 = 2
+    test_case_u64(0x0000000000000001, 2); // 1 << 2 = 4
+    test_case_u64(0x0000000100000000, 8);
+    // high-bit crossing: 1 shifted left 63 becomes the highest bit
+    test_case_u64(0x0000000000000001, 63);
+    // shift by 32: hi becomes lo, lo becomes 0
+    test_case_u64(0x0000000100000001, 32);
+    test_case_u64(0xFFFFFFFF00000000, 32);
+    test_case_u64(0x00000000FFFFFFFF, 32);
+    // shifts > 32, bits only in lo part matter
+    test_case_u64(0x0000000000000001, 33);
+    test_case_u64(0x00000000FFFFFFFF, 40);
+    // shift full 64: always zero
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 64);
+    // shift by more than 63 (masked): should behave like shift % 64
+    test_case_u64(0x0000000000000001, 65);
+    test_case_u64(0x0000000000000001, 128);
+    // patterned bits
+    test_case_u64(0xAAAAAAAAAAAAAAAA, 1);
+    test_case_u64(0x5555555555555555, 1);
+    test_case_u64(0x8000000000000000, 1);
+    // all ones, various shifts
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 1);
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 32);
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 63);
+    // zero, any shift is zero
+    test_case_u64(0x0000000000000000, 5);
+    test_case_u64(0x0000000000000000, 32);
+    test_case_u64(0x0000000000000000, 63);
+    // alternating nibbles, various shifts
+    test_case_u64(0x0F0F0F0F0F0F0F0F, 4);
+    test_case_u64(0xF0F0F0F0F0F0F0F0, 4);
+    // random
+    test_case_u64(0x123456789ABCDEF0, 8);
+    test_case_u64(0x7FFFFFFFFFFFFFFF, 1);
+}
+
+#[test]
+fn test_i64_clz() {
+    let mut is = InstructionSet::new();
+    is.op_i64_clz();
+
+    let test_case_u64 = |a: u64| {
+        let c = a.leading_zeros() as u64;
+        run_unary_test_case(&is, a, c).unwrap();
+    };
+
+    test_case_u64(0x00000000_00000000);
+    test_case_u64(0x00000000_00000001);
+    test_case_u64(0x80000000_00000000);
+    test_case_u64(0x00000001_00000000);
+    test_case_u64(0x00000000_FFFFFFFF);
+    test_case_u64(0xFFFFFFFF_00000000);
+    test_case_u64(0x0000FFFF_FFFFFFFF);
+    test_case_u64(0x00000000_80000000);
+    test_case_u64(0x7FFFFFFF_FFFFFFFF);
+    test_case_u64(0x00FF0000_00000000);
+    test_case_u64(0x00000000_00008000);
+}
+
+#[test]
+fn test_i64_ctz() {
+    let mut is = InstructionSet::new();
+    is.op_i64_ctz();
+
+    let test_case_u64 = |a: u64| {
+        let c = a.trailing_zeros() as u64;
+        run_unary_test_case(&is, a, c).unwrap();
+    };
+
+    test_case_u64(0x00000000_00000000);
+    test_case_u64(0x00000000_00000001);
+    test_case_u64(0x80000000_00000000);
+    test_case_u64(0x00000001_00000000);
+    test_case_u64(0x00000000_FFFFFFFF);
+    test_case_u64(0xFFFFFFFF_00000000);
+    test_case_u64(0x0000FFFF_FFFFFFFF);
+    test_case_u64(0x00000000_80000000);
+    test_case_u64(0x7FFFFFFF_FFFFFFFF);
+    test_case_u64(0x00FF0000_00000000);
+    test_case_u64(0x00000000_00008000);
+}
+
+#[test]
+fn test_i64_popcnt() {
+    let mut is = InstructionSet::new();
+    is.op_i64_popcnt();
+
+    let test_case_u64 = |a: u64| {
+        let c = a.count_ones() as u64;
+        run_unary_test_case(&is, a, c).unwrap();
+    };
+
+    test_case_u64(0x12345678_9ABCDEF0);
+    test_case_u64(0x00000000_00000000); // all zeros
+    test_case_u64(0xFFFFFFFF_FFFFFFFF); // all ones
+    test_case_u64(0x80000000_00000000); // high bit only
+    test_case_u64(0x00000000_00000001); // low bit only
+    test_case_u64(0x00000000_00000000);
+    test_case_u64(0x00000000_00000001);
+    test_case_u64(0x80000000_00000000);
+    test_case_u64(0x00000001_00000000);
+    test_case_u64(0x00000000_FFFFFFFF);
+    test_case_u64(0xFFFFFFFF_00000000);
+    test_case_u64(0x0000FFFF_FFFFFFFF);
+    test_case_u64(0x00000000_80000000);
+    test_case_u64(0x7FFFFFFF_FFFFFFFF);
+    test_case_u64(0x00FF0000_00000000);
+    test_case_u64(0x00000000_00008000);
+}
+
+#[test]
+fn test_i64_and() {
+    let mut is = InstructionSet::new();
+    is.op_i64_and();
+
+    let test_case_u64 = |a: u64, b: u64| {
+        let c = a.bitand(b);
+        run_binary_test_case(&is, a, b, c).unwrap();
+    };
+
+    // zero and anything are zero
+    test_case_u64(0x0000000000000000, 0xFFFFFFFFFFFFFFFF);
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 0x0000000000000000);
+    // all ones and anything are the value itself
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 0x123456789ABCDEF0);
+    test_case_u64(0x123456789ABCDEF0, 0xFFFFFFFFFFFFFFFF);
+    // high bit only
+    test_case_u64(0x8000000000000000, 0x8000000000000000);
+    test_case_u64(0x8000000000000000, 0x7FFFFFFFFFFFFFFF);
+    // low bit only
+    test_case_u64(0x0000000000000001, 0x0000000000000001);
+    test_case_u64(0x0000000000000001, 0xFFFFFFFFFFFFFFFE);
+    // alternating bits
+    test_case_u64(0xAAAAAAAAAAAAAAAA, 0x5555555555555555);
+    test_case_u64(0xAAAAAAAAAAAAAAAA, 0xAAAAAAAAAAAAAAAA);
+    test_case_u64(0x5555555555555555, 0x5555555555555555);
+    // every nibble is half-set
+    test_case_u64(0x0F0F0F0F0F0F0F0F, 0xF0F0F0F0F0F0F0F0);
+    // random pattern
+    test_case_u64(0x123456789ABCDEF0, 0x0FEDCBA987654321);
+    // low and high halves
+    test_case_u64(0xFFFFFFFF00000000, 0x00000000FFFFFFFF);
+    test_case_u64(0x00000000FFFFFFFF, 0xFFFFFFFF00000000);
+    // overlapping bits
+    test_case_u64(0x0000FFFF0000FFFF, 0xFFFF0000FFFF0000);
+    // 1, 2, 4, 8 pattern
+    test_case_u64(0x000000000000000F, 0x0000000000000005);
+    // single bit
+    test_case_u64(0x0000000000000002, 0x0000000000000004);
+    // large numbers, almost all bits
+    test_case_u64(0xFFFFFFFFFFFFFFFE, 0xFFFFFFFFFFFFFFFD);
+    // mix signedness
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 0x8000000000000000);
+    test_case_u64(0x7FFFFFFFFFFFFFFF, 0x8000000000000000);
+}
+
+#[test]
+fn test_i64_or() {
+    let mut is = InstructionSet::new();
+    is.op_i64_or();
+
+    let test_case_u64 = |a: u64, b: u64| {
+        let c = a.bitor(b);
+        run_binary_test_case(&is, a, b, c).unwrap();
+    };
+
+    // zero and anything are zero
+    test_case_u64(0x0000000000000000, 0xFFFFFFFFFFFFFFFF);
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 0x0000000000000000);
+    // all ones and anything are the value itself
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 0x123456789ABCDEF0);
+    test_case_u64(0x123456789ABCDEF0, 0xFFFFFFFFFFFFFFFF);
+    // high bit only
+    test_case_u64(0x8000000000000000, 0x8000000000000000);
+    test_case_u64(0x8000000000000000, 0x7FFFFFFFFFFFFFFF);
+    // low bit only
+    test_case_u64(0x0000000000000001, 0x0000000000000001);
+    test_case_u64(0x0000000000000001, 0xFFFFFFFFFFFFFFFE);
+    // alternating bits
+    test_case_u64(0xAAAAAAAAAAAAAAAA, 0x5555555555555555);
+    test_case_u64(0xAAAAAAAAAAAAAAAA, 0xAAAAAAAAAAAAAAAA);
+    test_case_u64(0x5555555555555555, 0x5555555555555555);
+    // every nibble is half-set
+    test_case_u64(0x0F0F0F0F0F0F0F0F, 0xF0F0F0F0F0F0F0F0);
+    // random pattern
+    test_case_u64(0x123456789ABCDEF0, 0x0FEDCBA987654321);
+    // low and high halves
+    test_case_u64(0xFFFFFFFF00000000, 0x00000000FFFFFFFF);
+    test_case_u64(0x00000000FFFFFFFF, 0xFFFFFFFF00000000);
+    // overlapping bits
+    test_case_u64(0x0000FFFF0000FFFF, 0xFFFF0000FFFF0000);
+    // 1, 2, 4, 8 pattern
+    test_case_u64(0x000000000000000F, 0x0000000000000005);
+    // single bit
+    test_case_u64(0x0000000000000002, 0x0000000000000004);
+    // large numbers, almost all bits
+    test_case_u64(0xFFFFFFFFFFFFFFFE, 0xFFFFFFFFFFFFFFFD);
+    // mix signedness
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 0x8000000000000000);
+    test_case_u64(0x7FFFFFFFFFFFFFFF, 0x8000000000000000);
+}
+
+#[test]
+fn test_i64_xor() {
+    let mut is = InstructionSet::new();
+    is.op_i64_xor();
+
+    let test_case_u64 = |a: u64, b: u64| {
+        let c = a.bitxor(b);
+        run_binary_test_case(&is, a, b, c).unwrap();
+    };
+
+    // zero and anything are zero
+    test_case_u64(0x0000000000000000, 0xFFFFFFFFFFFFFFFF);
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 0x0000000000000000);
+    // all ones and anything are the value itself
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 0x123456789ABCDEF0);
+    test_case_u64(0x123456789ABCDEF0, 0xFFFFFFFFFFFFFFFF);
+    // high bit only
+    test_case_u64(0x8000000000000000, 0x8000000000000000);
+    test_case_u64(0x8000000000000000, 0x7FFFFFFFFFFFFFFF);
+    // low bit only
+    test_case_u64(0x0000000000000001, 0x0000000000000001);
+    test_case_u64(0x0000000000000001, 0xFFFFFFFFFFFFFFFE);
+    // alternating bits
+    test_case_u64(0xAAAAAAAAAAAAAAAA, 0x5555555555555555);
+    test_case_u64(0xAAAAAAAAAAAAAAAA, 0xAAAAAAAAAAAAAAAA);
+    test_case_u64(0x5555555555555555, 0x5555555555555555);
+    // every nibble is half-set
+    test_case_u64(0x0F0F0F0F0F0F0F0F, 0xF0F0F0F0F0F0F0F0);
+    // random pattern
+    test_case_u64(0x123456789ABCDEF0, 0x0FEDCBA987654321);
+    // low and high halves
+    test_case_u64(0xFFFFFFFF00000000, 0x00000000FFFFFFFF);
+    test_case_u64(0x00000000FFFFFFFF, 0xFFFFFFFF00000000);
+    // overlapping bits
+    test_case_u64(0x0000FFFF0000FFFF, 0xFFFF0000FFFF0000);
+    // 1, 2, 4, 8 pattern
+    test_case_u64(0x000000000000000F, 0x0000000000000005);
+    // single bit
+    test_case_u64(0x0000000000000002, 0x0000000000000004);
+    // large numbers, almost all bits
+    test_case_u64(0xFFFFFFFFFFFFFFFE, 0xFFFFFFFFFFFFFFFD);
+    // mix signedness
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 0x8000000000000000);
+    test_case_u64(0x7FFFFFFFFFFFFFFF, 0x8000000000000000);
+}
+
+#[test]
+fn test_i64_rotl() {
+    let mut is = InstructionSet::new();
+    is.op_i64_rotl();
+
+    let test_case_u64 = |a: u64, b: u64| {
+        let c = a.rotate_left(u32::try_from(b).unwrap());
+        run_binary_test_case(&is, a, b, c).unwrap();
+    };
+
+    // No rotation: value unchanged
+    test_case_u64(0x0000000000000001, 0);
+    test_case_u64(0x8000000000000000, 0);
+    // rotating by 64 is an identity (Wasm shift amount is masked)
+    test_case_u64(0x123456789ABCDEF0, 64);
+    test_case_u64(0x123456789ABCDEF0, 128);
+    // shift by 1: lowest bit becomes second, the highest bit becomes lowest
+    test_case_u64(0x0000000000000001, 1);
+    test_case_u64(0x8000000000000000, 1);
+    // patterned bits, rotation of 4
+    test_case_u64(0x0F0F0F0F0F0F0F0F, 4);
+    test_case_u64(0xF0F0F0F0F0F0F0F0, 4);
+    // all ones: always all ones
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 13);
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 63);
+    // alternating pattern
+    test_case_u64(0xAAAAAAAAAAAAAAAA, 1);
+    test_case_u64(0x5555555555555555, 1);
+    // high-bit set, rotate into lower bits
+    test_case_u64(0x8000000000000000, 4);
+    test_case_u64(0x0000000000000001, 63);
+    // rotation by 32: upper and lower halves swap
+    test_case_u64(0xDEADBEEF12345678, 32);
+    test_case_u64(0x00000000FFFFFFFF, 32);
+    test_case_u64(0xFFFFFFFF00000000, 32);
+    // random value, various shifts
+    test_case_u64(0x123456789ABCDEF0, 1);
+    test_case_u64(0x123456789ABCDEF0, 8);
+    test_case_u64(0x123456789ABCDEF0, 60);
+    // zero: always zero
+    test_case_u64(0x0000000000000000, 7);
+    test_case_u64(0x0000000000000000, 63);
+}
+
+#[test]
+fn test_i64_rotr() {
+    let mut is = InstructionSet::new();
+    is.op_i64_rotr();
+
+    let test_case_u64 = |a: u64, b: u64| {
+        let c = a.rotate_right(u32::try_from(b).unwrap());
+        run_binary_test_case(&is, a, b, c).unwrap();
+    };
+
+    // No rotation: value unchanged
+    test_case_u64(0x0000000000000001, 0);
+    test_case_u64(0x8000000000000000, 0);
+    // rotating by 64 is an identity (Wasm shift amount is masked)
+    test_case_u64(0x123456789ABCDEF0, 64);
+    test_case_u64(0x123456789ABCDEF0, 128);
+    // shift by 1: lowest bit becomes second, the highest bit becomes lowest
+    test_case_u64(0x0000000000000001, 1);
+    test_case_u64(0x8000000000000000, 1);
+    // patterned bits, rotation of 4
+    test_case_u64(0x0F0F0F0F0F0F0F0F, 4);
+    test_case_u64(0xF0F0F0F0F0F0F0F0, 4);
+    // all ones: always all ones
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 13);
+    test_case_u64(0xFFFFFFFFFFFFFFFF, 63);
+    // alternating pattern
+    test_case_u64(0xAAAAAAAAAAAAAAAA, 1);
+    test_case_u64(0x5555555555555555, 1);
+    // high-bit set, rotate into lower bits
+    test_case_u64(0x8000000000000000, 4);
+    test_case_u64(0x0000000000000001, 63);
+    // rotation by 32: upper and lower halves swap
+    test_case_u64(0xDEADBEEF12345678, 32);
+    test_case_u64(0x00000000FFFFFFFF, 32);
+    test_case_u64(0xFFFFFFFF00000000, 32);
+    // random value, various shifts
+    test_case_u64(0x123456789ABCDEF0, 1);
+    test_case_u64(0x123456789ABCDEF0, 8);
+    test_case_u64(0x123456789ABCDEF0, 60);
+    // zero: always zero
+    test_case_u64(0x0000000000000000, 7);
+    test_case_u64(0x0000000000000000, 63);
 }

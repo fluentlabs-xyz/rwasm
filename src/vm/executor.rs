@@ -250,7 +250,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "debug-print")]
     fn debug_print(&mut self, instr: &Opcode) {
-        let stack = self.value_stack.dump_stack();
+        let stack = self.value_stack.dump_stack2(self.sp);
         println!(
             "{:04}:\t {} \tstack({}):{:?}",
             self.program_counter(),

@@ -44,6 +44,10 @@ impl<'a, T> Caller<'a, T> {
         self.sp.pop2()
     }
 
+    pub fn stack_pop3(&mut self) -> (UntypedValue, UntypedValue, UntypedValue) {
+        self.sp.pop3()
+    }
+
     pub fn stack_pop2_as<I: From<UntypedValue>>(&mut self) -> (I, I) {
         let (lhs, rhs) = self.stack_pop2();
         (I::from(lhs), I::from(rhs))

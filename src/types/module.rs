@@ -138,7 +138,7 @@ impl core::fmt::Display for RwasmModule {
         let mut func_num = 0;
         writeln!(f, " .function_begin_{} (#{})", 0, func_num)?;
         for (pos, opcode) in self.code_section.iter().copied().enumerate() {
-            if let Some(Opcode::SignatureCheck(_)) = self.code_section.get(pos + 1) {
+            if let Some(Opcode::SignatureCheck(_)) = self.code_section.get(pos) {
                 writeln!(f, " .function_end\n")?;
                 func_num += 1;
                 writeln!(f, " .function_begin_{} (#{})", pos, func_num)?;

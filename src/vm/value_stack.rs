@@ -101,6 +101,11 @@ impl ValueStack {
         self.entries[0..self.stack_ptr].to_vec()
     }
 
+    pub fn dump_stack2(&mut self, sp: ValueStackPtr) -> Vec<UntypedValue> {
+        let offset = sp.offset_from(self.base_ptr()) as usize;
+        self.entries[0..offset].to_vec()
+    }
+
     /// Returns the base [`ValueStackPtr`] of `self`.
     ///
     /// The returned [`ValueStackPtr`] points to the first value on the [`ValueStack`].

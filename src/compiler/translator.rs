@@ -1865,11 +1865,11 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_shr_s(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shr_s, 4)
+        self.translate_binary(InstructionSet::op_i64_shr_s, 6)
     }
 
     fn visit_i64_shr_u(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shr_u, 4)
+        self.translate_binary(InstructionSet::op_i64_shr_u, 6)
     }
 
     fn visit_i64_rotl(&mut self) -> Self::Output {

@@ -2,6 +2,7 @@ use bincode::{Decode, Encode};
 use core::fmt::Formatter;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
+#[repr(u8)]
 pub enum TrapCode {
     UnreachableCodeReached = 0x00,
     MemoryOutOfBounds = 0x01,
