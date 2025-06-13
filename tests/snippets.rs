@@ -1,3 +1,55 @@
+/// |-----------------------|---------|
+/// | Opcode                | Covered |
+/// |-----------------------|---------|
+/// | op_i64_add            |     +   |
+/// | op_i64_sub            |     +   |
+/// | op_i64_clz            |     +   |
+/// | op_i64_ctz            |     +   |
+/// | op_i64_popcnt         |     +   |
+/// | op_i64_and            |     +   |
+/// | op_i64_or             |     +   |
+/// | op_i64_xor            |     +   |
+/// | op_i64_shl            |     +   |
+/// | op_i64_shr_s          |     +   |
+/// | op_i64_shr_u          |     +   |
+/// | op_i64_rotl           |     +   |
+/// | op_i64_rotr           |     +   |
+/// | op_i64_eqz            |     +   |
+/// | op_i64_eq             |         |
+/// | op_i64_ne             |         |
+/// | op_i64_lt_s           |         |
+/// | op_i64_lt_u           |         |
+/// | op_i64_gt_s           |         |
+/// | op_i64_gt_u           |         |
+/// | op_i64_le_s           |         |
+/// | op_i64_le_u           |     +   |
+/// | op_i64_ge_s           |         |
+/// | op_i64_ge_u           |         |
+/// | op_i32_wrap_i64       |         |
+/// | op_i64_extend_i32_s   |         |
+/// | op_i64_extend_i32_u   |         |
+/// | op_i64_extend8_s      |         |
+/// | op_i64_extend16_s     |         |
+/// | op_i64_extend32_s     |         |
+/// | op_i64_div_s          |     +   |
+/// | op_i64_div_u          |     +   |
+/// | op_i64_load           |         |
+/// | op_i64_load8_s        |         |
+/// | op_i64_load8_u        |         |
+/// | op_i64_load16_s       |         |
+/// | op_i64_load16_u       |         |
+/// | op_i64_load32_s       |         |
+/// | op_i64_load32_u       |         |
+/// | op_i64_store          |         |
+/// | op_i64_store8         |         |
+/// | op_i64_store16        |         |
+/// | op_i64_store32        |         |
+/// | op_i64_const          |     +   |
+/// | op_memory_grow_checked|         |
+/// | op_i64_mul            |         |
+/// | op_i64_rem_s          |         |
+/// | op_i64_rem_u          |         |
+/// |-----------------------|---------|
 use rwasm::{ExecutionEngine, InstructionSet, RwasmModule, Store, TrapCode};
 use std::ops::{BitAnd, BitOr, BitXor, Shl, Shr};
 
