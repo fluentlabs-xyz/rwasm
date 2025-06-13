@@ -15,6 +15,9 @@ pub enum TrapCode {
     OutOfFuel = 0x09,
     UnknownExternalFunction = 0x0a,
     IllegalOpcode = 0x0b,
+    // a special trap code for interrupting an execution,
+    // it saves the latest registers for IP and SP in the call stack
+    InterruptionCalled = 0x0c,
     // this trap code is only used for external calls to terminate the execution,
     // but this error can't be returned from an execution cycle
     ExecutionHalted = 0xff,
@@ -37,6 +40,7 @@ impl core::fmt::Display for TrapCode {
             TrapCode::OutOfFuel => write!(f, "out of fuel"),
             TrapCode::UnknownExternalFunction => write!(f, "unknown external function"),
             TrapCode::IllegalOpcode => write!(f, "illegal opcode"),
+            TrapCode::InterruptionCalled => write!(f, "interruption called"),
             TrapCode::ExecutionHalted => write!(f, "execution halted"),
         }
     }

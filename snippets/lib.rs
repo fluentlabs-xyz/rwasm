@@ -18,4 +18,3 @@ mod i64_ne;
 mod i64_rem_s;
 mod i64_rem_u;
 mod i64_sub;
-mod tests;

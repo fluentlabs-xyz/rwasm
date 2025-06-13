@@ -20,15 +20,6 @@ use crate::{
     ValueStackPtr,
 };
 
-pub fn execute_rwasm_module<'a, T>(
-    module: &'a RwasmModule,
-    value_stack: &'a mut ValueStack,
-    call_stack: &'a mut CallStack,
-    store: &'a mut Store<T>,
-) -> Result<(), TrapCode> {
-    RwasmExecutor::new(&module, value_stack, call_stack, store).run()
-}
-
 /// The `RwasmExecutor` struct represents the state and functionality required to execute
 /// WebAssembly (WASM) instructions within an embedded WASM runtime environment.
 /// It manages the
@@ -106,6 +97,17 @@ impl<'a, T> RwasmExecutor<'a, T> {
     ) -> Self {
         let sp = value_stack.stack_ptr();
         let ip = InstructionPtr::new(module.code_section.instr.as_ptr());
+        Self::resumable(module, value_stack, sp, call_stack, ip, store)
+    }
+
+    pub fn resumable(
+        module: &'a RwasmModule,
+        value_stack: &'a mut ValueStack,
+        sp: ValueStackPtr,
+        call_stack: &'a mut CallStack,
+        ip: InstructionPtr,
+        store: &'a mut Store<T>,
+    ) -> Self {
         Self {
             module,
             value_stack,
@@ -343,8 +345,20 @@ impl<'a, T> RwasmExecutor<'a, T> {
 
     pub(crate) fn invoke_syscall(&mut self, sys_func_idx: SysFuncIdx) -> Result<bool, TrapCode> {
         match (self.store.syscall_handler)(self.caller(), sys_func_idx) {
-            Ok(_) => Ok(false),
-            Err(TrapCode::ExecutionHalted) => Ok(true),
+            Ok(_) => {
+                // just continue the execution, don't terminate the loop
+                Ok(false)
+            }
+            Err(TrapCode::ExecutionHalted) => {
+                // when execution is halted, then we just terminate an execution loop
+                Ok(true)
+            }
+            Err(TrapCode::InterruptionCalled) => {
+                // for resumable calls we need to store IP in the call stack
+                self.call_stack.push((self.ip, self.sp));
+                // terminate an execution
+                Err(TrapCode::InterruptionCalled)
+            }
             Err(err) => Err(err),
         }
     }

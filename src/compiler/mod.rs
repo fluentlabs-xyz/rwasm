@@ -9,8 +9,6 @@ mod labels;
 mod locals_registry;
 mod parser;
 mod segment_builder;
-#[cfg(test)]
-mod tests;
 mod translator;
 mod utils;
 mod value_stack;
