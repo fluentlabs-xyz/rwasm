@@ -215,13 +215,15 @@ impl ModuleParser {
         }
         // translate state router
         for (entrypoint_name, state_value) in state_router.states.iter() {
-            let func_idx = self
+            let Some(func_idx) = self
                 .allocations
                 .translation
                 .exported_funcs
                 .get(entrypoint_name)
                 .copied()
-                .ok_or(CompilationError::MissingEntrypoint)?;
+            else {
+                continue;
+            };
             let func_type_idx = self
                 .allocations
                 .translation
