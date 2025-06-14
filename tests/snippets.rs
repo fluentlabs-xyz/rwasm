@@ -26,11 +26,11 @@
 /// | op_i64_ge_s           |         |
 /// | op_i64_ge_u           |         |
 /// | op_i32_wrap_i64       |         |
-/// | op_i64_extend_i32_s   |         |
-/// | op_i64_extend_i32_u   |         |
-/// | op_i64_extend8_s      |         |
-/// | op_i64_extend16_s     |         |
-/// | op_i64_extend32_s     |         |
+/// | op_i64_extend_i32_s   |     +   |
+/// | op_i64_extend_i32_u   |     +   |
+/// | op_i64_extend8_s      |     +   |
+/// | op_i64_extend16_s     |     +   |
+/// | op_i64_extend32_s     |     +   |
 /// | op_i64_div_s          |     +   |
 /// | op_i64_div_u          |     +   |
 /// | op_i64_load           |         |
@@ -875,4 +875,93 @@ fn test_i64_rotr() {
     // zero: always zero
     test_case_u64(0x0000000000000000, 7);
     test_case_u64(0x0000000000000000, 63);
+}
+
+#[test]
+fn test_i64_extend_i32_s() {
+    let mut is = InstructionSet::new();
+    is.op_i64_extend_i32_s();
+    let test_case = |a: i32, c_lo: i32, c_hi: i32| {
+        let output = run_vm_instr(is.clone(), vec![a as u32]).unwrap();
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0], c_lo as u32);
+        assert_eq!(output[1], c_hi as u32);
+    };
+    // simple cases
+    test_case(0, 0, 0);
+    test_case(1, 1, 0);
+    test_case(42, 42, 0);
+    test_case(-1, -1, -1);
+    test_case(-42, -42, -1);
+    // 0x80000000, high should be -1
+    test_case(i32::MIN, i32::MIN, -1);
+    // 0x7FFFFFFF, positive
+    test_case(i32::MAX, i32::MAX, 0);
+    // 255
+    test_case(0x000000FF, 0xFF, 0);
+    // -128 in 2's complement
+    test_case(0xFFFFFF80u32 as i32, -128, -1);
+}
+
+#[test]
+fn test_i64_extend8_s() {
+    let mut is = InstructionSet::new();
+    is.op_i64_extend8_s();
+    let test_case = |a: i32, c_lo: i32, c_hi: i32| {
+        let output = run_vm_instr(is.clone(), vec![a as u32 & 0xff, 0]).unwrap();
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0], c_lo as u32);
+        assert_eq!(output[1], c_hi as u32);
+    };
+    test_case(0x00, 0x00, 0); // 0 → [0, 0]
+    test_case(0x01, 0x01, 0); // 1 → [1, 0]
+    test_case(0x7F, 0x7F, 0); // 127 → [127, 0]
+    test_case(0x80, -128, -1); // -128 → [0xFFFFFF80, -1]
+    test_case(0xFF, -1, -1); // -1 → [0xFFFFFFFF, -1]
+    test_case(0xA5, -91, -1); // -91 → [0xFFFFFFA5, -1]
+    test_case(0x1234, 0x34, 0); // truncated to 0x34 → [52, 0]
+    test_case(-1, -1, -1); // -1 → [0xFFFFFFFF, -1]
+    test_case(255, -1, -1); // 255 interpreted as 0xFF → [-1, -1]
+}
+
+#[test]
+fn test_i64_extend16_s() {
+    let mut is = InstructionSet::new();
+    is.op_i64_extend16_s();
+    let test_case = |a: i32, c_lo: i32, c_hi: i32| {
+        let output = run_vm_instr(is.clone(), vec![a as u32 & 0xffff, 0]).unwrap();
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0], c_lo as u32);
+        assert_eq!(output[1], c_hi as u32);
+    };
+    test_case(0x0000, 0x0000, 0); // 0 → [0, 0]
+    test_case(0x0001, 0x0001, 0); // 1 → [1, 0]
+    test_case(0x7FFF, 0x7FFF, 0); // 32767 → [32767, 0]
+    test_case(0x8000, -32768, -1); // -32768 → [0xFFFF8000, -1]
+    test_case(0xFFFF, -1, -1); // -1 → [0xFFFFFFFF, -1]
+    test_case(0xABCD, -21555, -1); // -21555 → [0xFFFFABCD, -1]
+    test_case(0x123456, 0x3456, 0); // truncate to 16-bit → [0x3456, 0]
+    test_case(-1, -1, -1); // -1 stays [-1, -1]
+    test_case(65535, -1, -1); // 0xFFFF = -1 in 16-bit → [-1, -1]
+}
+
+#[test]
+fn test_i64_extend32_s() {
+    let mut is = InstructionSet::new();
+    is.op_i64_extend32_s();
+    let test_case = |a: i64, c_lo: i64, c_hi: i64| {
+        let a = a as i32;
+        let output = run_vm_instr(is.clone(), vec![a as u32, 0]).unwrap();
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0], c_lo as i32 as u32);
+        assert_eq!(output[1], c_hi as i32 as u32);
+    };
+    test_case(0x00000000, 0x00000000, 0); // 0 → [0, 0]
+    test_case(0x00000001, 0x00000001, 0); // 1 → [1, 0]
+    test_case(0x7FFFFFFF, 0x7FFFFFFF, 0); // i32::MAX → [0x7FFFFFFF, 0]
+    test_case(0x80000000, 0x80000000, -1); // i32::MIN → [0x80000000, -1]
+    test_case(0xFFFFFFFF, -1, -1); // -1 → [-1, -1]
+    test_case(0xFFFF0000, -65536, -1); // -65536 → [0xFFFF0000, -1]
+    test_case(0x12345678, 0x12345678, 0); // 305419896 → [0x12345678, 0]
+    test_case(-42, -42, -1); // -42 → [-42, -1]
 }

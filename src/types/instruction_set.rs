@@ -147,6 +147,10 @@ impl InstructionSet {
         self.instr.iter_mut().rev().nth(offset)
     }
 
+    pub fn op_dup(&mut self) {
+        self.op_local_get(1);
+    }
+
     impl_opcode!(Unreachable);
     impl_opcode!(Trap(TrapCode));
     impl_opcode!(LocalGet(LocalDepth));

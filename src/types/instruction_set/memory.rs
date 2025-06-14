@@ -20,13 +20,11 @@ impl InstructionSet {
     /// Max stack height: 1
     pub fn op_i64_load8_s<I: Into<AddressOffset>>(&mut self, offset: I) {
         let offset: AddressOffset = offset.into();
-        self.op_i32_load8_s(offset);
         self.op_local_get(1);
-        self.op_i32_clz();
-        self.op_br_if_eqz(3);
-        self.op_i32_const(0);
-        self.op_br(2);
-        self.op_i32_const(-1);
+        self.op_i32_load8_s(offset);
+        self.op_dup();
+        self.op_i32_const(31);
+        self.op_i32_shr_s();
     }
 
     /// Max stack height: 1
@@ -39,13 +37,11 @@ impl InstructionSet {
     /// Max stack height: 1
     pub fn op_i64_load16_s<I: Into<AddressOffset>>(&mut self, offset: I) {
         let offset: AddressOffset = offset.into();
-        self.op_i32_load16_s(offset);
         self.op_local_get(1);
-        self.op_i32_clz();
-        self.op_br_if_eqz(3);
-        self.op_i32_const(0);
-        self.op_br(2);
-        self.op_i32_const(-1);
+        self.op_i32_load16_s(offset);
+        self.op_dup();
+        self.op_i32_const(31);
+        self.op_i32_shr_s();
     }
 
     /// Max stack height: 1
@@ -58,13 +54,11 @@ impl InstructionSet {
     /// Max stack height: 1
     pub fn op_i64_load32_s<I: Into<AddressOffset>>(&mut self, offset: I) {
         let offset: AddressOffset = offset.into();
-        self.op_i32_load(offset);
         self.op_local_get(1);
-        self.op_i32_clz();
-        self.op_br_if_eqz(3);
-        self.op_i32_const(0);
-        self.op_br(2);
-        self.op_i32_const(-1);
+        self.op_i32_load(offset);
+        self.op_dup();
+        self.op_i32_const(31);
+        self.op_i32_shr_s();
     }
 
     pub fn op_i64_load32_u<I: Into<AddressOffset>>(&mut self, offset: I) {
