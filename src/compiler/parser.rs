@@ -448,8 +448,8 @@ impl ModuleParser {
                 .translation
                 .compiled_funcs
                 .push(func_type_index);
-            #[cfg(feature = "debug-print")]
-            println!("\nfunc_idx={}", func_idx);
+            // #[cfg(feature = "debug-print")]
+            // println!("\nfunc_idx={}", func_idx);
             let allocations = take(&mut self.allocations);
             let mut translator =
                 InstructionTranslator::new(allocations.translation, self.config.consume_fuel);
@@ -617,8 +617,8 @@ impl ModuleParser {
         self.validator.export_section(&section)?;
         for export in section.into_iter() {
             let export = export?;
-            #[cfg(feature = "debug-print")]
-            println!("export: func_idx={} {}", export.index, export.name);
+            // #[cfg(feature = "debug-print")]
+            // println!("export: func_idx={} {}", export.index, export.name);
             match export.kind {
                 ExternalKind::Func => {
                     let function_name: Box<str> = export.name.into();
@@ -839,8 +839,8 @@ impl ModuleParser {
     /// If the function body fails to validate.
     fn process_code_entry(&mut self, func_body: FunctionBody) -> Result<(), CompilationError> {
         let func_idx = self.next_func();
-        #[cfg(feature = "debug-print")]
-        println!("\nfunc_idx={}", func_idx);
+        // #[cfg(feature = "debug-print")]
+        // println!("\nfunc_idx={}", func_idx);
         let allocations = take(&mut self.allocations);
         let validator = self.validator.code_section_entry(&func_body)?;
         let func_validator = validator.into_validator(allocations.validation);

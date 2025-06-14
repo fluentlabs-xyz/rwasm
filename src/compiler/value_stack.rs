@@ -44,8 +44,8 @@ impl ValueStackHeight {
 
     /// Pushes an `amount` of values to the emulated value stack.
     pub fn push_n(&mut self, amount: u32) {
-        #[cfg(feature = "debug-print")]
-        println!(" + push_n: {} height={}", amount, self.height);
+        // #[cfg(feature = "debug-print")]
+        // println!(" + push_n: {} height={}", amount, self.height);
         self.height += amount;
         self.update_max_height();
     }
@@ -67,8 +67,8 @@ impl ValueStackHeight {
 
     /// Pops an `amount` of elements from the emulated value stack.
     pub fn pop_n(&mut self, amount: u32) {
-        #[cfg(feature = "debug-print")]
-        println!(" - pop_n: {} height={}", amount, self.height);
+        // #[cfg(feature = "debug-print")]
+        // println!(" - pop_n: {} height={}", amount, self.height);
         debug_assert!(amount <= self.height);
         self.height -= amount;
     }
