@@ -38,8 +38,10 @@ use bincode::{
     Decode,
     Encode,
 };
+use serde::{Deserialize, Serialize};
 use core::ops::{Deref, DerefMut};
 
+#[cfg_attr(feature = "tracing", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub struct InstructionSet {
     pub instr: Vec<Opcode>,

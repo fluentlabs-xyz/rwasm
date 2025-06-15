@@ -14,6 +14,7 @@ use bincode::{
     Decode,
     Encode,
 };
+use serde::{Deserialize, Serialize};
 
 /// Represents a compiled rWasm module.
 ///
@@ -21,6 +22,7 @@ use bincode::{
 /// reference) information needed for execution within the rWasm virtual machine.
 ///
 /// It's compiled from Wasm
+#[cfg_attr(feature = "tracing", derive(Serialize, Deserialize))]
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct RwasmModule {
     /// The main instruction set (bytecode) for this module that includes an entrypoint
