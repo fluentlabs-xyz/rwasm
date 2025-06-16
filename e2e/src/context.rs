@@ -370,7 +370,6 @@ impl TestContext<'_> {
         vm.run()?;
         // copy results
         let func_type = self.extern_types.get(func_name).unwrap();
-        println!("{:?}", func_type);
         let len_results = func_type.results().len();
         let mut results = vec![Value::I32(0); len_results];
         for (i, val_type) in func_type.results().iter().rev().enumerate() {

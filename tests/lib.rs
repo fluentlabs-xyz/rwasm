@@ -15,7 +15,7 @@ fn test_fib() {
 }
 
 #[test]
-fn test_block() {
+fn test_i64_load8_s() {
     let wasm_binary = wat::parse_str(
         r#"
 (module
@@ -44,6 +44,36 @@ fn test_block() {
     assert_eq!(result.as_i32(), 97);
     println!("{:?}", engine.value_stack().dump_stack());
     assert!(engine.value_stack().dump_stack().is_empty());
+}
+
+#[test]
+fn test_i64_load() {
+    let wasm_binary = wat::parse_str(
+        r#"
+(module
+  (memory 1)
+  (data (i32.const 0) "abcdefghijklmnopqrstuvwxyz")
+  (func (export "64_good1") (param $i i32) (result i64)
+    (i64.load offset=0 (local.get $i))                     ;; 0x6867666564636261 'abcdefgh'
+  )
+)
+"#,
+    )
+    .unwrap();
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("64_good1".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+    println!("{}", rwasm_module);
+    let mut store = Store::<()>::default();
+    let mut engine = ExecutionEngine::new();
+    engine.value_stack().push(0.into());
+    engine.execute(&mut store, &rwasm_module).unwrap();
+    let hi = engine.value_stack().pop().to_bits() as u64;
+    let lo = engine.value_stack().pop().to_bits() as u64;
+    assert!(engine.value_stack().dump_stack().is_empty());
+    let value = (hi << 32) | lo;
+    assert_eq!(value, 0x6867666564636261);
 }
 
 #[test]
