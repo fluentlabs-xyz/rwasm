@@ -104,7 +104,7 @@ impl ModuleParser {
         for (k, v) in &parser.allocations.translation.exported_funcs {
             let func_type_idx = parser.allocations.translation.resolve_func_type_index(*v);
             let func_type =
-                parser.allocations.translation.func_types[func_type_idx as usize].clone();
+                parser.allocations.translation.original_func_types[func_type_idx as usize].clone();
             result.push((k.clone(), *v, func_type));
             #[cfg(feature = "debug-print")]
             print!("{}: func_idx={}, func_type_idx={}\n", k, v, func_type_idx);

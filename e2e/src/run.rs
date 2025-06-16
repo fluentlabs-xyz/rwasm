@@ -1,6 +1,6 @@
 use super::{error::TestError, TestContext, TestDescriptor};
 use anyhow::Result;
-use rwasm::{split_i64_to_i32, ExternRef, FuncRef, Value, F32, F64};
+use rwasm::{ExternRef, FuncRef, Value, F32, F64};
 use wast::{
     core::{HeapType, NanPattern, WastRetCore},
     lexer::Lexer,
@@ -221,17 +221,7 @@ fn assert_trap(test_context: &TestContext, span: Span, error: TestError, message
 
 /// Asserts that `results` match the `expected` values.
 fn assert_results(context: &TestContext, span: Span, results: &[Value], expected: &[WastRet]) {
-    assert_eq!(
-        results.len(),
-        expected.len()
-            + expected
-                .iter()
-                .filter(|c| matches!(
-                    c,
-                    WastRet::Core(WastRetCore::I64(_)) | WastRet::Core(WastRetCore::F64(_))
-                ))
-                .count()
-    );
+    assert_eq!(results.len(), expected.len());
 
     let expected = expected.iter().map(|expected| match expected {
         WastRet::Core(expected) => expected,
@@ -240,49 +230,13 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
             context.spanned(span),
         ),
     }).collect::<Vec<_>>();
-    let mut shift = 0;
-    for i in 0..expected.len() {
-        let result = &results[i + shift];
-        let expected = &expected[i];
-
+    for (expected, result) in expected.iter().zip(results.iter()) {
         match (result, expected) {
             (Value::I32(result), WastRetCore::I32(expected)) => {
                 assert_eq!(result, expected, "in {}", context.spanned(span))
             }
             (Value::I64(result), WastRetCore::I64(expected)) => {
                 assert_eq!(result, expected, "in {}", context.spanned(span))
-            }
-            (Value::I32(result), WastRetCore::I64(expected)) => {
-                let low = result;
-                let high = &results[i + shift + 1]
-                    .i32()
-                    .expect("Failed to find the low part of i64");
-                shift += 1;
-                let (expected_low, expected_high) = split_i64_to_i32(*expected);
-                assert_eq!(*high, expected_high, "in {}", context.spanned(span));
-                assert_eq!(*low, expected_low, "in {}", context.spanned(span));
-            }
-            (Value::I32(result), WastRetCore::F64(expected)) => {
-                let low = *result as u32;
-                let high = results[i + shift + 1]
-                    .i32()
-                    .expect("Failed to find the low part of i64") as u32;
-                let bits = (high as u64) << 32 | (low as u64);
-                let result = F64::from_bits(bits);
-                shift += 1;
-                match expected {
-                    NanPattern::CanonicalNan | NanPattern::ArithmeticNan => {
-                        assert!(result.is_nan(), "in {}", context.spanned(span))
-                    }
-                    NanPattern::Value(expected) => {
-                        assert_eq!(
-                            result.to_bits(),
-                            expected.bits,
-                            "in {}",
-                            context.spanned(span)
-                        );
-                    }
-                }
             }
             (Value::I64(result), WastRetCore::I32(expected)) => {
                 assert_eq!(*result, *expected as i64, "in {}", context.spanned(span))

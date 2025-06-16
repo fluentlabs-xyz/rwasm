@@ -96,9 +96,9 @@ impl InstructionSet {
     }
 
     pub fn op_i64_const(&mut self, value: i64) {
-        let (expected_low, expected_high) = split_i64_to_i32(value);
-        self.op_i32_const(expected_low);
-        self.op_i32_const(expected_high);
+        let (lo, hi) = split_i64_to_i32(value);
+        self.op_i32_const(lo);
+        self.op_i32_const(hi);
     }
 
     /// Max stack height: 2
