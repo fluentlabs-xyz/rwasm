@@ -122,9 +122,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.ip.add(offset)
     }
 
-    pub fn caller(&mut self) -> Caller<T> {
-        let program_counter = self.program_counter();
-        Caller::new(self.store, &mut self.sp, program_counter, self.ip)
+    pub fn caller<'vm>(&'vm mut self) -> Caller<'vm, 'a, T> {
+        Caller::<'vm, 'a, T>::new(self)
     }
 
     pub fn program_counter(&self) -> u32 {

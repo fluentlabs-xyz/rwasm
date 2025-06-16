@@ -7,13 +7,24 @@ use crate::{
 };
 
 impl InstructionSet {
+    /// Loads a 64-bit word from a memory and copies it on the stack by as 32-bit words
+    ///
+    /// Input: [addr]
+    /// Output: [hi, lo]
+    ///
     /// Max stack height: 2
     pub fn op_i64_load(&mut self, offset: AddressOffset) {
+        // [addr]
         self.op_local_get(1);
+        // [addr, addr]
         self.op_i32_load(offset.checked_add(4).unwrap_or(u32::MAX));
+        // [hi, addr]
         self.op_local_get(2);
+        // [addr, hi, addr]
         self.op_i32_load(offset);
+        // [lo, hi, addr]
         self.op_local_set(2);
+        // [hi, lo]
     }
 
     /// Max stack height: 1
@@ -86,8 +97,8 @@ impl InstructionSet {
 
     pub fn op_i64_const(&mut self, value: i64) {
         let (lo, hi) = split_i64_to_i32(value);
-        self.op_i32_const(lo);
-        self.op_i32_const(hi);
+        self.op_i32_const(lo); // [lo]
+        self.op_i32_const(hi); // [hi, lo]
     }
 
     /// Max stack height: 2
