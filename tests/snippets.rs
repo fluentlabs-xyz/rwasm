@@ -965,3 +965,13 @@ fn test_i64_extend32_s() {
     test_case(0x12345678, 0x12345678, 0); // 305419896 → [0x12345678, 0]
     test_case(-42, -42, -1); // -42 → [-42, -1]
 }
+
+#[test]
+fn test_swap() {
+    let mut is = InstructionSet::new();
+    is.op_swap();
+    let output = run_vm_instr(is.clone(), vec![100, 200]).unwrap();
+    assert_eq!(output.len(), 2);
+    assert_eq!(output[0], 200);
+    assert_eq!(output[1], 100);
+}

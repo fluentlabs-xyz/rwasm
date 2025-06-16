@@ -151,6 +151,13 @@ impl InstructionSet {
         self.op_local_get(1);
     }
 
+    pub fn op_swap(&mut self) {
+        self.op_local_get(2);
+        self.op_local_get(2);
+        self.op_local_set(3);
+        self.op_local_set(1);
+    }
+
     impl_opcode!(Unreachable);
     impl_opcode!(Trap(TrapCode));
     impl_opcode!(LocalGet(LocalDepth));

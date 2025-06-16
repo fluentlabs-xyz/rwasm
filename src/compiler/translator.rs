@@ -3906,6 +3906,7 @@ impl InstructionTranslator {
             debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(|fuel_costs| fuel_costs.load)?;
             let addr_type = builder.alloc.stack_types.pop().unwrap();
+            debug_assert_eq!(addr_type, ValType::I32);
             builder.stack_height.pop_type(addr_type);
             builder.stack_height.push_type(loaded_type);
             builder.stack_height.push_n(max_stack_height);
@@ -3931,6 +3932,7 @@ impl InstructionTranslator {
             debug_assert_eq!(value_type, stored_value);
             builder.stack_height.pop_type(value_type);
             let addr_type = builder.alloc.stack_types.pop().unwrap();
+            debug_assert_eq!(addr_type, ValType::I32);
             builder.stack_height.pop_type(addr_type);
             builder.stack_height.push_n(max_stack_height);
             builder.stack_height.pop_n(max_stack_height);

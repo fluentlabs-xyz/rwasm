@@ -19,26 +19,31 @@ fn test_block() {
     let wasm_binary = wat::parse_str(
         r#"
 (module
-  (func $f32-i32 (param f32 i32) (result i32) (local.get 1))
-  (func (export "type-second-i32") (result i32)
-    (call $f32-i32 (f32.const 32.1) (i32.const 32))
+  (memory 1)
+  (data (i32.const 0) "abcdefghijklmnopqrstuvwxyz")
+
+  (func (export "8s_good1") (param $i i32) (result i64)
+    (i64.load8_s offset=0 (local.get $i))                   ;; 97 'a'
   )
-)"#,
+)
+"#,
     )
     .unwrap();
     let config = CompilationConfig::default()
-        .with_entrypoint_name("type-second-i32".into())
+        .with_entrypoint_name("8s_good1".into())
         .with_allow_malformed_entrypoint_func_type(true);
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = Store::<()>::default();
     let mut engine = ExecutionEngine::new();
-    // engine.value_stack().push(0x132.into());
-    // engine.value_stack().push(0.into());
+    engine.value_stack().push(0.into());
     engine.execute(&mut store, &rwasm_module).unwrap();
-    // let result = engine.value_stack().pop();
-    // let result = engine.value_stack().pop();
-    // assert_eq!(result.as_i64(), 433494437);
+    let result = engine.value_stack().pop();
+    assert_eq!(result.as_i32(), 0);
+    let result = engine.value_stack().pop();
+    assert_eq!(result.as_i32(), 97);
+    println!("{:?}", engine.value_stack().dump_stack());
+    assert!(engine.value_stack().dump_stack().is_empty());
 }
 
 #[test]

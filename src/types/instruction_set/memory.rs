@@ -20,7 +20,6 @@ impl InstructionSet {
     /// Max stack height: 1
     pub fn op_i64_load8_s<I: Into<AddressOffset>>(&mut self, offset: I) {
         let offset: AddressOffset = offset.into();
-        self.op_local_get(1);
         self.op_i32_load8_s(offset);
         self.op_dup();
         self.op_i32_const(31);
@@ -37,7 +36,6 @@ impl InstructionSet {
     /// Max stack height: 1
     pub fn op_i64_load16_s<I: Into<AddressOffset>>(&mut self, offset: I) {
         let offset: AddressOffset = offset.into();
-        self.op_local_get(1);
         self.op_i32_load16_s(offset);
         self.op_dup();
         self.op_i32_const(31);
@@ -54,7 +52,6 @@ impl InstructionSet {
     /// Max stack height: 1
     pub fn op_i64_load32_s<I: Into<AddressOffset>>(&mut self, offset: I) {
         let offset: AddressOffset = offset.into();
-        self.op_local_get(1);
         self.op_i32_load(offset);
         self.op_dup();
         self.op_i32_const(31);
