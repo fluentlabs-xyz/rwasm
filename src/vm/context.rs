@@ -48,6 +48,16 @@ impl<'vm, 'a, T> Caller<'vm, 'a, T> {
         self.vm.sp.pop()
     }
 
+    pub fn stack_pop_as<I: From<UntypedValue>>(&mut self) -> I {
+        let lhs = self.stack_pop();
+        I::from(lhs)
+    }
+
+    pub fn stack_pop2_as<I: From<UntypedValue>>(&mut self) -> (I, I) {
+        let (lhs, rhs) = self.stack_pop2();
+        (I::from(lhs), I::from(rhs))
+    }
+
     pub fn stack_pop_u32(&mut self) -> u32 {
         self.vm.sp.pop().to_bits()
     }
