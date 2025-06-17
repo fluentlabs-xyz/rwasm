@@ -37,7 +37,7 @@ pub struct Store<T> {
     pub(crate) syscall_handler: SyscallHandler<T>,
     pub(crate) fuel_costs: FuelCosts,
     #[cfg(feature = "tracing")]
-    pub(crate) tracer: crate::Tracer,
+    pub tracer: crate::Tracer,
 }
 
 impl<T: Default> Default for Store<T> {
