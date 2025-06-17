@@ -1,4 +1,5 @@
 use crate::{
+    split_i64_to_i32,
     types::{TrapCode, UntypedValue},
     vm::store::Store,
     InstructionPtr,
@@ -17,6 +18,26 @@ impl<'vm, 'a, T> Caller<'vm, 'a, T> {
 
     pub fn stack_push<I: Into<UntypedValue>>(&mut self, value: I) {
         self.vm.sp.push_as(value);
+    }
+
+    pub fn stack_push_u32(&mut self, value: u32) {
+        self.vm.sp.push(UntypedValue::from_bits(value));
+    }
+
+    pub fn stack_push_i32(&mut self, value: i32) {
+        self.vm.sp.push(UntypedValue::from_bits(value as u32));
+    }
+
+    pub fn stack_push_u64(&mut self, value: u64) {
+        let (lo, hi) = split_i64_to_i32(value as i64);
+        self.vm.sp.push(UntypedValue::from_bits(lo as u32));
+        self.vm.sp.push(UntypedValue::from_bits(hi as u32));
+    }
+
+    pub fn stack_push_i64(&mut self, value: i64) {
+        let (lo, hi) = split_i64_to_i32(value);
+        self.vm.sp.push(UntypedValue::from_bits(lo as u32));
+        self.vm.sp.push(UntypedValue::from_bits(hi as u32));
     }
 
     pub fn sync_stack_ptr(&mut self) {
