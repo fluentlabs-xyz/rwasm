@@ -1,4 +1,5 @@
 use crate::{
+    mem_index::SP_START,
     split_i64_to_i32,
     types::{TrapCode, UntypedValue},
     F32,
@@ -413,8 +414,8 @@ impl ValueStackPtr {
     }
     /// convert stack pointer to the address number
     #[inline]
-    pub fn to_position(&self) -> u32 {
-        unsafe { (*self.src).as_u32() }
+    pub fn to_relative_address(&self) -> u32 {
+        SP_START - (self.ptr as u32 - self.src as u32)
     }
 
     /// Pushes the `T` to the end of the [`ValueStack`].

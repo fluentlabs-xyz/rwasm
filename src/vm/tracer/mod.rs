@@ -122,7 +122,7 @@ impl Tracer {
         let memory_changes = take(&mut self.memory_changes);
         let table_changes = take(&mut self.table_changes);
         let table_size_changes = take(&mut self.table_size_changes);
-        let memory_access = self.record_mr(opcode, sp.to_position());
+        let memory_access = self.record_mr(opcode, sp.to_relative_address());
         let opcode_state = TracerInstrState {
             program_counter,
             opcode,
@@ -147,6 +147,7 @@ impl Tracer {
         let opcode = op_state.opcode;
         let mut memory_access = op_state.memory_access;
         self.record_mw(opcode, new_sp, stack, &mut memory_access);
+        self.state.sp = new_sp;
     }
 
     pub fn remember_next_table(&mut self, table_idx: TableIdx) {

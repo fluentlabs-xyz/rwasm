@@ -399,7 +399,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
     #[cfg(feature = "tracing")]
     fn trace_instr_post(&mut self, instr: &Opcode, trap_code: Option<TrapCode>) {
         // TODO(wangyao): "track trap codes"
-        let sp = self.sp.to_position();
+        let sp = self.sp.to_relative_address();
+        println!("sp:{}", sp);
         let pc = self.program_counter();
         let stack = self.value_stack.dump_stack(self.sp);
         self.store.tracer.post_opcode_state(pc, sp, stack);
