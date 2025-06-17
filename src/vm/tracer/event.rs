@@ -17,7 +17,7 @@ pub fn opcode_stack_read(ins: Opcode) -> u32 {
 }
 
 pub fn opcode_stack_write(op: Opcode) -> bool {
-    if op.is_binary_instruction() || op.is_unary_instruction() {
+    if op.is_binary_instruction() || op.is_unary_instruction() | op.is_const_instruction() {
         return true;
     }
     if op.is_binary_instruction() {
