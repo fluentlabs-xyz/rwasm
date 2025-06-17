@@ -27,8 +27,24 @@ impl<'vm, 'a, T> Caller<'vm, 'a, T> {
         self.vm.sp.pop()
     }
 
-    pub fn stack_pop_as<I: From<UntypedValue>>(&mut self) -> I {
-        self.vm.sp.pop_as()
+    pub fn stack_pop_u32(&mut self) -> u32 {
+        self.vm.sp.pop().to_bits()
+    }
+
+    pub fn stack_pop_i32(&mut self) -> i32 {
+        self.vm.sp.pop().to_bits() as i32
+    }
+
+    pub fn stack_pop_u64(&mut self) -> u64 {
+        let (lo, hi) = self.vm.sp.pop2();
+        let value = ((hi.to_bits() as u64) << 32) | (lo.to_bits() as u64);
+        value
+    }
+
+    pub fn stack_pop_i64(&mut self) -> i64 {
+        let (lo, hi) = self.vm.sp.pop2();
+        let value = ((hi.to_bits() as u64) << 32) | (lo.to_bits() as u64);
+        value as i64
     }
 
     pub fn stack_pop2(&mut self) -> (UntypedValue, UntypedValue) {
@@ -37,11 +53,6 @@ impl<'vm, 'a, T> Caller<'vm, 'a, T> {
 
     pub fn stack_pop3(&mut self) -> (UntypedValue, UntypedValue, UntypedValue) {
         self.vm.sp.pop3()
-    }
-
-    pub fn stack_pop2_as<I: From<UntypedValue>>(&mut self) -> (I, I) {
-        let (lhs, rhs) = self.stack_pop2();
-        (I::from(lhs), I::from(rhs))
     }
 
     pub fn stack_pop_n<const N: usize>(&mut self) -> [UntypedValue; N] {
