@@ -1,4 +1,3 @@
-mod block_fuel;
 mod branch_offset;
 mod compiled_expr;
 mod constructor_params;
@@ -17,7 +16,6 @@ mod units;
 mod untyped_value;
 mod value;
 
-pub use block_fuel::*;
 pub use branch_offset::*;
 pub use compiled_expr::*;
 pub use constructor_params::*;
@@ -82,6 +80,8 @@ pub const N_MAX_TABLES: u32 = 100;
 /// inside.
 pub const N_MAX_TABLE_SIZE: u32 = 1024;
 
+pub type InstrLoc = u32;
+pub type LabelRef = u32;
 pub type FuncTypeIdx = u32;
 pub type SignatureIdx = u32;
 pub type MemoryIdx = u32;
@@ -97,5 +97,6 @@ pub type BranchTableTargets = u32;
 pub type MaxStackHeight = u32;
 pub type SysFuncIdx = u32;
 pub type AddressOffset = u32;
+pub type BlockFuel = u32;
 
 pub const MEMORY_BYTES_PER_FUEL: u32 = 64;

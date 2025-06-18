@@ -321,12 +321,16 @@ impl InstructionSet {
     pub fn bump_fuel_consumption(
         &mut self,
         instr: u32,
-        delta: u64,
+        delta: u32,
     ) -> Result<(), CompilationError> {
-        match &mut self.instr[instr as usize] {
-            Opcode::ConsumeFuel(fuel) => fuel.bump_by(delta),
+        let fuel = match &mut self.instr[instr as usize] {
+            Opcode::ConsumeFuel(fuel) => fuel,
             _ => unreachable!("instruction {} is not a `ConsumeFuel` instruction", instr),
-        }
+        };
+        *fuel = fuel
+            .checked_add(delta)
+            .ok_or(CompilationError::BlockFuelOutOfBounds)?;
+        Ok(())
     }
 }
 

@@ -1,7 +1,4 @@
-use crate::{
-    compiler::{error::CompilationError, instr_loc::InstrLoc},
-    BranchOffset,
-};
+use crate::{compiler::error::CompilationError, BranchOffset, InstrLoc, LabelRef};
 use alloc::vec::Vec;
 use core::{
     fmt::{self, Display},
@@ -15,18 +12,6 @@ pub enum Label {
     Pinned(InstrLoc),
     /// The label is still unpinned.
     Unpinned,
-}
-
-/// A reference to an [`Label`].
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct LabelRef(u32);
-
-impl LabelRef {
-    /// Returns the `usize` value of the [`LabelRef`].
-    #[inline]
-    pub(crate) fn into_usize(self) -> usize {
-        self.0 as usize
-    }
 }
 
 /// The label registry.
@@ -97,19 +82,19 @@ impl LabelRegistry {
             .try_into()
             .unwrap_or_else(|err| panic!("cannot have more than u32::MAX label refs: {err}"));
         self.labels.push(Label::Unpinned);
-        LabelRef(index)
+        index as LabelRef
     }
 
     /// Returns a shared reference to the underlying [`Label`].
     #[inline]
     fn get_label(&self, label: LabelRef) -> &Label {
-        &self.labels[label.into_usize()]
+        &self.labels[label as usize]
     }
 
     /// Returns an exclusive reference to the underlying [`Label`].
     #[inline]
     fn get_label_mut(&mut self, label: LabelRef) -> &mut Label {
-        &mut self.labels[label.into_usize()]
+        &mut self.labels[label as usize]
     }
 
     /// Pins the `label` to the given `instr`.
@@ -150,10 +135,8 @@ impl LabelRegistry {
         user: InstrLoc,
     ) -> Result<BranchOffset, CompilationError> {
         let offset = match *self.get_label(label) {
-            Label::Pinned(target) => {
-                BranchOffset::from_src_to_dst(user.into_u32(), target.into_u32())
-                    .ok_or(CompilationError::BranchOffsetOutOfBounds)?
-            }
+            Label::Pinned(target) => BranchOffset::from_src_to_dst(user, target)
+                .ok_or(CompilationError::BranchOffsetOutOfBounds)?,
             Label::Unpinned => {
                 self.users.push(LabelUser::new(label, user));
                 BranchOffset::uninit()
@@ -210,7 +193,7 @@ impl<'a> Iterator for ResolvedUserIter<'a> {
             .registry
             .resolve_label(next.label)
             .unwrap_or_else(|err| panic!("failed to resolve user: {err}"));
-        let offset = BranchOffset::from_src_to_dst(src.into_u32(), dst.into_u32())
+        let offset = BranchOffset::from_src_to_dst(src, dst)
             .ok_or(CompilationError::BranchOffsetOutOfBounds);
         Some((src, offset))
     }

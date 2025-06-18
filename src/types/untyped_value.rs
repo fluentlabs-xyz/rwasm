@@ -1,5 +1,4 @@
 use crate::{
-    split_i64_to_i32,
     ArithmeticOps,
     ExtendInto,
     Float,
@@ -15,14 +14,11 @@ use crate::{
     F32,
     F64,
 };
-use alloc::{format, vec::Vec};
 use bincode::{Decode, Encode};
 use core::{
     fmt::{self, Display, Formatter},
     ops::{Neg, Shl, Shr},
 };
-use paste::paste;
-use wasmparser::ValType;
 
 /// An untyped value.
 ///
@@ -37,8 +33,7 @@ pub struct UntypedValue {
 
 impl Display for UntypedValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let name = format!("{:?}", self.bits);
-        write!(f, "{}", name)
+        write!(f, "{:?}", self.bits)
     }
 }
 
@@ -592,11 +587,6 @@ impl UntypedValue {
         self.execute_binary(rhs, <i32 as ArithmeticOps<i32>>::mul)
     }
 
-    /// Execute `i64.mul` Wasm operation.
-    pub fn i64_mul(self, rhs: Self) -> Self {
-        self.execute_binary(rhs, <i64 as ArithmeticOps<i64>>::mul)
-    }
-
     /// Execute `i32.div_s` Wasm operation.
     ///
     /// # Errors
@@ -605,16 +595,6 @@ impl UntypedValue {
     /// - If the operation result overflows.
     pub fn i32_div_s(self, rhs: Self) -> Result<Self, TrapCode> {
         self.try_execute_binary(rhs, <i32 as Integer<i32>>::div)
-    }
-
-    /// Execute `i64.div_s` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `rhs` is equal to zero.
-    /// - If the operation result overflows.
-    pub fn i64_div_s(self, rhs: Self) -> Result<Self, TrapCode> {
-        self.try_execute_binary(rhs, <i64 as Integer<i64>>::div)
     }
 
     /// Execute `i32.div_u` Wasm operation.
@@ -627,16 +607,6 @@ impl UntypedValue {
         self.try_execute_binary(rhs, <u32 as Integer<u32>>::div)
     }
 
-    /// Execute `i64.div_u` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `rhs` is equal to zero.
-    /// - If the operation result overflows.
-    pub fn i64_div_u(self, rhs: Self) -> Result<Self, TrapCode> {
-        self.try_execute_binary(rhs, <u64 as Integer<u64>>::div)
-    }
-
     /// Execute `i32.rem_s` Wasm operation.
     ///
     /// # Errors
@@ -645,16 +615,6 @@ impl UntypedValue {
     /// - If the operation result overflows.
     pub fn i32_rem_s(self, rhs: Self) -> Result<Self, TrapCode> {
         self.try_execute_binary(rhs, <i32 as Integer<i32>>::rem)
-    }
-
-    /// Execute `i64.rem_s` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `rhs` is equal to zero.
-    /// - If the operation result overflows.
-    pub fn i64_rem_s(self, rhs: Self) -> Result<Self, TrapCode> {
-        self.try_execute_binary(rhs, <i64 as Integer<i64>>::rem)
     }
 
     /// Execute `i32.rem_u` Wasm operation.
@@ -667,24 +627,9 @@ impl UntypedValue {
         self.try_execute_binary(rhs, <u32 as Integer<u32>>::rem)
     }
 
-    /// Execute `i64.rem_u` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `rhs` is equal to zero.
-    /// - If the operation result overflows.
-    pub fn i64_rem_u(self, rhs: Self) -> Result<Self, TrapCode> {
-        self.try_execute_binary(rhs, <u64 as Integer<u64>>::rem)
-    }
-
     /// Execute `i32.and` Wasm operation.
     pub fn i32_and(self, rhs: Self) -> Self {
         self.execute_binary::<i32, _>(rhs, op!(&))
-    }
-
-    /// Execute `i64.and` Wasm operation.
-    pub fn i64_and(self, rhs: Self) -> Self {
-        self.execute_binary::<i64, _>(rhs, op!(&))
     }
 
     /// Execute `i32.or` Wasm operation.
@@ -692,19 +637,9 @@ impl UntypedValue {
         self.execute_binary::<i32, _>(rhs, op!(|))
     }
 
-    /// Execute `i64.or` Wasm operation.
-    pub fn i64_or(self, rhs: Self) -> Self {
-        self.execute_binary::<i64, _>(rhs, op!(|))
-    }
-
     /// Execute `i32.xor` Wasm operation.
     pub fn i32_xor(self, rhs: Self) -> Self {
         self.execute_binary::<i32, _>(rhs, op!(^))
-    }
-
-    /// Execute `i64.xor` Wasm operation.
-    pub fn i64_xor(self, rhs: Self) -> Self {
-        self.execute_binary::<i64, _>(rhs, op!(^))
     }
 
     /// Execute `i32.shl` Wasm operation.
@@ -712,19 +647,9 @@ impl UntypedValue {
         self.execute_binary::<i32, _>(rhs, |lhs, rhs| lhs.shl(rhs & 0x1F))
     }
 
-    /// Execute `i64.shl` Wasm operation.
-    pub fn i64_shl(self, rhs: Self) -> Self {
-        self.execute_binary::<i64, _>(rhs, |lhs, rhs| lhs.shl(rhs & 0x3F))
-    }
-
     /// Execute `i32.shr_s` Wasm operation.
     pub fn i32_shr_s(self, rhs: Self) -> Self {
         self.execute_binary::<i32, _>(rhs, |lhs, rhs| lhs.shr(rhs & 0x1F))
-    }
-
-    /// Execute `i64.shr_s` Wasm operation.
-    pub fn i64_shr_s(self, rhs: Self) -> Self {
-        self.execute_binary::<i64, _>(rhs, |lhs, rhs| lhs.shr(rhs & 0x3F))
     }
 
     /// Execute `i32.shr_u` Wasm operation.
@@ -732,19 +657,9 @@ impl UntypedValue {
         self.execute_binary::<u32, _>(rhs, |lhs, rhs| lhs.shr(rhs & 0x1F))
     }
 
-    /// Execute `i64.shr_u` Wasm operation.
-    pub fn i64_shr_u(self, rhs: Self) -> Self {
-        self.execute_binary::<u64, _>(rhs, |lhs, rhs| lhs.shr(rhs & 0x3F))
-    }
-
     /// Execute `i32.clz` Wasm operation.
     pub fn i32_clz(self) -> Self {
         self.execute_unary(<i32 as Integer<i32>>::leading_zeros)
-    }
-
-    /// Execute `i64.clz` Wasm operation.
-    pub fn i64_clz(self) -> Self {
-        self.execute_unary(<i64 as Integer<i64>>::leading_zeros)
     }
 
     /// Execute `i32.ctz` Wasm operation.
@@ -752,19 +667,9 @@ impl UntypedValue {
         self.execute_unary(<i32 as Integer<i32>>::trailing_zeros)
     }
 
-    /// Execute `i64.ctz` Wasm operation.
-    pub fn i64_ctz(self) -> Self {
-        self.execute_unary(<i64 as Integer<i64>>::trailing_zeros)
-    }
-
     /// Execute `i32.popcnt` Wasm operation.
     pub fn i32_popcnt(self) -> Self {
         self.execute_unary(<i32 as Integer<i32>>::count_ones)
-    }
-
-    /// Execute `i64.popcnt` Wasm operation.
-    pub fn i64_popcnt(self) -> Self {
-        self.execute_unary(<i64 as Integer<i64>>::count_ones)
     }
 
     /// Execute `i32.rotl` Wasm operation.
@@ -772,19 +677,9 @@ impl UntypedValue {
         self.execute_binary(rhs, <i32 as Integer<i32>>::rotl)
     }
 
-    /// Execute `i64.rotl` Wasm operation.
-    pub fn i64_rotl(self, rhs: Self) -> Self {
-        self.execute_binary(rhs, <i64 as Integer<i64>>::rotl)
-    }
-
     /// Execute `i32.rotr` Wasm operation.
     pub fn i32_rotr(self, rhs: Self) -> Self {
         self.execute_binary(rhs, <i32 as Integer<i32>>::rotr)
-    }
-
-    /// Execute `i64.rotr` Wasm operation.
-    pub fn i64_rotr(self, rhs: Self) -> Self {
-        self.execute_binary(rhs, <i64 as Integer<i64>>::rotr)
     }
 
     /// Execute `i32.eqz` Wasm operation.
@@ -792,19 +687,9 @@ impl UntypedValue {
         self.execute_unary::<i32, bool>(|value| value == 0)
     }
 
-    /// Execute `i64.eqz` Wasm operation.
-    pub fn i64_eqz(self) -> Self {
-        self.execute_unary::<i64, bool>(|value| value == 0)
-    }
-
     /// Execute `i32.eq` Wasm operation.
     pub fn i32_eq(self, rhs: Self) -> Self {
         self.execute_binary::<i32, bool>(rhs, op!(==))
-    }
-
-    /// Execute `i64.eq` Wasm operation.
-    pub fn i64_eq(self, rhs: Self) -> Self {
-        self.execute_binary::<i64, bool>(rhs, op!(==))
     }
 
     /// Execute `f32.eq` Wasm operation.
@@ -822,11 +707,6 @@ impl UntypedValue {
         self.execute_binary::<i32, bool>(rhs, op!(!=))
     }
 
-    /// Execute `i64.ne` Wasm operation.
-    pub fn i64_ne(self, rhs: Self) -> Self {
-        self.execute_binary::<i64, bool>(rhs, op!(!=))
-    }
-
     /// Execute `f32.ne` Wasm operation.
     pub fn f32_ne(self, rhs: Self) -> Self {
         self.execute_binary::<F32, bool>(rhs, op!(!=))
@@ -842,19 +722,9 @@ impl UntypedValue {
         self.execute_binary::<i32, bool>(rhs, op!(<))
     }
 
-    /// Execute `i64.lt_s` Wasm operation.
-    pub fn i64_lt_s(self, rhs: Self) -> Self {
-        self.execute_binary::<i64, bool>(rhs, op!(<))
-    }
-
     /// Execute `i32.lt_u` Wasm operation.
     pub fn i32_lt_u(self, rhs: Self) -> Self {
         self.execute_binary::<u32, bool>(rhs, op!(<))
-    }
-
-    /// Execute `i64.lt_u` Wasm operation.
-    pub fn i64_lt_u(self, rhs: Self) -> Self {
-        self.execute_binary::<u64, bool>(rhs, op!(<))
     }
 
     /// Execute `f32.lt` Wasm operation.
@@ -872,19 +742,9 @@ impl UntypedValue {
         self.execute_binary::<i32, bool>(rhs, op!(<=))
     }
 
-    /// Execute `i64.le_s` Wasm operation.
-    pub fn i64_le_s(self, rhs: Self) -> Self {
-        self.execute_binary::<i64, bool>(rhs, op!(<=))
-    }
-
     /// Execute `i32.le_u` Wasm operation.
     pub fn i32_le_u(self, rhs: Self) -> Self {
         self.execute_binary::<u32, bool>(rhs, op!(<=))
-    }
-
-    /// Execute `i64.le_u` Wasm operation.
-    pub fn i64_le_u(self, rhs: Self) -> Self {
-        self.execute_binary::<u64, bool>(rhs, op!(<=))
     }
 
     /// Execute `f32.le` Wasm operation.
@@ -902,19 +762,9 @@ impl UntypedValue {
         self.execute_binary::<i32, bool>(rhs, op!(>))
     }
 
-    /// Execute `i64.gt_s` Wasm operation.
-    pub fn i64_gt_s(self, rhs: Self) -> Self {
-        self.execute_binary::<i64, bool>(rhs, op!(>))
-    }
-
     /// Execute `i32.gt_u` Wasm operation.
     pub fn i32_gt_u(self, rhs: Self) -> Self {
         self.execute_binary::<u32, bool>(rhs, op!(>))
-    }
-
-    /// Execute `i64.gt_u` Wasm operation.
-    pub fn i64_gt_u(self, rhs: Self) -> Self {
-        self.execute_binary::<u64, bool>(rhs, op!(>))
     }
 
     /// Execute `f32.gt` Wasm operation.
@@ -932,19 +782,9 @@ impl UntypedValue {
         self.execute_binary::<i32, bool>(rhs, op!(>=))
     }
 
-    /// Execute `i64.ge_s` Wasm operation.
-    pub fn i64_ge_s(self, rhs: Self) -> Self {
-        self.execute_binary::<i64, bool>(rhs, op!(>=))
-    }
-
     /// Execute `i32.ge_u` Wasm operation.
     pub fn i32_ge_u(self, rhs: Self) -> Self {
         self.execute_binary::<u32, bool>(rhs, op!(>=))
-    }
-
-    /// Execute `i64.ge_u` Wasm operation.
-    pub fn i64_ge_u(self, rhs: Self) -> Self {
-        self.execute_binary::<u64, bool>(rhs, op!(>=))
     }
 
     /// Execute `f32.ge` Wasm operation.
@@ -1047,19 +887,9 @@ impl UntypedValue {
         self.execute_binary(rhs, <F32 as ArithmeticOps<F32>>::add)
     }
 
-    /// Execute `f64.add` Wasm operation.
-    pub fn f64_add(self, rhs: Self) -> Self {
-        self.execute_binary(rhs, <F64 as ArithmeticOps<F64>>::add)
-    }
-
     /// Execute `f32.sub` Wasm operation.
     pub fn f32_sub(self, rhs: Self) -> Self {
         self.execute_binary(rhs, <F32 as ArithmeticOps<F32>>::sub)
-    }
-
-    /// Execute `f64.sub` Wasm operation.
-    pub fn f64_sub(self, rhs: Self) -> Self {
-        self.execute_binary(rhs, <F64 as ArithmeticOps<F64>>::sub)
     }
 
     /// Execute `f32.mul` Wasm operation.
@@ -1067,34 +897,9 @@ impl UntypedValue {
         self.execute_binary(rhs, <F32 as ArithmeticOps<F32>>::mul)
     }
 
-    /// Execute `f64.mul` Wasm operation.
-    pub fn f64_mul(self, rhs: Self) -> Self {
-        self.execute_binary(rhs, <F64 as ArithmeticOps<F64>>::mul)
-    }
-
     /// Execute `f32.div` Wasm operation.
     pub fn f32_div(self, rhs: Self) -> Self {
         self.execute_binary(rhs, <F32 as Float<F32>>::div)
-    }
-
-    /// Execute `f64.div` Wasm operation.
-    pub fn f64_div(self, rhs: Self) -> Self {
-        self.execute_binary(rhs, <F64 as Float<F64>>::div)
-    }
-
-    /// Execute `f64.min` Wasm operation.
-    pub fn f64_min(self, other: Self) -> Self {
-        self.execute_binary(other, <F64 as Float<F64>>::min)
-    }
-
-    /// Execute `f64.max` Wasm operation.
-    pub fn f64_max(self, other: Self) -> Self {
-        self.execute_binary(other, <F64 as Float<F64>>::max)
-    }
-
-    /// Execute `f64.copysign` Wasm operation.
-    pub fn f64_copysign(self, other: Self) -> Self {
-        self.execute_binary(other, <F64 as Float<F64>>::copysign)
     }
 
     /// Execute `i32.wrap_i64` Wasm operation.
@@ -1134,112 +939,6 @@ impl UntypedValue {
         self.try_execute_unary(<F32 as TryTruncateInto<u32, TrapCode>>::try_truncate_into)
     }
 
-    /// Execute `i32.trunc_f64_s` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `self` is NaN (not a number).
-    /// - If `self` is positive or negative infinity.
-    /// - If the integer value of `self` is out of bounds of the target type.
-    ///
-    /// Read more about the failure cases in the [WebAssembly specification].
-    ///
-    /// [WebAssembly specification]:
-    /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i32_trunc_f64_s(self) -> Result<Self, TrapCode> {
-        self.try_execute_unary(<F64 as TryTruncateInto<i32, TrapCode>>::try_truncate_into)
-    }
-
-    /// Execute `i32.trunc_f64_u` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `self` is NaN (not a number).
-    /// - If `self` is positive or negative infinity.
-    /// - If the integer value of `self` is out of bounds of the target type.
-    ///
-    /// Read more about the failure cases in the [WebAssembly specification].
-    ///
-    /// [WebAssembly specification]:
-    /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i32_trunc_f64_u(self) -> Result<Self, TrapCode> {
-        self.try_execute_unary(<F64 as TryTruncateInto<u32, TrapCode>>::try_truncate_into)
-    }
-
-    /// Execute `i64.extend_i32_s` Wasm operation.
-    pub fn i64_extend_i32_s(self) -> Self {
-        self.execute_unary(<i32 as ExtendInto<i64>>::extend_into)
-    }
-
-    /// Execute `i64.extend_i32_u` Wasm operation.
-    pub fn i64_extend_i32_u(self) -> Self {
-        self.execute_unary(<u32 as ExtendInto<i64>>::extend_into)
-    }
-
-    /// Execute `i64.trunc_f32_s` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `self` is NaN (not a number).
-    /// - If `self` is positive or negative infinity.
-    /// - If the integer value of `self` is out of bounds of the target type.
-    ///
-    /// Read more about the failure cases in the [WebAssembly specification].
-    ///
-    /// [WebAssembly specification]:
-    /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i64_trunc_f32_s(self) -> Result<Self, TrapCode> {
-        self.try_execute_unary(<F32 as TryTruncateInto<i64, TrapCode>>::try_truncate_into)
-    }
-
-    /// Execute `i64.trunc_f32_u` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `self` is NaN (not a number).
-    /// - If `self` is positive or negative infinity.
-    /// - If the integer value of `self` is out of bounds of the target type.
-    ///
-    /// Read more about the failure cases in the [WebAssembly specification].
-    ///
-    /// [WebAssembly specification]:
-    /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i64_trunc_f32_u(self) -> Result<Self, TrapCode> {
-        self.try_execute_unary(<F32 as TryTruncateInto<u64, TrapCode>>::try_truncate_into)
-    }
-
-    /// Execute `i64.trunc_f64_s` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `self` is NaN (not a number).
-    /// - If `self` is positive or negative infinity.
-    /// - If the integer value of `self` is out of bounds of the target type.
-    ///
-    /// Read more about the failure cases in the [WebAssembly specification].
-    ///
-    /// [WebAssembly specification]:
-    /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i64_trunc_f64_s(self) -> Result<Self, TrapCode> {
-        self.try_execute_unary(<F64 as TryTruncateInto<i64, TrapCode>>::try_truncate_into)
-    }
-
-    /// Execute `i64.trunc_f64_u` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `self` is NaN (not a number).
-    /// - If `self` is positive or negative infinity.
-    /// - If the integer value of `self` is out of bounds of the target type.
-    ///
-    /// Read more about the failure cases in the [WebAssembly specification].
-    ///
-    /// [WebAssembly specification]:
-    /// https://webassembly.github.io/spec/core/exec/numerics.html#op-trunc-s
-    pub fn i64_trunc_f64_u(self) -> Result<Self, TrapCode> {
-        self.try_execute_unary(<F64 as TryTruncateInto<u64, TrapCode>>::try_truncate_into)
-    }
-
     /// Execute `f32.convert_i32_s` Wasm operation.
     pub fn f32_convert_i32_s(self) -> Self {
         self.execute_unary(<i32 as ExtendInto<F32>>::extend_into)
@@ -1248,46 +947,6 @@ impl UntypedValue {
     /// Execute `f32.convert_i32_u` Wasm operation.
     pub fn f32_convert_i32_u(self) -> Self {
         self.execute_unary(<u32 as ExtendInto<F32>>::extend_into)
-    }
-
-    /// Execute `f32.convert_i64_s` Wasm operation.
-    pub fn f32_convert_i64_s(self) -> Self {
-        self.execute_unary(<i64 as WrapInto<F32>>::wrap_into)
-    }
-
-    /// Execute `f32.convert_i64_u` Wasm operation.
-    pub fn f32_convert_i64_u(self) -> Self {
-        self.execute_unary(<u64 as WrapInto<F32>>::wrap_into)
-    }
-
-    /// Execute `f32.demote_f64` Wasm operation.
-    pub fn f32_demote_f64(self) -> Self {
-        self.execute_unary(<F64 as WrapInto<F32>>::wrap_into)
-    }
-
-    /// Execute `f64.convert_i32_s` Wasm operation.
-    pub fn f64_convert_i32_s(self) -> Self {
-        self.execute_unary(<i32 as ExtendInto<F64>>::extend_into)
-    }
-
-    /// Execute `f64.convert_i32_u` Wasm operation.
-    pub fn f64_convert_i32_u(self) -> Self {
-        self.execute_unary(<u32 as ExtendInto<F64>>::extend_into)
-    }
-
-    /// Execute `f64.convert_i64_s` Wasm operation.
-    pub fn f64_convert_i64_s(self) -> Self {
-        self.execute_unary(<i64 as ExtendInto<F64>>::extend_into)
-    }
-
-    /// Execute `f64.convert_i64_u` Wasm operation.
-    pub fn f64_convert_i64_u(self) -> Self {
-        self.execute_unary(<u64 as ExtendInto<F64>>::extend_into)
-    }
-
-    /// Execute `f64.promote_f32` Wasm operation.
-    pub fn f64_promote_f32(self) -> Self {
-        self.execute_unary(<F32 as ExtendInto<F64>>::extend_into)
     }
 
     /// Execute `i32.extend8_s` Wasm operation.
@@ -1300,21 +959,6 @@ impl UntypedValue {
         self.execute_unary(<i32 as SignExtendFrom<i16>>::sign_extend_from)
     }
 
-    /// Execute `i64.extend8_s` Wasm operation.
-    pub fn i64_extend8_s(self) -> Self {
-        self.execute_unary(<i64 as SignExtendFrom<i8>>::sign_extend_from)
-    }
-
-    /// Execute `i64.extend16_s` Wasm operation.
-    pub fn i64_extend16_s(self) -> Self {
-        self.execute_unary(<i64 as SignExtendFrom<i16>>::sign_extend_from)
-    }
-
-    /// Execute `i64.extend32_s` Wasm operation.
-    pub fn i64_extend32_s(self) -> Self {
-        self.execute_unary(<i64 as SignExtendFrom<i32>>::sign_extend_from)
-    }
-
     /// Execute `i32.trunc_sat_f32_s` Wasm operation.
     pub fn i32_trunc_sat_f32_s(self) -> Self {
         self.execute_unary(<F32 as TruncateSaturateInto<i32>>::truncate_saturate_into)
@@ -1324,339 +968,7 @@ impl UntypedValue {
     pub fn i32_trunc_sat_f32_u(self) -> Self {
         self.execute_unary(<F32 as TruncateSaturateInto<u32>>::truncate_saturate_into)
     }
-
-    /// Execute `i32.trunc_sat_f64_s` Wasm operation.
-    pub fn i32_trunc_sat_f64_s(self) -> Self {
-        self.execute_unary(<F64 as TruncateSaturateInto<i32>>::truncate_saturate_into)
-    }
-
-    /// Execute `i32.trunc_sat_f64_u` Wasm operation.
-    pub fn i32_trunc_sat_f64_u(self) -> Self {
-        self.execute_unary(<F64 as TruncateSaturateInto<u32>>::truncate_saturate_into)
-    }
-
-    /// Execute `i64.trunc_sat_f32_s` Wasm operation.
-    pub fn i64_trunc_sat_f32_s(self) -> Self {
-        self.execute_unary(<F32 as TruncateSaturateInto<i64>>::truncate_saturate_into)
-    }
-
-    /// Execute `i64.trunc_sat_f32_u` Wasm operation.
-    pub fn i64_trunc_sat_f32_u(self) -> Self {
-        self.execute_unary(<F32 as TruncateSaturateInto<u64>>::truncate_saturate_into)
-    }
-
-    /// Execute `i64.trunc_sat_f64_s` Wasm operation.
-    pub fn i64_trunc_sat_f64_s(self) -> Self {
-        self.execute_unary(<F64 as TruncateSaturateInto<i64>>::truncate_saturate_into)
-    }
-
-    /// Execute `i64.trunc_sat_f64_u` Wasm operation.
-    pub fn i64_trunc_sat_f64_u(self) -> Self {
-        self.execute_unary(<F64 as TruncateSaturateInto<u64>>::truncate_saturate_into)
-    }
 }
-
-/// Macro to help implement generic trait implementations for tuple types.
-macro_rules! for_each_tuple {
-    ($mac:ident) => {
-        $mac!( 0 );
-        $mac!( 1 T1);
-        $mac!( 2 T1 T2);
-        $mac!( 3 T1 T2 T3);
-        $mac!( 4 T1 T2 T3 T4);
-        $mac!( 5 T1 T2 T3 T4 T5);
-        $mac!( 6 T1 T2 T3 T4 T5 T6);
-        $mac!( 7 T1 T2 T3 T4 T5 T6 T7);
-        $mac!( 8 T1 T2 T3 T4 T5 T6 T7 T8);
-        $mac!( 9 T1 T2 T3 T4 T5 T6 T7 T8 T9);
-        $mac!(10 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10);
-        $mac!(11 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11);
-        $mac!(12 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12);
-        $mac!(13 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12 T13);
-        $mac!(14 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12 T13 T14);
-        $mac!(15 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12 T13 T14 T15);
-        $mac!(16 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12 T13 T14 T15 T16);
-    }
-}
-
-/// An error that may occur upon encoding or decoding slices of [`UntypedValue`].
-#[derive(Debug, Copy, Clone)]
-pub enum UntypedError {
-    /// The [`UntypedValue`] slice length did not match `Self`.
-    InvalidLen,
-}
-
-impl UntypedError {
-    /// Creates a new `InvalidLen` [`UntypedError`].
-    #[cold]
-    pub fn invalid_len() -> Self {
-        Self::InvalidLen
-    }
-}
-
-impl Display for UntypedError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            UntypedError::InvalidLen => {
-                write!(f, "mismatched length of the untyped slice",)
-            }
-        }
-    }
-}
-
-impl UntypedValue {
-    /// Decodes the slice of [`UntypedValue`] as a value of type `T`.
-    ///
-    /// # Note
-    ///
-    /// `T` can either be a single type or a tuple of types depending
-    /// on the length of the `slice`.
-    ///
-    /// # Errors
-    ///
-    /// If the tuple length of `T` and the length of `slice` does not match.
-    pub fn decode_slice<T>(slice: &[Self]) -> Result<T, UntypedError>
-    where
-        T: DecodeUntypedSlice,
-    {
-        <T as DecodeUntypedSlice>::decode_untyped_slice(slice)
-    }
-
-    pub fn decode_slice_i32<T>(slice: &[Self], origin_params: &[ValType]) -> Result<T, UntypedError>
-    where
-        T: DecodeUntypedSlice,
-    {
-        <T as DecodeUntypedSlice>::decode_untyped_slice_i32(slice, origin_params)
-    }
-
-    /// Encodes the slice of [`UntypedValue`] from the given value of type `T`.
-    ///
-    /// # Note
-    ///
-    /// `T` can either be a single type or a tuple of types depending
-    /// on the length of the `slice`.
-    ///
-    /// # Errors
-    ///
-    /// If the tuple length of `T` and the length of `slice` does not match.
-    pub fn encode_slice<T>(slice: &mut [Self], input: T) -> Result<(), UntypedError>
-    where
-        T: EncodeUntypedSlice,
-    {
-        <T as EncodeUntypedSlice>::encode_untyped_slice(input, slice)
-    }
-
-    pub fn encode_slice_i32<T>(
-        slice: &mut [Self],
-        input: T,
-        origin_results: Vec<ValType>,
-    ) -> Result<(), UntypedError>
-    where
-        T: EncodeUntypedSlice,
-    {
-        <T as EncodeUntypedSlice>::encode_untyped_slice_i32(input, slice, origin_results)
-    }
-}
-
-/// Tuple types that allow to decode a slice of [`UntypedValue`].
-pub trait DecodeUntypedSlice: Sized {
-    /// Decodes the slice of [`UntypedValue`] as a value of type `Self`.
-    ///
-    /// # Note
-    ///
-    /// `Self` can either be a single type or a tuple of types depending
-    /// on the length of the `slice`.
-    ///
-    /// # Errors
-    ///
-    /// If the tuple length of `Self` and the length of `slice` does not match.
-    fn decode_untyped_slice(params: &[UntypedValue]) -> Result<Self, UntypedError>;
-
-    fn decode_untyped_slice_i32(
-        params: &[UntypedValue],
-        origin_params: &[ValType],
-    ) -> Result<Self, UntypedError>;
-}
-
-impl<T1> DecodeUntypedSlice for T1
-where
-    T1: From<UntypedValue>,
-{
-    #[inline]
-    fn decode_untyped_slice(results: &[UntypedValue]) -> Result<Self, UntypedError> {
-        <(T1,) as DecodeUntypedSlice>::decode_untyped_slice(results).map(|t| t.0)
-    }
-
-    #[inline]
-    fn decode_untyped_slice_i32(
-        results: &[UntypedValue],
-        origin_params: &[ValType],
-    ) -> Result<Self, UntypedError> {
-        <(T1,) as DecodeUntypedSlice>::decode_untyped_slice_i32(results, origin_params).map(|t| t.0)
-    }
-}
-
-macro_rules! impl_decode_untyped_slice {
-    ( $n:literal $( $tuple:ident )* ) => {
-        impl<$($tuple),*> DecodeUntypedSlice for ($($tuple,)*)
-        where
-            $(
-                $tuple: From<UntypedValue>
-            ),*
-        {
-                        #[allow(non_snake_case)]
-            #[inline]
-            fn decode_untyped_slice(results: &[UntypedValue]) -> Result<Self, UntypedError> {
-                match results {
-                    &[ $($tuple),* ] => Ok((
-                        $(
-                            <$tuple as From<UntypedValue>>::from($tuple),
-                        )*
-                    )),
-                    _ => Err(UntypedError::invalid_len()),
-                }
-            }
-
-            #[allow(non_snake_case)]
-            #[inline]
-            #[allow(unused_variables, unused_mut, unused_assignments)]
-            fn decode_untyped_slice_i32(results: &[UntypedValue], origin_params: &[ValType]) -> Result<Self, UntypedError> {
-                let mut i = 0;
-                match origin_params {
-                    &[ $($tuple),* ]   => Ok((
-                    $(
-                        {
-                            if $tuple == ValType::I64 {
-                                if i + 1 >= results.len() {
-                                    return Err(UntypedError::invalid_len());
-                                }
-                                let high = results[i].as_u64();
-                                let low = results[i + 1].as_u64();
-                                i += 2;
-
-                                <$tuple as From<UntypedValue>>::from(UntypedValue::from((high << 32) | low))
-                            } else {
-                                if i >= results.len() {
-                                    return Err(UntypedError::invalid_len());
-                                }
-                                let value = results[i].clone();
-                                i += 1;
-
-                                <$tuple as From<UntypedValue>>::from(value)
-                            }
-                        },
-                    )*
-
-                )),
-                    _ => Err(UntypedError::invalid_len()),
-                }
-            }
-        }
-    };
-}
-for_each_tuple!(impl_decode_untyped_slice);
-
-/// Tuple types that allow to encode a slice of [`UntypedValue`].
-pub trait EncodeUntypedSlice {
-    /// Encodes the slice of [`UntypedValue`] from the given value of type `Self`.
-    ///
-    /// # Note
-    ///
-    /// `Self` can either be a single type or a tuple of types depending
-    /// on the length of the `slice`.
-    ///
-    /// # Errors
-    ///
-    /// If the tuple length of `Self` and the length of `slice` does not match.
-    fn encode_untyped_slice(self, results: &mut [UntypedValue]) -> Result<(), UntypedError>;
-
-    fn encode_untyped_slice_i32(
-        self,
-        results: &mut [UntypedValue],
-        origin_results: Vec<ValType>,
-    ) -> Result<(), UntypedError>;
-}
-
-impl<T1> EncodeUntypedSlice for T1
-where
-    T1: Into<UntypedValue>,
-{
-    #[inline]
-    fn encode_untyped_slice(self, results: &mut [UntypedValue]) -> Result<(), UntypedError> {
-        <(T1,) as EncodeUntypedSlice>::encode_untyped_slice((self,), results)
-    }
-
-    #[inline]
-    fn encode_untyped_slice_i32(
-        self,
-        results: &mut [UntypedValue],
-        origin_results: Vec<ValType>,
-    ) -> Result<(), UntypedError> {
-        <(T1,) as EncodeUntypedSlice>::encode_untyped_slice_i32((self,), results, origin_results)
-    }
-}
-
-macro_rules! impl_encode_untyped_slice {
-    ( $n:literal $( $tuple:ident )* ) => {
-        paste! {
-            impl<$($tuple),*> EncodeUntypedSlice for ($($tuple,)*)
-            where
-                $(
-                    $tuple: Into<UntypedValue>
-                ),*
-            {
-                #[allow(non_snake_case)]
-                #[inline]
-                fn encode_untyped_slice(self, results: &mut [UntypedValue]) -> Result<(), UntypedError> {
-                    match results {
-                        [ $( [< _results_ $tuple >] ,)* ] => {
-                            let ( $( [< _self_ $tuple >] ,)* ) = self;
-                            $(
-                                *[< _results_ $tuple >] = <$tuple as Into<UntypedValue>>::into([< _self_ $tuple >]);
-                            )*
-                            Ok(())
-                        }
-                        _ => Err(UntypedError::invalid_len())
-                    }
-                }
-
-                #[allow(non_snake_case)]
-                #[inline]
-                #[allow(unused_variables)]
-                #[allow(unused_mut)]
-                fn encode_untyped_slice_i32(self, results: &mut [UntypedValue], origin_results: Vec<ValType>) -> Result<(), UntypedError> {
-                    let mut i = 0;
-                    match origin_results.as_slice() {
-                        [ $( [< _origin_results_ $tuple >] ,)* ] => {
-                            let ( $( [< _self_ $tuple >] ,)* ) = self;
-                            $(
-                                let untyped = <$tuple as Into<UntypedValue>>::into([< _self_ $tuple >]);
-                                if [< _origin_results_ $tuple >] == &ValType::I64 {
-                                    let (low, high) = split_i64_to_i32(untyped.as_u64() as i64);
-                                    results[i] = UntypedValue::from(high);
-                                    i += 1;
-                                    results[i] = UntypedValue::from(low);
-                                    i += 1;
-                                } else {
-                                    results[i] = untyped;
-                                    i += 1;
-                                }
-                            )*
-                            if i != results.len() {
-                                Err(UntypedError::invalid_len())
-                            } else {
-                                Ok(())
-                            }
-
-                        }
-                        _ => Err(UntypedError::invalid_len())
-                    }
-                }
-            }
-        }
-    };
-}
-for_each_tuple!(impl_encode_untyped_slice);
 
 impl UntypedValue {
     pub fn as_u16(self) -> u16 {

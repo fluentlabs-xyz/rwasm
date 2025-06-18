@@ -12,8 +12,7 @@ use crate::{
         drop_keep::{translate_drop_keep, DropKeep},
         error::CompilationError,
         fuel_costs::FuelCosts,
-        instr_loc::InstrLoc,
-        labels::{LabelRef, LabelRegistry},
+        labels::LabelRegistry,
         locals_registry::LocalsRegistry,
         segment_builder::SegmentBuilder,
         utils::RelativeDepth,
@@ -28,7 +27,9 @@ use crate::{
     FuncIdx,
     FuncTypeIdx,
     GlobalVariable,
+    InstrLoc,
     InstructionSet,
+    LabelRef,
     Opcode,
     SignatureIdx,
     DEFAULT_MEMORY_INDEX,
@@ -245,7 +246,9 @@ impl InstructionTranslator {
 
     /// Returns the current instruction pointer as an index.
     pub fn current_pc(&self) -> InstrLoc {
-        InstrLoc::from_usize(self.alloc.instruction_set.len())
+        let instr_loc = u32::try_from(self.alloc.instruction_set.len())
+            .unwrap_or_else(|_| panic!("instruction len out of range"));
+        instr_loc as InstrLoc
     }
 
     /// Registers the `block` control frame surrounding the entire function body.
@@ -298,7 +301,7 @@ impl InstructionTranslator {
             .expect("base fuel exceeds u32 size");
         let instr_loc = self.alloc.instruction_set.loc();
         self.alloc.instruction_set.op_consume_fuel(base_fuel);
-        InstrLoc::from_u32(instr_loc)
+        instr_loc as InstrLoc
     }
 
     /// Returns the most recent [`ConsumeFuel`] instruction in the translation process.
@@ -315,7 +318,7 @@ impl InstructionTranslator {
     /// Does nothing if gas metering is disabled.
     ///
     /// [`ConsumeFuel`]: enum.Instruction.html#variant.ConsumeFuel
-    pub(crate) fn bump_fuel_consumption<F: FnOnce(&FuelCosts) -> u64>(
+    pub(crate) fn bump_fuel_consumption<F: FnOnce(&FuelCosts) -> u32>(
         &mut self,
         delta: F,
     ) -> Result<(), CompilationError> {
@@ -326,7 +329,7 @@ impl InstructionTranslator {
             let delta = delta(fuel_costs);
             self.alloc
                 .instruction_set
-                .bump_fuel_consumption(instr.into_u32(), delta)?;
+                .bump_fuel_consumption(instr, delta)?;
         }
         Ok(())
     }
@@ -403,7 +406,7 @@ impl InstructionTranslator {
     pub fn finish(&mut self) -> Result<(), CompilationError> {
         // update branch offsets in `Branch` opcodes
         for (user, offset) in self.alloc.labels.resolved_users() {
-            self.alloc.instruction_set.instr[user.into_usize()].update_branch_offset(offset?);
+            self.alloc.instruction_set.instr[user as usize].update_branch_offset(offset?);
         }
         let last_func_offset = self.alloc.func_offsets.last().copied().unwrap() as usize;
         // update max stack height in `StackAlloc` opcode
@@ -989,10 +992,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
         self.translate_if_reachable(|builder| {
             fn offset_instr(base: InstrLoc, offset: usize) -> InstrLoc {
-                InstrLoc::from_u32(base.into_u32() + offset as u32)
+                (base + offset as u32) as InstrLoc
             }
 
-            fn fuel_for_drop_keep(builder: &mut InstructionTranslator, drop_keep: DropKeep) -> u64 {
+            fn fuel_for_drop_keep(builder: &mut InstructionTranslator, drop_keep: DropKeep) -> u32 {
                 if let Some(fuel_costs) = builder.fuel_costs {
                     fuel_costs.fuel_for_drop_keep(drop_keep)
                 } else {
@@ -1004,7 +1007,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 builder: &mut InstructionTranslator,
                 n: usize,
                 depth: RelativeDepth,
-                max_drop_keep_fuel: &mut u64,
+                max_drop_keep_fuel: &mut u32,
             ) -> Result<BrTableTarget, CompilationError> {
                 match builder.acquire_target(depth.into_u32())? {
                     AcquiredTarget::Branch(label, drop_keep) => {
@@ -1106,7 +1109,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // The maximum fuel costs among all `br_table` arms.
             // We use this to charge fuel once at the entry of a `br_table`
             // for the most expensive arm of all of its arms.
-            let mut max_drop_keep_fuel = 0;
+            let mut max_drop_keep_fuel = 0u32;
             builder.stack_height.pop1();
             builder.alloc.stack_types.pop().unwrap();
 

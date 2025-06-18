@@ -1,5 +1,6 @@
 use crate::{
     always_failing_syscall_handler,
+    BlockFuel,
     ExecutorConfig,
     FuelCosts,
     GlobalIdx,
@@ -123,8 +124,11 @@ impl<T> Store<T> {
         self.refunded_fuel
     }
 
-    pub fn try_consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
-        let consumed_fuel = self.consumed_fuel.checked_add(fuel).unwrap_or(u64::MAX);
+    pub fn try_consume_fuel(&mut self, fuel: BlockFuel) -> Result<(), TrapCode> {
+        let consumed_fuel = self
+            .consumed_fuel
+            .checked_add(fuel as u64)
+            .unwrap_or(u64::MAX);
         if let Some(fuel_limit) = self.config.fuel_limit {
             if consumed_fuel > fuel_limit {
                 return Err(TrapCode::OutOfFuel);

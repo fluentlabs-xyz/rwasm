@@ -88,9 +88,8 @@ impl<'a> FuncBuilder<'a> {
 
         // we exclude i64 locals from this check to satisfy wasm fuel calculation policy
         let validated_locals = self.validator.len_locals();
-        self.translator.bump_fuel_consumption(|fuel_costs| {
-            fuel_costs.fuel_for_locals(u64::from(validated_locals))
-        })?;
+        self.translator
+            .bump_fuel_consumption(|fuel_costs| fuel_costs.fuel_for_locals(validated_locals))?;
         Ok(())
     }
 

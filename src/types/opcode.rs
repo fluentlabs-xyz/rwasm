@@ -263,7 +263,7 @@ impl core::fmt::Display for Opcode {
         } else {
             match self {
                 Opcode::I32Const(value) => write!(f, "I32Const({})", value),
-                Opcode::ConsumeFuel(value) => write!(f, "ConsumeFuel({})", value.to_u64()),
+                Opcode::ConsumeFuel(value) => write!(f, "ConsumeFuel({})", value),
                 Opcode::Br(value) => write!(f, "Br({})", value.to_i32()),
                 Opcode::BrIfEqz(value) => write!(f, "BrIfEqz({})", value.to_i32()),
                 Opcode::BrIfNez(value) => write!(f, "BrIfNez({})", value.to_i32()),

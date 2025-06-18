@@ -1,4 +1,4 @@
-use crate::compiler::{instr_loc::InstrLoc, labels::LabelRef};
+use crate::{InstrLoc, LabelRef};
 use alloc::vec::Vec;
 use wasmparser::BlockType;
 

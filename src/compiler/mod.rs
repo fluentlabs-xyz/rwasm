@@ -4,7 +4,6 @@ mod drop_keep;
 mod error;
 mod fuel_costs;
 mod func_builder;
-mod instr_loc;
 mod labels;
 mod locals_registry;
 mod parser;
