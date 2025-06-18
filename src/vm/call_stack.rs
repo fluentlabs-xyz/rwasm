@@ -1,12 +1,12 @@
-use crate::InstructionPtr;
+use crate::{InstructionPtr, ValueStackPtr};
 use core::ops::{Deref, DerefMut};
 use smallvec::SmallVec;
 
 #[derive(Default, Clone)]
-pub struct CallStack(SmallVec<[InstructionPtr; 128]>);
+pub struct CallStack(SmallVec<[(InstructionPtr, ValueStackPtr); 128]>);
 
 impl Deref for CallStack {
-    type Target = SmallVec<[InstructionPtr; 128]>;
+    type Target = SmallVec<[(InstructionPtr, ValueStackPtr); 128]>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

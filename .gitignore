@@ -19,3 +19,7 @@ Cargo.lock
 
 # coverage
 lcov*.info
+
+# exclude all wasm & wat files
+lib.wasm
+lib.wat

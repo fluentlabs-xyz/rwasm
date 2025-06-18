@@ -19,7 +19,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let delta: u32 = delta.into();
         if self.store.config.fuel_enabled {
             self.store
-                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(delta as u64))?;
+                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(delta))?;
         }
         let table = self
             .store
@@ -93,7 +93,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let dst_index = u32::from(d);
         if self.store.config.fuel_enabled {
             self.store
-                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(len as u64))?;
+                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(len))?;
         }
         // Query both tables and check if they are the same:
         if src_table_idx != dst_table_idx {
@@ -129,7 +129,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
 
         if self.store.config.fuel_enabled {
             self.store
-                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(len as u64))?;
+                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(len))?;
         }
 
         // There is a trick with `element_segment_idx`:

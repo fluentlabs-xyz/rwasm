@@ -87,7 +87,14 @@ impl ImportLinker {
                 result,
             },
         );
-        assert!(last_value.is_none(), "rwasm: import linker name collision");
+        debug_assert!(
+            self.func_by_name
+                .values()
+                .find(|v| v.sys_func_idx == sys_func_idx)
+                .is_some(),
+            "import linker sys func idx collision"
+        );
+        assert!(last_value.is_none(), "import linker name collision");
     }
 
     pub fn find_symbols(&self) -> Vec<ImportName> {

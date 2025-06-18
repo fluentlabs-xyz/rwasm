@@ -39,10 +39,9 @@ use bincode::{
     Encode,
 };
 use core::ops::{Deref, DerefMut};
-use serde::{Deserialize, Serialize};
 
-#[cfg_attr(feature = "tracing", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
 pub struct InstructionSet {
     pub instr: Vec<Opcode>,
 }
@@ -147,6 +146,17 @@ impl InstructionSet {
 
     pub fn last_nth_mut(&mut self, offset: usize) -> Option<&mut Opcode> {
         self.instr.iter_mut().rev().nth(offset)
+    }
+
+    pub fn op_dup(&mut self) {
+        self.op_local_get(1);
+    }
+
+    pub fn op_swap(&mut self) {
+        self.op_local_get(2);
+        self.op_local_get(2);
+        self.op_local_set(3);
+        self.op_local_set(1);
     }
 
     impl_opcode!(Unreachable);
@@ -312,12 +322,16 @@ impl InstructionSet {
     pub fn bump_fuel_consumption(
         &mut self,
         instr: u32,
-        delta: u64,
+        delta: u32,
     ) -> Result<(), CompilationError> {
-        match &mut self.instr[instr as usize] {
-            Opcode::ConsumeFuel(fuel) => fuel.bump_by(delta),
+        let fuel = match &mut self.instr[instr as usize] {
+            Opcode::ConsumeFuel(fuel) => fuel,
             _ => unreachable!("instruction {} is not a `ConsumeFuel` instruction", instr),
-        }
+        };
+        *fuel = fuel
+            .checked_add(delta)
+            .ok_or(CompilationError::BlockFuelOutOfBounds)?;
+        Ok(())
     }
 }
 

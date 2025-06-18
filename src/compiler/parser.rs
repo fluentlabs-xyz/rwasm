@@ -104,7 +104,7 @@ impl ModuleParser {
         for (k, v) in &parser.allocations.translation.exported_funcs {
             let func_type_idx = parser.allocations.translation.resolve_func_type_index(*v);
             let func_type =
-                parser.allocations.translation.func_types[func_type_idx as usize].clone();
+                parser.allocations.translation.original_func_types[func_type_idx as usize].clone();
             result.push((k.clone(), *v, func_type));
             #[cfg(feature = "debug-print")]
             print!("{}: func_idx={}, func_type_idx={}\n", k, v, func_type_idx);
@@ -215,13 +215,15 @@ impl ModuleParser {
         }
         // translate state router
         for (entrypoint_name, state_value) in state_router.states.iter() {
-            let func_idx = self
+            let Some(func_idx) = self
                 .allocations
                 .translation
                 .exported_funcs
                 .get(entrypoint_name)
                 .copied()
-                .ok_or(CompilationError::MissingEntrypoint)?;
+            else {
+                continue;
+            };
             let func_type_idx = self
                 .allocations
                 .translation
@@ -446,8 +448,8 @@ impl ModuleParser {
                 .translation
                 .compiled_funcs
                 .push(func_type_index);
-            #[cfg(feature = "debug-print")]
-            println!("\nfunc_idx={}", func_idx);
+            // #[cfg(feature = "debug-print")]
+            // println!("\nfunc_idx={}", func_idx);
             let allocations = take(&mut self.allocations);
             let mut translator =
                 InstructionTranslator::new(allocations.translation, self.config.consume_fuel);
@@ -615,8 +617,8 @@ impl ModuleParser {
         self.validator.export_section(&section)?;
         for export in section.into_iter() {
             let export = export?;
-            #[cfg(feature = "debug-print")]
-            println!("export: func_idx={} {}", export.index, export.name);
+            // #[cfg(feature = "debug-print")]
+            // println!("export: func_idx={} {}", export.index, export.name);
             match export.kind {
                 ExternalKind::Func => {
                     let function_name: Box<str> = export.name.into();
@@ -837,8 +839,8 @@ impl ModuleParser {
     /// If the function body fails to validate.
     fn process_code_entry(&mut self, func_body: FunctionBody) -> Result<(), CompilationError> {
         let func_idx = self.next_func();
-        #[cfg(feature = "debug-print")]
-        println!("\nfunc_idx={}", func_idx);
+        // #[cfg(feature = "debug-print")]
+        // println!("\nfunc_idx={}", func_idx);
         let allocations = take(&mut self.allocations);
         let validator = self.validator.code_section_entry(&func_body)?;
         let func_validator = validator.into_validator(allocations.validation);

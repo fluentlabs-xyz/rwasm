@@ -30,6 +30,7 @@ use rwasm::{
     ValType,
     Value,
     ValueStack,
+    F64,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use wast::token::{Id, Span};
@@ -59,14 +60,13 @@ type Instance = Rc<RefCell<InstanceInner>>;
 pub struct TestContext<'a> {
     /// The list of all instantiated modules.
     instances: HashMap<String, Instance>,
+    /// Extern function types and state values
     extern_types: HashMap<String, FuncType>,
     extern_state: HashMap<String, u32>,
     /// The last touched module instance.
     last_instance: Option<Instance>,
     /// Profiling during the Wasm spec test run.
     profile: TestProfile,
-    /// Intermediate results buffer that can be reused for calling Wasm functions.
-    results: Vec<Value>,
     /// The descriptor of the test.
     ///
     /// Useful for printing better debug messages in case of failure.
@@ -82,7 +82,6 @@ impl<'a> TestContext<'a> {
             extern_state: Default::default(),
             last_instance: None,
             profile: TestProfile::default(),
-            results: Vec::new(),
             descriptor,
         }
     }
@@ -115,7 +114,7 @@ impl<'a> TestContext<'a> {
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I64,
                     block_fuel: block_fuel.clone(),
-                    params: &[ValType::I32; 2],
+                    params: &[ValType::I64],
                     result: &[],
                 },
             ),
@@ -133,7 +132,7 @@ impl<'a> TestContext<'a> {
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_F64,
                     block_fuel: block_fuel.clone(),
-                    params: &[ValType::F32; 2],
+                    params: &[ValType::F64],
                     result: &[],
                 },
             ),
@@ -151,7 +150,7 @@ impl<'a> TestContext<'a> {
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I64_F64,
                     block_fuel: block_fuel.clone(),
-                    params: &[ValType::I32, ValType::I32, ValType::F32, ValType::F32],
+                    params: &[ValType::I64, ValType::F64],
                     result: &[],
                 },
             ),
@@ -195,7 +194,6 @@ impl TestContext<'_> {
 
         let config = CompilationConfig::default()
             .with_import_linker(Self::import_linker())
-            .with_wrap_import_functions(true)
             .with_allow_malformed_entrypoint_func_type(true)
             .with_builtins_consume_fuel(false)
             .with_default_imported_global_value(666.into());
@@ -217,11 +215,11 @@ impl TestContext<'_> {
         let (rwasm_module, _) =
             RwasmModule::compile(config, &wasm[..]).map_err(|err| TestError::Rwasm(err.into()))?;
 
-        // {
-        //     let buffer = rwasm_module.serialize();
-        //     let parsed_module = RwasmModule::new(&buffer);
-        //     assert_eq!(rwasm_module, parsed_module);
-        // }
+        {
+            let buffer = rwasm_module.serialize();
+            let parsed_module = RwasmModule::new(&buffer);
+            assert_eq!(rwasm_module, parsed_module);
+        }
 
         #[cfg(feature = "debug-print")]
         println!("{}", rwasm_module);
@@ -318,7 +316,7 @@ impl TestContext<'_> {
         module_name: Option<&str>,
         func_name: &str,
         args: &[Value],
-    ) -> Result<&[Value], TestError> {
+    ) -> Result<Vec<Value>, TestError> {
         #[cfg(feature = "debug-print")]
         println!("\n --- {} ---", func_name);
 
@@ -373,21 +371,31 @@ impl TestContext<'_> {
         // copy results
         let func_type = self.extern_types.get(func_name).unwrap();
         let len_results = func_type.results().len();
-        self.results.clear();
-        self.results.resize(len_results, Value::I32(0));
+        let mut results = vec![Value::I32(0); len_results];
         for (i, val_type) in func_type.results().iter().rev().enumerate() {
             let popped_value = instance.value_stack.pop();
-            self.results[len_results - 1 - i] = match val_type {
+            results[len_results - 1 - i] = match val_type {
                 ValType::I32 => Value::I32(popped_value.into()),
-                ValType::I64 => Value::I64(popped_value.into()),
+                ValType::I64 => {
+                    let hi = popped_value.to_bits() as u64;
+                    let lo = instance.value_stack.pop().to_bits() as u64;
+                    let value = (hi << 32) | lo;
+                    Value::I64(value as i64)
+                }
                 ValType::F32 => Value::F32(popped_value.into()),
-                ValType::F64 => Value::F64(popped_value.into()),
+                ValType::F64 => {
+                    let hi = popped_value.to_bits() as u64;
+                    let lo = instance.value_stack.pop().to_bits() as u64;
+                    let value = (hi << 32) | lo;
+                    Value::F64(F64::from_bits(value))
+                }
                 ValType::FuncRef => Value::FuncRef(popped_value.into()),
                 ValType::ExternRef => Value::ExternRef(popped_value.into()),
                 _ => unreachable!("unsupported result type: {:?}", val_type),
             };
         }
-        Ok(&self.results)
+        assert!(instance.value_stack.as_slice().is_empty());
+        Ok(results)
     }
 
     /// Returns the current value of the [`Global`] identifier by the given `module_name` and

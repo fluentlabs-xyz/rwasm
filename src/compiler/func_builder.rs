@@ -88,9 +88,8 @@ impl<'a> FuncBuilder<'a> {
 
         // we exclude i64 locals from this check to satisfy wasm fuel calculation policy
         let validated_locals = self.validator.len_locals();
-        self.translator.bump_fuel_consumption(|fuel_costs| {
-            fuel_costs.fuel_for_locals(u64::from(validated_locals))
-        })?;
+        self.translator
+            .bump_fuel_consumption(|fuel_costs| fuel_costs.fuel_for_locals(validated_locals))?;
         Ok(())
     }
 
@@ -121,11 +120,11 @@ impl<'a> FuncBuilder<'a> {
     fn translate_operators(&mut self) -> Result<usize, CompilationError> {
         let mut reader = self.func_body.get_operators_reader()?;
         while !reader.eof() {
-            #[cfg(feature = "debug-print")]
-            {
-                let operator = reader.clone().read()?;
-                println!("{:?}", operator);
-            }
+            // #[cfg(feature = "debug-print")]
+            // {
+            //     let operator = reader.clone().read()?;
+            //     println!("{:?}", operator);
+            // }
             self.pos = reader.original_position();
             reader.visit_operator(self)??;
         }

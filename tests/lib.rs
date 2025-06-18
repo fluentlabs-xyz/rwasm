@@ -1,8 +1,8 @@
-use crate::{CompilationConfig, ExecutionEngine, RwasmModule, Store};
+use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, Store};
 
 #[test]
 fn test_fib() {
-    let wasm_binary = include_bytes!("../../benchmarks/lib.wasm");
+    let wasm_binary = include_bytes!("../benchmarks/lib.wasm");
     let config = CompilationConfig::default().with_entrypoint_name("main".into());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     println!("{}", rwasm_module);
@@ -15,30 +15,65 @@ fn test_fib() {
 }
 
 #[test]
-fn test_block() {
+fn test_i64_load8_s() {
     let wasm_binary = wat::parse_str(
         r#"
 (module
-  (func $f32-i32 (param f32 i32) (result i32) (local.get 1))
-  (func (export "type-second-i32") (result i32)
-    (call $f32-i32 (f32.const 32.1) (i32.const 32))
+  (memory 1)
+  (data (i32.const 0) "abcdefghijklmnopqrstuvwxyz")
+
+  (func (export "8s_good1") (param $i i32) (result i64)
+    (i64.load8_s offset=0 (local.get $i))                   ;; 97 'a'
   )
-)"#,
+)
+"#,
     )
     .unwrap();
     let config = CompilationConfig::default()
-        .with_entrypoint_name("type-second-i32".into())
+        .with_entrypoint_name("8s_good1".into())
         .with_allow_malformed_entrypoint_func_type(true);
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = Store::<()>::default();
     let mut engine = ExecutionEngine::new();
-    // engine.value_stack().push(0x132.into());
-    // engine.value_stack().push(0.into());
+    engine.value_stack().push(0.into());
     engine.execute(&mut store, &rwasm_module).unwrap();
-    // let result = engine.value_stack().pop();
-    // let result = engine.value_stack().pop();
-    // assert_eq!(result.as_i64(), 433494437);
+    let result = engine.value_stack().pop();
+    assert_eq!(result.as_i32(), 0);
+    let result = engine.value_stack().pop();
+    assert_eq!(result.as_i32(), 97);
+    println!("{:?}", engine.value_stack().as_slice());
+    assert!(engine.value_stack().as_slice().is_empty());
+}
+
+#[test]
+fn test_i64_load() {
+    let wasm_binary = wat::parse_str(
+        r#"
+(module
+  (memory 1)
+  (data (i32.const 0) "abcdefghijklmnopqrstuvwxyz")
+  (func (export "64_good1") (param $i i32) (result i64)
+    (i64.load offset=0 (local.get $i))                     ;; 0x6867666564636261 'abcdefgh'
+  )
+)
+"#,
+    )
+    .unwrap();
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("64_good1".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+    println!("{}", rwasm_module);
+    let mut store = Store::<()>::default();
+    let mut engine = ExecutionEngine::new();
+    engine.value_stack().push(0.into());
+    engine.execute(&mut store, &rwasm_module).unwrap();
+    let hi = engine.value_stack().pop().to_bits() as u64;
+    let lo = engine.value_stack().pop().to_bits() as u64;
+    assert!(engine.value_stack().as_slice().is_empty());
+    let value = (hi << 32) | lo;
+    assert_eq!(value, 0x6867666564636261);
 }
 
 #[test]
@@ -97,52 +132,6 @@ fn test_bulk_bench() {
     engine.value_stack().push(5000.into());
     engine.value_stack().push(0.into());
     engine.execute(&mut store, &rwasm_module).unwrap();
-    let result = engine.value_stack().pop();
-    let result = engine.value_stack().pop();
+    let _result = engine.value_stack().pop();
+    let _result = engine.value_stack().pop();
 }
-
-// #[test]
-// fn test_nitro_verifier() {
-//     let wasm_binary = include_bytes!("../../tests/nitro-verifier.wasm");
-//     let mut import_linker = ImportLinker::default();
-//     import_linker.insert_function(
-//         ImportName::new("fluentbase_v1preview", "_debug_log"),
-//         70,
-//         InstructionSet::default(),
-//         &[ValType::I32; 2],
-//         &[],
-//     );
-//     import_linker.insert_function(
-//         ImportName::new("fluentbase_v1preview", "_input_size"),
-//         71,
-//         InstructionSet::default(),
-//         &[],
-//         &[ValType::I32; 1],
-//     );
-//     import_linker.insert_function(
-//         ImportName::new("fluentbase_v1preview", "_read"),
-//         72,
-//         InstructionSet::default(),
-//         &[ValType::I32; 3],
-//         &[],
-//     );
-//     import_linker.insert_function(
-//         ImportName::new("fluentbase_v1preview", "_write"),
-//         72,
-//         InstructionSet::default(),
-//         &[ValType::I32; 2],
-//         &[],
-//     );
-//     import_linker.insert_function(
-//         ImportName::new("fluentbase_v1preview", "_exit"),
-//         72,
-//         InstructionSet::default(),
-//         &[ValType::I32; 1],
-//         &[],
-//     );
-//     let config = CompilationConfig::default()
-//         .with_entrypoint_name("main".into())
-//         .with_allow_malformed_entrypoint_func_type(true)
-//         .with_import_linker(import_linker);
-//     let (_rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-// }

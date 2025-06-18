@@ -42,3 +42,4 @@ tracing = [
 ]
 debug-print = []
 fpu = []
+wasmer = []

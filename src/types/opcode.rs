@@ -264,7 +264,7 @@ impl core::fmt::Display for Opcode {
         } else {
             match self {
                 Opcode::I32Const(value) => write!(f, "I32Const({})", value),
-                Opcode::ConsumeFuel(value) => write!(f, "ConsumeFuel({})", value.to_u64()),
+                Opcode::ConsumeFuel(value) => write!(f, "ConsumeFuel({})", value),
                 Opcode::Br(value) => write!(f, "Br({})", value.to_i32()),
                 Opcode::BrIfEqz(value) => write!(f, "BrIfEqz({})", value.to_i32()),
                 Opcode::BrIfNez(value) => write!(f, "BrIfNez({})", value.to_i32()),
@@ -458,7 +458,7 @@ impl Opcode {
             Opcode::BrIfEqz(branch_offset) => branch_offset.to_i32() as u32,
             Opcode::BrIfNez(branch_offset) => branch_offset.to_i32() as u32,
             Opcode::BrTable(target) => *target as u32,
-            Opcode::ConsumeFuel(block_fuel) => block_fuel.to_u64() as u32,
+            Opcode::ConsumeFuel(block_fuel) => *block_fuel,
             Opcode::ReturnCallInternal(func) => *func as u32,
             Opcode::ReturnCall(sys_func_id) => *sys_func_id as u32,
             Opcode::ReturnCallIndirect(func) => *func as u32,
