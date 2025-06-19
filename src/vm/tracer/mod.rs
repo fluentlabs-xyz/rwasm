@@ -88,6 +88,7 @@ pub struct Tracer {
     pub memory_records: HashMap<u32, MemoryRecord>,
     pub local_memory_event: HashMap<u32, MemoryLocalEvent>,
     pub state: VMState,
+    pub ip_max: u64,
 }
 
 impl Debug for Tracer {
@@ -134,7 +135,8 @@ impl Tracer {
             call_id: 0,
             memory_access,
         };
-        self.logs.push(opcode_state.clone());
+        println!("opcode _state{:?},", opcode_state);
+        self.logs.push(opcode_state);
     }
 
     pub fn post_opcode_state(
@@ -145,8 +147,8 @@ impl Tracer {
     ) {
         let op_state = self.logs.last().unwrap();
         let opcode = op_state.opcode;
-        let mut memory_access = op_state.memory_access;
-        self.record_mw(opcode, new_sp, stack, &mut memory_access);
+
+        self.record_mw(opcode, new_sp, stack);
         self.state.sp = new_sp;
     }
 
@@ -190,16 +192,19 @@ impl Tracer {
     pub fn record_mr(&mut self, ins: Opcode, sp: u32) -> MemoryAccessRecord {
         let length = opcode_stack_read(ins);
         let mut memory_access = MemoryAccessRecord::default();
+        println!(
+            "op:{},length:{},memory_record{:?}",
+            ins, length, self.memory_records
+        );
+
         for idx in length..0 {
-            let addr = sp - length + 1;
-            let record = self
-                .memory_records
-                .entry(sp - length)
-                .or_insert(MemoryRecord {
-                    value: 0,
-                    shard: 0,
-                    timestamp: 0,
-                });
+            let addr = sp - idx;
+            println!("length in loop{},addr:{}", length, addr);
+            let record = self.memory_records.entry(addr).or_insert(MemoryRecord {
+                value: 0,
+                shard: 0,
+                timestamp: 0,
+            });
 
             let prev_record = *record;
             record.shard = self.state.shard;
@@ -236,13 +241,7 @@ impl Tracer {
         memory_access
     }
 
-    pub fn record_mw(
-        &mut self,
-        ins: Opcode,
-        sp: u32,
-        stack: Vec<UntypedValue>,
-        memory_access: &mut MemoryAccessRecord,
-    ) {
+    pub fn record_mw(&mut self, ins: Opcode, sp: u32, stack: Vec<UntypedValue>) {
         if !opcode_stack_write(ins) {
             return;
         }
@@ -271,7 +270,9 @@ impl Tracer {
             prev_record.shard,
             prev_record.timestamp,
         );
+        let op_state = self.logs.last_mut().unwrap();
 
-        memory_access.c = Some(MemoryRecordEnum::Write(write_record));
+        op_state.memory_access.c = Some(MemoryRecordEnum::Write(write_record));
+        println!("op_state:memoeryaccess:{:?}", op_state.memory_access);
     }
 }
