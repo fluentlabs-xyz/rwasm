@@ -1,7 +1,6 @@
-use rwasm::{Caller, TrapCode};
+use rwasm::{Caller, TrapCode, Value};
 
-pub const ENTRYPOINT_FUNC_IDX: u32 = u32::MAX;
-
+pub const FUNC_ENTRYPOINT: u32 = u32::MAX;
 pub const FUNC_PRINT: u32 = 100;
 pub const FUNC_PRINT_I32: u32 = 101;
 pub const FUNC_PRINT_I64: u32 = 102;
@@ -17,8 +16,10 @@ pub struct TestingContext {
 }
 
 pub(crate) fn testing_context_syscall_handler(
-    mut caller: Caller<TestingContext>,
+    caller: &mut dyn Caller<TestingContext>,
     func_idx: u32,
+    params: &[Value],
+    _result: &mut [Value],
 ) -> Result<(), TrapCode> {
     match func_idx {
         FUNC_PRINT => {
@@ -26,42 +27,45 @@ pub(crate) fn testing_context_syscall_handler(
             Ok(())
         }
         FUNC_PRINT_I32 => {
-            let value = i32::from(caller.stack_pop());
+            let value = params[0].i32().unwrap();
             println!("print: {value}");
             Ok(())
         }
         FUNC_PRINT_I64 => {
-            let value = i64::from(caller.stack_pop());
+            let value = params[0].i64().unwrap();
             println!("print: {value}");
             Ok(())
         }
         FUNC_PRINT_F32 => {
-            let value = f32::from(caller.stack_pop());
+            let value = params[0].f32().unwrap();
             println!("print: {value}");
             Ok(())
         }
         FUNC_PRINT_F64 => {
-            let value = f64::from(caller.stack_pop());
+            let value = params[0].f64().unwrap();
             println!("print: {value}");
             Ok(())
         }
         FUNC_PRINT_I32_F32 => {
-            let (v0, v1) = caller.stack_pop2();
+            let v0 = params[0].i32().unwrap();
+            let v1 = params[1].f32().unwrap();
             println!("print: {:?} {:?}", i32::from(v0), f32::from(v1));
             Ok(())
         }
         FUNC_PRINT_I64_F64 => {
-            let (v0, v1) = caller.stack_pop2();
+            let v0 = params[0].i64().unwrap();
+            let v1 = params[1].f64().unwrap();
             println!("print: {:?} {:?}", i64::from(v0), f64::from(v1));
             Ok(())
         }
-        u32::MAX => {
+        FUNC_ENTRYPOINT => {
             // yeah, dirty, but this is how we remember the program counter to reset,
             // since we're 100% sure the function is called using `Call`
             // that we can safely deduct 1 from PC (for `ReturnCall` we need to deduct 2)
             caller.context_mut().program_counter = caller.program_counter() - 1;
             // push state value into the stack
-            caller.stack_push(caller.context().state);
+            let state = caller.context().state;
+            caller.stack_push(state.into());
             Ok(())
         }
         _ => todo!("not implemented syscall handler"),

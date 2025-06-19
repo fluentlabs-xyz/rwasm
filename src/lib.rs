@@ -6,6 +6,8 @@
 mod compiler;
 mod types;
 mod vm;
+#[cfg(feature = "wasmtime")]
+pub mod wasmtime;
 
 extern crate alloc;
 extern crate core;

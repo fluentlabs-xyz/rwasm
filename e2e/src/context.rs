@@ -2,7 +2,7 @@ use super::{TestDescriptor, TestError, TestProfile, TestSpan};
 use crate::handler::{
     testing_context_syscall_handler,
     TestingContext,
-    ENTRYPOINT_FUNC_IDX,
+    FUNC_ENTRYPOINT,
     FUNC_PRINT,
     FUNC_PRINT_F32,
     FUNC_PRINT_F64,
@@ -17,10 +17,12 @@ use rwasm::{
     split_i64_to_i32_arr,
     CallStack,
     CompilationConfig,
+    ExecutorConfig,
     FuncType,
     ImportLinker,
     ImportLinkerEntity,
     ImportName,
+    InstructionSet,
     ModuleParser,
     Opcode,
     RwasmExecutor,
@@ -67,6 +69,7 @@ pub struct TestContext<'a> {
     last_instance: Option<Instance>,
     /// Profiling during the Wasm spec test run.
     profile: TestProfile,
+    import_linker: Rc<ImportLinker>,
     /// The descriptor of the test.
     ///
     /// Useful for printing better debug messages in case of failure.
@@ -82,6 +85,7 @@ impl<'a> TestContext<'a> {
             extern_state: Default::default(),
             last_instance: None,
             profile: TestProfile::default(),
+            import_linker: Rc::new(Self::import_linker()),
             descriptor,
         }
     }
@@ -91,6 +95,15 @@ impl<'a> TestContext<'a> {
             .op_i32_const(0)
         };
         ImportLinker::from([
+            (
+                ImportName::new("__nothing_here", "__absolutely_nothing"),
+                ImportLinkerEntity {
+                    sys_func_idx: FUNC_ENTRYPOINT,
+                    block_fuel: InstructionSet::default(),
+                    params: &[],
+                    result: &[],
+                },
+            ),
             (
                 ImportName::new("spectest", "print"),
                 ImportLinkerEntity {
@@ -193,10 +206,11 @@ impl TestContext<'_> {
         });
 
         let config = CompilationConfig::default()
-            .with_import_linker(Self::import_linker())
+            .with_import_linker(self.import_linker.clone())
             .with_allow_malformed_entrypoint_func_type(true)
             .with_builtins_consume_fuel(false)
-            .with_default_imported_global_value(666.into());
+            .with_default_imported_global_value(666.into())
+            .with_allow_func_ref_function_types(true);
 
         // extract all exports first to calculate rwasm config
         let mut states = Vec::<(Box<str>, u32)>::new();
@@ -224,8 +238,13 @@ impl TestContext<'_> {
         #[cfg(feature = "debug-print")]
         println!("{}", rwasm_module);
 
-        let mut store = Store::default();
+        let mut store = Store::<TestingContext>::new(
+            ExecutorConfig::default(),
+            TestingContext::default(),
+            self.import_linker.clone(),
+        );
         store.set_syscall_handler(testing_context_syscall_handler);
+        store.context_mut().state = FUNC_ENTRYPOINT;
         let mut instance_inner = InstanceInner {
             module: rwasm_module,
             store,
@@ -233,13 +252,12 @@ impl TestContext<'_> {
             call_stack: CallStack::default(),
             program_counter: 0,
         };
-        let mut executor = RwasmExecutor::<TestingContext>::new(
+        let executor = RwasmExecutor::<TestingContext>::new(
             &instance_inner.module,
             &mut instance_inner.value_stack,
             &mut instance_inner.call_stack,
             &mut instance_inner.store,
         );
-        executor.context_mut().state = ENTRYPOINT_FUNC_IDX;
         #[cfg(feature = "debug-print")]
         println!(" --- entrypoint ---");
         executor.run()?;
@@ -327,7 +345,8 @@ impl TestContext<'_> {
         // However, with different states.
         // Some tests might fail, and we might keep outdated signature value in the state,
         // make sure the state is clear before every new call.
-        instance.program_counter = instance.store.context().program_counter as usize;
+        let program_counter = instance.store.context().program_counter as usize;
+        instance.program_counter = program_counter;
         instance.store.reset(true);
 
         let func_state = self

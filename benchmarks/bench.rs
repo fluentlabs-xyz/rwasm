@@ -1,6 +1,6 @@
 extern crate test;
 
-use rwasm::{CompilationConfig, ExecutionEngine, Store};
+use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, Store};
 use test::Bencher;
 
 const FIB_VALUE: i32 = 47;
@@ -53,8 +53,6 @@ fn bench_wasmi(b: &mut Bencher) {
 
 #[bench]
 fn bench_rwasm_no_cache(b: &mut Bencher) {
-    use rwasm::{ExecutorConfig, RwasmModule};
-
     let wasm_binary = include_bytes!("./lib.wasm");
 
     let config = CompilationConfig::default()
@@ -62,7 +60,7 @@ fn bench_rwasm_no_cache(b: &mut Bencher) {
         .with_allow_malformed_entrypoint_func_type(true);
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     let encoded_rwasm_module = rwasm_module.serialize();
-    let mut store = Store::new(ExecutorConfig::default(), ());
+    let mut store = Store::<()>::default();
     let mut engine = ExecutionEngine::new();
 
     b.iter(|| {
@@ -77,8 +75,6 @@ fn bench_rwasm_no_cache(b: &mut Bencher) {
 
 #[bench]
 fn bench_rwasm(b: &mut Bencher) {
-    use rwasm::{ExecutorConfig, RwasmModule};
-
     let wasm_binary = include_bytes!("./lib.wasm");
 
     let config = CompilationConfig::default()
@@ -86,7 +82,7 @@ fn bench_rwasm(b: &mut Bencher) {
         .with_allow_malformed_entrypoint_func_type(true);
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     let encoded_rwasm_module = rwasm_module.serialize();
-    let mut store = Store::new(ExecutorConfig::default(), ());
+    let mut store = Store::<()>::default();
     let mut engine = ExecutionEngine::new();
     let rwasm_module = RwasmModule::new(&encoded_rwasm_module);
 

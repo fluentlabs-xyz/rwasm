@@ -5,6 +5,7 @@ use crate::{
     FuelCosts,
     GlobalIdx,
     GlobalMemory,
+    ImportLinker,
     Pages,
     SignatureIdx,
     SyscallHandler,
@@ -17,14 +18,16 @@ use crate::{
     N_MAX_ELEM_SEGMENTS,
     N_MAX_ELEM_SEGMENTS_BITS,
 };
+use alloc::rc::Rc;
 use bitvec::{array::BitArray, bitarr};
+use core::cell::{Ref, RefCell, RefMut};
 use hashbrown::HashMap;
 
 pub struct Store<T> {
     pub(crate) consumed_fuel: u64,
     pub(crate) refunded_fuel: i64,
     pub(crate) global_memory: GlobalMemory,
-    pub(crate) context: T,
+    pub(crate) context: RefCell<T>,
     pub(crate) config: ExecutorConfig,
     // the last used signature (needed for indirect calls type checks)
     pub(crate) last_signature: Option<SignatureIdx>,
@@ -39,16 +42,21 @@ pub struct Store<T> {
     // list of nested calls return pointers
     pub(crate) syscall_handler: SyscallHandler<T>,
     pub(crate) fuel_costs: FuelCosts,
+    pub(crate) import_linker: Rc<ImportLinker>,
 }
 
 impl<T: Default> Default for Store<T> {
     fn default() -> Self {
-        Self::new(ExecutorConfig::default(), T::default())
+        Self::new(
+            ExecutorConfig::default(),
+            T::default(),
+            Rc::new(ImportLinker::default()),
+        )
     }
 }
 
 impl<T> Store<T> {
-    pub fn new(config: ExecutorConfig, context: T) -> Self {
+    pub fn new(config: ExecutorConfig, context: T, import_linker: Rc<ImportLinker>) -> Self {
         // create global memory
         let global_memory = GlobalMemory::new(Pages::default());
 
@@ -66,7 +74,7 @@ impl<T> Store<T> {
             consumed_fuel: 0,
             refunded_fuel: 0,
             global_memory,
-            context,
+            context: RefCell::new(context),
             #[cfg(feature = "tracing")]
             tracer,
             global_variables: Default::default(),
@@ -77,6 +85,7 @@ impl<T> Store<T> {
             empty_data_segments,
             config,
             fuel_costs: Default::default(),
+            import_linker,
         }
     }
 
@@ -146,12 +155,12 @@ impl<T> Store<T> {
         Some(self.config.fuel_limit? - self.consumed_fuel)
     }
 
-    pub fn context(&self) -> &T {
-        &self.context
+    pub fn context(&self) -> Ref<T> {
+        self.context.borrow()
     }
 
-    pub fn context_mut(&mut self) -> &mut T {
-        &mut self.context
+    pub fn context_mut(&mut self) -> RefMut<T> {
+        self.context.borrow_mut()
     }
 
     pub fn set_syscall_handler(&mut self, handler: SyscallHandler<T>) {

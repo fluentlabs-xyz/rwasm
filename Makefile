@@ -8,6 +8,8 @@ test-specific-cases:
 	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml
 	cargo test --color=always --no-fail-fast --manifest-path e2e/Cargo.toml
 	cargo test --color=always --no-fail-fast --manifest-path snippets/Cargo.toml
+	# run nitro test (with release flag)
+	cargo test --release --package rwasm --test nitro test_nitro_verifier -- --ignored
 
 .PHONY: coverage
 coverage:
@@ -21,5 +23,12 @@ coverage:
 	cargo llvm-cov --lcov --manifest-path=./e2e/Cargo.toml > lcov3.info
 	# merge all lcov files together
 	grcov --llvm ./lcov1.info ./lcov2.info ./lcov3.info > lcov.info
+
+.PHONY: clean
+clean:
+	# Delete all target folders
+	find . -type d -name "target" -exec rm -rf {} +
+	# Delete all Cargo.lock files except the root
+	find . -name Cargo.lock ! -path './Cargo.lock' -type f -exec rm -f {} +
 
 all: test-specific-cases

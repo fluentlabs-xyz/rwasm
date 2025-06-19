@@ -367,6 +367,14 @@ impl ModuleParser {
                         adjusted_params.push(ValType::I32);
                         adjusted_params.push(ValType::I32);
                     }
+                    ValType::FuncRef | ValType::ExternRef
+                        if !self.config.allow_func_ref_function_types =>
+                    {
+                        return Err(CompilationError::NotSupportedFuncType);
+                    }
+                    ValType::V128 => {
+                        return Err(CompilationError::NotSupportedFuncType);
+                    }
                     _ => adjusted_params.push(*x),
                 }
             }
@@ -375,6 +383,14 @@ impl ModuleParser {
                     ValType::I64 | ValType::F64 => {
                         adjusted_results.push(ValType::I32);
                         adjusted_results.push(ValType::I32);
+                    }
+                    ValType::FuncRef | ValType::ExternRef
+                        if !self.config.allow_func_ref_function_types =>
+                    {
+                        return Err(CompilationError::NotSupportedFuncType);
+                    }
+                    ValType::V128 => {
+                        return Err(CompilationError::NotSupportedFuncType);
                     }
                     _ => adjusted_results.push(*x),
                 }

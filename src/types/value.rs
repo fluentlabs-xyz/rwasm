@@ -935,18 +935,19 @@ pub enum Value {
 }
 
 impl Value {
-    // /// Creates new default value of given type.
-    // #[inline]
-    // pub fn default(value_type: ValType) -> Self {
-    //     match value_type {
-    //         ValType::I32 => Self::I32(0),
-    //         ValType::I64 => Self::I64(0),
-    //         ValType::F32 => Self::F32(0f32.into()),
-    //         ValType::F64 => Self::F64(0f64.into()),
-    //         ValType::FuncRef => Self::FuncRef(FuncRef::null()),
-    //         ValType::ExternRef => Self::ExternRef(ExternRef::null()),
-    //     }
-    // }
+    /// Creates a new default value of a given type.
+    #[inline]
+    pub fn default(value_type: ValType) -> Self {
+        match value_type {
+            ValType::I32 => Self::I32(0),
+            ValType::I64 => Self::I64(0),
+            ValType::F32 => Self::F32(0f32.into()),
+            ValType::F64 => Self::F64(0f64.into()),
+            ValType::V128 => unreachable!("not supported v128 type"),
+            ValType::FuncRef => Self::FuncRef(FuncRef::null()),
+            ValType::ExternRef => Self::ExternRef(ExternRef::null()),
+        }
+    }
 
     /// Get a variable type for this value.
     #[inline]

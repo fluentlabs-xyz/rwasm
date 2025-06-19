@@ -10,15 +10,17 @@ mod table;
 use crate::{
     types::{AddressOffset, RwasmModule, TableIdx, UntypedValue},
     CallStack,
-    Caller,
     InstructionPtr,
     Opcode,
+    RwasmCaller,
     Store,
     SysFuncIdx,
     TrapCode,
+    Value,
     ValueStack,
     ValueStackPtr,
 };
+use smallvec::SmallVec;
 
 /// The `RwasmExecutor` struct represents the state and functionality required to execute
 /// WebAssembly (WASM) instructions within an embedded WASM runtime environment.
@@ -122,8 +124,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.ip.add(offset)
     }
 
-    pub fn caller<'vm>(&'vm mut self) -> Caller<'vm, 'a, T> {
-        Caller::<'vm, 'a, T>::new(self)
+    pub fn caller<'vm>(&'vm mut self) -> RwasmCaller<'vm, 'a, T> {
+        RwasmCaller::<'vm, 'a, T>::new(self)
     }
 
     pub fn program_counter(&self) -> u32 {
@@ -291,7 +293,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         addr.add(offset);
         match addr.get() {
             Opcode::TableGet(table_idx) => table_idx,
-            _ => unreachable!("rwasm: can't extract table index"),
+            _ => unreachable!("can't extract table index"),
         }
     }
 
@@ -343,38 +345,47 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     pub(crate) fn invoke_syscall(&mut self, sys_func_idx: SysFuncIdx) -> Result<bool, TrapCode> {
-        match (self.store.syscall_handler)(self.caller(), sys_func_idx) {
+        let (params, result) = self
+            .store
+            .import_linker
+            .resolve_by_func_idx(sys_func_idx)
+            .map(|v| (v.params, v.result))
+            .unwrap_or_else(|| unreachable!("can't resolve syscall in the import linker"));
+        let mut buffer = SmallVec::<[Value; 16]>::default();
+        buffer.resize(params.len() + result.len(), Value::I32(0));
+        for (i, x) in params.iter().enumerate() {
+            buffer[params.len() - i - 1] = self.sp.pop_value(*x);
+        }
+        for (i, x) in result.iter().enumerate() {
+            buffer[params.len() + i] = Value::default(*x);
+        }
+        let (params, result) = buffer.split_at_mut(params.len());
+        match (self.store.syscall_handler)(&mut self.caller(), sys_func_idx, params, result) {
             Ok(_) => {
+                // if execution succeeded, then copy output params back to the stack
+                for x in result {
+                    self.sp.push_value(x)
+                }
                 // just continue the execution, don't terminate the loop
                 Ok(false)
             }
             Err(TrapCode::ExecutionHalted) => {
+                // if execution halted, then copy output params back to the stack because the caller
+                // might want to read these params
+                for x in result {
+                    self.sp.push_value(x)
+                }
                 // when execution is halted, then we just terminate an execution loop
                 Ok(true)
             }
             Err(TrapCode::InterruptionCalled) => {
-                // for resumable calls we need to store IP in the call stack
+                // for resumable calls we need to store IP in the call stack, also the caller is
+                // responsible for putting return params back
                 self.call_stack.push((self.ip, self.sp));
                 // terminate an execution
                 Err(TrapCode::InterruptionCalled)
             }
             Err(err) => Err(err),
         }
-    }
-
-    pub fn store(&self) -> &Store<T> {
-        &self.store
-    }
-
-    pub fn store_mut(&mut self) -> &mut Store<T> {
-        &mut self.store
-    }
-
-    pub fn context(&self) -> &T {
-        &self.store.context
-    }
-
-    pub fn context_mut(&mut self) -> &mut T {
-        &mut self.store.context
     }
 }

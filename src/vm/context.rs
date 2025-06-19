@@ -5,13 +5,29 @@ use crate::{
     InstructionPtr,
     RwasmExecutor,
 };
-use alloc::{vec, vec::Vec};
+use core::cell::{Ref, RefMut};
 
-pub struct Caller<'vm, 'a, T> {
+pub trait Caller<T> {
+    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode>;
+
+    fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode>;
+
+    fn program_counter(&self) -> u32;
+
+    fn sync_stack_ptr(&mut self);
+
+    fn context_mut(&mut self) -> RefMut<'_, T>;
+
+    fn context(&self) -> Ref<'_, T>;
+
+    fn stack_push(&mut self, value: UntypedValue);
+}
+
+pub struct RwasmCaller<'vm, 'a, T> {
     vm: &'vm mut RwasmExecutor<'a, T>,
 }
 
-impl<'vm, 'a, T> Caller<'vm, 'a, T> {
+impl<'vm, 'a, T> RwasmCaller<'vm, 'a, T> {
     pub fn new(vm: &'vm mut RwasmExecutor<'a, T>) -> Self {
         Self { vm }
     }
@@ -38,10 +54,6 @@ impl<'vm, 'a, T> Caller<'vm, 'a, T> {
         let (lo, hi) = split_i64_to_i32(value);
         self.vm.sp.push(UntypedValue::from_bits(lo as u32));
         self.vm.sp.push(UntypedValue::from_bits(hi as u32));
-    }
-
-    pub fn sync_stack_ptr(&mut self) {
-        self.vm.value_stack.sync_stack_ptr(self.vm.sp);
     }
 
     pub fn stack_pop(&mut self) -> UntypedValue {
@@ -94,36 +106,6 @@ impl<'vm, 'a, T> Caller<'vm, 'a, T> {
         result
     }
 
-    pub fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        self.vm.store.global_memory.read(offset, buffer)?;
-        Ok(())
-    }
-
-    pub fn memory_read_fixed<const N: usize>(&self, offset: usize) -> Result<[u8; N], TrapCode> {
-        let mut buffer = [0u8; N];
-        self.vm.store.global_memory.read(offset, &mut buffer)?;
-        Ok(buffer)
-    }
-
-    pub fn memory_read_vec(&self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
-        let mut buffer = vec![0u8; length];
-        self.vm.store.global_memory.read(offset, &mut buffer)?;
-        Ok(buffer)
-    }
-
-    pub fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        self.vm.store.global_memory.write(offset, buffer)?;
-        #[cfg(feature = "tracing")]
-        if let Some(tracer) = self.vm.store.tracer.as_mut() {
-            tracer.memory_change(offset as u32, buffer.len() as u32, buffer);
-        }
-        Ok(())
-    }
-
-    pub fn program_counter(&self) -> u32 {
-        self.vm.program_counter()
-    }
-
     pub fn instruction_ptr(&self) -> InstructionPtr {
         self.vm.ip
     }
@@ -135,12 +117,40 @@ impl<'vm, 'a, T> Caller<'vm, 'a, T> {
     pub fn store(&self) -> &Store<T> {
         &self.vm.store
     }
+}
 
-    pub fn context_mut(&mut self) -> &mut T {
-        &mut self.vm.store.context
+impl<'vm, 'a, T> Caller<T> for RwasmCaller<'vm, 'a, T> {
+    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+        self.vm.store.global_memory.read(offset, buffer)?;
+        Ok(())
     }
 
-    pub fn context(&self) -> &T {
-        &self.vm.store.context
+    fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
+        self.vm.store.global_memory.write(offset, buffer)?;
+        #[cfg(feature = "tracing")]
+        if let Some(tracer) = self.vm.store.tracer.as_mut() {
+            tracer.memory_change(offset as u32, buffer.len() as u32, buffer);
+        }
+        Ok(())
+    }
+
+    fn program_counter(&self) -> u32 {
+        self.vm.program_counter()
+    }
+
+    fn sync_stack_ptr(&mut self) {
+        self.vm.value_stack.sync_stack_ptr(self.vm.sp);
+    }
+
+    fn context_mut(&mut self) -> RefMut<T> {
+        self.vm.store.context.borrow_mut()
+    }
+
+    fn context(&self) -> Ref<T> {
+        self.vm.store.context.borrow()
+    }
+
+    fn stack_push(&mut self, value: UntypedValue) {
+        self.vm.sp.push(value);
     }
 }

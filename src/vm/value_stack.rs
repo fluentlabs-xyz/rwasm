@@ -1,6 +1,9 @@
 use crate::{
     split_i64_to_i32,
     types::{TrapCode, UntypedValue},
+    ExternRef,
+    FuncRef,
+    Value,
     F32,
     F64,
     N_DEFAULT_STACK_SIZE,
@@ -8,6 +11,7 @@ use crate::{
 };
 use alloc::{vec, vec::Vec};
 use core::fmt::Debug;
+use wasmparser::ValType;
 
 /// The value stack used to execute Wasm bytecode.
 ///
@@ -597,8 +601,31 @@ impl ValueStackPtr {
         F64::from_bits(((hi.as_u64()) << 32) | (lo.as_u64()))
     }
 
+    pub fn push_value(&mut self, value: &Value) {
+        match value {
+            Value::I32(value) => self.push_i32(*value),
+            Value::I64(value) => self.push_i64(*value),
+            Value::F32(value) => self.push_f32(*value),
+            Value::F64(value) => self.push_f64(*value),
+            Value::FuncRef(value) => self.push_i32(value.0 as i32),
+            Value::ExternRef(value) => self.push_i32(value.0 as i32),
+        }
+    }
+
     pub fn push_i32(&mut self, value: i32) {
         self.push(value.into());
+    }
+
+    pub fn pop_value(&mut self, value_type: ValType) -> Value {
+        match value_type {
+            ValType::I32 => Value::I32(self.pop_i32()),
+            ValType::I64 => Value::I64(self.pop_i64()),
+            ValType::F32 => Value::F32(self.pop_f32()),
+            ValType::F64 => Value::F64(self.pop_f64()),
+            ValType::V128 => unreachable!("can't invoke syscall with v128"),
+            ValType::FuncRef => Value::FuncRef(FuncRef::new(self.pop_i32() as u32)),
+            ValType::ExternRef => Value::ExternRef(ExternRef::new(self.pop_i32() as u32)),
+        }
     }
 
     pub fn pop_i32(&mut self) -> i32 {

@@ -46,3 +46,5 @@ impl core::fmt::Display for TrapCode {
         }
     }
 }
+
+impl core::error::Error for TrapCode {}
