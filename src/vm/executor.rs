@@ -188,7 +188,7 @@ macro_rules! exec_opcode {
         TableFill(imm) => $self.visit_table_fill(imm)?,
         TableGet(imm) => $self.visit_table_get(imm)?,
         TableSet(imm) => $self.visit_table_set(imm)?,
-        TableCopy(imm) => $self.visit_table_copy(imm)?,
+        TableCopy(dst_imm, src_imm) => $self.visit_table_copy(dst_imm, src_imm)?,
         TableInit(imm) => $self.visit_table_init(imm)?,
         ElemDrop(imm) => $self.visit_element_drop(imm),
 

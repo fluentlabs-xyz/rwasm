@@ -8,6 +8,7 @@ mod memory;
 mod mul;
 mod rem_s;
 mod rem_u;
+mod table;
 
 use crate::{
     types::{
@@ -67,6 +68,16 @@ impl Default for InstructionSet {
 }
 
 macro_rules! impl_opcode {
+    ($opcode:ident($data1_type:ident, $data2_type:ident)) => {
+        paste::paste! {
+            pub fn [< op_ $opcode:snake >]<I1: TryInto<$data1_type>, I2: TryInto<$data2_type>>(&mut self, value1: I1, value2: I2) {
+                self.push(Opcode::$opcode(
+                    value1.try_into().unwrap_or_else(|_| unreachable!()),
+                    value2.try_into().unwrap_or_else(|_| unreachable!())
+                ));
+            }
+        }
+    };
     ($opcode:ident($data_type:ident)) => {
         paste::paste! {
             pub fn [< op_ $opcode:snake >]<I: TryInto<$data_type>>(&mut self, value: I) {
@@ -202,7 +213,7 @@ impl InstructionSet {
     impl_opcode!(TableFill(TableIdx));
     impl_opcode!(TableGet(TableIdx));
     impl_opcode!(TableSet(TableIdx));
-    impl_opcode!(TableCopy(TableIdx));
+    impl_opcode!(TableCopy(TableIdx, TableIdx));
     impl_opcode!(TableInit(ElementSegmentIdx));
     impl_opcode!(ElemDrop(ElementSegmentIdx));
     impl_opcode!(RefFunc(CompiledFunc));
