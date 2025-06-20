@@ -80,6 +80,25 @@ impl<'a, T> Caller<T> for WrappedCaller<'a, T> {
     fn stack_push(&mut self, _value: UntypedValue) {
         unimplemented!("not allowed in wasmtime mode")
     }
+
+    fn remaining_fuel(&mut self) -> Option<u64> {
+        self.caller.borrow().get_fuel().ok()
+    }
+
+    fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
+        let ctx = self.caller.borrow_mut();
+        let remaining_fuel = ctx
+            .get_fuel()
+            .unwrap_or_else(|_| unreachable!("fuel mode is disabled in wasmtime"));
+        let new_fuel = remaining_fuel
+            .checked_sub(delta)
+            .ok_or(TrapCode::OutOfFuel)?;
+        self.caller
+            .borrow_mut()
+            .set_fuel(new_fuel)
+            .unwrap_or_else(|_| unreachable!("fuel mode is disabled in wasmtime"));
+        Ok(())
+    }
 }
 
 /// Wasmtime module is compiled from rWasm, it means that it can have only 1 entrypoint that is

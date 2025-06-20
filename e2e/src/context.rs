@@ -252,7 +252,7 @@ impl TestContext<'_> {
             call_stack: CallStack::default(),
             program_counter: 0,
         };
-        let executor = RwasmExecutor::<TestingContext>::new(
+        let mut executor = RwasmExecutor::<TestingContext>::new(
             &instance_inner.module,
             &mut instance_inner.value_stack,
             &mut instance_inner.call_stack,
