@@ -21,6 +21,7 @@ bincode = { version = "2.0.1", default-features = false, features = ["alloc", "d
 num-traits = { version = "0.2", default-features = false }
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
 libm = "0.2.1"
+serde = { version = "1.0.219", features = ["derive"], optional = true }
 smallvec = "1.15.0"
 
 [dev-dependencies]
@@ -36,7 +37,9 @@ std = [
     "bitvec/std",
 ]
 more-max-pages = []
-tracing = []
+tracing = [
+    "dep:serde", "serde/derive"
+]
 debug-print = []
 fpu = []
 wasmer = []

@@ -24,6 +24,7 @@ use core::{
 ///
 /// Provides a dense and simple interface to all functional Wasm operations.
 #[derive(Debug, Copy, Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord, Encode, Decode)]
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct UntypedValue {
     /// This inner value is required to have enough bits to represent

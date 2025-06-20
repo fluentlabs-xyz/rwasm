@@ -42,8 +42,8 @@ fn test_i64_load8_s() {
     assert_eq!(result.as_i32(), 0);
     let result = engine.value_stack().pop();
     assert_eq!(result.as_i32(), 97);
-    println!("{:?}", engine.value_stack().dump_stack());
-    assert!(engine.value_stack().dump_stack().is_empty());
+    println!("{:?}", engine.value_stack().as_slice());
+    assert!(engine.value_stack().as_slice().is_empty());
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn test_i64_load() {
     engine.execute(&mut store, &rwasm_module).unwrap();
     let hi = engine.value_stack().pop().to_bits() as u64;
     let lo = engine.value_stack().pop().to_bits() as u64;
-    assert!(engine.value_stack().dump_stack().is_empty());
+    assert!(engine.value_stack().as_slice().is_empty());
     let value = (hi << 32) | lo;
     assert_eq!(value, 0x6867666564636261);
 }

@@ -62,4 +62,9 @@ impl InstructionPtr {
         //         of valid bounds using this method.
         unsafe { *self.ptr }
     }
+
+    #[cfg(feature = "tracing")]
+    pub fn is_valid(self, max: u64) -> bool {
+        self.ptr as u64 <= max
+    }
 }

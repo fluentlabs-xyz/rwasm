@@ -31,4 +31,8 @@ impl ConstructorParams {
             self.0 = Some(reader.data().to_vec());
         }
     }
+
+    pub fn into_vec(self) -> Vec<u8> {
+        self.0.unwrap_or_default()
+    }
 }

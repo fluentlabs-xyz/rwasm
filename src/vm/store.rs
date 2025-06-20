@@ -28,8 +28,6 @@ pub struct Store<T> {
     pub(crate) config: ExecutorConfig,
     // the last used signature (needed for indirect calls type checks)
     pub(crate) last_signature: Option<SignatureIdx>,
-    #[cfg(feature = "tracing")]
-    pub(crate) tracer: Option<crate::vm::Tracer>,
     // rwasm modified segments
     pub(crate) tables: HashMap<TableIdx, TableEntity>,
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
@@ -39,6 +37,8 @@ pub struct Store<T> {
     // list of nested calls return pointers
     pub(crate) syscall_handler: SyscallHandler<T>,
     pub(crate) fuel_costs: FuelCosts,
+    #[cfg(feature = "tracing")]
+    pub tracer: crate::Tracer,
 }
 
 impl<T: Default> Default for Store<T> {
@@ -55,20 +55,13 @@ impl<T> Store<T> {
         let empty_data_segments = bitarr![0; N_MAX_DATA_SEGMENTS];
         let empty_elem_segments = bitarr![0; N_MAX_ELEM_SEGMENTS];
 
-        #[cfg(feature = "tracing")]
-        let tracer = if config.trace_enabled {
-            Some(crate::vm::Tracer::default())
-        } else {
-            None
-        };
-
         Self {
             consumed_fuel: 0,
             refunded_fuel: 0,
             global_memory,
             context,
             #[cfg(feature = "tracing")]
-            tracer,
+            tracer: crate::Tracer::default(),
             global_variables: Default::default(),
             tables: Default::default(),
             last_signature: None,
