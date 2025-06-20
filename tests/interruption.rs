@@ -103,7 +103,6 @@ fn test_interrupted_call_wasmtime() {
     let err = engine.execute(&mut store, &rwasm_module).unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
     engine.resume(&mut store, &rwasm_module).unwrap();
-    // make sure the engine is empty
     let sp = engine.value_stack().stack_ptr();
     assert_eq!(engine.value_stack().stack_len(sp), 1);
     assert!(engine.call_stack().is_empty());

@@ -231,42 +231,38 @@ fn map_import_linker<T>(
 fn map_anyhow_error(err: anyhow::Error) -> TrapCode {
     if let Some(trap) = err.downcast_ref::<Trap>() {
         // map wasmtime trap codes into our trap codes
-        map_trap_code(trap)
+        match trap {
+            Trap::StackOverflow => TrapCode::StackOverflow,
+            Trap::MemoryOutOfBounds => TrapCode::MemoryOutOfBounds,
+            Trap::HeapMisaligned => TrapCode::MemoryOutOfBounds,
+            Trap::TableOutOfBounds => TrapCode::TableOutOfBounds,
+            Trap::IndirectCallToNull => TrapCode::IndirectCallToNull,
+            Trap::BadSignature => TrapCode::BadSignature,
+            Trap::IntegerOverflow => TrapCode::IntegerOverflow,
+            Trap::IntegerDivisionByZero => TrapCode::IntegerDivisionByZero,
+            Trap::BadConversionToInteger => TrapCode::BadConversionToInteger,
+            Trap::UnreachableCodeReached => TrapCode::UnreachableCodeReached,
+            Trap::Interrupt => unreachable!("interrupt is not supported"),
+            Trap::AlwaysTrapAdapter => unreachable!("component-model is not supported"),
+            Trap::OutOfFuel => TrapCode::OutOfFuel,
+            Trap::AtomicWaitNonSharedMemory => {
+                unreachable!("atomic extension is not supported")
+            }
+            Trap::NullReference => TrapCode::IndirectCallToNull,
+            Trap::ArrayOutOfBounds | Trap::AllocationTooLarge => {
+                unreachable!("gc is not supported")
+            }
+            Trap::CastFailure => TrapCode::BadConversionToInteger,
+            Trap::CannotEnterComponent => unreachable!("component-model is not supported"),
+            Trap::NoAsyncResult => unreachable!("async mode must be disabled"),
+            _ => unreachable!("unknown trap wasmtime code"),
+        }
     } else if let Some(trap) = err.downcast_ref::<TrapCode>() {
         // if our trap code is initiated, then just return the trap code
         *trap
     } else {
         // TODO(dmitry123): "what type of error to use here in case of unknown error?"
         TrapCode::IllegalOpcode
-    }
-}
-
-fn map_trap_code(trap: &Trap) -> TrapCode {
-    match trap {
-        Trap::StackOverflow => TrapCode::StackOverflow,
-        Trap::MemoryOutOfBounds => TrapCode::MemoryOutOfBounds,
-        Trap::HeapMisaligned => TrapCode::MemoryOutOfBounds,
-        Trap::TableOutOfBounds => TrapCode::TableOutOfBounds,
-        Trap::IndirectCallToNull => TrapCode::IndirectCallToNull,
-        Trap::BadSignature => TrapCode::BadSignature,
-        Trap::IntegerOverflow => TrapCode::IntegerOverflow,
-        Trap::IntegerDivisionByZero => TrapCode::IntegerDivisionByZero,
-        Trap::BadConversionToInteger => TrapCode::BadConversionToInteger,
-        Trap::UnreachableCodeReached => TrapCode::UnreachableCodeReached,
-        Trap::Interrupt => unreachable!("interrupt is not supported"),
-        Trap::AlwaysTrapAdapter => unreachable!("component-model is not supported"),
-        Trap::OutOfFuel => TrapCode::OutOfFuel,
-        Trap::AtomicWaitNonSharedMemory => {
-            unreachable!("atomic extension is not supported")
-        }
-        Trap::NullReference => TrapCode::IndirectCallToNull,
-        Trap::ArrayOutOfBounds | Trap::AllocationTooLarge => {
-            unreachable!("gc is not supported")
-        }
-        Trap::CastFailure => TrapCode::BadConversionToInteger,
-        Trap::CannotEnterComponent => unreachable!("component-model is not supported"),
-        Trap::NoAsyncResult => unreachable!("async mode must be disabled"),
-        _ => unreachable!("unknown trap wasmtime code"),
     }
 }
 
