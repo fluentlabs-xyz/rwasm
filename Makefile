@@ -3,6 +3,7 @@ test-specific-cases:
 	# build all binaries
 	cd benchmarks && make
 	cd wasm && make
+	cd tests/nitro-verifier && make
 	cd snippets && make
 	# run tests
 	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml
@@ -14,6 +15,7 @@ coverage:
 	# build all binaries
 	cd benchmarks && make
 	cd wasm && make
+	cd tests/nitro-verifier && make
 	cd snippets && make
 	# run tests
 	cargo llvm-cov --lcov --manifest-path=./snippets/Cargo.toml > lcov1.info
