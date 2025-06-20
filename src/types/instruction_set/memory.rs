@@ -1,8 +1,10 @@
 use crate::{
     split_i64_to_i32,
     AddressOffset,
+    DataSegmentIdx,
     InstructionSet,
-    MEMORY_BYTES_PER_FUEL,
+    TrapCode,
+    MEMORY_BYTES_PER_FUEL_LOG2,
     N_BYTES_PER_MEMORY_PAGE,
 };
 
@@ -102,34 +104,127 @@ impl InstructionSet {
     }
 
     /// Max stack height: 2
-    pub fn op_memory_grow_checked(&mut self, max_pages: Option<u32>, bytes_per_fuel: Option<u32>) {
+    pub fn op_memory_grow_checked(&mut self, max_pages: Option<u32>, inject_fuel_check: bool) {
         // we must do max memory check before an execution
         if let Some(max_pages) = max_pages {
-            self.op_local_get(1);
-            self.op_memory_size();
-            self.op_i32_add();
-            self.op_i32_const(max_pages);
-            self.op_i32_gt_s();
+            self.op_local_get(1); // d
+            self.op_memory_size(); // memory_size
+            self.op_i32_add(); // memory_size+d
+            self.op_i32_const(max_pages); // max_pages
+            self.op_i32_gt_s(); // memory_size+d>max_pages
             self.op_br_if_eqz(4);
             self.op_drop();
             self.op_i32_const(u32::MAX);
-            let jump_to = bytes_per_fuel.map(|_| 8).unwrap_or(2);
-            self.op_br(jump_to);
+            self.op_br(if inject_fuel_check { 8 } else { 2 });
         }
         // now we know that pages can't exceed i32::MAX,
         // so we can safely multiply the num of pages to the page size
         // to calculate fuel required for memory to grow
-        if let Some(fuel_per_byte) = bytes_per_fuel {
-            // TODO(dmitry123): "fix `shr_u` params"
-            debug_assert_eq!(fuel_per_byte, MEMORY_BYTES_PER_FUEL);
+        if inject_fuel_check {
             self.op_local_get(1);
             self.op_i32_const(N_BYTES_PER_MEMORY_PAGE); // size of each memory page
             self.op_i32_mul(); // overflow is impossible here
-            self.op_i32_const(6); // 2^6=64
+            self.op_i32_const(MEMORY_BYTES_PER_FUEL_LOG2); // 2^6=64
             self.op_i32_shr_u(); // delta/64
             self.op_consume_fuel_stack();
         }
         // emit memory grows only if fuel is charged
         self.op_memory_grow();
+    }
+
+    /// Max stack height: 2
+    pub fn op_memory_fill_checked(&mut self, inject_fuel_check: bool) {
+        // [d, val, n]
+        if inject_fuel_check {
+            self.op_local_get(1); // n
+            self.op_i32_const(MEMORY_BYTES_PER_FUEL_LOG2); // 2^6=64
+            self.op_i32_shr_u(); // delta/64
+            self.op_consume_fuel_stack();
+        }
+        // emit memory fill
+        self.op_memory_fill();
+    }
+
+    /// Max stack height: 2
+    pub fn op_memory_copy_checked(&mut self, inject_fuel_check: bool) {
+        // [d, s, n]
+        if inject_fuel_check {
+            self.op_local_get(1); // n
+            self.op_i32_const(MEMORY_BYTES_PER_FUEL_LOG2); // 2^6=64
+            self.op_i32_shr_u(); // delta/64
+            self.op_consume_fuel_stack();
+        }
+        // emit memory copy
+        self.op_memory_copy();
+    }
+
+    /// MemoryInit opcode reads 3 elements from the stack (dst, src, len), where:
+    /// - dst - Memory destination of copied data
+    /// - src - Data source of copied data (in the passive section)
+    /// - len - Length of copied data
+    ///
+    /// In the `passive_sections` field, we store info about all passive sections
+    /// that are presented in the WebAssembly binary. When a passive section is activated
+    /// though `memory.init` opcode, we find modified offsets in the data section
+    /// and put on the stack by removing previous values.
+    ///
+    /// Here is the stack structure for `memory.init` call:
+    /// - ... some other stack elements
+    /// - dst
+    /// - src
+    /// - len
+    /// - ... call of `memory.init` happens here
+    ///
+    /// Here we need to replace the `src` field with our modified, but since we don't know
+    /// how the stack was structured, then we can achieve it by replacing a stack element using
+    /// `local.set` opcode.
+    ///
+    /// - dst
+    /// - src <-----+
+    /// - len       |
+    /// - new_src --+
+    /// - ... call `local.set` to replace prev offset
+    ///
+    /// Here we use 1 offset because we pop `new_src`, and then count from the top, `len`
+    /// has 0 offset and `src` has offset 1.
+    ///
+    /// Before doing these ops, we must ensure that the specified length of copied data
+    /// doesn't exceed the original section size. We also inject GT check to make sure that
+    /// there is no data section overflow.
+    ///
+    /// Max stack height: 2
+    pub fn op_memory_init_checked(
+        &mut self,
+        rewrite_offset: Option<u32>,
+        rewrite_length: Option<u32>,
+        data_segment_index: DataSegmentIdx,
+        inject_fuel_check: bool,
+    ) {
+        // do an overflow check
+        if let Some(length) = rewrite_length.filter(|v| *v > 0) {
+            self.op_local_get(1); // n
+            self.op_local_get(3); // s
+            self.op_i32_add(); // n + s
+            self.op_i32_const(length);
+            self.op_i32_gt_s(); // n + s > length
+            self.op_br_if_eqz(2);
+            self.op_trap(TrapCode::MemoryOutOfBounds);
+        }
+        // we need to replace the offset on the stack with the new value
+        if let Some(offset) = rewrite_offset.filter(|v| *v > 0) {
+            self.op_i32_const(offset);
+            self.op_local_get(3);
+            self.op_i32_add();
+            self.op_local_set(2);
+        }
+        // [d, s, n]
+        if inject_fuel_check {
+            self.op_local_get(1); // n
+            self.op_i32_const(MEMORY_BYTES_PER_FUEL_LOG2); // 2^6=64
+            self.op_i32_shr_u(); // delta/64
+            self.op_consume_fuel_stack();
+        }
+        // emit memory init
+        self.op_memory_init(data_segment_index);
     }
 }
