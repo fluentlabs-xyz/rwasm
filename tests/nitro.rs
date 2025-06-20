@@ -1,5 +1,5 @@
 use rwasm::{
-    wasmtime::WasmtimeExecutor,
+    wasmtime::CraneliftExecutor,
     Caller,
     CompilationConfig,
     ExecutionEngine,
@@ -138,7 +138,7 @@ fn test_nitro_verifier_wasmtime() {
         .with_import_linker(import_linker.clone());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     // compile & run using wasmtime
-    let mut wasmtime_vm = WasmtimeExecutor::compile(
+    let mut wasmtime_vm = CraneliftExecutor::compile(
         &rwasm_module.wasm_section,
         import_linker,
         (),

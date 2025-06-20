@@ -1,3 +1,5 @@
+mod resumable;
+
 use crate::{
     Caller,
     ImportLinker,
@@ -14,12 +16,12 @@ use smallvec::SmallVec;
 use std::cell::{Ref, RefCell, RefMut};
 use wasmtime::{AsContext, AsContextMut, Collector, Strategy, Trap, Val};
 
-pub struct WasmtimeContext<T> {
+struct WrappedContext<T> {
     syscall_handler: SyscallHandler<T>,
     inner: T,
 }
 
-impl<T> WasmtimeContext<T> {
+impl<T> WrappedContext<T> {
     pub fn new(syscall_handler: SyscallHandler<T>, inner: T) -> Self {
         Self {
             syscall_handler,
@@ -28,11 +30,11 @@ impl<T> WasmtimeContext<T> {
     }
 }
 
-pub struct WasmtimeCaller<'a, T> {
-    pub(crate) caller: RefCell<wasmtime::Caller<'a, WasmtimeContext<T>>>,
+struct WrappedCaller<'a, T> {
+    caller: RefCell<wasmtime::Caller<'a, WrappedContext<T>>>,
 }
 
-impl<'a, T> Caller<T> for WasmtimeCaller<'a, T> {
+impl<'a, T> Caller<T> for WrappedCaller<'a, T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let global_memory = self
             .caller
@@ -86,12 +88,12 @@ impl<'a, T> Caller<T> for WasmtimeCaller<'a, T> {
 /// for trustless arbitrary applications like Wasm or EVM.
 const WASMTIME_DEFAULT_ENTRYPOINT_NAME: &'static str = "main";
 
-pub struct WasmtimeExecutor<T> {
+pub struct CraneliftExecutor<T> {
     instance: wasmtime::Instance,
-    store: wasmtime::Store<WasmtimeContext<T>>,
+    store: wasmtime::Store<WrappedContext<T>>,
 }
 
-impl<T: 'static> WasmtimeExecutor<T> {
+impl<T: 'static> CraneliftExecutor<T> {
     pub fn compile(
         wasm_binary: impl AsRef<[u8]>,
         import_linker: Rc<ImportLinker>,
@@ -114,34 +116,9 @@ impl<T: 'static> WasmtimeExecutor<T> {
         context: T,
         syscall_handler: SyscallHandler<T>,
     ) -> Self {
-        let mut linker = wasmtime::Linker::<WasmtimeContext<T>>::new(module.engine());
-        for (import_name, import_entity) in import_linker.iter() {
-            let params = import_entity
-                .params
-                .iter()
-                .copied()
-                .map(map_val_type)
-                .collect::<Vec<_>>();
-            let result = import_entity
-                .result
-                .iter()
-                .copied()
-                .map(map_val_type)
-                .collect::<Vec<_>>();
-            let func_type = wasmtime::FuncType::new(module.engine(), params, result);
-            linker
-                .func_new(
-                    import_name.module(),
-                    import_name.name(),
-                    func_type,
-                    move |caller, params, result| {
-                        wasmtime_syscall_handler(import_entity.sys_func_idx, caller, params, result)
-                    },
-                )
-                .unwrap_or_else(|_| panic!("function import collision: {}", import_name));
-        }
-        let context = WasmtimeContext::new(syscall_handler, context);
-        let mut store = wasmtime::Store::<WasmtimeContext<T>>::new(module.engine(), context);
+        let linker = map_import_linker(module.engine(), import_linker);
+        let context = WrappedContext::new(syscall_handler, context);
+        let mut store = wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context);
         let instance = linker
             .instantiate(store.as_context_mut(), &module)
             .unwrap_or_else(|err| panic!("can't instantiate wasmtime: {}", err));
@@ -149,49 +126,44 @@ impl<T: 'static> WasmtimeExecutor<T> {
     }
 
     pub fn run(&mut self) -> Result<(), TrapCode> {
-        self.run_typed(&[], &mut [])
+        // entrypoint doesn't have input/output params
+        self.run_typed(WASMTIME_DEFAULT_ENTRYPOINT_NAME, &[], &mut [])
     }
 
-    pub fn run_typed(&mut self, params: &[Val], results: &mut [Val]) -> Result<(), TrapCode> {
+    pub fn run_typed(
+        &mut self,
+        entrypoint: &'static str,
+        params: &[Val],
+        results: &mut [Val],
+    ) -> Result<(), TrapCode> {
         let entrypoint = self
             .instance
-            .get_func(
-                self.store.as_context_mut(),
-                WASMTIME_DEFAULT_ENTRYPOINT_NAME,
-            )
+            .get_func(self.store.as_context_mut(), entrypoint)
             .unwrap_or_else(|| unreachable!("missing a default main entrypoint"));
-        // entrypoint doesn't have input/output params
         entrypoint
             .call(self.store.as_context_mut(), params, results)
-            .map_err(|err| {
-                if let Some(trap) = err.downcast_ref::<Trap>() {
-                    // map wasmtime trap codes into our trap codes
-                    map_trap_code(trap)
-                } else if let Some(trap) = err.downcast_ref::<TrapCode>() {
-                    // if our trap code is initiated, then just return the trap code
-                    *trap
-                } else {
-                    // TODO(dmitry123): "what type of error to use here in case of unknown error?"
-                    TrapCode::IllegalOpcode
-                }
-            })?;
+            .map_err(map_anyhow_error)?;
         Ok(())
+    }
+
+    pub fn resume(&mut self, results: &[Val]) -> Result<(), TrapCode> {
+        unimplemented!("not implemented yet")
     }
 }
 
 fn wasmtime_syscall_handler<'a, T>(
     sys_func_idx: u32,
-    caller: wasmtime::Caller<'a, WasmtimeContext<T>>,
-    params: &[wasmtime::Val],
-    result: &mut [wasmtime::Val],
+    caller: wasmtime::Caller<'a, WrappedContext<T>>,
+    params: &[Val],
+    result: &mut [Val],
 ) -> anyhow::Result<()> {
     // convert input values from wasmtime format into rwasm format
     let mut buffer = SmallVec::<[Value; 128]>::new();
     buffer.extend(params.iter().map(|x| match x {
-        wasmtime::Val::I32(value) => Value::I32(*value),
-        wasmtime::Val::I64(value) => Value::I64(*value),
-        wasmtime::Val::F32(value) => Value::F32(F32::from_bits(*value)),
-        wasmtime::Val::F64(value) => Value::F64(F64::from_bits(*value)),
+        Val::I32(value) => Value::I32(*value),
+        Val::I64(value) => Value::I64(*value),
+        Val::F32(value) => Value::F32(F32::from_bits(*value)),
+        Val::F64(value) => Value::F64(F64::from_bits(*value)),
         _ => unreachable!("not supported type: {:?}", x),
     }));
     buffer.extend(std::iter::repeat(Value::I32(0)).take(result.len()));
@@ -199,7 +171,7 @@ fn wasmtime_syscall_handler<'a, T>(
     // caller.data().import_linker.resolve_by_import_name();
     // caller adapter is required to provide operations for accessing memory and context
     let syscall_handler = caller.data().syscall_handler;
-    let mut caller_adapter = WasmtimeCaller::<'a, T> {
+    let mut caller_adapter = WrappedCaller::<'a, T> {
         caller: RefCell::new(caller),
     };
     let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
@@ -212,15 +184,61 @@ fn wasmtime_syscall_handler<'a, T>(
     // after call map all values back to wasmtime format
     for (i, value) in mapped_result.iter().enumerate() {
         let value = match value {
-            Value::I32(value) => wasmtime::Val::I32(*value),
-            Value::I64(value) => wasmtime::Val::I64(*value),
-            Value::F32(value) => wasmtime::Val::F32(value.to_bits()),
-            Value::F64(value) => wasmtime::Val::F64(value.to_bits()),
+            Value::I32(value) => Val::I32(*value),
+            Value::I64(value) => Val::I64(*value),
+            Value::F32(value) => Val::F32(value.to_bits()),
+            Value::F64(value) => Val::F64(value.to_bits()),
             _ => unreachable!("not supported type: {:?}", value),
         };
         result[i] = value;
     }
     Ok(())
+}
+
+fn map_import_linker<T>(
+    engine: &wasmtime::Engine,
+    import_linker: Rc<ImportLinker>,
+) -> wasmtime::Linker<WrappedContext<T>> {
+    let mut linker = wasmtime::Linker::<WrappedContext<T>>::new(engine);
+    for (import_name, import_entity) in import_linker.iter() {
+        let params = import_entity
+            .params
+            .iter()
+            .copied()
+            .map(map_val_type)
+            .collect::<Vec<_>>();
+        let result = import_entity
+            .result
+            .iter()
+            .copied()
+            .map(map_val_type)
+            .collect::<Vec<_>>();
+        let func_type = wasmtime::FuncType::new(engine, params, result);
+        linker
+            .func_new(
+                import_name.module(),
+                import_name.name(),
+                func_type,
+                move |caller, params, result| {
+                    wasmtime_syscall_handler(import_entity.sys_func_idx, caller, params, result)
+                },
+            )
+            .unwrap_or_else(|_| panic!("function import collision: {}", import_name));
+    }
+    linker
+}
+
+fn map_anyhow_error(err: anyhow::Error) -> TrapCode {
+    if let Some(trap) = err.downcast_ref::<Trap>() {
+        // map wasmtime trap codes into our trap codes
+        map_trap_code(trap)
+    } else if let Some(trap) = err.downcast_ref::<TrapCode>() {
+        // if our trap code is initiated, then just return the trap code
+        *trap
+    } else {
+        // TODO(dmitry123): "what type of error to use here in case of unknown error?"
+        TrapCode::IllegalOpcode
+    }
 }
 
 fn map_trap_code(trap: &Trap) -> TrapCode {

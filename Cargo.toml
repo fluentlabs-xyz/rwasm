@@ -24,6 +24,7 @@ libm = "0.2.1"
 wasmtime = { version = "33.0.0", optional = true }
 smallvec = "1.15.0"
 anyhow = { version = "1.0.98", default-features = false, optional = true }
+once_cell = { version = "1.21.3", optional = true }
 
 [dev-dependencies]
 rand = "0.9.1"
@@ -42,4 +43,4 @@ more-max-pages = []
 tracing = []
 debug-print = []
 fpu = []
-wasmtime = ["dep:wasmtime", "dep:anyhow"]
+wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:once_cell"]

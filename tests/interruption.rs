@@ -1,6 +1,6 @@
 use rwasm::{
     instruction_set,
-    wasmtime::WasmtimeExecutor,
+    wasmtime::CraneliftExecutor,
     Caller,
     CompilationConfig,
     ExecutionEngine,
@@ -109,15 +109,15 @@ fn test_interrupted_call_wasmtime() {
     assert!(engine.call_stack().is_empty());
     assert_eq!(engine.value_stack().pop().as_u32(), 120);
     // run with wasmtime
-    let mut wasmtime_vm = WasmtimeExecutor::compile(
+    let mut wasmtime_vm = CraneliftExecutor::compile(
         &rwasm_module.wasm_section,
         import_linker.clone(),
         (),
         syscall_handler,
     );
     let mut result = [wasmtime::Val::I32(0); 1];
-    let err = wasmtime_vm.run_typed(&[], &mut result).unwrap_err();
+    let err = wasmtime_vm.run_typed("main", &[], &mut result).unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
-    wasmtime_vm.run_typed(&[], &mut result).unwrap();
+    wasmtime_vm.resume(&[]).unwrap();
     assert_eq!(result[0].i32().unwrap(), 120);
 }
