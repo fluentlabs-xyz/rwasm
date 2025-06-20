@@ -32,6 +32,8 @@ use crate::{
     LabelRef,
     Opcode,
     SignatureIdx,
+    TableIdx,
+    BASE_FUEL_COST,
     DEFAULT_MEMORY_INDEX,
     N_MAX_MEMORY_PAGES,
     N_MAX_TABLE_SIZE,
@@ -220,10 +222,8 @@ pub struct InstructionTranslator {
     pub(crate) alloc: FuncTranslatorAllocations,
     /// The height of the emulated value stack.
     pub(crate) stack_height: ValueStackHeight,
-    /// The `fuel_costs` field represents an instance of the `FuelCosts` structure.
-    /// This field is used to store and manage data related to the costs associated
-    /// with fuel consumption, such as pricing or expenditure for a particular use case.
-    pub(crate) fuel_costs: Option<FuelCosts>,
+    /// Do we need to emit consume fuel related opcodes
+    pub(crate) with_consume_fuel: bool,
     /// Stores and resolves local variable types.
     pub(crate) locals: LocalsRegistry,
 }
@@ -234,7 +234,7 @@ impl InstructionTranslator {
             reachable: true,
             alloc,
             stack_height: Default::default(),
-            fuel_costs: with_consume_fuel.then(FuelCosts::default),
+            with_consume_fuel,
             locals: Default::default(),
         }
     }
@@ -297,10 +297,8 @@ impl InstructionTranslator {
     /// to the sequence of instructions. The finalized location of this instruction in
     /// the instruction sequence is then returned.
     pub fn push_consume_fuel_base(&mut self) -> InstrLoc {
-        let base_fuel = u32::try_from(self.fuel_costs.map(|v| v.base).unwrap())
-            .expect("base fuel exceeds u32 size");
         let instr_loc = self.alloc.instruction_set.loc();
-        self.alloc.instruction_set.op_consume_fuel(base_fuel);
+        self.alloc.instruction_set.op_consume_fuel(BASE_FUEL_COST);
         instr_loc as InstrLoc
     }
 
@@ -318,15 +316,15 @@ impl InstructionTranslator {
     /// Does nothing if gas metering is disabled.
     ///
     /// [`ConsumeFuel`]: enum.Instruction.html#variant.ConsumeFuel
-    pub(crate) fn bump_fuel_consumption<F: FnOnce(&FuelCosts) -> u32>(
+    pub(crate) fn bump_fuel_consumption<F: FnOnce() -> u32>(
         &mut self,
         delta: F,
     ) -> Result<(), CompilationError> {
         if let Some(instr) = self.consume_fuel_instr() {
-            let Some(fuel_costs) = self.fuel_costs.as_ref() else {
+            if !self.with_consume_fuel {
                 return Ok(());
             };
-            let delta = delta(fuel_costs);
+            let delta = delta();
             self.alloc
                 .instruction_set
                 .bump_fuel_consumption(instr, delta)?;
@@ -359,7 +357,7 @@ impl InstructionTranslator {
     }
 
     pub fn is_fuel_metering_enabled(&self) -> bool {
-        self.fuel_costs.is_some()
+        self.with_consume_fuel
     }
 
     /// Try resolving the `label` for the given `instr`.
@@ -410,7 +408,7 @@ impl InstructionTranslator {
         }
         let last_func_offset = self.alloc.func_offsets.last().copied().unwrap() as usize;
         // update max stack height in `StackAlloc` opcode
-        let how_deep_stack_check = if self.fuel_costs.is_some() { 3 } else { 2 };
+        let how_deep_stack_check = if self.with_consume_fuel { 3 } else { 2 };
         let mut iter = self
             .alloc
             .instruction_set
@@ -648,7 +646,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_unreachable(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.instruction_set.op_unreachable();
             builder.reachable = false;
             Ok(())
@@ -716,7 +714,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let stack_height = self.frame_stack_height(block_type);
             let else_label = self.alloc.labels.new_label();
             let end_label = self.alloc.labels.new_label();
-            self.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            self.bump_fuel_consumption(|| FuelCosts::BASE)?;
             let branch_offset = self.branch_offset(else_label)?;
             self.alloc.instruction_set.op_br_if_eqz(branch_offset);
             let consume_fuel = self
@@ -766,7 +764,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         // Create the jump from the end of the `then` block to the `if`
         // block's end label in case the end of `then` is reachable.
         if reachable {
-            self.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            self.bump_fuel_consumption(|| FuelCosts::BASE)?;
             let offset = self.branch_offset(if_frame.end_label())?;
             self.alloc.instruction_set.op_br(offset);
         }
@@ -908,7 +906,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
-                    builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+                    builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
                     translate_drop_keep(
                         &mut builder.alloc.instruction_set,
                         drop_keep,
@@ -933,14 +931,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
-                    builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+                    builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
                     if drop_keep.is_noop() {
                         let offset = builder.branch_offset(end_label)?;
                         builder.alloc.instruction_set.op_br_if_nez(offset);
                     } else {
-                        builder.bump_fuel_consumption(|fuel_costs| {
-                            fuel_costs.fuel_for_drop_keep(drop_keep)
-                        })?;
+                        builder
+                            .bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
                         builder
                             .alloc
                             .instruction_set
@@ -996,8 +993,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             }
 
             fn fuel_for_drop_keep(builder: &mut InstructionTranslator, drop_keep: DropKeep) -> u32 {
-                if let Some(fuel_costs) = builder.fuel_costs {
-                    fuel_costs.fuel_for_drop_keep(drop_keep)
+                if builder.with_consume_fuel {
+                    FuelCosts::fuel_for_drop_keep(drop_keep)
                 } else {
                     0
                 }
@@ -1105,7 +1102,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 })
                 .map(RelativeDepth::from_u32);
 
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             // The maximum fuel costs among all `br_table` arms.
             // We use this to charge fuel once at the entry of a `br_table`
             // for the most expensive arm of all of its arms.
@@ -1137,7 +1134,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             for branch in builder.alloc.br_table_branches.drain(..) {
                 builder.alloc.instruction_set.push(branch);
             }
-            builder.bump_fuel_consumption(|_| max_drop_keep_fuel)?;
+            builder.bump_fuel_consumption(|| max_drop_keep_fuel)?;
             builder.reachable = false;
             Ok(())
         })
@@ -1146,8 +1143,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_return(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
             let drop_keep = builder.drop_keep_return()?;
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.fuel_for_drop_keep(drop_keep))?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+            builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
             translate_drop_keep(
                 &mut builder.alloc.instruction_set,
                 drop_keep,
@@ -1161,7 +1158,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_call(&mut self, function_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.call)?;
+            builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
             let func_type_idx = builder.alloc.resolve_func_type_index(function_index);
             builder.adjust_value_stack_for_call(func_type_idx);
             builder
@@ -1178,7 +1175,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         _table_byte: u8,
     ) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.call)?;
+            builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
             builder.stack_height.pop1();
             builder.alloc.stack_types.pop().unwrap();
             builder.adjust_value_stack_for_call(func_type_index as FuncTypeIdx);
@@ -1197,8 +1194,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let func_type_idx = builder.alloc.resolve_func_type_index(function_index);
             let func_type = &builder.alloc.func_types[func_type_idx as usize];
             let drop_keep = builder.drop_keep_return_call(&func_type)?;
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.call)?;
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.fuel_for_drop_keep(drop_keep))?;
+            builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
+            builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
             translate_drop_keep(
                 &mut builder.alloc.instruction_set,
                 drop_keep,
@@ -1224,8 +1221,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let mut drop_keep = builder.drop_keep_return_call(&func_type)?;
             // TODO(dmitry123): "why? is there a bug in [drop_keep_return_call]?"
             drop_keep.keep += 1;
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.call)?;
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.fuel_for_drop_keep(drop_keep))?;
+            builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
+            builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
             translate_drop_keep(
                 &mut builder.alloc.instruction_set,
                 drop_keep,
@@ -1252,7 +1249,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_drop(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.stack_height.pop1();
             let item_type = builder.alloc.stack_types.pop().unwrap();
             builder.alloc.instruction_set.op_drop();
@@ -1266,7 +1263,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_select(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.stack_height.pop3();
             builder.stack_height.push1();
             builder.alloc.stack_types.pop().unwrap();
@@ -1294,7 +1291,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_local_get(&mut self, local_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             let local_depth = builder.relative_local_depth(local_index);
             let value =
                 builder.alloc.stack_types[builder.alloc.stack_types.len() - local_depth as usize];
@@ -1312,7 +1309,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_local_set(&mut self, local_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.stack_height.pop1();
             let value_type = builder.alloc.stack_types.pop().unwrap();
             let local_depth = builder.relative_local_depth(local_index);
@@ -1328,7 +1325,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_local_tee(&mut self, local_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             let local_depth = builder.relative_local_depth(local_index);
             let expressed_depth = builder.get_expressed_depth(local_depth);
             let value_type = builder.alloc.stack_types.last().unwrap();
@@ -1350,7 +1347,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_global_get(&mut self, global_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             let global_type = builder.resolve_global_type(global_index).clone();
             builder.alloc.stack_types.push(global_type.content_type);
             if global_type.content_type == ValType::I64 || global_type.content_type == ValType::F64
@@ -1377,7 +1374,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_global_set(&mut self, global_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             let global_type = builder.resolve_global_type(global_index).clone();
             debug_assert!(global_type.mutable);
             builder.alloc.stack_types.pop().unwrap();
@@ -1492,7 +1489,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_memory_size(&mut self, memory_index: u32, _mem_byte: u8) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.alloc.stack_types.push(ValType::I32);
             builder.stack_height.push1();
@@ -1504,7 +1501,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_memory_grow(&mut self, memory_index: u32, _mem_byte: u8) -> Self::Output {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             // for rWASM, we inject memory limit error check, if we exceed the number of allowed
             // pages, then we push `u32::MAX` value on the stack that is equal to memory grow
             // overflow error
@@ -1513,12 +1510,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .maximum
                 .and_then(|v| u32::try_from(v).ok())
                 .unwrap_or(N_MAX_MEMORY_PAGES);
-            builder.alloc.instruction_set.op_memory_grow_checked(
-                Some(max_pages),
-                builder
-                    .fuel_costs
-                    .map(|v| u32::try_from(v.memory_bytes_per_fuel).unwrap_or(u32::MAX)),
-            );
+            builder
+                .alloc
+                .instruction_set
+                .op_memory_grow_checked(Some(max_pages), builder.is_fuel_metering_enabled());
             // make sure types are correct
             let popped_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(popped_type, ValType::I32);
@@ -1534,7 +1529,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_i32_const(&mut self, value: i32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(ValType::I32);
             builder.stack_height.push1();
             builder.alloc.instruction_set.op_i32_const(value);
@@ -1544,7 +1539,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_i64_const(&mut self, value: i64) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(ValType::I64);
             builder.stack_height.push2();
             builder.alloc.instruction_set.op_i64_const(value);
@@ -1554,7 +1549,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_f32_const(&mut self, value: Ieee32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(ValType::F32);
             builder.stack_height.push1();
             use crate::F32;
@@ -1566,7 +1561,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_f64_const(&mut self, value: Ieee64) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(ValType::F64);
             builder.stack_height.push2();
             let value = value.bits() as i64;
@@ -1591,7 +1586,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_ref_func(&mut self, function_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(ValType::FuncRef);
             builder.stack_height.push1();
             // We do +1 here because 0 offset is reserved for `null` value and an entrypoint
@@ -1997,7 +1992,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_i32_wrap_i64(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             let popped_value = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(popped_value, ValType::I64);
             builder.alloc.stack_types.push(ValType::I32);
@@ -2295,50 +2290,15 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         )
     }
 
-    /// MemoryInit opcode reads 3 elements from the stack (dst, src, len), where:
-    /// - dst - Memory destination of copied data
-    /// - src - Data source of copied data (in the passive section)
-    /// - len - Length of copied data
-    ///
-    /// In the `passive_sections` field, we store info about all passive sections
-    /// that are presented in the WebAssembly binary. When a passive section is activated
-    /// though `memory.init` opcode, we find modified offsets in the data section
-    /// and put on the stack by removing previous values.
-    ///
-    /// Here is the stack structure for `memory.init` call:
-    /// - ... some other stack elements
-    /// - dst
-    /// - src
-    /// - len
-    /// - ... call of `memory.init` happens here
-    ///
-    /// Here we need to replace the `src` field with our modified, but since we don't know
-    /// how the stack was structured, then we can achieve it by replacing a stack element using
-    /// `local.set` opcode.
-    ///
-    /// - dst
-    /// - src <-----+
-    /// - len       |
-    /// - new_src --+
-    /// - ... call `local.set` to replace prev offset
-    ///
-    /// Here we use 1 offset because we pop `new_src`, and then count from the top, `len`
-    /// has 0 offset and `src` has offset 1.
-    ///
-    /// Before doing these ops, we must ensure that the specified length of copied data
-    /// doesn't exceed the original section size. We also inject GT check to make sure that
-    /// there is no data section overflow.
     fn visit_memory_init(&mut self, data_segment_index: u32, memory_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
-
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-
             let data_segment_index: DataSegmentIdx = data_segment_index.into();
-
+            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
             let (ib, rb) = (
                 &mut builder.alloc.instruction_set,
                 &mut builder.alloc.segment_builder,
@@ -2348,49 +2308,23 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .get(&data_segment_index)
                 .copied()
                 .expect("can't resolve a passive segment by index");
-            // do an overflow check
-            if length > 0 {
-                builder.stack_height.push1();
-                builder.stack_height.push1();
-                builder.stack_height.pop1();
-                builder.stack_height.push1();
-                builder.stack_height.pop1();
-                builder.stack_height.pop1();
-                builder.stack_height.push1();
-                builder.stack_height.pop1();
-                ib.op_local_get(1);
-                ib.op_local_get(3);
-                ib.op_i32_add();
-                ib.op_i32_const(length);
-                ib.op_i32_gt_s();
-                ib.op_br_if_eqz(3);
-                // we can't manually emit the "out-of-bounds table access" error required
-                // by WebAssembly standards, so we put an impossible number of tables to trigger
-                // overflow by rewriting the number of elements to be copied
-                ib.op_i32_const(u32::MAX);
-                ib.op_local_set(1);
-            }
-            // we need to replace the offset on the stack with the new value
-            if offset > 0 {
-                builder.stack_height.push1();
-                builder.stack_height.push1();
-                builder.stack_height.pop1();
-                builder.stack_height.pop1();
-                ib.op_i32_const(offset);
-                ib.op_local_get(3);
-                ib.op_i32_add();
-                ib.op_local_set(2);
-            }
+            builder.stack_height.push2();
+            builder.stack_height.pop2();
             builder.stack_height.pop3();
             // since we store all data sections in the one segment, then the index is always 0
-            ib.op_memory_init(data_segment_index + 1);
+            ib.op_memory_init_checked(
+                Some(offset),
+                Some(length),
+                data_segment_index + 1,
+                is_fuel_metering_enabled,
+            );
             Ok(())
         })
     }
 
     fn visit_data_drop(&mut self, data_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             // We do +1 here because we store all data sections in the one segment,
             // and we use 0 for a default memory segment.
             builder.alloc.instruction_set.op_data_drop(data_index + 1);
@@ -2402,12 +2336,17 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(dst_memory_index, DEFAULT_MEMORY_INDEX);
             debug_assert_eq!(src_memory_index, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
+            builder.stack_height.push2();
+            builder.stack_height.pop2();
             builder.stack_height.pop3();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.instruction_set.op_memory_copy();
+            builder
+                .alloc
+                .instruction_set
+                .op_memory_copy_checked(builder.is_fuel_metering_enabled());
             Ok(())
         })
     }
@@ -2415,24 +2354,28 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_memory_fill(&mut self, memory_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
+            builder.stack_height.push2();
+            builder.stack_height.pop2();
             builder.stack_height.pop3();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.instruction_set.op_memory_fill();
+            builder
+                .alloc
+                .instruction_set
+                .op_memory_fill_checked(builder.is_fuel_metering_enabled());
             Ok(())
         })
     }
 
     fn visit_table_init(&mut self, segment_index: u32, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
-
+            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-
             let (ib, rb) = (
                 &mut builder.alloc.instruction_set,
                 &mut builder.alloc.segment_builder,
@@ -2443,51 +2386,22 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .get(&elem_segment_index)
                 .copied()
                 .expect("can't resolve an element segment by index");
-            // do an overflow check
-            builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-
-            ib.op_local_get(1);
-            ib.op_local_get(3);
-            ib.op_i32_add();
-            ib.op_i32_const(length);
-            ib.op_i32_gt_s();
-            ib.op_br_if_eqz(3);
-            // we can't manually emit the "out-of-bounds table access" error required
-            // by WebAssembly standards, so we put an impossible number of tables to trigger
-            // overflow by rewriting the number of elements to be copied
-            ib.op_i32_const(u32::MAX);
-            ib.op_local_set(1);
-            // we need to replace the offset on the stack with the new value
-            if offset > 0 {
-                builder.stack_height.push1();
-                builder.stack_height.push1();
-                builder.stack_height.pop1();
-                builder.stack_height.pop1();
-                // replace offset with an adjusted value
-                ib.op_i32_const(offset);
-                ib.op_local_get(3);
-                ib.op_i32_add();
-                ib.op_local_set(2);
-            }
+            ib.op_table_init_checked(
+                segment_index + 1,
+                TableIdx::try_from(table_index).unwrap(),
+                length,
+                offset,
+                is_fuel_metering_enabled,
+            );
+            builder.stack_height.push2();
+            builder.stack_height.pop2();
             builder.stack_height.pop3();
-            // since we store all element sections in the one segment, then the index is always 0
-            ib.op_table_init(segment_index + 1);
-            ib.op_table_get(table_index);
-
             Ok(())
         })
     }
-
     fn visit_elem_drop(&mut self, segment_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             builder
                 .alloc
                 .instruction_set
@@ -2498,32 +2412,44 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_table_copy(&mut self, dst_table: u32, src_table: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
+            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
+            builder.stack_height.push2();
+            builder.stack_height.pop2();
             builder.stack_height.pop3();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.instruction_set.op_table_copy(dst_table);
-            builder.alloc.instruction_set.op_table_get(src_table);
+            builder.alloc.instruction_set.op_table_copy_checked(
+                TableIdx::try_from(dst_table).unwrap(),
+                TableIdx::try_from(src_table).unwrap(),
+                is_fuel_metering_enabled,
+            );
             Ok(())
         })
     }
 
     fn visit_table_fill(&mut self, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
+            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
+            builder.stack_height.push2();
+            builder.stack_height.pop2();
             builder.stack_height.pop3();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.instruction_set.op_table_fill(table_index);
+            builder.alloc.instruction_set.op_table_fill_checked(
+                TableIdx::try_from(table_index).unwrap(),
+                is_fuel_metering_enabled,
+            );
             Ok(())
         })
     }
 
     fn visit_table_get(&mut self, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             let popped_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(popped_type, ValType::I32);
             builder.alloc.instruction_set.op_table_get(table_index);
@@ -2535,7 +2461,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_table_set(&mut self, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             builder.stack_height.pop2();
             //TODO: Do set and get for i32 x2 as i64
             builder.alloc.stack_types.pop().unwrap();
@@ -2547,48 +2473,34 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_table_grow(&mut self, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
-
+            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.push(ValType::I32);
-
             // for rWASM we inject table limit error check, if we exceed the number of allowed
             // elements, then we push `u32::MAX` on the stack that is equal to table
             // grow overflow error
             let table_type = builder.resolve_table_type(table_index);
+            // TODO(dmitry123): "is this construction correct?"
             let max_table_elements = table_type.maximum.unwrap_or(N_MAX_TABLE_SIZE);
             let ib = &mut builder.alloc.instruction_set;
-
+            ib.op_table_grow_checked(
+                TableIdx::try_from(table_index).unwrap(),
+                Some(max_table_elements),
+                is_fuel_metering_enabled,
+            );
+            builder.stack_height.push2();
+            builder.stack_height.pop2();
+            builder.stack_height.pop2();
             builder.stack_height.push1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-
-            ib.op_local_get(1);
-            ib.op_table_size(table_index);
-            ib.op_i32_add();
-            ib.op_i32_const(max_table_elements);
-            ib.op_i32_gt_s();
-            ib.op_br_if_eqz(5);
-            ib.op_drop();
-            ib.op_drop();
-            ib.op_i32_const(u32::MAX);
-            ib.op_br(2);
-
-            builder.stack_height.pop1();
-            builder.stack_height.pop1();
-            builder.stack_height.push1();
-            ib.op_table_grow(table_index);
             Ok(())
         })
     }
 
     fn visit_table_size(&mut self, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.entity)?;
+            builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             builder.stack_height.push1();
             builder.alloc.stack_types.push(ValType::I32);
             builder.alloc.instruction_set.op_table_size(table_index);
@@ -3907,7 +3819,7 @@ impl InstructionTranslator {
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.load)?;
+            builder.bump_fuel_consumption(|| FuelCosts::LOAD)?;
             let addr_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(addr_type, ValType::I32);
             builder.stack_height.pop_type(addr_type);
@@ -3930,7 +3842,7 @@ impl InstructionTranslator {
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.store)?;
+            builder.bump_fuel_consumption(|| FuelCosts::STORE)?;
             let value_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(value_type, stored_value);
             builder.stack_height.pop_type(value_type);
@@ -3953,7 +3865,7 @@ impl InstructionTranslator {
         max_stack_height: u32,
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             let lhs_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(lhs_type, input_type);
             builder.alloc.stack_types.push(output_type);
@@ -3989,7 +3901,7 @@ impl InstructionTranslator {
         max_stack_height: u32,
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             // calculate the type stack and make sure params are correct
             let lhs_type = builder.alloc.stack_types.pop().unwrap();
             let rhs_type = builder.alloc.stack_types.pop().unwrap();
@@ -4013,7 +3925,7 @@ impl InstructionTranslator {
         max_stack_height: u32,
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             let lhs_type = builder.alloc.stack_types.pop().unwrap();
             let rhs_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(lhs_type, rhs_type);
@@ -4036,7 +3948,7 @@ impl InstructionTranslator {
         max_stack_height: u32,
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             // calc the type stack
             let lhs_type = builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.push(lhs_type);
@@ -4057,7 +3969,7 @@ impl InstructionTranslator {
         max_stack_height: u32,
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|fuel_costs| fuel_costs.base)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             // check the type stack
             let lsh_type = builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.push(ValType::I32);

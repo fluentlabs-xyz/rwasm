@@ -74,7 +74,7 @@ pub enum Opcode {
     TableFill(TableIdx) = 0x92,
     TableGet(TableIdx) = 0x93,
     TableSet(TableIdx) = 0x94,
-    TableCopy(TableIdx) = 0x95,
+    TableCopy(TableIdx, TableIdx) = 0x95,
     TableInit(ElementSegmentIdx) = 0x96,
     ElemDrop(ElementSegmentIdx) = 0x97,
 
@@ -486,7 +486,9 @@ impl Opcode {
             Opcode::TableFill(table_id) => *table_id as u32,
             Opcode::TableGet(table_id) => *table_id as u32,
             Opcode::TableSet(table_id) => *table_id as u32,
-            Opcode::TableCopy(table_id) => *table_id as u32,
+            Opcode::TableCopy(dst_table_idx, src_table_idx) => {
+                (*dst_table_idx as u32) << 16 | (*src_table_idx as u32)
+            }
             Opcode::TableInit(ele_seg_id) => *ele_seg_id as u32,
             Opcode::ElemDrop(ele_seg_id) => *ele_seg_id as u32,
             _ => 0,

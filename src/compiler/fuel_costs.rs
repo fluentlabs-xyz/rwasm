@@ -1,55 +1,28 @@
-use crate::{compiler::drop_keep::DropKeep, types::UntypedValue};
+use crate::{
+    compiler::drop_keep::DropKeep,
+    BASE_FUEL_COST,
+    CALL_FUEL_COST,
+    DROP_KEEP_PER_FUEL,
+    ENTITY_FUEL_COST,
+    LOAD_FUEL_COST,
+    LOCALS_PER_FUEL,
+    MEMORY_BYTES_PER_FUEL,
+    STORE_FUEL_COST,
+    TABLE_ELEMS_PER_FUEL,
+};
 use core::num::NonZeroU32;
 
 /// Type storing all kinds of fuel costs of instructions.
-#[derive(Debug, Copy, Clone)]
-pub struct FuelCosts {
-    /// The base fuel costs for all instructions.
-    pub base: u32,
-    /// The fuel cost for instruction operating on Wasm entities.
-    ///
-    /// # Note
-    ///
-    /// A Wasm entity is one of `func`, `global`, `memory` or `table`.
-    /// Those instructions are usually a bit more costly since they need
-    ///  multiple indirect accesses through the Wasm instance and store.
-    pub entity: u32,
-    /// The fuel cost offset for `memory.load` instructions.
-    pub load: u32,
-    /// The fuel cost offset for `memory.store` instructions.
-    pub store: u32,
-    /// The fuel cost offset for `call` and `call_indirect` instructions.
-    pub call: u32,
-    /// Determines how many moved stack values consume one fuel upon a branch or return
-    /// instruction.
-    ///
-    /// # Note
-    ///
-    /// If this is zero, then processing [`DropKeep`] costs nothing.
-    branch_kept_per_fuel: u32,
-    /// Determines how many function locals consume one fuel per function call.
-    ///
-    /// # Note
-    ///
-    /// - This is also applied to all function parameters since they are translated to local
-    ///   variable slots.
-    /// - If this is zero then processing function locals costs nothing.
-    func_locals_per_fuel: u32,
-    /// How many memory bytes can be processed per fuel in a `bulk-memory` instruction?
-    ///
-    /// # Note
-    ///
-    /// If this is zero, then processing memory bytes costs nothing.
-    pub memory_bytes_per_fuel: u32,
-    /// How many table elements can be processed per fuel in a `bulk-table` instruction?
-    ///
-    /// # Note
-    ///
-    /// If this is zero, then processing table elements costs nothing.
-    pub table_elements_per_fuel: u32,
-}
+#[derive(Default, Debug, Copy, Clone)]
+pub struct FuelCosts;
 
 impl FuelCosts {
+    pub const BASE: u32 = BASE_FUEL_COST;
+    pub const ENTITY: u32 = ENTITY_FUEL_COST;
+    pub const LOAD: u32 = LOAD_FUEL_COST;
+    pub const STORE: u32 = STORE_FUEL_COST;
+    pub const CALL: u32 = CALL_FUEL_COST;
+
     /// Returns the fuel consumption of the number of items with costs per items.
     pub fn costs_per(len_items: u32, items_per_fuel: u32) -> u32 {
         NonZeroU32::new(items_per_fuel)
@@ -58,11 +31,11 @@ impl FuelCosts {
     }
 
     /// Returns the fuel consumption for branches and returns using the given [`DropKeep`].
-    pub fn fuel_for_drop_keep(&self, drop_keep: DropKeep) -> u32 {
+    pub fn fuel_for_drop_keep(drop_keep: DropKeep) -> u32 {
         if drop_keep.drop == 0 {
             return 0;
         }
-        Self::costs_per(u32::from(drop_keep.keep), self.branch_kept_per_fuel)
+        Self::costs_per(u32::from(drop_keep.keep), DROP_KEEP_PER_FUEL)
     }
 
     /// Returns the fuel consumption for calling a function with the amount of local variables.
@@ -70,36 +43,17 @@ impl FuelCosts {
     /// # Note
     ///
     /// Function parameters are also treated as local variables.
-    pub fn fuel_for_locals(&self, locals: u32) -> u32 {
-        Self::costs_per(locals, self.func_locals_per_fuel)
+    pub fn fuel_for_locals(locals: u32) -> u32 {
+        Self::costs_per(locals, LOCALS_PER_FUEL)
     }
 
     /// Returns the fuel consumption for processing the amount of memory bytes.
-    pub fn fuel_for_bytes(&self, bytes: u32) -> u32 {
-        Self::costs_per(bytes, self.memory_bytes_per_fuel)
+    pub fn fuel_for_bytes(bytes: u32) -> u32 {
+        Self::costs_per(bytes, MEMORY_BYTES_PER_FUEL)
     }
 
     /// Returns the fuel consumption for processing the amount of table elements.
-    pub fn fuel_for_elements(&self, elements: u32) -> u32 {
-        Self::costs_per(elements, self.table_elements_per_fuel)
-    }
-}
-
-impl Default for FuelCosts {
-    fn default() -> Self {
-        let memory_bytes_per_fuel = 64;
-        let bytes_per_register = size_of::<UntypedValue>() as u32;
-        let registers_per_fuel = memory_bytes_per_fuel / bytes_per_register;
-        Self {
-            base: 1,
-            entity: 1,
-            load: 1,
-            store: 1,
-            call: 1,
-            func_locals_per_fuel: registers_per_fuel,
-            branch_kept_per_fuel: registers_per_fuel,
-            memory_bytes_per_fuel,
-            table_elements_per_fuel: registers_per_fuel,
-        }
+    pub fn fuel_for_elements(elements: u32) -> u32 {
+        Self::costs_per(elements, TABLE_ELEMS_PER_FUEL)
     }
 }
