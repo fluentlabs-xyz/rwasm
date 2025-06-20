@@ -41,6 +41,7 @@ use bincode::{
 use core::ops::{Deref, DerefMut};
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
 pub struct InstructionSet {
     pub instr: Vec<Opcode>,
 }

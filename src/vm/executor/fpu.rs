@@ -101,9 +101,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let memory = self.store.global_memory.data_mut();
         UntypedValue::f32_store(memory, address, address_offset, value)?;
         #[cfg(feature = "tracing")]
-        if let Some(tracer) = self.store.tracer.as_mut() {
-            let base_address = offset + u32::from(address);
-            tracer.memory_change(
+        {
+            let base_address = address_offset + u32::from(address);
+            self.store.tracer.memory_change(
                 base_address,
                 4,
                 &memory[base_address as usize..(base_address + 4) as usize],

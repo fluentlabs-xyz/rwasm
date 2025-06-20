@@ -90,6 +90,116 @@ pub struct RwasmExecutor<'a, T> {
     pub(crate) store: &'a mut Store<T>,
 }
 
+macro_rules! exec_opcode {
+    ($self:ident, $instr:expr, $terminate_expr:expr) => {{}
+    use Opcode::*;
+    match $instr {
+        // stack
+        Unreachable => $self.visit_unreachable()?,
+        Trap(imm) => $self.visit_trap_code(imm)?,
+        LocalGet(imm) => $self.visit_local_get(imm),
+        LocalSet(imm) => $self.visit_local_set(imm),
+        LocalTee(imm) => $self.visit_local_tee(imm),
+        Br(imm) => $self.visit_br(imm),
+        BrIfEqz(imm) => $self.visit_br_if(imm),
+        BrIfNez(imm) => $self.visit_br_if_nez(imm),
+        BrTable(imm) => $self.visit_br_table(imm),
+        ConsumeFuel(imm) => $self.visit_consume_fuel(imm)?,
+        ConsumeFuelStack => $self.visit_consume_fuel_stack()?,
+        Return => {
+            if $self.visit_return() {
+                $terminate_expr
+            }
+        }
+        ReturnCallInternal(imm) => $self.visit_return_call_internal(imm),
+        ReturnCall(imm) => {
+            if $self.visit_return_call(imm)? {
+                $terminate_expr
+            }
+        }
+        ReturnCallIndirect(imm) => $self.visit_return_call_indirect(imm)?,
+        CallInternal(imm) => $self.visit_call_internal(imm)?,
+        Call(imm) => {
+            if $self.visit_call(imm)? {
+                $terminate_expr
+            }
+        }
+        CallIndirect(imm) => $self.visit_call_indirect(imm)?,
+        SignatureCheck(imm) => $self.visit_signature_check(imm)?,
+        StackCheck(imm) => $self.visit_stack_check(imm)?,
+        Drop => $self.visit_drop(),
+        Select => $self.visit_select(),
+        GlobalGet(imm) => $self.visit_global_get(imm),
+        GlobalSet(imm) => $self.visit_global_set(imm),
+        RefFunc(imm) => $self.visit_ref_func(imm),
+        I32Const(imm) => $self.visit_i32_const(imm),
+
+        // alu
+        I32Eqz => $self.visit_i32_eqz(),
+        I32Eq => $self.visit_i32_eq(),
+        I32Ne => $self.visit_i32_ne(),
+        I32LtS => $self.visit_i32_lt_s(),
+        I32LtU => $self.visit_i32_lt_u(),
+        I32GtS => $self.visit_i32_gt_s(),
+        I32GtU => $self.visit_i32_gt_u(),
+        I32LeS => $self.visit_i32_le_s(),
+        I32LeU => $self.visit_i32_le_u(),
+        I32GeS => $self.visit_i32_ge_s(),
+        I32GeU => $self.visit_i32_ge_u(),
+        I32Clz => $self.visit_i32_clz(),
+        I32Ctz => $self.visit_i32_ctz(),
+        I32Popcnt => $self.visit_i32_popcnt(),
+        I32Add => $self.visit_i32_add(),
+        I32Sub => $self.visit_i32_sub(),
+        I32Mul => $self.visit_i32_mul(),
+        I32DivS => $self.visit_i32_div_s()?,
+        I32DivU => $self.visit_i32_div_u()?,
+        I32RemS => $self.visit_i32_rem_s()?,
+        I32RemU => $self.visit_i32_rem_u()?,
+        I32And => $self.visit_i32_and(),
+        I32Or => $self.visit_i32_or(),
+        I32Xor => $self.visit_i32_xor(),
+        I32Shl => $self.visit_i32_shl(),
+        I32ShrS => $self.visit_i32_shr_s(),
+        I32ShrU => $self.visit_i32_shr_u(),
+        I32Rotl => $self.visit_i32_rotl(),
+        I32Rotr => $self.visit_i32_rotr(),
+        I32WrapI64 => $self.visit_i32_wrap_i64(),
+        I32Extend8S => $self.visit_i32_extend8_s(),
+        I32Extend16S => $self.visit_i32_extend16_s(),
+
+        // memory
+        MemorySize => $self.visit_memory_size(),
+        MemoryGrow => $self.visit_memory_grow()?,
+        MemoryFill => $self.visit_memory_fill()?,
+        MemoryCopy => $self.visit_memory_copy()?,
+        MemoryInit(imm) => $self.visit_memory_init(imm)?,
+        DataDrop(imm) => $self.visit_data_drop(imm),
+        I32Load(imm) => $self.visit_i32_load(imm)?,
+        I32Load8S(imm) => $self.visit_i32_load_i8_s(imm)?,
+        I32Load8U(imm) => $self.visit_i32_load_i8_u(imm)?,
+        I32Load16S(imm) => $self.visit_i32_load_i16_s(imm)?,
+        I32Load16U(imm) => $self.visit_i32_load_i16_u(imm)?,
+        I32Store(imm) => $self.visit_i32_store(imm)?,
+        I32Store8(imm) => $self.visit_i32_store_8(imm)?,
+        I32Store16(imm) => $self.visit_i32_store_16(imm)?,
+
+        // table
+        TableSize(imm) => $self.visit_table_size(imm),
+        TableGrow(imm) => $self.visit_table_grow(imm)?,
+        TableFill(imm) => $self.visit_table_fill(imm)?,
+        TableGet(imm) => $self.visit_table_get(imm)?,
+        TableSet(imm) => $self.visit_table_set(imm)?,
+        TableCopy(imm) => $self.visit_table_copy(imm)?,
+        TableInit(imm) => $self.visit_table_init(imm)?,
+        ElemDrop(imm) => $self.visit_element_drop(imm),
+
+        // fpu
+        #[cfg(feature = "fpu")]
+        opcode => $self.exec_fpu_opcode(opcode)?,
+    }};
+}
+
 impl<'a, T> RwasmExecutor<'a, T> {
     pub fn new(
         module: &'a RwasmModule,
@@ -133,125 +243,74 @@ impl<'a, T> RwasmExecutor<'a, T> {
         diff / size_of::<Opcode>() as u32
     }
 
-    pub fn run(mut self) -> Result<(), TrapCode> {
-        use Opcode::*;
+    pub fn run(&mut self) -> Result<(), TrapCode> {
         loop {
             let instr = self.ip.get();
+
             #[cfg(feature = "debug-print")]
             self.debug_print(&instr);
+
             #[cfg(feature = "tracing")]
-            self.trace_instr(&instr);
-            match instr {
-                // stack
-                Unreachable => self.visit_unreachable()?,
-                Trap(imm) => self.visit_trap_code(imm)?,
-                LocalGet(imm) => self.visit_local_get(imm),
-                LocalSet(imm) => self.visit_local_set(imm),
-                LocalTee(imm) => self.visit_local_tee(imm),
-                Br(imm) => self.visit_br(imm),
-                BrIfEqz(imm) => self.visit_br_if(imm),
-                BrIfNez(imm) => self.visit_br_if_nez(imm),
-                BrTable(imm) => self.visit_br_table(imm),
-                ConsumeFuel(imm) => self.visit_consume_fuel(imm)?,
-                ConsumeFuelStack => self.visit_consume_fuel_stack()?,
-                Return => {
-                    if self.visit_return() {
-                        break Ok(());
-                    }
+            {
+                self.trace_instr_pre(&instr);
+                let mut wrapper = |instr: Opcode| -> Result<bool, TrapCode> {
+                    exec_opcode!(self, instr, return Ok(true));
+                    Ok(false)
+                };
+                let res = wrapper(instr);
+                self.trace_instr_post(&instr, res.err());
+                if res? {
+                    break Ok(());
                 }
-                ReturnCallInternal(imm) => self.visit_return_call_internal(imm),
-                ReturnCall(imm) => {
-                    if self.visit_return_call(imm)? {
-                        break Ok(());
-                    }
-                }
-                ReturnCallIndirect(imm) => self.visit_return_call_indirect(imm)?,
-                CallInternal(imm) => self.visit_call_internal(imm)?,
-                Call(imm) => {
-                    if self.visit_call(imm)? {
-                        break Ok(());
-                    }
-                }
-                CallIndirect(imm) => self.visit_call_indirect(imm)?,
-                SignatureCheck(imm) => self.visit_signature_check(imm)?,
-                StackCheck(imm) => self.visit_stack_check(imm)?,
-                Drop => self.visit_drop(),
-                Select => self.visit_select(),
-                GlobalGet(imm) => self.visit_global_get(imm),
-                GlobalSet(imm) => self.visit_global_set(imm),
-                RefFunc(imm) => self.visit_ref_func(imm),
-                I32Const(imm) => self.visit_i32_const(imm),
-
-                // alu
-                I32Eqz => self.visit_i32_eqz(),
-                I32Eq => self.visit_i32_eq(),
-                I32Ne => self.visit_i32_ne(),
-                I32LtS => self.visit_i32_lt_s(),
-                I32LtU => self.visit_i32_lt_u(),
-                I32GtS => self.visit_i32_gt_s(),
-                I32GtU => self.visit_i32_gt_u(),
-                I32LeS => self.visit_i32_le_s(),
-                I32LeU => self.visit_i32_le_u(),
-                I32GeS => self.visit_i32_ge_s(),
-                I32GeU => self.visit_i32_ge_u(),
-                I32Clz => self.visit_i32_clz(),
-                I32Ctz => self.visit_i32_ctz(),
-                I32Popcnt => self.visit_i32_popcnt(),
-                I32Add => self.visit_i32_add(),
-                I32Sub => self.visit_i32_sub(),
-                I32Mul => self.visit_i32_mul(),
-                I32DivS => self.visit_i32_div_s()?,
-                I32DivU => self.visit_i32_div_u()?,
-                I32RemS => self.visit_i32_rem_s()?,
-                I32RemU => self.visit_i32_rem_u()?,
-                I32And => self.visit_i32_and(),
-                I32Or => self.visit_i32_or(),
-                I32Xor => self.visit_i32_xor(),
-                I32Shl => self.visit_i32_shl(),
-                I32ShrS => self.visit_i32_shr_s(),
-                I32ShrU => self.visit_i32_shr_u(),
-                I32Rotl => self.visit_i32_rotl(),
-                I32Rotr => self.visit_i32_rotr(),
-                I32WrapI64 => self.visit_i32_wrap_i64(),
-                I32Extend8S => self.visit_i32_extend8_s(),
-                I32Extend16S => self.visit_i32_extend16_s(),
-
-                // memory
-                MemorySize => self.visit_memory_size(),
-                MemoryGrow => self.visit_memory_grow()?,
-                MemoryFill => self.visit_memory_fill()?,
-                MemoryCopy => self.visit_memory_copy()?,
-                MemoryInit(imm) => self.visit_memory_init(imm)?,
-                DataDrop(imm) => self.visit_data_drop(imm),
-                I32Load(imm) => self.visit_i32_load(imm)?,
-                I32Load8S(imm) => self.visit_i32_load_i8_s(imm)?,
-                I32Load8U(imm) => self.visit_i32_load_i8_u(imm)?,
-                I32Load16S(imm) => self.visit_i32_load_i16_s(imm)?,
-                I32Load16U(imm) => self.visit_i32_load_i16_u(imm)?,
-                I32Store(imm) => self.visit_i32_store(imm)?,
-                I32Store8(imm) => self.visit_i32_store_8(imm)?,
-                I32Store16(imm) => self.visit_i32_store_16(imm)?,
-
-                // table
-                TableSize(imm) => self.visit_table_size(imm),
-                TableGrow(imm) => self.visit_table_grow(imm)?,
-                TableFill(imm) => self.visit_table_fill(imm)?,
-                TableGet(imm) => self.visit_table_get(imm)?,
-                TableSet(imm) => self.visit_table_set(imm)?,
-                TableCopy(imm) => self.visit_table_copy(imm)?,
-                TableInit(imm) => self.visit_table_init(imm)?,
-                ElemDrop(imm) => self.visit_element_drop(imm),
-
-                // fpu
-                #[cfg(feature = "fpu")]
-                opcode => self.exec_fpu_opcode(opcode)?,
             }
+
+            #[cfg(not(feature = "tracing"))]
+            exec_opcode!(self, instr, break Ok(()));
         }
+    }
+
+    #[cfg(feature = "tracing")]
+    pub fn step(&mut self) -> Result<bool, TrapCode> {
+        if !self
+            .ip
+            .is_valid((self.module.code_section.instr.last().unwrap()) as *const Opcode as u64)
+        {
+            return Err(TrapCode::UnreachableCodeReached);
+        };
+        let instr = self.ip.get();
+        self.trace_instr_pre(&instr);
+        let mut wrapper = |instr: Opcode| -> Result<bool, TrapCode> {
+            exec_opcode!(self, instr, return Ok(true));
+            Ok(false)
+        };
+        let res = wrapper(instr);
+        self.trace_instr_post(&instr, res.err());
+        res
+    }
+
+    #[cfg(feature = "tracing")]
+    fn trace_instr_pre(&mut self, instr: &Opcode) {
+        self.store.tracer.state.next_cycle();
+        let pc = self.program_counter();
+        let memory_size: u32 = self.store.global_memory.current_pages().into();
+        let consumed_fuel = self.store.fuel_consumed();
+        self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
+    }
+
+    #[cfg(feature = "tracing")]
+    fn trace_instr_post(&mut self, instr: &Opcode, trap_code: Option<TrapCode>) {
+        // TODO(wangyao): "track trap codes"
+
+        let sp = self.sp.to_relative_address();
+
+        let pc = self.program_counter();
+        let stack = self.value_stack.dump_stack(self.sp);
+        self.store.tracer.post_opcode_state(pc, sp, stack);
     }
 
     #[cfg(feature = "debug-print")]
     fn debug_print(&mut self, instr: &Opcode) {
-        let stack = self.value_stack.dump_stack2(self.sp);
+        let stack = self.value_stack.dump_stack(self.sp);
         println!(
             "{:04}:\t {} \tstack({}):{:?}",
             self.program_counter(),
@@ -263,28 +322,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 .take(10)
                 .map(|v| v.as_usize())
                 .collect::<Vec<_>>()
-        );
-    }
-
-    #[cfg(feature = "tracing")]
-    fn trace_instr(&self, instr: &Opcode) {
-        let Some(tracer) = self.store.tracer.as_ref() else {
-            return;
-        };
-        let memory_size: u32 = self.store.global_memory.current_pages().into();
-        let consumed_fuel = self.fuel_consumed();
-        let stack = self.value_stack.dump_stack();
-        self.store.tracer.as_mut().unwrap().pre_opcode_state(
-            self.program_counter(),
-            *instr,
-            stack,
-            &crate::OpcodeMeta {
-                index: 0,
-                pos: 0,
-                opcode: 0,
-            },
-            memory_size,
-            consumed_fuel,
         );
     }
 
@@ -332,9 +369,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let memory = self.store.global_memory.data_mut();
         store_wrap(memory, address, offset, value)?;
         #[cfg(feature = "tracing")]
-        if let Some(tracer) = self.store.tracer.as_mut() {
+        {
             let base_address = offset + u32::from(address);
-            tracer.memory_change(
+            self.store.tracer.memory_change(
                 base_address,
                 len,
                 &memory[base_address as usize..(base_address + len) as usize],

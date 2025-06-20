@@ -92,22 +92,26 @@ impl ValueStack {
         self.base_ptr().into_add(self.stack_ptr)
     }
 
+    /// Calculates the length of the stack from a given stack pointer.
     pub fn stack_len(&mut self, sp: ValueStackPtr) -> usize {
-        let base = self.base_ptr();
-        sp.offset_from(base) as usize
+        sp.offset_from(self.base_ptr()) as usize
     }
 
+    /// Checks if the stack has overflowed based on the provided stack pointer.
     pub fn has_stack_overflowed(&mut self, sp: ValueStackPtr) -> bool {
         self.stack_len(sp) > self.maximum_len
     }
 
-    pub fn dump_stack(&mut self) -> Vec<UntypedValue> {
-        self.entries[0..self.stack_ptr].to_vec()
+    /// Returns a slice of `UntypedValue` starting from the base pointer up to the given
+    /// `ValueStackPtr` (exclusive).
+    pub fn as_slice(&mut self) -> &mut [UntypedValue] {
+        &mut self.entries[0..self.stack_ptr]
     }
 
-    pub fn dump_stack2(&mut self, sp: ValueStackPtr) -> Vec<UntypedValue> {
-        let offset = sp.offset_from(self.base_ptr()) as usize;
-        self.entries[0..offset].to_vec()
+    /// Dumps a portion of the value stack into a `Vec<UntypedValue>`.
+    pub fn dump_stack(&mut self, sp: ValueStackPtr) -> Vec<UntypedValue> {
+        let offset = usize::try_from(sp.offset_from(self.base_ptr())).unwrap();
+        self.entries.as_slice()[..offset].to_vec()
     }
 
     /// Returns the base [`ValueStackPtr`] of `self`.
@@ -115,7 +119,7 @@ impl ValueStack {
     /// The returned [`ValueStackPtr`] points to the first value on the [`ValueStack`].
     #[inline]
     fn base_ptr(&mut self) -> ValueStackPtr {
-        ValueStackPtr::new(self.entries.as_mut_ptr(), self.entries.len())
+        ValueStackPtr::new(self.entries.as_mut_ptr())
     }
 
     /// Synchronizes [`ValueStack`] with the new [`ValueStackPtr`].
@@ -271,7 +275,8 @@ impl ValueStack {
     ///
     /// This is required since sometimes execution can halt in the middle of
     /// function execution which leaves the [`ValueStack`] in an unspecified
-    /// state. Therefore the [`ValueStack`] is required to be reset before
+    /// state.
+    /// Therefore, the [`ValueStack`] is required to be reset before
     /// function execution happens.
     pub fn reset(&mut self) {
         self.stack_ptr = 0;
@@ -297,8 +302,7 @@ impl From<*mut UntypedValue> for ValueStackPtr {
 }
 
 impl ValueStackPtr {
-    pub fn new(ptr: *mut UntypedValue, _len: usize) -> ValueStackPtr {
-        // Self { src: ptr, ptr, len }
+    pub fn new(ptr: *mut UntypedValue) -> ValueStackPtr {
         Self { ptr, src: ptr }
     }
 
@@ -334,7 +338,7 @@ impl ValueStackPtr {
     ///
     /// # Note
     ///
-    /// The amount of `delta` is in number of bytes per [`UntypedValue`].
+    /// The amount of `delta` is in the number of bytes per [`UntypedValue`].
     #[must_use]
     #[inline]
     pub fn into_add(mut self, delta: usize) -> Self {
@@ -346,7 +350,7 @@ impl ValueStackPtr {
     ///
     /// # Note
     ///
-    /// The amount of `delta` is in number of bytes per [`UntypedValue`].
+    /// The amount of `delta` is in the number of bytes per [`UntypedValue`].
     #[must_use]
     #[inline]
     pub fn into_sub(mut self, delta: usize) -> Self {
@@ -410,6 +414,12 @@ impl ValueStackPtr {
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.sub(delta) };
         debug_assert!(self.ptr >= self.src, "stack underflow");
+    }
+
+    /// convert stack pointer to the address number
+    #[cfg(feature = "tracing")]
+    pub fn to_relative_address(&self) -> u32 {
+        crate::mem_index::SP_START - (self.ptr as u32 - self.src as u32)
     }
 
     /// Pushes the `T` to the end of the [`ValueStack`].

@@ -936,6 +936,7 @@ dependencies = [
  "once_cell",
  "paste",
  "rand",
+ "serde",
  "smallvec",
  "tiny-keccak",
  "wasmparser-nostd",

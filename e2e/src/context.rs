@@ -413,7 +413,7 @@ impl TestContext<'_> {
                 _ => unreachable!("unsupported result type: {:?}", val_type),
             };
         }
-        assert!(instance.value_stack.dump_stack().is_empty());
+        assert!(instance.value_stack.as_slice().is_empty());
         Ok(results)
     }
 

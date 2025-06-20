@@ -128,9 +128,10 @@ impl<'vm, 'a, T> Caller<T> for RwasmCaller<'vm, 'a, T> {
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
         self.vm.store.global_memory.write(offset, buffer)?;
         #[cfg(feature = "tracing")]
-        if let Some(tracer) = self.vm.store.tracer.as_mut() {
-            tracer.memory_change(offset as u32, buffer.len() as u32, buffer);
-        }
+        self.vm
+            .store
+            .tracer
+            .memory_change(offset as u32, buffer.len() as u32, buffer);
         Ok(())
     }
 
