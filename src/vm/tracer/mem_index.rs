@@ -25,7 +25,7 @@ pub const SP_START: u32 = N_DEFAULT_STACK_SIZE as u32 * UNIT + UNIT;
 /// simpler.
 pub const SP_END: u32 = UNIT;
 
-pub const FUNC_FRAME_SIZE: u32 = UNIT; // TODO (dmitry123): "it looks like the call stack only save the returning pc right?"
+pub const FUNC_FRAME_SIZE: u32 = UNIT; // TODO (dmitry123): "it looks like the call stack only save the returning pc right?, Yes(Yao)"
 pub const FUNC_FRAME_START: u32 = SP_START + UNIT;
 pub const FUNC_FRAME_END: u32 = FUNC_FRAME_START + FUNC_FRAME_SIZE * N_MAX_RECURSION_DEPTH as u32;
 pub const TABLE_ELEM_SIZE: u32 = UNIT;
@@ -36,3 +36,48 @@ pub const DATA_SEG_START: u32 = TABLE_SEG_END + UNIT;
 pub const DATA_SEG_END: u32 = DATA_SEG_START + N_MAX_DATA_SEGMENTS_BITS as u32 * DATA_SEG_ELEM_SIZE;
 pub const GLOBAL_MEM_START: u32 = DATA_SEG_END + UNIT;
 pub const GLOBAL_MEM_END: u32 = GLOBAL_MEM_START + (1 << 8) << 20;
+
+pub enum AddressType {
+    Stack(u32),
+    FuncFrame(u32),
+    Table(u32),
+    Data(u32),
+    GlobalMemory(u32),
+}
+
+impl AddressType {
+    pub fn to_virtual_addr(&self) -> u32 {
+        match self {
+            AddressType::Stack(offset) => {
+                let v_addr = (SP_START - offset * UNIT) - UNIT;
+                debug_assert!(v_addr >= SP_END);
+                debug_assert!(v_addr < SP_START);
+                v_addr
+            }
+            AddressType::FuncFrame(offset) => {
+                let v_addr = FUNC_FRAME_START + *offset * UNIT;
+                debug_assert!(v_addr >= FUNC_FRAME_START);
+                debug_assert!(v_addr < FUNC_FRAME_END);
+                v_addr
+            }
+            AddressType::Table(offset) => {
+                let v_addr = TABLE_SEG_START + offset * UNIT;
+                debug_assert!(v_addr >= TABLE_SEG_START);
+                debug_assert!(v_addr < TABLE_SEG_END);
+                v_addr
+            }
+            AddressType::Data(offset) => {
+                let v_addr = DATA_SEG_START + offset * UNIT;
+                debug_assert!(v_addr >= DATA_SEG_START);
+                debug_assert!(v_addr < DATA_SEG_END);
+                v_addr
+            }
+            AddressType::GlobalMemory(offset) => {
+                let v_addr = GLOBAL_MEM_START + offset * UNIT;
+                debug_assert!(v_addr >= GLOBAL_MEM_START);
+                debug_assert!(v_addr < GLOBAL_MEM_END);
+                v_addr
+            }
+        }
+    }
+}

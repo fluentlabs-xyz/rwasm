@@ -52,6 +52,8 @@ pub struct TraceTableSizeState {
 pub struct TracerInstrState {
     pub program_counter: u32,
     pub opcode: Opcode,
+    pub sp: u32,
+    pub next_sp: u32,
     pub value: u32,
     pub memory_changes: Vec<TracerMemoryState>,
     pub table_changes: Vec<TraceTableState>,
@@ -123,7 +125,8 @@ impl Tracer {
         let memory_changes = take(&mut self.memory_changes);
         let table_changes = take(&mut self.table_changes);
         let table_size_changes = take(&mut self.table_size_changes);
-        let memory_access = self.record_mr(opcode, sp.to_relative_address());
+        let sp = sp.to_relative_address();
+        let memory_access = self.record_mr(opcode, sp);
         let opcode_state = TracerInstrState {
             program_counter,
             opcode,
@@ -134,8 +137,10 @@ impl Tracer {
             next_table_idx: None,
             call_id: 0,
             memory_access,
+            sp,
+            next_sp: 0,
         };
-        println!("opcode _state{:?},", opcode_state);
+
         self.logs.push(opcode_state);
     }
 
@@ -145,10 +150,12 @@ impl Tracer {
         new_sp: u32,
         stack: Vec<UntypedValue>,
     ) {
-        let op_state = self.logs.last().unwrap();
-        let opcode = op_state.opcode;
+        let op_state = self.logs.last_mut().unwrap();
 
-        self.record_mw(opcode, new_sp, stack);
+        let opcode = op_state.opcode;
+        op_state.next_sp = new_sp;
+        println!("opcode _state{:?},", op_state);
+        self.record_sw(opcode, new_sp, stack);
         self.state.sp = new_sp;
     }
 
@@ -197,37 +204,10 @@ impl Tracer {
             ins, length, self.memory_records
         );
 
-        for idx in length..0 {
+        for idx in 0..length {
             let addr = sp - idx;
-            println!("length in loop{},addr:{}", length, addr);
-            let record = self.memory_records.entry(addr).or_insert(MemoryRecord {
-                value: 0,
-                shard: 0,
-                timestamp: 0,
-            });
-
-            let prev_record = *record;
-            record.shard = self.state.shard;
-            record.timestamp = self.state.clk;
-            let local_memory_access = &mut self.local_memory_event;
-            local_memory_access
-                .entry(addr)
-                .and_modify(|e| {
-                    e.final_mem_access = *record;
-                })
-                .or_insert(MemoryLocalEvent {
-                    addr,
-                    initial_mem_access: prev_record,
-                    final_mem_access: *record,
-                });
-            // Construct the memory read record.
-            let read_record = MemoryReadRecord::new(
-                record.value,
-                record.shard,
-                record.timestamp,
-                prev_record.shard,
-                prev_record.timestamp,
-            );
+            let read_record = self.mr(addr);
+            println!("idx:{}", idx);
             match idx {
                 1 => {
                     memory_access.b = Some(MemoryRecordEnum::Read(read_record));
@@ -238,26 +218,73 @@ impl Tracer {
                 _ => unreachable!(),
             }
         }
+
+        if ins.is_memory_load_instruction() {
+            let offset = ins.aux_value();
+            let raw_addr = memory_access.a.unwrap().value();
+            let aligned_addr = align(raw_addr + offset);
+            let read_record = self.mr(aligned_addr);
+            memory_access.b = Some(MemoryRecordEnum::Read(read_record));
+        }
+
         memory_access
     }
 
-    pub fn record_mw(&mut self, ins: Opcode, sp: u32, stack: Vec<UntypedValue>) {
+    pub fn record_sw(&mut self, ins: Opcode, sp: u32, stack: Vec<UntypedValue>) {
         if !opcode_stack_write(ins) {
             return;
         }
-        let record = self.memory_records.entry(sp).or_default();
+        let value = stack.last().unwrap().as_u32();
+        self.mw(sp, value);
+    }
+
+    pub fn mr(&mut self, addr: u32) -> MemoryReadRecord {
+        let clk = self.state.clk;
+        let shard = self.state.shard;
+        let record = self.memory_records.entry(addr).or_insert(MemoryRecord {
+            value: 0,
+            shard: 0,
+            timestamp: 0,
+        });
+
         let prev_record = *record;
         record.shard = self.state.shard;
         record.timestamp = self.state.clk;
-        record.value = stack.last().unwrap().as_u32();
         let local_memory_access = &mut self.local_memory_event;
         local_memory_access
-            .entry(sp)
+            .entry(addr)
             .and_modify(|e| {
                 e.final_mem_access = *record;
             })
             .or_insert(MemoryLocalEvent {
-                addr: sp,
+                addr,
+                initial_mem_access: prev_record,
+                final_mem_access: *record,
+            });
+        // Construct the memory read record.
+        MemoryReadRecord::new(
+            record.value,
+            record.shard,
+            record.timestamp,
+            prev_record.shard,
+            prev_record.timestamp,
+        )
+    }
+    pub fn mw(&mut self, addr: u32, value: u32) {
+        assert!(addr % 4 == 0);
+        let record = self.memory_records.entry(addr).or_default();
+        let prev_record = *record;
+        record.shard = self.state.shard;
+        record.timestamp = self.state.clk;
+        record.value = value;
+        let local_memory_access = &mut self.local_memory_event;
+        local_memory_access
+            .entry(addr)
+            .and_modify(|e| {
+                e.final_mem_access = *record;
+            })
+            .or_insert(MemoryLocalEvent {
+                addr: addr,
                 initial_mem_access: prev_record,
                 final_mem_access: *record,
             });
@@ -271,8 +298,11 @@ impl Tracer {
             prev_record.timestamp,
         );
         let op_state = self.logs.last_mut().unwrap();
-
         op_state.memory_access.c = Some(MemoryRecordEnum::Write(write_record));
         println!("op_state:memoeryaccess:{:?}", op_state.memory_access);
     }
+}
+
+pub fn align(addr: u32) -> u32 {
+    return addr - addr % 4;
 }

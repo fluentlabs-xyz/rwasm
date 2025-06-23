@@ -298,7 +298,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     #[cfg(feature = "tracing")]
     fn trace_instr_post(&mut self, instr: &Opcode, trap_code: Option<TrapCode>) {
         // TODO(wangyao): "track trap codes"
-
+        self.store.tracer.state.next_cycle();
         let sp = self.sp.to_relative_address();
 
         let pc = self.program_counter();
@@ -363,17 +363,37 @@ impl<'a, T> RwasmExecutor<'a, T> {
         ) -> Result<(), TrapCode>,
         #[allow(unused_variables)] len: u32,
     ) -> Result<(), TrapCode> {
-        let (address, value) = self.sp.pop2();
-        let memory = self.store.global_memory.data_mut();
-        store_wrap(memory, address, offset, value)?;
+        #[cfg(not(feature = "tracing"))]
+        {
+            let (address, value) = self.sp.pop2();
+            let memory = self.store.global_memory.data_mut();
+            store_wrap(memory, address, offset, value)?;
+        }
         #[cfg(feature = "tracing")]
         {
-            let base_address = offset + u32::from(address);
-            self.store.tracer.memory_change(
-                base_address,
-                len,
-                &memory[base_address as usize..(base_address + len) as usize],
+            use crate::{align, mem_index::AddressType};
+
+            let (address, value) = self.sp.pop2();
+            println!("base_addrss:{},value:{}", address, value);
+            let memory = self.store.global_memory.data_mut();
+            let addr = address.to_bits() + offset;
+            let aligned_addr: u32 = align(addr);
+            let old_val = match self.store.tracer.memory_records.get(&aligned_addr) {
+                Some(record) => record.value,
+                None => 0,
+            };
+            store_wrap(memory, address, offset, value)?;
+            let typed_addr = AddressType::GlobalMemory(aligned_addr.into());
+            let new_val = u32::from_le_bytes(
+                memory[aligned_addr as usize..(aligned_addr + 4) as usize]
+                    .try_into()
+                    .unwrap(),
             );
+            println!("addr:{},aligned_addr:{}", addr, aligned_addr);
+            println!("old_val:{},new_val:{}", old_val, new_val);
+            self.store
+                .tracer
+                .mw(typed_addr.to_virtual_addr(), new_val.into());
         }
         self.ip.add(1);
         Ok(())
