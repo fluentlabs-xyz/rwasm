@@ -73,10 +73,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let n = i32::from(n) as usize;
         let offset = i32::from(d) as usize;
         let byte = u8::from(val);
-        if self.store.config.fuel_enabled {
-            self.store
-                .try_consume_fuel(self.store.fuel_costs.fuel_for_bytes(n as u32))?;
-        }
         let memory = self
             .store
             .global_memory
@@ -99,10 +95,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let n = i32::from(n) as usize;
         let src_offset = i32::from(s) as usize;
         let dst_offset = i32::from(d) as usize;
-        if self.store.config.fuel_enabled {
-            self.store
-                .try_consume_fuel(self.store.fuel_costs.fuel_for_bytes(n as u32))?;
-        }
         // these accesses just perform the bound checks required by the Wasm spec.
         let data = self.store.global_memory.data_mut();
         data.get(src_offset..)
@@ -138,10 +130,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let n = i32::from(n) as usize;
         let src_offset = i32::from(s) as usize;
         let dst_offset = i32::from(d) as usize;
-        if self.store.config.fuel_enabled {
-            self.store
-                .try_consume_fuel(self.store.fuel_costs.fuel_for_bytes(n as u32))?;
-        }
         let memory = self
             .store
             .global_memory

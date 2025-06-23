@@ -33,3 +33,13 @@ fluentbase-build = { git = "https://github.com/fluentlabs-xyz/fluentbase", branc
 [features]
 default = ["std"]
 std = []
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = 3
+strip = true
+debug = false
+debug-assertions = false
+rpath = false
+codegen-units = 1

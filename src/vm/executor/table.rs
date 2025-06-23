@@ -17,10 +17,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
     pub(crate) fn visit_table_grow(&mut self, table_idx: TableIdx) -> Result<(), TrapCode> {
         let (init, delta) = self.sp.pop2();
         let delta: u32 = delta.into();
-        if self.store.config.fuel_enabled {
-            self.store
-                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(delta))?;
-        }
         let table = self
             .store
             .tables
@@ -39,10 +35,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_table_fill(&mut self, table_idx: TableIdx) -> Result<(), TrapCode> {
         let (i, val, n) = self.sp.pop3();
-        if self.store.config.fuel_enabled {
-            self.store
-                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(n.into()))?;
-        }
         self.store
             .tables
             .get_mut(&table_idx)
@@ -85,16 +77,15 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     #[inline(always)]
-    pub(crate) fn visit_table_copy(&mut self, dst_table_idx: TableIdx) -> Result<(), TrapCode> {
-        let src_table_idx = self.fetch_table_index(1);
+    pub(crate) fn visit_table_copy(
+        &mut self,
+        dst_table_idx: TableIdx,
+        src_table_idx: TableIdx,
+    ) -> Result<(), TrapCode> {
         let (d, s, n) = self.sp.pop3();
         let len = u32::from(n);
         let src_index = u32::from(s);
         let dst_index = u32::from(d);
-        if self.store.config.fuel_enabled {
-            self.store
-                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(len))?;
-        }
         // Query both tables and check if they are the same:
         if src_table_idx != dst_table_idx {
             let [src, dst] = self
@@ -111,7 +102,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 .expect("rwasm: unresolved table segment");
             src.copy_within(dst_index, src_index, len)?;
         }
-        self.ip.add(2);
+        self.ip.add(1);
         Ok(())
     }
 
@@ -126,11 +117,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let len = u32::from(n);
         let src_index = u32::from(s);
         let dst_index = u32::from(d);
-
-        if self.store.config.fuel_enabled {
-            self.store
-                .try_consume_fuel(self.store.fuel_costs.fuel_for_elements(len))?;
-        }
 
         // There is a trick with `element_segment_idx`:
         // it refers to the segment number.

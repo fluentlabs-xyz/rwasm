@@ -2,7 +2,6 @@ use crate::{
     always_failing_syscall_handler,
     BlockFuel,
     ExecutorConfig,
-    FuelCosts,
     GlobalIdx,
     GlobalMemory,
     Pages,
@@ -36,7 +35,6 @@ pub struct Store<T> {
     pub(crate) empty_elem_segments: BitArray<[usize; N_MAX_ELEM_SEGMENTS_BITS]>,
     // list of nested calls return pointers
     pub(crate) syscall_handler: SyscallHandler<T>,
-    pub(crate) fuel_costs: FuelCosts,
     #[cfg(feature = "tracing")]
     pub tracer: crate::Tracer,
 }
@@ -69,7 +67,6 @@ impl<T> Store<T> {
             empty_elem_segments,
             empty_data_segments,
             config,
-            fuel_costs: Default::default(),
         }
     }
 

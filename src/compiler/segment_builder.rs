@@ -8,7 +8,6 @@ use crate::{
     InstructionSet,
     TableIdx,
     DEFAULT_MEMORY_INDEX,
-    MEMORY_BYTES_PER_FUEL,
     NULL_FUNC_IDX,
     N_BYTES_PER_MEMORY_PAGE,
     N_MAX_MEMORY_PAGES,
@@ -69,8 +68,7 @@ impl SegmentBuilder {
         if initial_pages > 0 {
             // TODO(dmitry123): "add stack height check?"
             self.entrypoint_bytecode.op_i32_const(initial_pages);
-            self.entrypoint_bytecode
-                .op_memory_grow_checked(None, Some(MEMORY_BYTES_PER_FUEL));
+            self.entrypoint_bytecode.op_memory_grow_checked(None, true);
             // there is no need to verify for a potential trap because it can't overflow,
             // we have this check upper during the compilation time
             self.entrypoint_bytecode.op_drop();

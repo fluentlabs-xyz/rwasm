@@ -99,4 +99,17 @@ pub type SysFuncIdx = u32;
 pub type AddressOffset = u32;
 pub type BlockFuel = u32;
 
+pub const BASE_FUEL_COST: u32 = 1;
+pub const ENTITY_FUEL_COST: u32 = 1;
+pub const LOAD_FUEL_COST: u32 = 1;
+pub const STORE_FUEL_COST: u32 = 1;
+pub const CALL_FUEL_COST: u32 = 1;
+
 pub const MEMORY_BYTES_PER_FUEL: u32 = 64;
+pub const MEMORY_BYTES_PER_FUEL_LOG2: u32 = 6;
+pub const TABLE_ELEMS_PER_FUEL: u32 = 16;
+pub const TABLE_ELEMS_PER_FUEL_LOG2: u32 = 4;
+pub const LOCALS_PER_FUEL: u32 = 16;
+pub const LOCALS_PER_FUEL_LOG2: u32 = 4;
+pub const DROP_KEEP_PER_FUEL: u32 = 16;
+pub const DROP_KEEP_PER_FUEL_LOG2: u32 = 4;
