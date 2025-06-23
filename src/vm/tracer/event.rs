@@ -11,6 +11,10 @@ pub fn opcode_stack_read(ins: Opcode) -> u32 {
         return 1;
     } else if ins.is_memory_store_instruction() {
         return 2;
+    } else if let Opcode::LocalTee(_) = ins {
+        return 1;
+    } else if let Opcode::LocalSet(_) = ins {
+        return 1;
     } else if ins.is_branch_instruction() {
     }
     0
@@ -29,6 +33,10 @@ pub fn opcode_stack_write(op: Opcode) -> bool {
         } else {
             false
         }
+    } else if let Opcode::LocalGet(_) = op {
+        true
+    } else if let Opcode::LocalTee(_) = op {
+        true
     } else {
         false
     }

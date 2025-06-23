@@ -1,5 +1,6 @@
 use super::ValueStackPtr;
 use crate::{
+    mem_index::AddressType,
     types::{Opcode, TableIdx},
     vm::tracer::{
         mem::{
@@ -21,6 +22,7 @@ use core::{
 };
 use event::{opcode_stack_read, opcode_stack_write};
 use hashbrown::HashMap;
+use serde::de::value;
 
 pub mod event;
 pub mod mem;
@@ -50,7 +52,8 @@ pub struct TraceTableSizeState {
 
 #[derive(Debug, Clone)]
 pub struct TracerInstrState {
-    pub program_counter: u32,
+    pub pc: u32,
+    pub next_pc: u32,
     pub opcode: Opcode,
     pub sp: u32,
     pub next_sp: u32,
@@ -128,7 +131,8 @@ impl Tracer {
         let sp = sp.to_relative_address();
         let memory_access = self.record_mr(opcode, sp);
         let opcode_state = TracerInstrState {
-            program_counter,
+            pc: program_counter,
+            next_pc: 0,
             opcode,
             value: opcode.aux_value(),
             memory_changes,
@@ -151,10 +155,9 @@ impl Tracer {
         stack: Vec<UntypedValue>,
     ) {
         let op_state = self.logs.last_mut().unwrap();
-
+        op_state.next_pc = next_program_counter;
         let opcode = op_state.opcode;
         op_state.next_sp = new_sp;
-        println!("opcode _state{:?},", op_state);
         self.record_sw(opcode, new_sp, stack);
         self.state.sp = new_sp;
     }
@@ -199,15 +202,9 @@ impl Tracer {
     pub fn record_mr(&mut self, ins: Opcode, sp: u32) -> MemoryAccessRecord {
         let length = opcode_stack_read(ins);
         let mut memory_access = MemoryAccessRecord::default();
-        println!(
-            "op:{},length:{},memory_record{:?}",
-            ins, length, self.memory_records
-        );
-
         for idx in 0..length {
             let addr = sp - idx;
             let read_record = self.mr(addr);
-            println!("idx:{}", idx);
             match idx {
                 1 => {
                     memory_access.b = Some(MemoryRecordEnum::Read(read_record));
@@ -227,15 +224,26 @@ impl Tracer {
             memory_access.b = Some(MemoryRecordEnum::Read(read_record));
         }
 
+        if let Opcode::LocalGet(_) = ins {
+            let v_addr = AddressType::Stack(ins.aux_value()).to_virtual_addr();
+            let read_record = self.mr(v_addr);
+            memory_access.a = Some(MemoryRecordEnum::Read(read_record));
+        }
+
         memory_access
     }
 
     pub fn record_sw(&mut self, ins: Opcode, sp: u32, stack: Vec<UntypedValue>) {
-        if !opcode_stack_write(ins) {
-            return;
+        if opcode_stack_write(ins) {
+            let value = stack.last().unwrap().as_u32();
+            self.mw(sp, value);
         }
-        let value = stack.last().unwrap().as_u32();
-        self.mw(sp, value);
+
+        if let Opcode::LocalSet(offset) = ins {
+            let v_addr = AddressType::Stack(ins.aux_value()).to_virtual_addr();
+            let value = self.logs.last().unwrap().memory_access.a.unwrap().value();
+            self.mw(v_addr, value);
+        }
     }
 
     pub fn mr(&mut self, addr: u32) -> MemoryReadRecord {
@@ -273,6 +281,7 @@ impl Tracer {
     pub fn mw(&mut self, addr: u32, value: u32) {
         assert!(addr % 4 == 0);
         let record = self.memory_records.entry(addr).or_default();
+
         let prev_record = *record;
         record.shard = self.state.shard;
         record.timestamp = self.state.clk;
@@ -299,7 +308,6 @@ impl Tracer {
         );
         let op_state = self.logs.last_mut().unwrap();
         op_state.memory_access.c = Some(MemoryRecordEnum::Write(write_record));
-        println!("op_state:memoeryaccess:{:?}", op_state.memory_access);
     }
 }
 
