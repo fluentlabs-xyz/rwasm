@@ -17,4 +17,5 @@ use libm as _;
 pub use types::*;
 pub use vm::*;
 pub use wasmparser::{FuncType, ValType};
+#[cfg(feature = "wasmtime")]
 pub use wasmtime::*;
