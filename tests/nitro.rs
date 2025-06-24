@@ -170,18 +170,16 @@ fn test_nitro_verifier_strategy() {
         );
         strategy.execute::<()>(&mut store, "main", &[], &mut [])
     };
-    ExecutionEngine::acquire_shared(|engine| {
-        let rwasm_module = Arc::new(rwasm_module);
-        // run with rwasm strategy first
-        exec_strategy(Strategy::Rwasm {
-            module: rwasm_module.clone(),
-            engine,
-        })
-        .unwrap();
-        // run with wasmtime strategy
-        let module = compile_wasmtime_module(&rwasm_module.wasm_section)
-            .unwrap()
-            .into();
-        exec_strategy(Strategy::Wasmtime { module }).unwrap();
-    });
+    let rwasm_module = Arc::new(rwasm_module);
+    // run with rwasm strategy first
+    exec_strategy(Strategy::Rwasm {
+        module: rwasm_module.clone(),
+        engine: ExecutionEngine::acquire_shared(),
+    })
+    .unwrap();
+    // run with wasmtime strategy
+    let module = compile_wasmtime_module(&rwasm_module.wasm_section)
+        .unwrap()
+        .into();
+    exec_strategy(Strategy::Wasmtime { module }).unwrap();
 }

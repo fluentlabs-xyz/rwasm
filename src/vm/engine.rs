@@ -1,4 +1,6 @@
 use crate::{CallStack, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, ValueStack};
+#[cfg(feature = "std")]
+use std::{cell::RefCell, rc::Rc};
 
 /// Represents the core execution engine for managing the execution of a program,
 /// including the handling of values and function calls.
@@ -98,12 +100,12 @@ impl ExecutionEngine {
 
 #[cfg(feature = "std")]
 thread_local! {
-    static ENGINE: core::cell::RefCell<ExecutionEngine> = core::cell::RefCell::new(ExecutionEngine::new());
+    static ENGINE: Rc<RefCell<ExecutionEngine>> = Rc::new(RefCell::new(ExecutionEngine::new()));
 }
 
 #[cfg(feature = "std")]
 impl ExecutionEngine {
-    pub fn acquire_shared<R, F: FnOnce(&mut ExecutionEngine) -> R>(f: F) -> R {
-        ENGINE.with(|cell| f(&mut cell.borrow_mut()))
+    pub fn acquire_shared() -> Rc<RefCell<ExecutionEngine>> {
+        ENGINE.with(|e| e.clone())
     }
 }

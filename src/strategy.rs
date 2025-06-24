@@ -10,8 +10,8 @@ use crate::{
 };
 #[cfg(feature = "wasmtime")]
 use crate::{WasmtimeModule, WasmtimeWorker};
-use alloc::sync::Arc;
-use core::cell::{Ref, RefMut};
+use alloc::{rc::Rc, sync::Arc};
+use core::cell::{Ref, RefCell, RefMut};
 
 pub trait Store<T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode>;
@@ -50,10 +50,10 @@ pub fn always_failing_syscall_handler<T>(
     Err(TrapCode::UnknownExternalFunction)
 }
 
-pub enum Strategy<'b> {
+pub enum Strategy {
     Rwasm {
         module: Arc<RwasmModule>,
-        engine: &'b mut ExecutionEngine,
+        engine: Rc<RefCell<ExecutionEngine>>,
     },
     #[cfg(feature = "wasmtime")]
     Wasmtime { module: Arc<WasmtimeModule> },
@@ -65,7 +65,7 @@ pub enum TypedStore<T: Send + 'static> {
     Wasmtime(WasmtimeWorker<T>),
 }
 
-impl<'b> Strategy<'b> {
+impl Strategy {
     pub fn create_store<T: 'static + Send>(
         &self,
         config: ExecutorConfig,
@@ -104,7 +104,8 @@ impl<'b> Strategy<'b> {
                     #[allow(unreachable_patterns)]
                     _ => unreachable!(),
                 };
-                let mut executor = engine.create_callable_executor(store, &module);
+                let mut ctx = engine.borrow_mut();
+                let mut executor = ctx.create_callable_executor(store, &module);
                 executor.run()
             }
             #[cfg(feature = "wasmtime")]
@@ -131,7 +132,8 @@ impl<'b> Strategy<'b> {
                     #[allow(unreachable_patterns)]
                     _ => unreachable!(),
                 };
-                let mut executor = engine.create_resumable_executor(store, &module);
+                let mut ctx = engine.borrow_mut();
+                let mut executor = ctx.create_resumable_executor(store, &module);
                 executor.run()
             }
             #[cfg(feature = "wasmtime")]
