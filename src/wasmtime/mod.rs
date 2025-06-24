@@ -1,5 +1,3 @@
-mod resumable;
-
 use crate::{
     Caller,
     ImportLinker,
@@ -13,28 +11,25 @@ use crate::{
 };
 use alloc::rc::Rc;
 use smallvec::SmallVec;
-use std::cell::{Ref, RefCell, RefMut};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    sync::mpsc,
+    thread,
+};
 use wasmtime::{AsContext, AsContextMut, Collector, Strategy, Trap, Val};
 
-struct WrappedContext<T> {
+struct WrappedContext<T: Send> {
     syscall_handler: SyscallHandler<T>,
     inner: T,
+    worker_to_host_sender: mpsc::Sender<WorkerMessage>,
+    host_to_worker_receiver: mpsc::Receiver<HostMessage>,
 }
 
-impl<T> WrappedContext<T> {
-    pub fn new(syscall_handler: SyscallHandler<T>, inner: T) -> Self {
-        Self {
-            syscall_handler,
-            inner,
-        }
-    }
-}
-
-struct WrappedCaller<'a, T> {
+struct WrappedCaller<'a, T: Send> {
     caller: RefCell<wasmtime::Caller<'a, WrappedContext<T>>>,
 }
 
-impl<'a, T> Caller<T> for WrappedCaller<'a, T> {
+impl<'a, T: Send> Caller<T> for WrappedCaller<'a, T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let global_memory = self
             .caller
@@ -101,19 +96,35 @@ impl<'a, T> Caller<T> for WrappedCaller<'a, T> {
     }
 }
 
-/// Wasmtime module is compiled from rWasm, it means that it can have only 1 entrypoint that is
-/// function "main". Function "deploy" can't be called, because AOT can be applied only for
-/// precompiled trusted binaries that are gas-free or use manual gas management. It doesn't work
-/// for trustless arbitrary applications like Wasm or EVM.
-const WASMTIME_DEFAULT_ENTRYPOINT_NAME: &'static str = "main";
-
-pub struct CraneliftExecutor<T> {
-    instance: wasmtime::Instance,
-    store: wasmtime::Store<WrappedContext<T>>,
+#[derive(Debug)]
+enum HostMessage {
+    Run {
+        func_name: &'static str,
+        params: Vec<Val>,
+        results: Vec<Val>,
+    },
+    Resume {
+        fuel_consumed: u64,
+        results: Vec<Val>,
+        trap_code: Option<TrapCode>,
+    },
 }
 
-impl<T: 'static> CraneliftExecutor<T> {
-    pub fn compile(
+#[derive(Debug)]
+enum WorkerMessage {
+    ExecutionResult(Result<Vec<Val>, TrapCode>),
+}
+
+pub struct CraneliftExecutor {
+    // instance: wasmtime::Instance,
+    // store: wasmtime::Store<WrappedContext<T>>,
+    host_to_worker_sender: mpsc::Sender<HostMessage>,
+    worker_to_host_receiver: mpsc::Receiver<WorkerMessage>,
+    worker: thread::JoinHandle<()>,
+}
+
+impl CraneliftExecutor {
+    pub fn compile<T: Send + 'static>(
         wasm_binary: impl AsRef<[u8]>,
         import_linker: Rc<ImportLinker>,
         context: T,
@@ -129,24 +140,72 @@ impl<T: 'static> CraneliftExecutor<T> {
         Self::new(module, import_linker, context, syscall_handler)
     }
 
-    pub fn new(
+    pub fn new<T: Send + 'static>(
         module: wasmtime::Module,
         import_linker: Rc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
     ) -> Self {
         let linker = map_import_linker(module.engine(), import_linker);
-        let context = WrappedContext::new(syscall_handler, context);
+        let (host_to_worker_sender, host_to_worker_receiver) = mpsc::channel();
+        let (worker_to_host_sender, worker_to_host_receiver) = mpsc::channel();
+        let context = WrappedContext {
+            syscall_handler,
+            inner: context,
+            worker_to_host_sender,
+            host_to_worker_receiver,
+        };
         let mut store = wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context);
         let instance = linker
             .instantiate(store.as_context_mut(), &module)
             .unwrap_or_else(|err| panic!("can't instantiate wasmtime: {}", err));
-        Self { instance, store }
+
+        let worker = thread::spawn(move || loop {
+            let next_host_message = match store.data().host_to_worker_receiver.recv() {
+                Ok(message) => message,
+                Err(_) => {
+                    println!("Worker thread received a shutdown signal, exiting...");
+                    break;
+                }
+            };
+            match next_host_message {
+                HostMessage::Run {
+                    func_name,
+                    params,
+                    mut results,
+                } => {
+                    println!("Worker received a run message for function: {}", func_name);
+
+                    let entrypoint = instance
+                        .get_func(store.as_context_mut(), func_name)
+                        .unwrap_or_else(|| panic!("missing main entrypoint"));
+
+                    let result = entrypoint
+                        .call(store.as_context_mut(), &params, &mut results)
+                        .map_err(map_anyhow_error)
+                        .map(|_| results);
+
+                    store
+                        .data()
+                        .worker_to_host_sender
+                        .send(WorkerMessage::ExecutionResult(result))
+                        .expect("failed to send result to host thread");
+                }
+                _ => {
+                    panic!("expected run message, got: {:?}", next_host_message);
+                }
+            }
+        });
+        Self {
+            host_to_worker_sender,
+            worker_to_host_receiver,
+            worker,
+        }
     }
 
-    pub fn run(&mut self) -> Result<(), TrapCode> {
+    pub fn run_main(&mut self) -> Result<(), TrapCode> {
         // entrypoint doesn't have input/output params
-        self.run_typed(WASMTIME_DEFAULT_ENTRYPOINT_NAME, &[], &mut [])
+        self.run_typed("main", &[], &mut [])
     }
 
     pub fn run_typed(
@@ -155,26 +214,61 @@ impl<T: 'static> CraneliftExecutor<T> {
         params: &[Val],
         results: &mut [Val],
     ) -> Result<(), TrapCode> {
-        let entrypoint = self
-            .instance
-            .get_func(self.store.as_context_mut(), entrypoint)
-            .unwrap_or_else(|| unreachable!("missing a default main entrypoint"));
-        entrypoint
-            .call(self.store.as_context_mut(), params, results)
-            .map_err(map_anyhow_error)?;
+        let message = HostMessage::Run {
+            func_name: entrypoint,
+            params: params.to_vec(),
+            results: results.to_vec(),
+        };
+        self.host_to_worker_sender
+            .send(message)
+            .expect("failed to send message to worker thread");
+        let message = self
+            .worker_to_host_receiver
+            .recv()
+            .expect("failed to receive result from worker thread");
+        let results2 = match message {
+            WorkerMessage::ExecutionResult(result) => result,
+        }?;
+        for (i, returned_result) in results2.into_iter().enumerate() {
+            results[i] = returned_result;
+        }
         Ok(())
     }
 
-    pub fn resume(&mut self, results: &[Val]) -> Result<(), TrapCode> {
-        unimplemented!("not implemented yet")
+    pub fn resume(
+        &mut self,
+        fuel_consumed: u64,
+        interruption_results: &[Val],
+        interruption_trap_code: Option<TrapCode>,
+        results: &mut [Val],
+    ) -> Result<(), TrapCode> {
+        let message = HostMessage::Resume {
+            fuel_consumed,
+            trap_code: interruption_trap_code,
+            results: interruption_results.to_vec(),
+        };
+        self.host_to_worker_sender
+            .send(message)
+            .expect("failed to send resume message to worker thread");
+        let message = self
+            .worker_to_host_receiver
+            .recv()
+            .expect("failed to receive result from worker thread");
+        let results2 = match message {
+            WorkerMessage::ExecutionResult(result) => result,
+        }?;
+        for (i, returned_result) in results2.into_iter().enumerate() {
+            results[i] = returned_result;
+        }
+        Ok(())
     }
 }
 
-fn wasmtime_syscall_handler<'a, T>(
+fn wasmtime_syscall_handler<'a, T: Send + 'static>(
     sys_func_idx: u32,
     caller: wasmtime::Caller<'a, WrappedContext<T>>,
     params: &[Val],
-    result: &mut [Val],
+    results: &mut [Val],
 ) -> anyhow::Result<()> {
     // convert input values from wasmtime format into rwasm format
     let mut buffer = SmallVec::<[Value; 128]>::new();
@@ -185,7 +279,7 @@ fn wasmtime_syscall_handler<'a, T>(
         Val::F64(value) => Value::F64(F64::from_bits(*value)),
         _ => unreachable!("not supported type: {:?}", x),
     }));
-    buffer.extend(std::iter::repeat(Value::I32(0)).take(result.len()));
+    buffer.extend(std::iter::repeat(Value::I32(0)).take(results.len()));
     // resolve sys func idx using import linker
     // caller.data().import_linker.resolve_by_import_name();
     // caller adapter is required to provide operations for accessing memory and context
@@ -194,12 +288,12 @@ fn wasmtime_syscall_handler<'a, T>(
         caller: RefCell::new(caller),
     };
     let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
-    syscall_handler(
+    let syscall_result = syscall_handler(
         &mut caller_adapter,
         sys_func_idx,
         mapped_params,
         mapped_result,
-    )?;
+    );
     // after call map all values back to wasmtime format
     for (i, value) in mapped_result.iter().enumerate() {
         let value = match value {
@@ -209,12 +303,46 @@ fn wasmtime_syscall_handler<'a, T>(
             Value::F64(value) => Val::F64(value.to_bits()),
             _ => unreachable!("not supported type: {:?}", value),
         };
-        result[i] = value;
+        results[i] = value;
+    }
+    if let Some(TrapCode::InterruptionCalled) = syscall_result.err() {
+        let mut caller = caller_adapter.caller.borrow();
+        caller
+            .data()
+            .worker_to_host_sender
+            .send(WorkerMessage::ExecutionResult(
+                syscall_result.map(|_| results.to_vec()),
+            ))
+            .expect("failed to send message to host thread");
+        let response = caller
+            .data()
+            .host_to_worker_receiver
+            .recv()
+            .expect("failed to receive result from host thread");
+        match response {
+            HostMessage::Resume {
+                fuel_consumed,
+                results: results2,
+                trap_code,
+            } => {
+                if let Some(trap_code) = trap_code {
+                    return Err(trap_code.into());
+                }
+                for (i, x) in results2.into_iter().enumerate() {
+                    results[i] = x;
+                }
+            }
+            _ => {
+                panic!("expected resume message, got: {:?}", response);
+            }
+        }
+    } else {
+        syscall_result?;
     }
     Ok(())
 }
 
-fn map_import_linker<T>(
+fn map_import_linker<T: Send + 'static>(
     engine: &wasmtime::Engine,
     import_linker: Rc<ImportLinker>,
 ) -> wasmtime::Linker<WrappedContext<T>> {

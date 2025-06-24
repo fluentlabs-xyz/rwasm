@@ -117,6 +117,6 @@ fn test_interrupted_call_wasmtime() {
     let mut result = [wasmtime::Val::I32(0); 1];
     let err = wasmtime_vm.run_typed("main", &[], &mut result).unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
-    wasmtime_vm.resume(&[]).unwrap();
+    wasmtime_vm.resume(0, &[], None, &mut result).unwrap();
     assert_eq!(result[0].i32().unwrap(), 120);
 }

@@ -144,5 +144,5 @@ fn test_nitro_verifier_wasmtime() {
         (),
         syscall_handler,
     );
-    wasmtime_vm.run().unwrap()
+    wasmtime_vm.run_main().unwrap()
 }
