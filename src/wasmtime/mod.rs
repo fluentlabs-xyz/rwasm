@@ -116,11 +116,8 @@ enum WorkerMessage {
 }
 
 pub struct CraneliftExecutor {
-    // instance: wasmtime::Instance,
-    // store: wasmtime::Store<WrappedContext<T>>,
     host_to_worker_sender: mpsc::Sender<HostMessage>,
     worker_to_host_receiver: mpsc::Receiver<WorkerMessage>,
-    worker: thread::JoinHandle<()>,
 }
 
 impl CraneliftExecutor {
@@ -159,8 +156,7 @@ impl CraneliftExecutor {
         let instance = linker
             .instantiate(store.as_context_mut(), &module)
             .unwrap_or_else(|err| panic!("can't instantiate wasmtime: {}", err));
-
-        let worker = thread::spawn(move || loop {
+        thread::spawn(move || loop {
             let next_host_message = match store.data().host_to_worker_receiver.recv() {
                 Ok(message) => message,
                 Err(_) => {
@@ -199,7 +195,6 @@ impl CraneliftExecutor {
         Self {
             host_to_worker_sender,
             worker_to_host_receiver,
-            worker,
         }
     }
 
@@ -306,7 +301,7 @@ fn wasmtime_syscall_handler<'a, T: Send + 'static>(
         results[i] = value;
     }
     if let Some(TrapCode::InterruptionCalled) = syscall_result.err() {
-        let mut caller = caller_adapter.caller.borrow();
+        let caller = caller_adapter.caller.borrow();
         caller
             .data()
             .worker_to_host_sender
