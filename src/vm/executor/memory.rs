@@ -12,11 +12,11 @@ macro_rules! impl_visit_load {
 }
 
 macro_rules! impl_visit_store {
-    ( $( fn $visit_ident:ident($untyped_ident:ident, $type_size:literal); )* ) => {
+    ( $( fn $visit_ident:ident($untyped_ident:ident, $alignment:literal); )* ) => {
         $(
             #[inline(always)]
             pub(crate) fn $visit_ident(&mut self, address_offset: AddressOffset) -> Result<(), TrapCode> {
-                self.execute_store_wrap(address_offset, UntypedValue::$untyped_ident, $type_size)
+                self.execute_store_wrap(address_offset, UntypedValue::$untyped_ident, $alignment)
             }
         )*
     }

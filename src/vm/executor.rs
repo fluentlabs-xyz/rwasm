@@ -361,7 +361,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
             offset: u32,
             value: UntypedValue,
         ) -> Result<(), TrapCode>,
-        #[allow(unused_variables)] len: u32,
+        alignment: u32,
     ) -> Result<(), TrapCode> {
         let (address, value) = self.sp.pop2();
         let memory = self.store.global_memory.data_mut();
@@ -371,8 +371,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
             let base_address = offset + u32::from(address);
             self.store.tracer.memory_change(
                 base_address,
-                len,
-                &memory[base_address as usize..(base_address + len) as usize],
+                alignment,
+                &memory[base_address as usize..(base_address + alignment) as usize],
             );
         }
         self.ip.add(1);

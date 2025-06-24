@@ -67,7 +67,7 @@ impl Default for InstructionSet {
     }
 }
 
-macro_rules! impl_opcode {
+macro_rules! impl_default_emitter {
     ($opcode:ident($data1_type:ident, $data2_type:ident)) => {
         paste::paste! {
             pub fn [< op_ $opcode:snake >]<I1: TryInto<$data1_type>, I2: TryInto<$data2_type>>(&mut self, value1: I1, value2: I2) {
@@ -89,6 +89,19 @@ macro_rules! impl_opcode {
         paste::paste! {
             pub fn [< op_ $opcode:snake >](&mut self) {
                 self.push(Opcode::$opcode);
+            }
+        }
+    };
+}
+
+macro_rules! impl_memory_load_emitter {
+    ($opcode:ident($data_type:ident): $alignment:literal) => {
+        paste::paste! {
+            pub fn [< op_ $opcode:snake _aligned >]<I: TryInto<$data_type>>(&mut self, value: I) {
+                self.emit_load_aligned::<$alignment>(value.try_into().unwrap_or_else(|_| unreachable!()), Self::[< op_ $opcode:snake >]);
+            }
+            pub fn [< op_ $opcode:snake >]<I: TryInto<$data_type>>(&mut self, value: I) {
+                self.push(Opcode::$opcode(value.try_into().unwrap_or_else(|_| unreachable!())));
             }
         }
     };
@@ -170,85 +183,145 @@ impl InstructionSet {
         self.op_local_set(1);
     }
 
-    impl_opcode!(Unreachable);
-    impl_opcode!(Trap(TrapCode));
-    impl_opcode!(LocalGet(LocalDepth));
-    impl_opcode!(LocalSet(LocalDepth));
-    impl_opcode!(LocalTee(LocalDepth));
-    impl_opcode!(Br(BranchOffset));
-    impl_opcode!(BrIfEqz(BranchOffset));
-    impl_opcode!(BrIfNez(BranchOffset));
-    impl_opcode!(BrTable(BranchTableTargets));
-    impl_opcode!(ConsumeFuel(BlockFuel));
-    impl_opcode!(ConsumeFuelStack);
-    impl_opcode!(Return);
-    impl_opcode!(ReturnCallInternal(CompiledFunc));
-    impl_opcode!(ReturnCall(SysFuncIdx));
-    impl_opcode!(ReturnCallIndirect(SignatureIdx));
-    impl_opcode!(CallInternal(CompiledFunc));
-    impl_opcode!(Call(SysFuncIdx));
-    impl_opcode!(CallIndirect(SignatureIdx));
-    impl_opcode!(SignatureCheck(SignatureIdx));
-    impl_opcode!(StackCheck(MaxStackHeight));
-    impl_opcode!(Drop);
-    impl_opcode!(Select);
-    impl_opcode!(GlobalGet(GlobalIdx));
-    impl_opcode!(GlobalSet(GlobalIdx));
-    impl_opcode!(I32Load(AddressOffset));
-    impl_opcode!(I32Load8S(AddressOffset));
-    impl_opcode!(I32Load8U(AddressOffset));
-    impl_opcode!(I32Load16S(AddressOffset));
-    impl_opcode!(I32Load16U(AddressOffset));
-    impl_opcode!(I32Store(AddressOffset));
-    impl_opcode!(I32Store8(AddressOffset));
-    impl_opcode!(I32Store16(AddressOffset));
-    impl_opcode!(MemorySize);
-    impl_opcode!(MemoryGrow);
-    impl_opcode!(MemoryFill);
-    impl_opcode!(MemoryCopy);
-    impl_opcode!(MemoryInit(DataSegmentIdx));
-    impl_opcode!(DataDrop(DataSegmentIdx));
-    impl_opcode!(TableSize(TableIdx));
-    impl_opcode!(TableGrow(TableIdx));
-    impl_opcode!(TableFill(TableIdx));
-    impl_opcode!(TableGet(TableIdx));
-    impl_opcode!(TableSet(TableIdx));
-    impl_opcode!(TableCopy(TableIdx, TableIdx));
-    impl_opcode!(TableInit(ElementSegmentIdx));
-    impl_opcode!(ElemDrop(ElementSegmentIdx));
-    impl_opcode!(RefFunc(CompiledFunc));
-    impl_opcode!(I32Const(UntypedValue));
-    impl_opcode!(I32Eqz);
-    impl_opcode!(I32Eq);
-    impl_opcode!(I32Ne);
-    impl_opcode!(I32LtS);
-    impl_opcode!(I32LtU);
-    impl_opcode!(I32GtS);
-    impl_opcode!(I32GtU);
-    impl_opcode!(I32LeS);
-    impl_opcode!(I32LeU);
-    impl_opcode!(I32GeS);
-    impl_opcode!(I32GeU);
-    impl_opcode!(I32Clz);
-    impl_opcode!(I32Ctz);
-    impl_opcode!(I32Popcnt);
-    impl_opcode!(I32Add);
-    impl_opcode!(I32Sub);
-    impl_opcode!(I32Mul);
-    impl_opcode!(I32DivS);
-    impl_opcode!(I32DivU);
-    impl_opcode!(I32RemS);
-    impl_opcode!(I32RemU);
-    impl_opcode!(I32And);
-    impl_opcode!(I32Or);
-    impl_opcode!(I32Xor);
-    impl_opcode!(I32Shl);
-    impl_opcode!(I32ShrS);
-    impl_opcode!(I32ShrU);
-    impl_opcode!(I32Rotl);
-    impl_opcode!(I32Rotr);
-    impl_opcode!(I32Extend8S);
-    impl_opcode!(I32Extend16S);
+    fn emit_load_aligned<const ALIGNMENT: u32>(
+        &mut self,
+        address_offset: AddressOffset,
+        load_fn: fn(&mut Self, AddressOffset),
+    ) {
+        // TODO(dmitry123): "checked add? trap MemoryOutOfBounds?"
+
+        // compute aligned address
+        self.op_i32_const(address_offset); // [addr, address_offset]
+        self.op_i32_add(); // [eff_addr = addr + address_offset]
+        self.op_local_get(1); // [eff_addr, eff_addr]
+        self.op_i32_const(!(ALIGNMENT - 1)); // [eff_addr, eff_addr, mask]
+        self.op_i32_and(); // [eff_addr, aligned_address = eff_addr & mask]
+
+        // compute shift offset
+        self.op_local_get(2); // [eff_addr, aligned_address, eff_addr]
+        self.op_i32_const(ALIGNMENT - 1); // [eff_addr, aligned_address, eff_addr, mask]
+        self.op_i32_and(); // [eff_addr, aligned_address, shift_bits = eff_addr & mask]
+        self.op_i32_const(8); // [eff_addr, aligned_address, shift_bits, 8]
+        self.op_i32_mul(); // [eff_addr, aligned_address, shift_bytes = shift_bits * 8]
+
+        // load the lo word and shift
+        self.op_local_get(2); // [eff_addr, aligned_address, shift_bytes, aligned_address]
+        load_fn(self, 0); // [eff_addr, aligned_address, shift_bytes, word1]
+        self.op_local_get(2); // [eff_addr, aligned_address, shift_bytes, word1, shift_bytes]
+        self.op_i32_shr_u(); // [eff_addr, aligned_address, shift_bytes, low = word1 >> shift_bytes]
+
+        // load the hi word and shift
+        self.op_local_get(3); // [eff_addr, aligned_address, shift_bytes, low, aligned_address]
+        load_fn(self, ALIGNMENT); // [eff_addr, aligned_address, shift_bytes, low, word2]
+        self.op_i32_const(ALIGNMENT * 8); // [eff_addr, aligned_address, shift_bytes, low, word2, 32]
+        self.op_local_get(4); // [eff_addr, aligned_address, shift_bytes, low, word2, 32, shift_bytes]
+        self.op_i32_sub(); // [eff_addr, aligned_address, shift_bytes, low, word2, shift = 32 - shift_bytes]
+        self.op_i32_shl(); // [eff_addr, aligned_address, shift_bytes, low, hi = word2 << shift]
+
+        // for aligned address fix hi part
+        self.op_local_get(3); // [eff_addr, aligned_address, shift_bytes, low, hi, shift_bytes]
+        self.op_br_if_nez(3); // [eff_addr, aligned_address, shift_bytes, low, hi]
+        self.op_drop(); // [eff_addr, aligned_address, shift_bytes, low]
+        self.op_i32_const(0); // [eff_addr, aligned_address, shift_bytes, low, hi=0]
+
+        // reconstruct the word
+        self.op_i32_or(); // [eff_addr, aligned_address, shift_bytes, result = low | hi]
+        self.op_local_set(3); // [result, aligned_address, shift_bytes]
+        self.op_drop(); // [result, aligned_address]
+        self.op_drop(); // [result]
+
+        match ALIGNMENT {
+            2 => {
+                self.op_i32_const(0xffff);
+                self.op_i32_and();
+            }
+            1 => {
+                self.op_i32_const(0xff);
+                self.op_i32_and();
+            }
+            _ => {}
+        }
+    }
+
+    impl_default_emitter!(Unreachable);
+    impl_default_emitter!(Trap(TrapCode));
+    impl_default_emitter!(LocalGet(LocalDepth));
+    impl_default_emitter!(LocalSet(LocalDepth));
+    impl_default_emitter!(LocalTee(LocalDepth));
+    impl_default_emitter!(Br(BranchOffset));
+    impl_default_emitter!(BrIfEqz(BranchOffset));
+    impl_default_emitter!(BrIfNez(BranchOffset));
+    impl_default_emitter!(BrTable(BranchTableTargets));
+    impl_default_emitter!(ConsumeFuel(BlockFuel));
+    impl_default_emitter!(ConsumeFuelStack);
+    impl_default_emitter!(Return);
+    impl_default_emitter!(ReturnCallInternal(CompiledFunc));
+    impl_default_emitter!(ReturnCall(SysFuncIdx));
+    impl_default_emitter!(ReturnCallIndirect(SignatureIdx));
+    impl_default_emitter!(CallInternal(CompiledFunc));
+    impl_default_emitter!(Call(SysFuncIdx));
+    impl_default_emitter!(CallIndirect(SignatureIdx));
+    impl_default_emitter!(SignatureCheck(SignatureIdx));
+    impl_default_emitter!(StackCheck(MaxStackHeight));
+    impl_default_emitter!(Drop);
+    impl_default_emitter!(Select);
+    impl_default_emitter!(GlobalGet(GlobalIdx));
+    impl_default_emitter!(GlobalSet(GlobalIdx));
+    impl_memory_load_emitter!(I32Load(AddressOffset): 4);
+    impl_default_emitter!(I32Load8S(AddressOffset));
+    impl_default_emitter!(I32Load8U(AddressOffset));
+    impl_memory_load_emitter!(I32Load16S(AddressOffset): 2);
+    impl_memory_load_emitter!(I32Load16U(AddressOffset): 2);
+    impl_memory_load_emitter!(I32Store(AddressOffset): 4);
+    impl_default_emitter!(I32Store8(AddressOffset));
+    impl_memory_load_emitter!(I32Store16(AddressOffset): 2);
+    impl_default_emitter!(MemorySize);
+    impl_default_emitter!(MemoryGrow);
+    impl_default_emitter!(MemoryFill);
+    impl_default_emitter!(MemoryCopy);
+    impl_default_emitter!(MemoryInit(DataSegmentIdx));
+    impl_default_emitter!(DataDrop(DataSegmentIdx));
+    impl_default_emitter!(TableSize(TableIdx));
+    impl_default_emitter!(TableGrow(TableIdx));
+    impl_default_emitter!(TableFill(TableIdx));
+    impl_default_emitter!(TableGet(TableIdx));
+    impl_default_emitter!(TableSet(TableIdx));
+    impl_default_emitter!(TableCopy(TableIdx, TableIdx));
+    impl_default_emitter!(TableInit(ElementSegmentIdx));
+    impl_default_emitter!(ElemDrop(ElementSegmentIdx));
+    impl_default_emitter!(RefFunc(CompiledFunc));
+    impl_default_emitter!(I32Const(UntypedValue));
+    impl_default_emitter!(I32Eqz);
+    impl_default_emitter!(I32Eq);
+    impl_default_emitter!(I32Ne);
+    impl_default_emitter!(I32LtS);
+    impl_default_emitter!(I32LtU);
+    impl_default_emitter!(I32GtS);
+    impl_default_emitter!(I32GtU);
+    impl_default_emitter!(I32LeS);
+    impl_default_emitter!(I32LeU);
+    impl_default_emitter!(I32GeS);
+    impl_default_emitter!(I32GeU);
+    impl_default_emitter!(I32Clz);
+    impl_default_emitter!(I32Ctz);
+    impl_default_emitter!(I32Popcnt);
+    impl_default_emitter!(I32Add);
+    impl_default_emitter!(I32Sub);
+    impl_default_emitter!(I32Mul);
+    impl_default_emitter!(I32DivS);
+    impl_default_emitter!(I32DivU);
+    impl_default_emitter!(I32RemS);
+    impl_default_emitter!(I32RemU);
+    impl_default_emitter!(I32And);
+    impl_default_emitter!(I32Or);
+    impl_default_emitter!(I32Xor);
+    impl_default_emitter!(I32Shl);
+    impl_default_emitter!(I32ShrS);
+    impl_default_emitter!(I32ShrU);
+    impl_default_emitter!(I32Rotl);
+    impl_default_emitter!(I32Rotr);
+    impl_default_emitter!(I32Extend8S);
+    impl_default_emitter!(I32Extend16S);
 
     // fpu opcodes (emits trap for disable fpu feature flag)
     impl_fpu_emitter!(F32Load(AddressOffset));

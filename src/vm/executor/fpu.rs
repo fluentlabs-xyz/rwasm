@@ -86,7 +86,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     pub(crate) fn visit_f64_load(&mut self, address_offset: AddressOffset) -> Result<(), TrapCode> {
         let address = self.sp.pop_i32();
         let memory = self.store.global_memory.data();
-        let value = UntypedValue::load_typed::<F64>(memory, address as u32, address_offset)?;
+        let value = UntypedValue::load_typed::<F64, 8>(memory, address as u32, address_offset)?;
         self.sp.push_f64(value);
         self.ip.add(1);
         Ok(())
@@ -121,7 +121,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let value = self.sp.pop_f64();
         let address = self.sp.pop_i32();
         let memory = self.store.global_memory.data_mut();
-        UntypedValue::store_typed(memory, address as u32, address_offset, value)?;
+        UntypedValue::store_typed::<F64, 8>(memory, address as u32, address_offset, value)?;
         self.ip.add(1);
         Ok(())
     }

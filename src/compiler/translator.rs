@@ -1396,95 +1396,256 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i32_load(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I32, InstructionSet::op_i32_load, 0)
+        self.translate_load(
+            memarg,
+            ValType::I32,
+            InstructionSet::op_i32_load,
+            InstructionSet::op_i32_load_aligned,
+            0,
+            4,
+        )
     }
 
     fn visit_i64_load(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load, 2)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load,
+            InstructionSet::op_i64_load,
+            2,
+            8,
+        )
     }
 
     fn visit_f32_load(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::F32, InstructionSet::op_f32_load, 0)
+        self.translate_load(
+            memarg,
+            ValType::F32,
+            InstructionSet::op_f32_load,
+            InstructionSet::op_f32_load,
+            0,
+            4,
+        )
     }
 
     fn visit_f64_load(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::F64, InstructionSet::op_f64_load, 0)
+        self.translate_load(
+            memarg,
+            ValType::F64,
+            InstructionSet::op_f64_load,
+            InstructionSet::op_f64_load,
+            0,
+            8,
+        )
     }
 
     fn visit_i32_load8_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I32, InstructionSet::op_i32_load8_s, 0)
+        self.translate_load(
+            memarg,
+            ValType::I32,
+            InstructionSet::op_i32_load8_s,
+            InstructionSet::op_i32_load8_s,
+            0,
+            1,
+        )
     }
 
     fn visit_i32_load8_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I32, InstructionSet::op_i32_load8_u, 0)
+        self.translate_load(
+            memarg,
+            ValType::I32,
+            InstructionSet::op_i32_load8_u,
+            InstructionSet::op_i32_load8_u,
+            0,
+            1,
+        )
     }
 
     fn visit_i32_load16_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I32, InstructionSet::op_i32_load16_s, 0)
+        self.translate_load(
+            memarg,
+            ValType::I32,
+            InstructionSet::op_i32_load16_s,
+            InstructionSet::op_i32_load16_s_aligned,
+            0,
+            2,
+        )
     }
 
     fn visit_i32_load16_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I32, InstructionSet::op_i32_load16_u, 0)
+        self.translate_load(
+            memarg,
+            ValType::I32,
+            InstructionSet::op_i32_load16_u,
+            InstructionSet::op_i32_load16_u_aligned,
+            0,
+            2,
+        )
     }
 
     fn visit_i64_load8_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load8_s, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load8_s,
+            InstructionSet::op_i64_load8_s,
+            1,
+            1,
+        )
     }
 
     fn visit_i64_load8_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load8_u, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load8_u,
+            InstructionSet::op_i64_load8_u,
+            1,
+            1,
+        )
     }
 
     fn visit_i64_load16_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load16_s, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load16_s,
+            InstructionSet::op_i64_load16_s,
+            1,
+            2,
+        )
     }
 
     fn visit_i64_load16_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load16_u, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load16_u,
+            InstructionSet::op_i64_load16_u,
+            1,
+            2,
+        )
     }
 
     fn visit_i64_load32_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load32_s, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load32_s,
+            InstructionSet::op_i64_load32_s,
+            1,
+            4,
+        )
     }
 
     fn visit_i64_load32_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load32_u, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load32_u,
+            InstructionSet::op_i64_load32_u,
+            1,
+            4,
+        )
     }
 
     fn visit_i32_store(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::I32, InstructionSet::op_i32_store, 0)
+        self.translate_store(
+            memarg,
+            ValType::I32,
+            InstructionSet::op_i32_store,
+            InstructionSet::op_i32_store_aligned,
+            0,
+            4,
+        )
     }
 
     fn visit_i64_store(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::I64, InstructionSet::op_i64_store, 2)
+        self.translate_store(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_store,
+            InstructionSet::op_i64_store,
+            2,
+            8,
+        )
     }
 
     fn visit_f32_store(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::F32, InstructionSet::op_f32_store, 0)
+        self.translate_store(
+            memarg,
+            ValType::F32,
+            InstructionSet::op_f32_store,
+            InstructionSet::op_f32_store,
+            0,
+            4,
+        )
     }
 
     fn visit_f64_store(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::F64, InstructionSet::op_f64_store, 0)
+        self.translate_store(
+            memarg,
+            ValType::F64,
+            InstructionSet::op_f64_store,
+            InstructionSet::op_f64_store,
+            0,
+            8,
+        )
     }
 
     fn visit_i32_store8(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::I32, InstructionSet::op_i32_store8, 0)
+        self.translate_store(
+            memarg,
+            ValType::I32,
+            InstructionSet::op_i32_store8,
+            InstructionSet::op_i32_store8,
+            0,
+            1,
+        )
     }
 
     fn visit_i32_store16(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::I32, InstructionSet::op_i32_store16, 0)
+        self.translate_store(
+            memarg,
+            ValType::I32,
+            InstructionSet::op_i32_store16,
+            InstructionSet::op_i32_store16_aligned,
+            0,
+            2,
+        )
     }
 
     fn visit_i64_store8(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::I64, InstructionSet::op_i64_store8, 0)
+        self.translate_store(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_store8,
+            InstructionSet::op_i64_store8,
+            0,
+            1,
+        )
     }
 
     fn visit_i64_store16(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::I64, InstructionSet::op_i64_store16, 0)
+        self.translate_store(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_store16,
+            InstructionSet::op_i64_store16,
+            0,
+            2,
+        )
     }
 
     fn visit_i64_store32(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::I64, InstructionSet::op_i64_store32, 0)
+        self.translate_store(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_store32,
+            InstructionSet::op_i64_store32,
+            0,
+            4,
+        )
     }
 
     fn visit_memory_size(&mut self, memory_index: u32, _mem_byte: u8) -> Self::Output {
@@ -3814,10 +3975,13 @@ impl InstructionTranslator {
         &mut self,
         memarg: MemArg,
         loaded_type: ValType,
-        emitter: fn(&mut InstructionSet, offset: AddressOffset),
+        unaligned_emitter: fn(&mut InstructionSet, offset: AddressOffset),
+        aligned_emitter: fn(&mut InstructionSet, offset: AddressOffset),
         max_stack_height: u32,
+        alignment: u32,
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
+            let natural_alignment = 1 << memarg.align;
             debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(|| FuelCosts::LOAD)?;
             let addr_type = builder.alloc.stack_types.pop().unwrap();
@@ -3828,7 +3992,11 @@ impl InstructionTranslator {
             builder.stack_height.pop_n(max_stack_height);
             builder.alloc.stack_types.push(loaded_type);
             let offset = AddressOffset::from(memarg.offset as u32);
-            emitter(&mut builder.alloc.instruction_set, offset);
+            if natural_alignment < alignment as u8 {
+                aligned_emitter(&mut builder.alloc.instruction_set, offset);
+            } else {
+                unaligned_emitter(&mut builder.alloc.instruction_set, offset);
+            }
             Ok(())
         })
     }
@@ -3837,10 +4005,13 @@ impl InstructionTranslator {
         &mut self,
         memarg: MemArg,
         stored_value: ValType,
-        emitter: fn(&mut InstructionSet, offset: AddressOffset),
+        unaligned_emitter: fn(&mut InstructionSet, offset: AddressOffset),
+        aligned_emitter: fn(&mut InstructionSet, offset: AddressOffset),
         max_stack_height: u32,
+        alignment: u32,
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
+            let natural_alignment = 1 << memarg.align;
             debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(|| FuelCosts::STORE)?;
             let value_type = builder.alloc.stack_types.pop().unwrap();
@@ -3852,7 +4023,11 @@ impl InstructionTranslator {
             builder.stack_height.push_n(max_stack_height);
             builder.stack_height.pop_n(max_stack_height);
             let offset = AddressOffset::from(memarg.offset as u32);
-            emitter(&mut builder.alloc.instruction_set, offset);
+            if natural_alignment < alignment as u8 {
+                aligned_emitter(&mut builder.alloc.instruction_set, offset);
+            } else {
+                unaligned_emitter(&mut builder.alloc.instruction_set, offset);
+            }
             Ok(())
         })
     }

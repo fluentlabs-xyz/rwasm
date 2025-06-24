@@ -141,11 +141,13 @@ macro_rules! op {
 /// # Errors
 ///
 /// If the resulting effective address overflows.
-fn effective_address(address: u32, offset: u32) -> Result<usize, TrapCode> {
-    offset
+fn effective_address<const ALIGNMENT: u32>(address: u32, offset: u32) -> Result<usize, TrapCode> {
+    let new_address = offset
         .checked_add(address)
         .map(|address| address as usize)
-        .ok_or(TrapCode::MemoryOutOfBounds)
+        .ok_or(TrapCode::MemoryOutOfBounds)?;
+    assert_eq!(new_address as u32 % ALIGNMENT, 0, "memory must be aligned: address={address} + offset={offset} = {new_address}, alignment = {}", ALIGNMENT);
+    Ok(new_address)
 }
 
 impl UntypedValue {
@@ -155,13 +157,17 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    fn load_extend<T, U>(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode>
+    fn load_extend<T, U, const ALIGNMENT: u32>(
+        memory: &[u8],
+        address: Self,
+        offset: u32,
+    ) -> Result<Self, TrapCode>
     where
         T: Into<Self>,
         U: LittleEndianConvert + ExtendInto<T>,
     {
         let raw_address = u32::from(address);
-        let address = effective_address(raw_address, offset)?;
+        let address = effective_address::<ALIGNMENT>(raw_address, offset)?;
         let mut buffer = <<U as LittleEndianConvert>::Bytes as Default>::default();
         buffer.load_into(memory, address)?;
         let value: Self = <U as LittleEndianConvert>::from_le_bytes(buffer)
@@ -171,11 +177,15 @@ impl UntypedValue {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn load_typed<U>(memory: &[u8], raw_address: u32, offset: u32) -> Result<U, TrapCode>
+    pub(crate) fn load_typed<U, const ALIGNMENT: u32>(
+        memory: &[u8],
+        raw_address: u32,
+        offset: u32,
+    ) -> Result<U, TrapCode>
     where
         U: LittleEndianConvert,
     {
-        let address = effective_address(raw_address, offset)?;
+        let address = effective_address::<ALIGNMENT>(raw_address, offset)?;
         let mut buffer = <<U as LittleEndianConvert>::Bytes as Default>::default();
         buffer.load_into(memory, address)?;
         let value = <U as LittleEndianConvert>::from_le_bytes(buffer);
@@ -188,11 +198,15 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
-    pub(crate) fn load<T>(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode>
+    fn load<T, const ALIGNMENT: u32>(
+        memory: &[u8],
+        address: Self,
+        offset: u32,
+    ) -> Result<Self, TrapCode>
     where
         T: LittleEndianConvert + ExtendInto<T> + Into<Self>,
     {
-        Self::load_extend::<T, T>(memory, address, offset)
+        Self::load_extend::<T, T, ALIGNMENT>(memory, address, offset)
     }
 
     /// Executes the `i32.load` Wasm operation.
@@ -202,17 +216,7 @@ impl UntypedValue {
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
     pub fn i32_load(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load::<i32>(memory, address, offset)
-    }
-
-    /// Executes the `i64.load` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `address + offset` overflows.
-    /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load::<i64>(memory, address, offset)
+        Self::load::<i32, 4>(memory, address, offset)
     }
 
     /// Executes the `f32.load` Wasm operation.
@@ -222,17 +226,7 @@ impl UntypedValue {
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
     pub fn f32_load(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load::<F32>(memory, address, offset)
-    }
-
-    /// Executes the `f64.load` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `address + offset` overflows.
-    /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn f64_load(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load::<F64>(memory, address, offset)
+        Self::load::<F32, 4>(memory, address, offset)
     }
 
     /// Executes the `i32.load8_s` Wasm operation.
@@ -242,7 +236,7 @@ impl UntypedValue {
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
     pub fn i32_load8_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load_extend::<i32, i8>(memory, address, offset)
+        Self::load_extend::<i32, i8, 1>(memory, address, offset)
     }
 
     /// Executes the `i32.load8_u` Wasm operation.
@@ -252,7 +246,7 @@ impl UntypedValue {
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
     pub fn i32_load8_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load_extend::<i32, u8>(memory, address, offset)
+        Self::load_extend::<i32, u8, 1>(memory, address, offset)
     }
 
     /// Executes the `i32.load16_s` Wasm operation.
@@ -262,7 +256,7 @@ impl UntypedValue {
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
     pub fn i32_load16_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load_extend::<i32, i16>(memory, address, offset)
+        Self::load_extend::<i32, i16, 2>(memory, address, offset)
     }
 
     /// Executes the `i32.load16_u` Wasm operation.
@@ -272,67 +266,7 @@ impl UntypedValue {
     /// - If `address + offset` overflows.
     /// - If `address + offset` loads out of bounds from `memory`.
     pub fn i32_load16_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load_extend::<i32, u16>(memory, address, offset)
-    }
-
-    /// Executes the `i64.load8_s` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `address + offset` overflows.
-    /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load8_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load_extend::<i64, i8>(memory, address, offset)
-    }
-
-    /// Executes the `i64.load8_u` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `address + offset` overflows.
-    /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load8_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load_extend::<i64, u8>(memory, address, offset)
-    }
-
-    /// Executes the `i64.load16_s` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `address + offset` overflows.
-    /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load16_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load_extend::<i64, i16>(memory, address, offset)
-    }
-
-    /// Executes the `i64.load16_u` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `address + offset` overflows.
-    /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load16_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load_extend::<i64, u16>(memory, address, offset)
-    }
-
-    /// Executes the `i64.load32_s` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `address + offset` overflows.
-    /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load32_s(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load_extend::<i64, i32>(memory, address, offset)
-    }
-
-    /// Executes the `i64.load32_u` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `address + offset` overflows.
-    /// - If `address + offset` loads out of bounds from `memory`.
-    pub fn i64_load32_u(memory: &[u8], address: Self, offset: u32) -> Result<Self, TrapCode> {
-        Self::load_extend::<i64, u32>(memory, address, offset)
+        Self::load_extend::<i32, u16, 2>(memory, address, offset)
     }
 
     /// Executes a generic `T.store[N]` Wasm operation.
@@ -341,7 +275,7 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` stores out of bounds from `memory`.
-    fn store_wrap<T, U>(
+    fn store_wrap<T, U, const ALIGNMENT: u32>(
         memory: &mut [u8],
         address: Self,
         offset: u32,
@@ -352,7 +286,7 @@ impl UntypedValue {
         U: LittleEndianConvert,
     {
         let raw_address = u32::from(address);
-        let address = effective_address(raw_address, offset)?;
+        let address = effective_address::<ALIGNMENT>(raw_address, offset)?;
         let wrapped = T::from(value).wrap_into();
         let buffer = <U as LittleEndianConvert>::into_le_bytes(wrapped);
         buffer.store_from(memory, address)?;
@@ -360,7 +294,7 @@ impl UntypedValue {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn store_typed<U>(
+    pub(crate) fn store_typed<U, const ALIGNMENT: u32>(
         memory: &mut [u8],
         raw_address: u32,
         offset: u32,
@@ -369,7 +303,7 @@ impl UntypedValue {
     where
         U: LittleEndianConvert,
     {
-        let address = effective_address(raw_address, offset)?;
+        let address = effective_address::<ALIGNMENT>(raw_address, offset)?;
         let buffer = <U as LittleEndianConvert>::into_le_bytes(value);
         buffer.store_from(memory, address)?;
         Ok(())
@@ -381,11 +315,16 @@ impl UntypedValue {
     ///
     /// - If `address + offset` overflows.
     /// - If `address + offset` stores out of bounds from `memory`.
-    fn store<T>(memory: &mut [u8], address: Self, offset: u32, value: Self) -> Result<(), TrapCode>
+    fn store<T, const ALIGNMENT: u32>(
+        memory: &mut [u8],
+        address: Self,
+        offset: u32,
+        value: Self,
+    ) -> Result<(), TrapCode>
     where
         T: From<Self> + WrapInto<T> + LittleEndianConvert,
     {
-        Self::store_wrap::<T, T>(memory, address, offset, value)
+        Self::store_wrap::<T, T, ALIGNMENT>(memory, address, offset, value)
     }
 
     /// Executes the `i32.store` Wasm operation.
@@ -400,22 +339,7 @@ impl UntypedValue {
         offset: u32,
         value: Self,
     ) -> Result<(), TrapCode> {
-        Self::store::<i32>(memory, address, offset, value)
-    }
-
-    /// Executes the `i64.store` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `address + offset` overflows.
-    /// - If `address + offset` stores out of bounds from `memory`.
-    pub fn i64_store(
-        memory: &mut [u8],
-        address: Self,
-        offset: u32,
-        value: Self,
-    ) -> Result<(), TrapCode> {
-        Self::store::<i64>(memory, address, offset, value)
+        Self::store::<i32, 4>(memory, address, offset, value)
     }
 
     /// Executes the `f32.store` Wasm operation.
@@ -430,22 +354,7 @@ impl UntypedValue {
         offset: u32,
         value: Self,
     ) -> Result<(), TrapCode> {
-        Self::store::<F32>(memory, address, offset, value)
-    }
-
-    /// Executes the `f64.store` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `address + offset` overflows.
-    /// - If `address + offset` stores out of bounds from `memory`.
-    pub fn f64_store(
-        memory: &mut [u8],
-        address: Self,
-        offset: u32,
-        value: Self,
-    ) -> Result<(), TrapCode> {
-        Self::store::<F64>(memory, address, offset, value)
+        Self::store::<F32, 4>(memory, address, offset, value)
     }
 
     /// Executes the `i32.store8` Wasm operation.
@@ -460,7 +369,7 @@ impl UntypedValue {
         offset: u32,
         value: Self,
     ) -> Result<(), TrapCode> {
-        Self::store_wrap::<i32, i8>(memory, address, offset, value)
+        Self::store_wrap::<i32, i8, 1>(memory, address, offset, value)
     }
 
     /// Executes the `i32.store16` Wasm operation.
@@ -475,52 +384,7 @@ impl UntypedValue {
         offset: u32,
         value: Self,
     ) -> Result<(), TrapCode> {
-        Self::store_wrap::<i32, i16>(memory, address, offset, value)
-    }
-
-    /// Executes the `i64.store8` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `address + offset` overflows.
-    /// - If `address + offset` stores out of bounds from `memory`.
-    pub fn i64_store8(
-        memory: &mut [u8],
-        address: Self,
-        offset: u32,
-        value: Self,
-    ) -> Result<(), TrapCode> {
-        Self::store_wrap::<i64, i8>(memory, address, offset, value)
-    }
-
-    /// Executes the `i64.store16` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `address + offset` overflows.
-    /// - If `address + offset` stores out of bounds from `memory`.
-    pub fn i64_store16(
-        memory: &mut [u8],
-        address: Self,
-        offset: u32,
-        value: Self,
-    ) -> Result<(), TrapCode> {
-        Self::store_wrap::<i64, i16>(memory, address, offset, value)
-    }
-
-    /// Executes the `i64.store32` Wasm operation.
-    ///
-    /// # Errors
-    ///
-    /// - If `address + offset` overflows.
-    /// - If `address + offset` stores out of bounds from `memory`.
-    pub fn i64_store32(
-        memory: &mut [u8],
-        address: Self,
-        offset: u32,
-        value: Self,
-    ) -> Result<(), TrapCode> {
-        Self::store_wrap::<i64, i32>(memory, address, offset, value)
+        Self::store_wrap::<i32, i16, 2>(memory, address, offset, value)
     }
 
     /// Execute an infallible generic operation on `T` that returns an `R`.
@@ -568,19 +432,9 @@ impl UntypedValue {
         self.execute_binary(rhs, <i32 as ArithmeticOps<i32>>::add)
     }
 
-    /// Execute `i64.add` Wasm operation.
-    pub fn i64_add(self, rhs: Self) -> Self {
-        self.execute_binary(rhs, <i64 as ArithmeticOps<i64>>::add)
-    }
-
     /// Execute `i32.sub` Wasm operation.
     pub fn i32_sub(self, rhs: Self) -> Self {
         self.execute_binary(rhs, <i32 as ArithmeticOps<i32>>::sub)
-    }
-
-    /// Execute `i64.sub` Wasm operation.
-    pub fn i64_sub(self, rhs: Self) -> Self {
-        self.execute_binary(rhs, <i64 as ArithmeticOps<i64>>::sub)
     }
 
     /// Execute `i32.mul` Wasm operation.
@@ -698,11 +552,6 @@ impl UntypedValue {
         self.execute_binary::<F32, bool>(rhs, op!(==))
     }
 
-    /// Execute `f64.eq` Wasm operation.
-    pub fn f64_eq(self, rhs: Self) -> Self {
-        self.execute_binary::<F64, bool>(rhs, op!(==))
-    }
-
     /// Execute `i32.ne` Wasm operation.
     pub fn i32_ne(self, rhs: Self) -> Self {
         self.execute_binary::<i32, bool>(rhs, op!(!=))
@@ -711,11 +560,6 @@ impl UntypedValue {
     /// Execute `f32.ne` Wasm operation.
     pub fn f32_ne(self, rhs: Self) -> Self {
         self.execute_binary::<F32, bool>(rhs, op!(!=))
-    }
-
-    /// Execute `f64.ne` Wasm operation.
-    pub fn f64_ne(self, rhs: Self) -> Self {
-        self.execute_binary::<F64, bool>(rhs, op!(!=))
     }
 
     /// Execute `i32.lt_s` Wasm operation.
@@ -733,11 +577,6 @@ impl UntypedValue {
         self.execute_binary::<F32, bool>(rhs, op!(<))
     }
 
-    /// Execute `f64.lt` Wasm operation.
-    pub fn f64_lt(self, rhs: Self) -> Self {
-        self.execute_binary::<F64, bool>(rhs, op!(<))
-    }
-
     /// Execute `i32.le_s` Wasm operation.
     pub fn i32_le_s(self, rhs: Self) -> Self {
         self.execute_binary::<i32, bool>(rhs, op!(<=))
@@ -751,11 +590,6 @@ impl UntypedValue {
     /// Execute `f32.le` Wasm operation.
     pub fn f32_le(self, rhs: Self) -> Self {
         self.execute_binary::<F32, bool>(rhs, op!(<=))
-    }
-
-    /// Execute `f64.le` Wasm operation.
-    pub fn f64_le(self, rhs: Self) -> Self {
-        self.execute_binary::<F64, bool>(rhs, op!(<=))
     }
 
     /// Execute `i32.gt_s` Wasm operation.
@@ -773,11 +607,6 @@ impl UntypedValue {
         self.execute_binary::<F32, bool>(rhs, op!(>))
     }
 
-    /// Execute `f64.gt` Wasm operation.
-    pub fn f64_gt(self, rhs: Self) -> Self {
-        self.execute_binary::<F64, bool>(rhs, op!(>))
-    }
-
     /// Execute `i32.ge_s` Wasm operation.
     pub fn i32_ge_s(self, rhs: Self) -> Self {
         self.execute_binary::<i32, bool>(rhs, op!(>=))
@@ -791,11 +620,6 @@ impl UntypedValue {
     /// Execute `f32.ge` Wasm operation.
     pub fn f32_ge(self, rhs: Self) -> Self {
         self.execute_binary::<F32, bool>(rhs, op!(>=))
-    }
-
-    /// Execute `f64.ge` Wasm operation.
-    pub fn f64_ge(self, rhs: Self) -> Self {
-        self.execute_binary::<F64, bool>(rhs, op!(>=))
     }
 
     /// Execute `f32.abs` Wasm operation.
@@ -846,41 +670,6 @@ impl UntypedValue {
     /// Execute `f32.copysign` Wasm operation.
     pub fn f32_copysign(self, other: Self) -> Self {
         self.execute_binary(other, <F32 as Float<F32>>::copysign)
-    }
-
-    /// Execute `f64.abs` Wasm operation.
-    pub fn f64_abs(self) -> Self {
-        self.execute_unary(<F64 as Float<F64>>::abs)
-    }
-
-    /// Execute `f64.neg` Wasm operation.
-    pub fn f64_neg(self) -> Self {
-        self.execute_unary(<F64 as Neg>::neg)
-    }
-
-    /// Execute `f64.ceil` Wasm operation.
-    pub fn f64_ceil(self) -> Self {
-        self.execute_unary(<F64 as Float<F64>>::ceil)
-    }
-
-    /// Execute `f64.floor` Wasm operation.
-    pub fn f64_floor(self) -> Self {
-        self.execute_unary(<F64 as Float<F64>>::floor)
-    }
-
-    /// Execute `f64.trunc` Wasm operation.
-    pub fn f64_trunc(self) -> Self {
-        self.execute_unary(<F64 as Float<F64>>::trunc)
-    }
-
-    /// Execute `f64.nearest` Wasm operation.
-    pub fn f64_nearest(self) -> Self {
-        self.execute_unary(<F64 as Float<F64>>::nearest)
-    }
-
-    /// Execute `f64.sqrt` Wasm operation.
-    pub fn f64_sqrt(self) -> Self {
-        self.execute_unary(<F64 as Float<F64>>::sqrt)
     }
 
     /// Execute `f32.add` Wasm operation.

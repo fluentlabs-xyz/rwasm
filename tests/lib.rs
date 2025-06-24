@@ -15,6 +15,36 @@ fn test_fib() {
 }
 
 #[test]
+fn test_i32_load8_s() {
+    let wasm_binary = wat::parse_str(
+        r#"
+(module
+  (memory 1)
+  (data (i32.const 0) "abcdefghijklmnopqrstuvwxyz")
+
+  (func (export "8s_good1") (param $i i32) (result i32)
+    (i32.load8_s offset=0 (local.get $i))                   ;; 97 'a'
+  )
+)
+"#,
+    )
+    .unwrap();
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("8s_good1".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+    println!("{}", rwasm_module);
+    let mut store = Store::<()>::default();
+    let mut engine = ExecutionEngine::new();
+    engine.value_stack().push(0.into());
+    engine.execute(&mut store, &rwasm_module).unwrap();
+    let result = engine.value_stack().pop();
+    assert_eq!(result.as_i32(), 97);
+    println!("{:?}", engine.value_stack().as_slice());
+    assert!(engine.value_stack().as_slice().is_empty());
+}
+
+#[test]
 fn test_i64_load8_s() {
     let wasm_binary = wat::parse_str(
         r#"
