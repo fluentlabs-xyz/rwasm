@@ -1,6 +1,7 @@
 use rwasm::{
+    always_failing_syscall_handler,
+    compile_wasmtime_module,
     instruction_set,
-    wasmtime::CraneliftExecutor,
     Caller,
     CompilationConfig,
     ExecutionEngine,
@@ -9,13 +10,14 @@ use rwasm::{
     ImportName,
     InstructionSet,
     RwasmModule,
-    Store,
+    RwasmStore,
     TrapCode,
     Value,
+    WasmtimeWorker,
 };
-use std::rc::Rc;
+use std::sync::Arc;
 
-fn import_linker() -> Rc<ImportLinker> {
+fn import_linker() -> Arc<ImportLinker> {
     let mut import_linker = ImportLinker::default();
     import_linker.insert_function(
         ImportName::new("hello", "world"),
@@ -24,10 +26,10 @@ fn import_linker() -> Rc<ImportLinker> {
         &[],
         &[],
     );
-    Rc::new(import_linker)
+    Arc::new(import_linker)
 }
 
-fn syscall_handler<T>(
+fn interrupting_syscall_handler<T>(
     _caller: &mut dyn Caller<T>,
     _sys_func_idx: u32,
     _params: &[Value],
@@ -45,12 +47,10 @@ fn test_interrupted_call_rwasm() {
         Return
     });
     let import_linker = import_linker();
-    let mut store = Store::<()>::new(
+    let mut store = RwasmStore::<()>::new(
         ExecutorConfig::default().fuel_enabled(true),
-        (),
         import_linker,
-    );
-    store.set_syscall_handler(
+        (),
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> {
             // return an empty interruption
             Err(TrapCode::InterruptionCalled)
@@ -93,12 +93,13 @@ fn test_interrupted_call_wasmtime() {
     )
     .unwrap();
     // run with rwasm
-    let mut store = Store::<()>::new(
+    let mut store = RwasmStore::<()>::new(
         ExecutorConfig::default().fuel_enabled(true),
-        (),
         import_linker.clone(),
+        (),
+        always_failing_syscall_handler,
     );
-    store.set_syscall_handler(syscall_handler);
+    store.set_syscall_handler(interrupting_syscall_handler);
     let mut engine = ExecutionEngine::new();
     let err = engine.execute(&mut store, &rwasm_module).unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
@@ -108,15 +109,18 @@ fn test_interrupted_call_wasmtime() {
     assert!(engine.call_stack().is_empty());
     assert_eq!(engine.value_stack().pop().as_u32(), 120);
     // run with wasmtime
-    let mut wasmtime_vm = CraneliftExecutor::compile(
-        &rwasm_module.wasm_section,
+    let module = Arc::new(compile_wasmtime_module(&wasm_binary).unwrap());
+    let mut wasmtime_worker = WasmtimeWorker::new(
+        module,
         import_linker.clone(),
         (),
-        syscall_handler,
+        interrupting_syscall_handler,
     );
-    let mut result = [wasmtime::Val::I32(0); 1];
-    let err = wasmtime_vm.run_typed("main", &[], &mut result).unwrap_err();
+    let mut result = [Value::I32(0); 1];
+    let err = wasmtime_worker
+        .execute("main", &[], &mut result)
+        .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
-    wasmtime_vm.resume(0, &[], None, &mut result).unwrap();
+    wasmtime_worker.resume(Ok(&[]), &mut result).unwrap();
     assert_eq!(result[0].i32().unwrap(), 120);
 }

@@ -933,7 +933,6 @@ dependencies = [
  "hashbrown",
  "libm",
  "num-traits",
- "once_cell",
  "paste",
  "rand",
  "serde",

@@ -1,6 +1,7 @@
 use crate::{
     Caller,
     ImportLinker,
+    Store,
     SyscallHandler,
     TrapCode,
     UntypedValue,
@@ -9,27 +10,305 @@ use crate::{
     F32,
     F64,
 };
-use alloc::rc::Rc;
-use smallvec::SmallVec;
+use smallvec::{smallvec, SmallVec};
 use std::{
     cell::{Ref, RefCell, RefMut},
-    sync::mpsc,
+    marker::PhantomData,
+    sync::{mpsc, Arc},
     thread,
 };
 use wasmtime::{AsContext, AsContextMut, Collector, Strategy, Trap, Val};
 
+pub type WasmtimeModule = wasmtime::Module;
+pub type WasmtimeLinker<T> = wasmtime::Linker<T>;
+
 struct WrappedContext<T: Send> {
     syscall_handler: SyscallHandler<T>,
     inner: T,
-    worker_to_host_sender: mpsc::Sender<WorkerMessage>,
-    host_to_worker_receiver: mpsc::Receiver<HostMessage>,
+    message_channel: Option<mpsc::Sender<MessageResponse>>,
 }
 
 struct WrappedCaller<'a, T: Send> {
     caller: RefCell<wasmtime::Caller<'a, WrappedContext<T>>>,
 }
 
-impl<'a, T: Send> Caller<T> for WrappedCaller<'a, T> {
+enum MessageResponse {
+    ExecutionResult {
+        result: Result<SmallVec<[Value; 16]>, TrapCode>,
+    },
+    InterruptedCall {
+        resp: mpsc::Sender<Result<SmallVec<[Value; 16]>, TrapCode>>,
+    },
+}
+
+enum MessageRequest {
+    ExecuteFunc {
+        func_name: &'static str,
+        params: SmallVec<[Value; 16]>,
+        num_result: usize,
+        resp: mpsc::Sender<MessageResponse>,
+    },
+    MemoryRead {
+        offset: usize,
+        buffer_size: usize,
+        resp: mpsc::Sender<Result<Vec<u8>, TrapCode>>,
+    },
+    MemoryWrite {
+        offset: usize,
+        buffer: Vec<u8>,
+        resp: mpsc::Sender<Result<(), TrapCode>>,
+    },
+    TryConsumeFuel {
+        delta: u64,
+        resp: mpsc::Sender<Result<(), TrapCode>>,
+    },
+    RemainingFuel {
+        resp: mpsc::Sender<Option<u64>>,
+    },
+}
+
+pub struct WasmtimeWorker<T: 'static + Send> {
+    sender: mpsc::Sender<MessageRequest>,
+    interrupt_channel: Option<mpsc::Sender<Result<SmallVec<[Value; 16]>, TrapCode>>>,
+    marker: PhantomData<T>,
+    recv_channel: Option<mpsc::Receiver<MessageResponse>>,
+}
+
+impl<T: 'static + Send> WasmtimeWorker<T> {
+    pub fn new(
+        module: Arc<wasmtime::Module>,
+        import_linker: Arc<ImportLinker>,
+        context: T,
+        syscall_handler: SyscallHandler<T>,
+    ) -> Self {
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let context = WrappedContext {
+                syscall_handler,
+                inner: context,
+                message_channel: None,
+            };
+            let mut store = wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context);
+            let linker = wasmtime_import_linker(module.engine(), import_linker);
+            let instance = linker
+                .instantiate(store.as_context_mut(), &module)
+                .unwrap_or_else(|err| panic!("can't instantiate wasmtime: {}", err));
+            while let Ok(message) = receiver.recv() {
+                match message {
+                    MessageRequest::ExecuteFunc {
+                        func_name,
+                        params,
+                        num_result,
+                        resp,
+                    } => {
+                        let mut result: SmallVec<[Value; 16]> =
+                            smallvec![Value::I32(0); num_result];
+                        store.data_mut().message_channel = Some(resp);
+                        let result = execute_wasmtime_module_inner(
+                            instance,
+                            &mut store,
+                            func_name,
+                            &params,
+                            &mut result,
+                        )
+                        .map(|_| result);
+                        let resp = store.data_mut().message_channel.take().unwrap();
+                        resp.send(MessageResponse::ExecutionResult { result })
+                            .unwrap();
+                    }
+                    MessageRequest::MemoryRead {
+                        offset,
+                        buffer_size,
+                        resp,
+                    } => {
+                        let global_memory = instance
+                            .get_export(store.as_context_mut(), "memory")
+                            .unwrap_or_else(|| {
+                                unreachable!("missing memory export, it's not possible")
+                            })
+                            .into_memory()
+                            .unwrap_or_else(|| {
+                                unreachable!("missing memory export, it's not possible")
+                            });
+                        let mut buffer = vec![0; buffer_size];
+                        let result = global_memory
+                            .read(store.as_context(), offset, &mut buffer)
+                            .map_err(|_| TrapCode::MemoryOutOfBounds)
+                            .map(|_| buffer);
+                        resp.send(result).unwrap();
+                    }
+                    MessageRequest::MemoryWrite {
+                        offset,
+                        buffer,
+                        resp,
+                    } => {
+                        let global_memory = instance
+                            .get_export(store.as_context_mut(), "memory")
+                            .unwrap_or_else(|| {
+                                unreachable!("missing memory export, it's not possible")
+                            })
+                            .into_memory()
+                            .unwrap_or_else(|| {
+                                unreachable!("missing memory export, it's not possible")
+                            });
+                        let result = global_memory
+                            .write(store.as_context_mut(), offset, &buffer)
+                            .map_err(|_| TrapCode::MemoryOutOfBounds);
+                        resp.send(result).unwrap();
+                    }
+                    MessageRequest::TryConsumeFuel { delta, resp } => {
+                        let remaining_fuel = store
+                            .get_fuel()
+                            .unwrap_or_else(|_| unreachable!("fuel mode is disabled in wasmtime"));
+                        let result = if let Some(new_fuel) = remaining_fuel.checked_sub(delta) {
+                            store.set_fuel(new_fuel).unwrap_or_else(|_| {
+                                unreachable!("fuel mode is disabled in wasmtime")
+                            });
+                            Ok(())
+                        } else {
+                            Err(TrapCode::OutOfFuel)
+                        };
+                        resp.send(result).unwrap();
+                    }
+                    MessageRequest::RemainingFuel { resp } => {
+                        let fuel_remaining = store.get_fuel().ok();
+                        resp.send(fuel_remaining).unwrap();
+                    }
+                }
+            }
+        });
+        Self {
+            sender,
+            interrupt_channel: None,
+            marker: Default::default(),
+            recv_channel: None,
+        }
+    }
+
+    pub fn execute(
+        &mut self,
+        func_name: &'static str,
+        params: &[Value],
+        result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        let (resp_tx, resp_rx) = mpsc::channel();
+        debug_assert!(
+            self.interrupt_channel.is_none(),
+            "resumable flag must not be set"
+        );
+        self.sender
+            .send(MessageRequest::ExecuteFunc {
+                func_name,
+                params: params.into(),
+                num_result: result.len(),
+                resp: resp_tx,
+            })
+            .unwrap();
+        let response = resp_rx.recv().unwrap();
+        match response {
+            MessageResponse::ExecutionResult {
+                result: exec_result,
+            } => {
+                for (i, x) in exec_result?.into_iter().enumerate() {
+                    result[i] = x;
+                }
+                Ok(())
+            }
+            MessageResponse::InterruptedCall { resp } => {
+                self.interrupt_channel = Some(resp);
+                self.recv_channel = Some(resp_rx);
+                Err(TrapCode::InterruptionCalled)
+            }
+        }
+    }
+
+    pub fn resume(
+        &mut self,
+        interruption_result: Result<&[Value], TrapCode>,
+        result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        let channel = self
+            .interrupt_channel
+            .take()
+            .expect("resumable flag must not be set");
+        let interruption_result =
+            interruption_result.map(|values| SmallVec::<[Value; 16]>::from(values));
+        channel.send(interruption_result).unwrap();
+        let response = self.recv_channel.as_ref().unwrap().recv().unwrap();
+        match response {
+            MessageResponse::ExecutionResult {
+                result: exec_result,
+            } => {
+                for (i, x) in exec_result?.into_iter().enumerate() {
+                    result[i] = x;
+                }
+                Ok(())
+            }
+            MessageResponse::InterruptedCall { resp } => {
+                self.interrupt_channel = Some(resp);
+                Err(TrapCode::InterruptionCalled)
+            }
+        }
+    }
+}
+
+impl<T: Send> Store<T> for WasmtimeWorker<T> {
+    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+        let (resp_tx, resp_rx) = mpsc::channel();
+        self.sender
+            .send(MessageRequest::MemoryRead {
+                offset,
+                buffer_size: buffer.len(),
+                resp: resp_tx,
+            })
+            .unwrap();
+        let result = resp_rx.recv().unwrap()?;
+        debug_assert_eq!(result.len(), buffer.len());
+        buffer.copy_from_slice(result.as_slice());
+        Ok(())
+    }
+
+    fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
+        let (resp_tx, resp_rx) = mpsc::channel();
+        self.sender
+            .send(MessageRequest::MemoryWrite {
+                offset,
+                buffer: buffer.to_vec(),
+                resp: resp_tx,
+            })
+            .unwrap();
+        resp_rx.recv().unwrap()
+    }
+
+    fn context_mut(&mut self) -> RefMut<'_, T> {
+        unimplemented!("not implemented for wasmtime resumable mode")
+    }
+
+    fn context(&self) -> Ref<'_, T> {
+        unimplemented!("not implemented for wasmtime resumable mode")
+    }
+
+    fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
+        let (resp_tx, resp_rx) = mpsc::channel();
+        self.sender
+            .send(MessageRequest::TryConsumeFuel {
+                delta,
+                resp: resp_tx,
+            })
+            .unwrap();
+        resp_rx.recv().unwrap()
+    }
+
+    fn remaining_fuel(&mut self) -> Option<u64> {
+        let (resp_tx, resp_rx) = mpsc::channel();
+        self.sender
+            .send(MessageRequest::RemainingFuel { resp: resp_tx })
+            .unwrap();
+        resp_rx.recv().unwrap()
+    }
+}
+
+impl<'a, T: Send> Store<T> for WrappedCaller<'a, T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let global_memory = self
             .caller
@@ -56,28 +335,12 @@ impl<'a, T: Send> Caller<T> for WrappedCaller<'a, T> {
             .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
-    fn program_counter(&self) -> u32 {
-        unimplemented!("not allowed im wasmtime mode")
-    }
-
-    fn sync_stack_ptr(&mut self) {
-        // there is nothing to sync...
-    }
-
-    fn context_mut(&mut self) -> RefMut<T> {
+    fn context_mut(&mut self) -> RefMut<'_, T> {
         RefMut::map(self.caller.borrow_mut(), |c| &mut c.data_mut().inner)
     }
 
-    fn context(&self) -> Ref<T> {
+    fn context(&self) -> Ref<'_, T> {
         Ref::map(self.caller.borrow(), |c| &c.data().inner)
-    }
-
-    fn stack_push(&mut self, _value: UntypedValue) {
-        unimplemented!("not allowed in wasmtime mode")
-    }
-
-    fn remaining_fuel(&mut self) -> Option<u64> {
-        self.caller.borrow().get_fuel().ok()
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
@@ -94,169 +357,71 @@ impl<'a, T: Send> Caller<T> for WrappedCaller<'a, T> {
             .unwrap_or_else(|_| unreachable!("fuel mode is disabled in wasmtime"));
         Ok(())
     }
+
+    fn remaining_fuel(&mut self) -> Option<u64> {
+        self.caller.borrow().get_fuel().ok()
+    }
 }
 
-#[derive(Debug)]
-enum HostMessage {
-    Run {
-        func_name: &'static str,
-        params: Vec<Val>,
-        results: Vec<Val>,
-    },
-    Resume {
-        fuel_consumed: u64,
-        results: Vec<Val>,
-        trap_code: Option<TrapCode>,
-    },
-}
-
-#[derive(Debug)]
-enum WorkerMessage {
-    ExecutionResult(Result<Vec<Val>, TrapCode>),
-}
-
-pub struct CraneliftExecutor {
-    host_to_worker_sender: mpsc::Sender<HostMessage>,
-    worker_to_host_receiver: mpsc::Receiver<WorkerMessage>,
-}
-
-impl CraneliftExecutor {
-    pub fn compile<T: Send + 'static>(
-        wasm_binary: impl AsRef<[u8]>,
-        import_linker: Rc<ImportLinker>,
-        context: T,
-        syscall_handler: SyscallHandler<T>,
-    ) -> Self {
-        let mut config = wasmtime::Config::new();
-        // TODO(dmitry123): "make sure config is correct"
-        config.strategy(Strategy::Cranelift);
-        config.collector(Collector::Null);
-        let engine = wasmtime::Engine::new(&config).unwrap();
-        let module =
-            wasmtime::Module::new(&engine, wasm_binary).expect("failed to compile wasmtime module");
-        Self::new(module, import_linker, context, syscall_handler)
+impl<'a, T: Send> Caller<T> for WrappedCaller<'a, T> {
+    fn program_counter(&self) -> u32 {
+        unimplemented!("not allowed im wasmtime mode")
     }
 
-    pub fn new<T: Send + 'static>(
-        module: wasmtime::Module,
-        import_linker: Rc<ImportLinker>,
-        context: T,
-        syscall_handler: SyscallHandler<T>,
-    ) -> Self {
-        let linker = map_import_linker(module.engine(), import_linker);
-        let (host_to_worker_sender, host_to_worker_receiver) = mpsc::channel();
-        let (worker_to_host_sender, worker_to_host_receiver) = mpsc::channel();
-        let context = WrappedContext {
-            syscall_handler,
-            inner: context,
-            worker_to_host_sender,
-            host_to_worker_receiver,
+    fn sync_stack_ptr(&mut self) {
+        // there is nothing to sync...
+    }
+
+    fn stack_push(&mut self, _value: UntypedValue) {
+        unimplemented!("not allowed in wasmtime mode")
+    }
+}
+
+pub fn compile_wasmtime_module(wasm_binary: impl AsRef<[u8]>) -> anyhow::Result<WasmtimeModule> {
+    let mut config = wasmtime::Config::new();
+    // TODO(dmitry123): "make sure config is correct"
+    config.strategy(Strategy::Cranelift);
+    config.collector(Collector::Null);
+    let engine = wasmtime::Engine::new(&config)?;
+    wasmtime::Module::new(&engine, wasm_binary)
+}
+
+fn execute_wasmtime_module_inner<T: Send>(
+    instance: wasmtime::Instance,
+    store: &mut wasmtime::Store<WrappedContext<T>>,
+    func_name: &'static str,
+    params: &[Value],
+    result: &mut [Value],
+) -> Result<(), TrapCode> {
+    let entrypoint = instance
+        .get_func(store.as_context_mut(), func_name)
+        .unwrap_or_else(|| unreachable!("missing entrypoint: {}", func_name));
+    let mut buffer = SmallVec::<[Val; 128]>::new();
+    for (i, value) in params.iter().enumerate() {
+        let value = match value {
+            Value::I32(value) => Val::I32(*value),
+            Value::I64(value) => Val::I64(*value),
+            Value::F32(value) => Val::F32(value.to_bits()),
+            Value::F64(value) => Val::F64(value.to_bits()),
+            _ => unreachable!("not supported type: {:?}", value),
         };
-        let mut store = wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context);
-        let instance = linker
-            .instantiate(store.as_context_mut(), &module)
-            .unwrap_or_else(|err| panic!("can't instantiate wasmtime: {}", err));
-        thread::spawn(move || loop {
-            let next_host_message = match store.data().host_to_worker_receiver.recv() {
-                Ok(message) => message,
-                Err(_) => {
-                    println!("Worker thread received a shutdown signal, exiting...");
-                    break;
-                }
-            };
-            match next_host_message {
-                HostMessage::Run {
-                    func_name,
-                    params,
-                    mut results,
-                } => {
-                    println!("Worker received a run message for function: {}", func_name);
-
-                    let entrypoint = instance
-                        .get_func(store.as_context_mut(), func_name)
-                        .unwrap_or_else(|| panic!("missing main entrypoint"));
-
-                    let result = entrypoint
-                        .call(store.as_context_mut(), &params, &mut results)
-                        .map_err(map_anyhow_error)
-                        .map(|_| results);
-
-                    store
-                        .data()
-                        .worker_to_host_sender
-                        .send(WorkerMessage::ExecutionResult(result))
-                        .expect("failed to send result to host thread");
-                }
-                _ => {
-                    panic!("expected run message, got: {:?}", next_host_message);
-                }
-            }
-        });
-        Self {
-            host_to_worker_sender,
-            worker_to_host_receiver,
-        }
+        buffer.push(value);
     }
-
-    pub fn run_main(&mut self) -> Result<(), TrapCode> {
-        // entrypoint doesn't have input/output params
-        self.run_typed("main", &[], &mut [])
-    }
-
-    pub fn run_typed(
-        &mut self,
-        entrypoint: &'static str,
-        params: &[Val],
-        results: &mut [Val],
-    ) -> Result<(), TrapCode> {
-        let message = HostMessage::Run {
-            func_name: entrypoint,
-            params: params.to_vec(),
-            results: results.to_vec(),
+    buffer.extend(std::iter::repeat(Val::I32(0)).take(result.len()));
+    let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
+    entrypoint
+        .call(store.as_context_mut(), &mapped_params, mapped_result)
+        .map_err(map_anyhow_error)?;
+    for (i, x) in mapped_result.iter().enumerate() {
+        result[i] = match x {
+            Val::I32(value) => Value::I32(*value),
+            Val::I64(value) => Value::I64(*value),
+            Val::F32(value) => Value::F32(F32::from_bits(*value)),
+            Val::F64(value) => Value::F64(F64::from_bits(*value)),
+            _ => unreachable!("not supported type: {:?}", x),
         };
-        self.host_to_worker_sender
-            .send(message)
-            .expect("failed to send message to worker thread");
-        let message = self
-            .worker_to_host_receiver
-            .recv()
-            .expect("failed to receive result from worker thread");
-        let results2 = match message {
-            WorkerMessage::ExecutionResult(result) => result,
-        }?;
-        for (i, returned_result) in results2.into_iter().enumerate() {
-            results[i] = returned_result;
-        }
-        Ok(())
     }
-
-    pub fn resume(
-        &mut self,
-        fuel_consumed: u64,
-        interruption_results: &[Val],
-        interruption_trap_code: Option<TrapCode>,
-        results: &mut [Val],
-    ) -> Result<(), TrapCode> {
-        let message = HostMessage::Resume {
-            fuel_consumed,
-            trap_code: interruption_trap_code,
-            results: interruption_results.to_vec(),
-        };
-        self.host_to_worker_sender
-            .send(message)
-            .expect("failed to send resume message to worker thread");
-        let message = self
-            .worker_to_host_receiver
-            .recv()
-            .expect("failed to receive result from worker thread");
-        let results2 = match message {
-            WorkerMessage::ExecutionResult(result) => result,
-        }?;
-        for (i, returned_result) in results2.into_iter().enumerate() {
-            results[i] = returned_result;
-        }
-        Ok(())
-    }
+    Ok(())
 }
 
 fn wasmtime_syscall_handler<'a, T: Send + 'static>(
@@ -275,8 +440,6 @@ fn wasmtime_syscall_handler<'a, T: Send + 'static>(
         _ => unreachable!("not supported type: {:?}", x),
     }));
     buffer.extend(std::iter::repeat(Value::I32(0)).take(results.len()));
-    // resolve sys func idx using import linker
-    // caller.data().import_linker.resolve_by_import_name();
     // caller adapter is required to provide operations for accessing memory and context
     let syscall_handler = caller.data().syscall_handler;
     let mut caller_adapter = WrappedCaller::<'a, T> {
@@ -289,57 +452,48 @@ fn wasmtime_syscall_handler<'a, T: Send + 'static>(
         mapped_params,
         mapped_result,
     );
-    // after call map all values back to wasmtime format
-    for (i, value) in mapped_result.iter().enumerate() {
-        let value = match value {
-            Value::I32(value) => Val::I32(*value),
-            Value::I64(value) => Val::I64(*value),
-            Value::F32(value) => Val::F32(value.to_bits()),
-            Value::F64(value) => Val::F64(value.to_bits()),
-            _ => unreachable!("not supported type: {:?}", value),
-        };
-        results[i] = value;
-    }
     if let Some(TrapCode::InterruptionCalled) = syscall_result.err() {
         let caller = caller_adapter.caller.borrow();
+        let (resp_tx, resp_rx) = mpsc::channel();
         caller
             .data()
-            .worker_to_host_sender
-            .send(WorkerMessage::ExecutionResult(
-                syscall_result.map(|_| results.to_vec()),
-            ))
+            .message_channel
+            .as_ref()
+            .unwrap()
+            .send(MessageResponse::InterruptedCall { resp: resp_tx })
             .expect("failed to send message to host thread");
-        let response = caller
-            .data()
-            .host_to_worker_receiver
-            .recv()
-            .expect("failed to receive result from host thread");
-        match response {
-            HostMessage::Resume {
-                fuel_consumed,
-                results: results2,
-                trap_code,
-            } => {
-                if let Some(trap_code) = trap_code {
-                    return Err(trap_code.into());
-                }
-                for (i, x) in results2.into_iter().enumerate() {
-                    results[i] = x;
-                }
-            }
-            _ => {
-                panic!("expected resume message, got: {:?}", response);
-            }
+        let interruption_result = resp_rx.recv().expect("failed to receive response");
+        for (i, value) in interruption_result?.into_iter().enumerate() {
+            let value = match value {
+                Value::I32(value) => Val::I32(value),
+                Value::I64(value) => Val::I64(value),
+                Value::F32(value) => Val::F32(value.to_bits()),
+                Value::F64(value) => Val::F64(value.to_bits()),
+                _ => unreachable!("not supported type: {:?}", value),
+            };
+            results[i] = value;
         }
     } else {
+        // make sure syscall result is successful
         syscall_result?;
+        // after call map all values back to wasmtime format
+        for (i, value) in mapped_result.iter().enumerate() {
+            let value = match value {
+                Value::I32(value) => Val::I32(*value),
+                Value::I64(value) => Val::I64(*value),
+                Value::F32(value) => Val::F32(value.to_bits()),
+                Value::F64(value) => Val::F64(value.to_bits()),
+                _ => unreachable!("not supported type: {:?}", value),
+            };
+            results[i] = value;
+        }
     }
     Ok(())
 }
 
-fn map_import_linker<T: Send + 'static>(
+fn wasmtime_import_linker<T: Send + 'static>(
     engine: &wasmtime::Engine,
-    import_linker: Rc<ImportLinker>,
+    import_linker: Arc<ImportLinker>,
 ) -> wasmtime::Linker<WrappedContext<T>> {
     let mut linker = wasmtime::Linker::<WrappedContext<T>>::new(engine);
     for (import_name, import_entity) in import_linker.iter() {

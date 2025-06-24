@@ -1,4 +1,4 @@
-use crate::{BlockFuel, GlobalIdx, MaxStackHeight, RwasmExecutor, SignatureIdx, TrapCode};
+use crate::{BlockFuel, GlobalIdx, MaxStackHeight, RwasmExecutor, SignatureIdx, Store, TrapCode};
 
 impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]

@@ -13,7 +13,7 @@ use crate::{
     InstructionPtr,
     Opcode,
     RwasmCaller,
-    Store,
+    RwasmStore,
     SysFuncIdx,
     TrapCode,
     Value,
@@ -87,7 +87,7 @@ pub struct RwasmExecutor<'a, T> {
     pub(crate) sp: ValueStackPtr,
     pub(crate) call_stack: &'a mut CallStack,
     pub(crate) ip: InstructionPtr,
-    pub(crate) store: &'a mut Store<T>,
+    pub(crate) store: &'a mut RwasmStore<T>,
 }
 
 macro_rules! exec_opcode {
@@ -205,7 +205,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         module: &'a RwasmModule,
         value_stack: &'a mut ValueStack,
         call_stack: &'a mut CallStack,
-        store: &'a mut Store<T>,
+        store: &'a mut RwasmStore<T>,
     ) -> Self {
         let sp = value_stack.stack_ptr();
         let ip = InstructionPtr::new(module.code_section.instr.as_ptr());
@@ -218,7 +218,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         sp: ValueStackPtr,
         call_stack: &'a mut CallStack,
         ip: InstructionPtr,
-        store: &'a mut Store<T>,
+        store: &'a mut RwasmStore<T>,
     ) -> Self {
         Self {
             module,

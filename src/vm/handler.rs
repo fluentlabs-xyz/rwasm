@@ -1,17 +1,5 @@
-use crate::{types::TrapCode, vm::context::Caller, Value};
+use crate::{types::TrapCode, Caller, Value};
 use alloc::{vec, vec::Vec};
-
-pub type SyscallHandler<T> =
-    fn(&mut dyn Caller<T>, u32, &[Value], &mut [Value]) -> Result<(), TrapCode>;
-
-pub fn always_failing_syscall_handler<T>(
-    _caller: &mut dyn Caller<T>,
-    _func_idx: u32,
-    _params: &[Value],
-    _result: &mut [Value],
-) -> Result<(), TrapCode> {
-    Err(TrapCode::UnknownExternalFunction)
-}
 
 #[derive(Default)]
 #[allow(dead_code)]

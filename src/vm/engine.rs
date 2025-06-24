@@ -1,4 +1,4 @@
-use crate::{CallStack, RwasmExecutor, RwasmModule, Store, TrapCode, ValueStack};
+use crate::{CallStack, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, ValueStack};
 
 /// Represents the core execution engine for managing the execution of a program,
 /// including the handling of values and function calls.
@@ -45,7 +45,7 @@ impl ExecutionEngine {
 
     pub fn create_callable_executor<'a, T>(
         &'a mut self,
-        store: &'a mut Store<T>,
+        store: &'a mut RwasmStore<T>,
         module: &'a RwasmModule,
     ) -> RwasmExecutor<'a, T> {
         debug_assert!(
@@ -57,7 +57,7 @@ impl ExecutionEngine {
 
     pub fn create_resumable_executor<'a, T>(
         &'a mut self,
-        store: &'a mut Store<T>,
+        store: &'a mut RwasmStore<T>,
         module: &'a RwasmModule,
     ) -> RwasmExecutor<'a, T> {
         let (ip, sp) = self.call_stack.pop().unwrap_or_else(|| {
@@ -75,7 +75,7 @@ impl ExecutionEngine {
 
     pub fn execute<T>(
         &mut self,
-        store: &mut Store<T>,
+        store: &mut RwasmStore<T>,
         module: &RwasmModule,
     ) -> Result<(), TrapCode> {
         self.create_callable_executor(store, module).run()
@@ -83,15 +83,27 @@ impl ExecutionEngine {
 
     pub fn resume<T>(
         &mut self,
-        store: &mut Store<T>,
+        store: &mut RwasmStore<T>,
         module: &RwasmModule,
     ) -> Result<(), TrapCode> {
         self.create_resumable_executor(store, module).run()
     }
 
-    pub fn reset<T>(&mut self, store: &mut Store<T>, keep_flags: bool) {
+    pub fn reset<T>(&mut self, store: &mut RwasmStore<T>, keep_flags: bool) {
         self.value_stack.reset();
         self.call_stack.reset();
         store.reset(keep_flags)
+    }
+}
+
+#[cfg(feature = "std")]
+thread_local! {
+    static ENGINE: core::cell::RefCell<ExecutionEngine> = core::cell::RefCell::new(ExecutionEngine::new());
+}
+
+#[cfg(feature = "std")]
+impl ExecutionEngine {
+    pub fn acquire_shared<R, F: FnOnce(&mut ExecutionEngine) -> R>(f: F) -> R {
+        ENGINE.with(|cell| f(&mut cell.borrow_mut()))
     }
 }

@@ -6,6 +6,7 @@ use crate::{
     ImportLinker,
     Pages,
     SignatureIdx,
+    Store,
     SyscallHandler,
     TableEntity,
     TableIdx,
@@ -16,12 +17,12 @@ use crate::{
     N_MAX_ELEM_SEGMENTS,
     N_MAX_ELEM_SEGMENTS_BITS,
 };
-use alloc::rc::Rc;
+use alloc::sync::Arc;
 use bitvec::{array::BitArray, bitarr};
 use core::cell::{Ref, RefCell, RefMut};
 use hashbrown::HashMap;
 
-pub struct Store<T> {
+pub struct RwasmStore<T> {
     pub(crate) consumed_fuel: u64,
     pub(crate) refunded_fuel: i64,
     pub(crate) global_memory: GlobalMemory,
@@ -37,23 +38,67 @@ pub struct Store<T> {
     pub(crate) empty_elem_segments: BitArray<[usize; N_MAX_ELEM_SEGMENTS_BITS]>,
     // list of nested calls return pointers
     pub(crate) syscall_handler: SyscallHandler<T>,
-    pub(crate) import_linker: Rc<ImportLinker>,
+    pub(crate) import_linker: Arc<ImportLinker>,
     #[cfg(feature = "tracing")]
     pub tracer: crate::Tracer,
 }
 
-impl<T: Default> Default for Store<T> {
+impl<T: Default> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
             ExecutorConfig::default(),
+            Arc::new(ImportLinker::default()),
             T::default(),
-            Rc::new(ImportLinker::default()),
+            always_failing_syscall_handler,
         )
     }
 }
 
-impl<T> Store<T> {
-    pub fn new(config: ExecutorConfig, context: T, import_linker: Rc<ImportLinker>) -> Self {
+impl<T> Store<T> for RwasmStore<T> {
+    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+        self.global_memory.read(offset, buffer)?;
+        Ok(())
+    }
+
+    fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
+        self.global_memory.write(offset, buffer)?;
+        #[cfg(feature = "tracing")]
+        self.tracer
+            .memory_change(offset as u32, buffer.len() as u32, buffer);
+        Ok(())
+    }
+
+    fn context_mut(&mut self) -> RefMut<T> {
+        self.context.borrow_mut()
+    }
+
+    fn context(&self) -> Ref<T> {
+        self.context.borrow()
+    }
+
+    fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
+        let consumed_fuel = self.consumed_fuel.checked_add(delta).unwrap_or(u64::MAX);
+        if let Some(fuel_limit) = self.config.fuel_limit {
+            if consumed_fuel > fuel_limit {
+                return Err(TrapCode::OutOfFuel);
+            }
+        }
+        self.consumed_fuel = consumed_fuel;
+        Ok(())
+    }
+
+    fn remaining_fuel(&mut self) -> Option<u64> {
+        Some(self.config.fuel_limit? - self.consumed_fuel)
+    }
+}
+
+impl<T> RwasmStore<T> {
+    pub fn new(
+        config: ExecutorConfig,
+        import_linker: Arc<ImportLinker>,
+        context: T,
+        syscall_handler: SyscallHandler<T>,
+    ) -> Self {
         // create global memory
         let global_memory = GlobalMemory::new(Pages::default());
 
@@ -70,7 +115,7 @@ impl<T> Store<T> {
             global_variables: Default::default(),
             tables: Default::default(),
             last_signature: None,
-            syscall_handler: always_failing_syscall_handler,
+            syscall_handler,
             empty_elem_segments,
             empty_data_segments,
             config,
@@ -122,23 +167,8 @@ impl<T> Store<T> {
         self.refunded_fuel
     }
 
-    pub fn try_consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
-        let consumed_fuel = self.consumed_fuel.checked_add(fuel).unwrap_or(u64::MAX);
-        if let Some(fuel_limit) = self.config.fuel_limit {
-            if consumed_fuel > fuel_limit {
-                return Err(TrapCode::OutOfFuel);
-            }
-        }
-        self.consumed_fuel = consumed_fuel;
-        Ok(())
-    }
-
     pub fn refund_fuel(&mut self, fuel: i64) {
         self.refunded_fuel += fuel;
-    }
-
-    pub fn remaining_fuel(&self) -> Option<u64> {
-        Some(self.config.fuel_limit? - self.consumed_fuel)
     }
 
     pub fn context(&self) -> Ref<T> {

@@ -27,19 +27,19 @@ use rwasm::{
     Opcode,
     RwasmExecutor,
     RwasmModule,
+    RwasmStore,
     StateRouterConfig,
-    Store,
     ValType,
     Value,
     ValueStack,
     F64,
 };
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use wast::token::{Id, Span};
 
 pub struct InstanceInner {
     module: RwasmModule,
-    store: Store<TestingContext>,
+    store: RwasmStore<TestingContext>,
     value_stack: ValueStack,
     call_stack: CallStack,
     program_counter: usize,
@@ -69,7 +69,7 @@ pub struct TestContext<'a> {
     last_instance: Option<Instance>,
     /// Profiling during the Wasm spec test run.
     profile: TestProfile,
-    import_linker: Rc<ImportLinker>,
+    import_linker: Arc<ImportLinker>,
     /// The descriptor of the test.
     ///
     /// Useful for printing better debug messages in case of failure.
@@ -85,7 +85,7 @@ impl<'a> TestContext<'a> {
             extern_state: Default::default(),
             last_instance: None,
             profile: TestProfile::default(),
-            import_linker: Rc::new(Self::import_linker()),
+            import_linker: Arc::new(Self::import_linker()),
             descriptor,
         }
     }
@@ -238,12 +238,12 @@ impl TestContext<'_> {
         #[cfg(feature = "debug-print")]
         println!("{}", rwasm_module);
 
-        let mut store = Store::<TestingContext>::new(
+        let mut store = RwasmStore::<TestingContext>::new(
             ExecutorConfig::default(),
-            TestingContext::default(),
             self.import_linker.clone(),
+            TestingContext::default(),
+            testing_context_syscall_handler,
         );
-        store.set_syscall_handler(testing_context_syscall_handler);
         store.context_mut().state = FUNC_ENTRYPOINT;
         let mut instance_inner = InstanceInner {
             module: rwasm_module,
