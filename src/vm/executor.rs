@@ -16,6 +16,7 @@ use crate::{
     RwasmStore,
     SysFuncIdx,
     TrapCode,
+    TypedCaller,
     Value,
     ValueStack,
     ValueStackPtr,
@@ -81,7 +82,7 @@ use smallvec::SmallVec;
 ///
 /// Note: This struct is intended as part of an internal runtime and may not expose all fields to
 /// public interfaces.
-pub struct RwasmExecutor<'a, T> {
+pub struct RwasmExecutor<'a, T: Send + Sync> {
     pub(crate) module: &'a RwasmModule,
     pub(crate) value_stack: &'a mut ValueStack,
     pub(crate) sp: ValueStackPtr,
@@ -200,7 +201,7 @@ macro_rules! exec_opcode {
     }};
 }
 
-impl<'a, T> RwasmExecutor<'a, T> {
+impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     pub fn new(
         module: &'a RwasmModule,
         value_stack: &'a mut ValueStack,
@@ -209,6 +210,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
     ) -> Self {
         let sp = value_stack.stack_ptr();
         let ip = InstructionPtr::new(module.code_section.instr.as_ptr());
+        // we don't commit offset for resumable executor
+        call_stack.commit_offset();
         Self::resumable(module, value_stack, sp, call_stack, ip, store)
     }
 
@@ -234,8 +237,13 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.ip.add(offset)
     }
 
-    pub fn caller<'vm>(&'vm mut self) -> RwasmCaller<'vm, 'a, T> {
-        RwasmCaller::<'vm, 'a, T>::new(self)
+    pub fn caller<'vm>(&'vm mut self) -> TypedCaller<'vm, T> {
+        let program_counter = self.program_counter();
+        TypedCaller::Rwasm(RwasmCaller::<'vm, T>::new(
+            &mut self.store,
+            program_counter,
+            self.sp,
+        ))
     }
 
     pub fn program_counter(&self) -> u32 {
@@ -243,13 +251,44 @@ impl<'a, T> RwasmExecutor<'a, T> {
         diff / size_of::<Opcode>() as u32
     }
 
-    pub fn run(&mut self) -> Result<(), TrapCode> {
+    pub fn run(&mut self, params: &[Value], result: &mut [Value]) -> Result<(), TrapCode> {
+        // copy input params
+        for x in params {
+            self.sp.push_value(x);
+        }
+        // run the loop
+        let status = self.run_the_loop(params, result);
+        // trap halts the execution, we need to clear the stack
+        if let Some(trap_code) = status.err() {
+            // clear stack only for non-interrupted calls
+            if trap_code != TrapCode::InterruptionCalled {
+                // TODO(dmitry123): "do we also need to reset store flags?"
+                self.call_stack.reset();
+            }
+            // forward the error
+            return Err(trap_code);
+        }
+        // copy output values in case of successful execution
+        for x in result {
+            *x = self.sp.pop_value(x.ty());
+        }
+        // execution is over, clear stacks
+        // TODO(dmitry123): "enable this check after refactoring tests"
+        // debug_assert_eq!(
+        //     self.value_stack.stack_len(self.sp),
+        //     0,
+        //     "after execution the value stack must be empty"
+        // );
+        // we must reset the call stack in case of traps inside nested calls
+        self.call_stack.reset();
+        Ok(())
+    }
+
+    fn run_the_loop(&mut self, params: &[Value], result: &mut [Value]) -> Result<(), TrapCode> {
         loop {
             let instr = self.ip.get();
-
             #[cfg(feature = "debug-print")]
             self.debug_print(&instr);
-
             #[cfg(feature = "tracing")]
             {
                 self.trace_instr_pre(&instr);
@@ -263,7 +302,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
                     break Ok(());
                 }
             }
-
             #[cfg(not(feature = "tracing"))]
             exec_opcode!(self, instr, break Ok(()));
         }
@@ -397,8 +435,12 @@ impl<'a, T> RwasmExecutor<'a, T> {
             buffer[params.len() + i] = Value::default(*x);
         }
         let (params, result) = buffer.split_at_mut(params.len());
-        match (self.store.syscall_handler)(&mut self.caller(), sys_func_idx, params, result) {
+        let syscall_handler = self.store.syscall_handler;
+        let mut caller = self.caller();
+        match syscall_handler(&mut caller, sys_func_idx, params, result) {
             Ok(_) => {
+                // TODO(dmitry123): "resync SP, only for e2e testing suite"
+                self.sp = caller.as_rwasm_ref().sp();
                 // if execution succeeded, then copy output params back to the stack
                 for x in result {
                     self.sp.push_value(x)
@@ -407,18 +449,21 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 Ok(false)
             }
             Err(TrapCode::ExecutionHalted) => {
+                // TODO(dmitry123): "resync SP, only for e2e testing suite"
                 // if execution halted, then copy output params back to the stack because the caller
                 // might want to read these params
                 for x in result {
                     self.sp.push_value(x)
                 }
-                // when execution is halted, then we just terminate an execution loop
+                // when execution is halted, then we terminate an execution loop
                 Ok(true)
             }
             Err(TrapCode::InterruptionCalled) => {
+                // TODO(dmitry123): "resync SP, only for e2e testing suite"
                 // for resumable calls we need to store IP in the call stack, also the caller is
                 // responsible for putting return params back
-                self.call_stack.push((self.ip, self.sp));
+                self.value_stack.sync_stack_ptr(self.sp);
+                self.call_stack.push(self.ip, self.sp);
                 // terminate an execution
                 Err(TrapCode::InterruptionCalled)
             }

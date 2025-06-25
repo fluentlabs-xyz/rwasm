@@ -1,9 +1,13 @@
+mod unsafe_cell;
+
 use crate::{
+    wasmtime::unsafe_cell::UnsafeSyncCell,
     Caller,
     ImportLinker,
     Store,
     SyscallHandler,
     TrapCode,
+    TypedCaller,
     UntypedValue,
     ValType,
     Value,
@@ -12,23 +16,25 @@ use crate::{
 };
 use smallvec::{smallvec, SmallVec};
 use std::{
-    cell::{Ref, RefCell, RefMut},
+    cell::RefCell,
     marker::PhantomData,
+    panic,
     sync::{mpsc, Arc},
     thread,
 };
-use wasmtime::{AsContext, AsContextMut, Collector, Strategy, Trap, Val};
+use wasmtime::{AsContext, AsContextMut, Collector, Config, Engine, Strategy, Trap, Val};
 
 pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<T>;
 
-struct WrappedContext<T: Send> {
+struct WrappedContext<T: Send + Sync> {
     syscall_handler: SyscallHandler<T>,
     inner: T,
     message_channel: Option<mpsc::Sender<MessageResponse>>,
+    fuel: Option<u64>,
 }
 
-struct WrappedCaller<'a, T: Send> {
+pub struct WasmtimeCaller<'a, T: Send + Sync> {
     caller: RefCell<wasmtime::Caller<'a, WrappedContext<T>>>,
 }
 
@@ -41,140 +47,79 @@ enum MessageResponse {
     },
 }
 
-enum MessageRequest {
-    ExecuteFunc {
-        func_name: &'static str,
-        params: SmallVec<[Value; 16]>,
-        num_result: usize,
-        resp: mpsc::Sender<MessageResponse>,
-    },
-    MemoryRead {
-        offset: usize,
-        buffer_size: usize,
-        resp: mpsc::Sender<Result<Vec<u8>, TrapCode>>,
-    },
-    MemoryWrite {
-        offset: usize,
-        buffer: Vec<u8>,
-        resp: mpsc::Sender<Result<(), TrapCode>>,
-    },
-    TryConsumeFuel {
-        delta: u64,
-        resp: mpsc::Sender<Result<(), TrapCode>>,
-    },
-    RemainingFuel {
-        resp: mpsc::Sender<Option<u64>>,
-    },
+struct MessageRequest {
+    func_name: &'static str,
+    params: SmallVec<[Value; 16]>,
+    num_result: usize,
+    resp: mpsc::Sender<MessageResponse>,
 }
 
-pub struct WasmtimeWorker<T: 'static + Send> {
+pub struct WasmtimeWorker<T: 'static + Send + Sync> {
     sender: mpsc::Sender<MessageRequest>,
     interrupt_channel: Option<mpsc::Sender<Result<SmallVec<[Value; 16]>, TrapCode>>>,
     marker: PhantomData<T>,
     recv_channel: Option<mpsc::Receiver<MessageResponse>>,
+    store: Arc<UnsafeSyncCell<wasmtime::Store<WrappedContext<T>>>>,
+    instance: wasmtime::Instance,
 }
 
-impl<T: 'static + Send> WasmtimeWorker<T> {
+impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
     pub fn new(
         module: Arc<wasmtime::Module>,
         import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
+        fuel: Option<u64>,
     ) -> Self {
         let (sender, receiver) = mpsc::channel();
+        let context = WrappedContext {
+            syscall_handler,
+            inner: context,
+            message_channel: None,
+            fuel,
+        };
+        let store = Arc::new(UnsafeSyncCell::new(
+            wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context),
+        ));
+        let linker = wasmtime_import_linker(module.engine(), import_linker);
+        let instance = linker
+            .instantiate(store.borrow_mut().as_context_mut(), &module)
+            .unwrap_or_else(|err| panic!("can't instantiate wasmtime: {}", err));
+        let moved_store = store.clone();
+        let moved_instance = instance.clone();
         thread::spawn(move || {
-            let context = WrappedContext {
-                syscall_handler,
-                inner: context,
-                message_channel: None,
-            };
-            let mut store = wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context);
-            let linker = wasmtime_import_linker(module.engine(), import_linker);
-            let instance = linker
-                .instantiate(store.as_context_mut(), &module)
-                .unwrap_or_else(|err| panic!("can't instantiate wasmtime: {}", err));
+            panic::set_hook(Box::new(|info| {
+                let message = format!("{info}");
+                println!("panic happens inside the wasmtime worker thread, aborting: {message}");
+                std::process::abort();
+            }));
+            let store = moved_store;
+            let instance = moved_instance;
             while let Ok(message) = receiver.recv() {
-                match message {
-                    MessageRequest::ExecuteFunc {
-                        func_name,
-                        params,
-                        num_result,
-                        resp,
-                    } => {
-                        let mut result: SmallVec<[Value; 16]> =
-                            smallvec![Value::I32(0); num_result];
-                        store.data_mut().message_channel = Some(resp);
-                        let result = execute_wasmtime_module_inner(
-                            instance,
-                            &mut store,
-                            func_name,
-                            &params,
-                            &mut result,
-                        )
-                        .map(|_| result);
-                        let resp = store.data_mut().message_channel.take().unwrap();
-                        resp.send(MessageResponse::ExecutionResult { result })
-                            .unwrap();
-                    }
-                    MessageRequest::MemoryRead {
-                        offset,
-                        buffer_size,
-                        resp,
-                    } => {
-                        let global_memory = instance
-                            .get_export(store.as_context_mut(), "memory")
-                            .unwrap_or_else(|| {
-                                unreachable!("missing memory export, it's not possible")
-                            })
-                            .into_memory()
-                            .unwrap_or_else(|| {
-                                unreachable!("missing memory export, it's not possible")
-                            });
-                        let mut buffer = vec![0; buffer_size];
-                        let result = global_memory
-                            .read(store.as_context(), offset, &mut buffer)
-                            .map_err(|_| TrapCode::MemoryOutOfBounds)
-                            .map(|_| buffer);
-                        resp.send(result).unwrap();
-                    }
-                    MessageRequest::MemoryWrite {
-                        offset,
-                        buffer,
-                        resp,
-                    } => {
-                        let global_memory = instance
-                            .get_export(store.as_context_mut(), "memory")
-                            .unwrap_or_else(|| {
-                                unreachable!("missing memory export, it's not possible")
-                            })
-                            .into_memory()
-                            .unwrap_or_else(|| {
-                                unreachable!("missing memory export, it's not possible")
-                            });
-                        let result = global_memory
-                            .write(store.as_context_mut(), offset, &buffer)
-                            .map_err(|_| TrapCode::MemoryOutOfBounds);
-                        resp.send(result).unwrap();
-                    }
-                    MessageRequest::TryConsumeFuel { delta, resp } => {
-                        let remaining_fuel = store
-                            .get_fuel()
-                            .unwrap_or_else(|_| unreachable!("fuel mode is disabled in wasmtime"));
-                        let result = if let Some(new_fuel) = remaining_fuel.checked_sub(delta) {
-                            store.set_fuel(new_fuel).unwrap_or_else(|_| {
-                                unreachable!("fuel mode is disabled in wasmtime")
-                            });
-                            Ok(())
-                        } else {
-                            Err(TrapCode::OutOfFuel)
-                        };
-                        resp.send(result).unwrap();
-                    }
-                    MessageRequest::RemainingFuel { resp } => {
-                        let fuel_remaining = store.get_fuel().ok();
-                        resp.send(fuel_remaining).unwrap();
-                    }
-                }
+                let MessageRequest {
+                    func_name,
+                    params,
+                    num_result,
+                    resp,
+                } = message;
+                let mut result: SmallVec<[Value; 16]> = smallvec![Value::I32(0); num_result];
+                store.borrow_mut().data_mut().message_channel = Some(resp);
+                let result = execute_wasmtime_module(
+                    instance,
+                    &mut store.borrow_mut(),
+                    func_name,
+                    &params,
+                    &mut result,
+                )
+                .map(|_| result);
+                let resp = store
+                    .borrow_mut()
+                    .data_mut()
+                    .message_channel
+                    .take()
+                    .unwrap();
+                resp.send(MessageResponse::ExecutionResult { result })
+                    .unwrap();
             }
         });
         Self {
@@ -182,6 +127,8 @@ impl<T: 'static + Send> WasmtimeWorker<T> {
             interrupt_channel: None,
             marker: Default::default(),
             recv_channel: None,
+            store,
+            instance,
         }
     }
 
@@ -194,10 +141,10 @@ impl<T: 'static + Send> WasmtimeWorker<T> {
         let (resp_tx, resp_rx) = mpsc::channel();
         debug_assert!(
             self.interrupt_channel.is_none(),
-            "resumable flag must not be set"
+            "the resumable flag must not be set"
         );
         self.sender
-            .send(MessageRequest::ExecuteFunc {
+            .send(MessageRequest {
                 func_name,
                 params: params.into(),
                 num_result: result.len(),
@@ -230,7 +177,7 @@ impl<T: 'static + Send> WasmtimeWorker<T> {
         let channel = self
             .interrupt_channel
             .take()
-            .expect("resumable flag must not be set");
+            .expect("the resumable flag must not be set");
         let interruption_result =
             interruption_result.map(|values| SmallVec::<[Value; 16]>::from(values));
         channel.send(interruption_result).unwrap();
@@ -252,63 +199,71 @@ impl<T: 'static + Send> WasmtimeWorker<T> {
     }
 }
 
-impl<T: Send> Store<T> for WasmtimeWorker<T> {
+impl<T: Send + Sync> Store<T> for WasmtimeWorker<T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        let (resp_tx, resp_rx) = mpsc::channel();
-        self.sender
-            .send(MessageRequest::MemoryRead {
-                offset,
-                buffer_size: buffer.len(),
-                resp: resp_tx,
-            })
-            .unwrap();
-        let result = resp_rx.recv().unwrap()?;
-        debug_assert_eq!(result.len(), buffer.len());
-        buffer.copy_from_slice(result.as_slice());
-        Ok(())
+        let store = self.store.borrow_mut();
+        let global_memory = self
+            .instance
+            .get_export(store.as_context_mut(), "memory")
+            .unwrap_or_else(|| unreachable!("missing memory export, it's not possible"))
+            .into_memory()
+            .unwrap_or_else(|| unreachable!("missing memory export, it's not possible"));
+        global_memory
+            .read(store.as_context(), offset, buffer)
+            .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        let (resp_tx, resp_rx) = mpsc::channel();
-        self.sender
-            .send(MessageRequest::MemoryWrite {
-                offset,
-                buffer: buffer.to_vec(),
-                resp: resp_tx,
-            })
-            .unwrap();
-        resp_rx.recv().unwrap()
+        let store = self.store.borrow_mut();
+        let global_memory = self
+            .instance
+            .get_export(store.as_context_mut(), "memory")
+            .unwrap_or_else(|| unreachable!("missing memory export, it's not possible"))
+            .into_memory()
+            .unwrap_or_else(|| unreachable!("missing memory export, it's not possible"));
+        global_memory
+            .write(store.as_context_mut(), offset, &buffer)
+            .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
-    fn context_mut(&mut self) -> RefMut<'_, T> {
-        unimplemented!("not implemented for wasmtime resumable mode")
+    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+        let mut store = self.store.borrow_mut();
+        func(&mut store.data_mut().inner)
     }
 
-    fn context(&self) -> Ref<'_, T> {
-        unimplemented!("not implemented for wasmtime resumable mode")
+    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+        let store = self.store.borrow();
+        func(&store.data().inner)
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
-        let (resp_tx, resp_rx) = mpsc::channel();
-        self.sender
-            .send(MessageRequest::TryConsumeFuel {
-                delta,
-                resp: resp_tx,
-            })
-            .unwrap();
-        resp_rx.recv().unwrap()
+        let mut store = self.store.borrow_mut();
+        if let Ok(remaining_fuel) = store.get_fuel() {
+            let new_fuel = remaining_fuel
+                .checked_sub(delta)
+                .ok_or(TrapCode::OutOfFuel)?;
+            store
+                .set_fuel(new_fuel)
+                .unwrap_or_else(|_| unreachable!("fuel mode is disabled in wasmtime"));
+        } else if let Some(fuel) = store.data_mut().fuel.as_mut() {
+            *fuel = fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
+        }
+        Ok(())
     }
 
     fn remaining_fuel(&mut self) -> Option<u64> {
-        let (resp_tx, resp_rx) = mpsc::channel();
-        self.sender
-            .send(MessageRequest::RemainingFuel { resp: resp_tx })
-            .unwrap();
-        resp_rx.recv().unwrap()
+        let store = self.store.borrow();
+        if let Ok(fuel) = store.get_fuel() {
+            Some(fuel)
+        } else if let Some(fuel) = store.data().fuel.as_ref() {
+            Some(*fuel)
+        } else {
+            None
+        }
     }
 }
 
-impl<'a, T: Send> Store<T> for WrappedCaller<'a, T> {
+impl<'a, T: Send + Sync> Store<T> for WasmtimeCaller<'a, T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let global_memory = self
             .caller
@@ -335,41 +290,43 @@ impl<'a, T: Send> Store<T> for WrappedCaller<'a, T> {
             .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
-    fn context_mut(&mut self) -> RefMut<'_, T> {
-        RefMut::map(self.caller.borrow_mut(), |c| &mut c.data_mut().inner)
+    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+        func(&mut self.caller.borrow_mut().data_mut().inner)
     }
 
-    fn context(&self) -> Ref<'_, T> {
-        Ref::map(self.caller.borrow(), |c| &c.data().inner)
+    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+        func(&self.caller.borrow_mut().data().inner)
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
-        let ctx = self.caller.borrow_mut();
-        let remaining_fuel = ctx
-            .get_fuel()
-            .unwrap_or_else(|_| unreachable!("fuel mode is disabled in wasmtime"));
-        let new_fuel = remaining_fuel
-            .checked_sub(delta)
-            .ok_or(TrapCode::OutOfFuel)?;
-        self.caller
-            .borrow_mut()
-            .set_fuel(new_fuel)
-            .unwrap_or_else(|_| unreachable!("fuel mode is disabled in wasmtime"));
+        let mut ctx = self.caller.borrow_mut();
+        if let Ok(remaining_fuel) = ctx.get_fuel() {
+            let new_fuel = remaining_fuel
+                .checked_sub(delta)
+                .ok_or(TrapCode::OutOfFuel)?;
+            ctx.set_fuel(new_fuel)
+                .unwrap_or_else(|_| unreachable!("fuel mode is disabled in wasmtime"));
+        } else if let Some(fuel) = ctx.data_mut().fuel.as_mut() {
+            *fuel = fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
+        }
         Ok(())
     }
 
     fn remaining_fuel(&mut self) -> Option<u64> {
-        self.caller.borrow().get_fuel().ok()
+        let ctx = self.caller.borrow();
+        if let Ok(fuel) = ctx.get_fuel() {
+            Some(fuel)
+        } else if let Some(fuel) = ctx.data().fuel.as_ref() {
+            Some(*fuel)
+        } else {
+            None
+        }
     }
 }
 
-impl<'a, T: Send> Caller<T> for WrappedCaller<'a, T> {
+impl<'a, T: Send + Sync> Caller<T> for WasmtimeCaller<'a, T> {
     fn program_counter(&self) -> u32 {
         unimplemented!("not allowed im wasmtime mode")
-    }
-
-    fn sync_stack_ptr(&mut self) {
-        // there is nothing to sync...
     }
 
     fn stack_push(&mut self, _value: UntypedValue) {
@@ -378,7 +335,7 @@ impl<'a, T: Send> Caller<T> for WrappedCaller<'a, T> {
 }
 
 pub fn compile_wasmtime_module(wasm_binary: impl AsRef<[u8]>) -> anyhow::Result<WasmtimeModule> {
-    let mut config = wasmtime::Config::new();
+    let mut config = Config::new();
     // TODO(dmitry123): "make sure config is correct"
     config.strategy(Strategy::Cranelift);
     config.collector(Collector::Null);
@@ -386,7 +343,7 @@ pub fn compile_wasmtime_module(wasm_binary: impl AsRef<[u8]>) -> anyhow::Result<
     wasmtime::Module::new(&engine, wasm_binary)
 }
 
-fn execute_wasmtime_module_inner<T: Send>(
+fn execute_wasmtime_module<T: Send + Sync>(
     instance: wasmtime::Instance,
     store: &mut wasmtime::Store<WrappedContext<T>>,
     func_name: &'static str,
@@ -424,7 +381,7 @@ fn execute_wasmtime_module_inner<T: Send>(
     Ok(())
 }
 
-fn wasmtime_syscall_handler<'a, T: Send + 'static>(
+fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
     sys_func_idx: u32,
     caller: wasmtime::Caller<'a, WrappedContext<T>>,
     params: &[Val],
@@ -442,9 +399,9 @@ fn wasmtime_syscall_handler<'a, T: Send + 'static>(
     buffer.extend(std::iter::repeat(Value::I32(0)).take(results.len()));
     // caller adapter is required to provide operations for accessing memory and context
     let syscall_handler = caller.data().syscall_handler;
-    let mut caller_adapter = WrappedCaller::<'a, T> {
+    let mut caller_adapter = TypedCaller::Wasmtime(WasmtimeCaller::<'a, T> {
         caller: RefCell::new(caller),
-    };
+    });
     let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
     let syscall_result = syscall_handler(
         &mut caller_adapter,
@@ -453,16 +410,18 @@ fn wasmtime_syscall_handler<'a, T: Send + 'static>(
         mapped_result,
     );
     if let Some(TrapCode::InterruptionCalled) = syscall_result.err() {
-        let caller = caller_adapter.caller.borrow();
         let (resp_tx, resp_rx) = mpsc::channel();
-        caller
+        caller_adapter
+            .as_wasmtime_ref()
+            .caller
+            .borrow()
             .data()
             .message_channel
             .as_ref()
             .unwrap()
             .send(MessageResponse::InterruptedCall { resp: resp_tx })
-            .expect("failed to send message to host thread");
-        let interruption_result = resp_rx.recv().expect("failed to receive response");
+            .expect("failed to send a message to the host thread");
+        let interruption_result = resp_rx.recv().expect("failed to receive a response");
         for (i, value) in interruption_result?.into_iter().enumerate() {
             let value = match value {
                 Value::I32(value) => Val::I32(value),
@@ -474,7 +433,7 @@ fn wasmtime_syscall_handler<'a, T: Send + 'static>(
             results[i] = value;
         }
     } else {
-        // make sure syscall result is successful
+        // make sure a syscall result is successful
         syscall_result?;
         // after call map all values back to wasmtime format
         for (i, value) in mapped_result.iter().enumerate() {
@@ -491,8 +450,8 @@ fn wasmtime_syscall_handler<'a, T: Send + 'static>(
     Ok(())
 }
 
-fn wasmtime_import_linker<T: Send + 'static>(
-    engine: &wasmtime::Engine,
+fn wasmtime_import_linker<T: Send + Sync + 'static>(
+    engine: &Engine,
     import_linker: Arc<ImportLinker>,
 ) -> wasmtime::Linker<WrappedContext<T>> {
     let mut linker = wasmtime::Linker::<WrappedContext<T>>::new(engine);

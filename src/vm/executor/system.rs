@@ -1,6 +1,6 @@
 use crate::{BlockFuel, GlobalIdx, MaxStackHeight, RwasmExecutor, SignatureIdx, Store, TrapCode};
 
-impl<'a, T> RwasmExecutor<'a, T> {
+impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_consume_fuel(&mut self, block_fuel: BlockFuel) -> Result<(), TrapCode> {
         if self.store.config.fuel_enabled {

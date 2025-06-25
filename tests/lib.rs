@@ -9,7 +9,9 @@ fn test_fib() {
     let mut store = RwasmStore::<()>::default();
     let mut engine = ExecutionEngine::new();
     engine.value_stack().push(43.into());
-    engine.execute(&mut store, &rwasm_module).unwrap();
+    engine
+        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .unwrap();
     let result = engine.value_stack().pop();
     assert_eq!(result.as_i64(), 433494437);
 }
@@ -37,7 +39,9 @@ fn test_i64_load8_s() {
     let mut store = RwasmStore::<()>::default();
     let mut engine = ExecutionEngine::new();
     engine.value_stack().push(0.into());
-    engine.execute(&mut store, &rwasm_module).unwrap();
+    engine
+        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .unwrap();
     let result = engine.value_stack().pop();
     assert_eq!(result.as_i32(), 0);
     let result = engine.value_stack().pop();
@@ -68,7 +72,9 @@ fn test_i64_load() {
     let mut store = RwasmStore::<()>::default();
     let mut engine = ExecutionEngine::new();
     engine.value_stack().push(0.into());
-    engine.execute(&mut store, &rwasm_module).unwrap();
+    engine
+        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .unwrap();
     let hi = engine.value_stack().pop().to_bits() as u64;
     let lo = engine.value_stack().pop().to_bits() as u64;
     assert!(engine.value_stack().as_slice().is_empty());
@@ -131,7 +137,9 @@ fn test_bulk_bench() {
     let mut engine = ExecutionEngine::new();
     engine.value_stack().push(5000.into());
     engine.value_stack().push(0.into());
-    engine.execute(&mut store, &rwasm_module).unwrap();
+    engine
+        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .unwrap();
     let _result = engine.value_stack().pop();
     let _result = engine.value_stack().pop();
 }

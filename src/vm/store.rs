@@ -19,10 +19,10 @@ use crate::{
 };
 use alloc::sync::Arc;
 use bitvec::{array::BitArray, bitarr};
-use core::cell::{Ref, RefCell, RefMut};
+use core::cell::RefCell;
 use hashbrown::HashMap;
 
-pub struct RwasmStore<T> {
+pub struct RwasmStore<T: Send + Sync> {
     pub(crate) consumed_fuel: u64,
     pub(crate) refunded_fuel: i64,
     pub(crate) global_memory: GlobalMemory,
@@ -43,7 +43,7 @@ pub struct RwasmStore<T> {
     pub tracer: crate::Tracer,
 }
 
-impl<T: Default> Default for RwasmStore<T> {
+impl<T: Default + Send + Sync> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
             ExecutorConfig::default(),
@@ -54,7 +54,7 @@ impl<T: Default> Default for RwasmStore<T> {
     }
 }
 
-impl<T> Store<T> for RwasmStore<T> {
+impl<T: Send + Sync> Store<T> for RwasmStore<T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.global_memory.read(offset, buffer)?;
         Ok(())
@@ -68,12 +68,12 @@ impl<T> Store<T> for RwasmStore<T> {
         Ok(())
     }
 
-    fn context_mut(&mut self) -> RefMut<T> {
-        self.context.borrow_mut()
+    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+        func(&mut self.context.borrow_mut())
     }
 
-    fn context(&self) -> Ref<T> {
-        self.context.borrow()
+    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+        func(&self.context.borrow())
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
@@ -92,7 +92,7 @@ impl<T> Store<T> for RwasmStore<T> {
     }
 }
 
-impl<T> RwasmStore<T> {
+impl<T: Send + Sync> RwasmStore<T> {
     pub fn new(
         config: ExecutorConfig,
         import_linker: Arc<ImportLinker>,
@@ -169,14 +169,6 @@ impl<T> RwasmStore<T> {
 
     pub fn refund_fuel(&mut self, fuel: i64) {
         self.refunded_fuel += fuel;
-    }
-
-    pub fn context(&self) -> Ref<T> {
-        self.context.borrow()
-    }
-
-    pub fn context_mut(&mut self) -> RefMut<T> {
-        self.context.borrow_mut()
     }
 
     pub fn set_syscall_handler(&mut self, handler: SyscallHandler<T>) {

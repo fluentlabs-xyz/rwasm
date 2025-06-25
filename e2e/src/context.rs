@@ -29,6 +29,7 @@ use rwasm::{
     RwasmModule,
     RwasmStore,
     StateRouterConfig,
+    Store,
     ValType,
     Value,
     ValueStack,
@@ -244,7 +245,7 @@ impl TestContext<'_> {
             TestingContext::default(),
             testing_context_syscall_handler,
         );
-        store.context_mut().state = FUNC_ENTRYPOINT;
+        store.context_mut(|ctx| ctx.state = FUNC_ENTRYPOINT);
         let mut instance_inner = InstanceInner {
             module: rwasm_module,
             store,
@@ -260,7 +261,7 @@ impl TestContext<'_> {
         );
         #[cfg(feature = "debug-print")]
         println!(" --- entrypoint ---");
-        executor.run()?;
+        executor.run(&[], &mut [])?;
         #[cfg(feature = "debug-print")]
         println!();
         instance_inner.value_stack.reset();
@@ -345,7 +346,7 @@ impl TestContext<'_> {
         // However, with different states.
         // Some tests might fail, and we might keep outdated signature value in the state,
         // make sure the state is clear before every new call.
-        let program_counter = instance.store.context().program_counter as usize;
+        let program_counter = instance.store.context(|ctx| ctx.program_counter as usize);
         instance.program_counter = program_counter;
         instance.store.reset(true);
 
@@ -381,12 +382,12 @@ impl TestContext<'_> {
             instance.value_stack.push(value.clone().into());
         }
         // change function state for router
-        instance.store.context_mut().state = func_state;
+        instance.store.context_mut(|ctx| ctx.state = func_state);
 
         let pc = instance.program_counter;
         let mut vm = instance.new_executor();
         vm.advance_ip(pc);
-        vm.run()?;
+        vm.run(&[], &mut [])?;
         // copy results
         let func_type = self.extern_types.get(func_name).unwrap();
         let len_results = func_type.results().len();

@@ -1,6 +1,5 @@
 use rwasm::{
     compile_wasmtime_module,
-    Caller,
     CompilationConfig,
     ExecutionEngine,
     ExecutorConfig,
@@ -9,8 +8,10 @@ use rwasm::{
     InstructionSet,
     RwasmModule,
     RwasmStore,
+    Store,
     Strategy,
     TrapCode,
+    TypedCaller,
     Value,
 };
 use std::sync::Arc;
@@ -18,8 +19,8 @@ use wasmparser::ValType;
 
 const ATTESTATION_INPUT: &[u8] = include_bytes!("./nitro-verifier/attestation.bin");
 
-fn fluentbase_syscall_handler<T>(
-    caller: &mut dyn Caller<T>,
+fn fluentbase_syscall_handler<T: Send + Sync>(
+    caller: &mut TypedCaller<T>,
     sys_func_idx: u32,
     params: &[Value],
     result: &mut [Value],
@@ -129,7 +130,9 @@ fn test_nitro_verifier_rwasm() {
         (),
         fluentbase_syscall_handler,
     );
-    engine.execute(&mut store, &rwasm_module).unwrap();
+    engine
+        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .unwrap();
 }
 
 #[cfg(feature = "wasmtime")]
@@ -145,7 +148,8 @@ fn test_nitro_verifier_wasmtime() {
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     // compile & run using wasmtime
     let module = Arc::new(compile_wasmtime_module(&rwasm_module.wasm_section).unwrap());
-    let mut worker = WasmtimeWorker::new(module, import_linker, (), fluentbase_syscall_handler);
+    let mut worker =
+        WasmtimeWorker::new(module, import_linker, (), fluentbase_syscall_handler, None);
     worker.execute("main", &[], &mut []).unwrap();
 }
 
@@ -161,7 +165,7 @@ fn test_nitro_verifier_strategy() {
         .with_import_linker(import_linker.clone());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     // compile & run using wasmtime
-    let exec_strategy = |mut strategy: Strategy| {
+    let exec_strategy = |strategy: Strategy| {
         let mut store = strategy.create_store(
             ExecutorConfig::default(),
             import_linker.clone(),

@@ -1,6 +1,6 @@
 use crate::{CompiledFunc, LocalDepth, RwasmExecutor, UntypedValue};
 
-impl<'a, T> RwasmExecutor<'a, T> {
+impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_local_get(&mut self, local_depth: LocalDepth) {
         let value = self.sp.nth_back(local_depth as usize);

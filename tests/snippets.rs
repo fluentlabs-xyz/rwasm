@@ -61,7 +61,7 @@ fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Result<Vec<u32>, Tr
     for i in inputs {
         engine.value_stack().push(i.into());
     }
-    engine.execute(&mut store, &rwasm_module)?;
+    engine.execute(&mut store, &rwasm_module, &[], &mut [])?;
     let output = engine
         .value_stack()
         .as_slice()

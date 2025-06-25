@@ -1,6 +1,18 @@
 extern crate test;
 
-use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore};
+use rwasm::{
+    always_failing_syscall_handler,
+    compile_wasmtime_module,
+    CompilationConfig,
+    ExecutionEngine,
+    ExecutorConfig,
+    ImportLinker,
+    RwasmModule,
+    RwasmStore,
+    Strategy,
+    Value,
+};
+use std::sync::Arc;
 use test::Bencher;
 
 const FIB_VALUE: i32 = 47;
@@ -65,9 +77,15 @@ fn bench_rwasm_no_cache(b: &mut Bencher) {
 
     b.iter(|| {
         let rwasm_module = RwasmModule::new(&encoded_rwasm_module);
-        engine.value_stack().push(FIB_VALUE.into());
-        engine.execute(&mut store, &rwasm_module).unwrap();
-        let result = engine.value_stack().pop();
+        let mut result = [Value::I32(0)];
+        engine
+            .execute(
+                &mut store,
+                &rwasm_module,
+                &[Value::I32(FIB_VALUE)],
+                &mut result,
+            )
+            .unwrap();
         core::hint::black_box(result);
         store.reset(true);
     });
@@ -88,10 +106,35 @@ fn bench_rwasm(b: &mut Bencher) {
 
     b.iter(|| {
         engine.value_stack().push(FIB_VALUE.into());
-        engine.execute(&mut store, &rwasm_module).unwrap();
+        engine
+            .execute(&mut store, &rwasm_module, &[], &mut [])
+            .unwrap();
         let result = engine.value_stack().pop();
         core::hint::black_box(result);
         store.reset(true);
+    });
+}
+
+#[bench]
+fn bench_wasmtime(b: &mut Bencher) {
+    let wasm_binary = include_bytes!("./lib.wasm");
+
+    let strategy = Strategy::Wasmtime {
+        module: Arc::new(compile_wasmtime_module(wasm_binary).unwrap()),
+    };
+    let mut store = strategy.create_store(
+        ExecutorConfig::default(),
+        Arc::new(ImportLinker::default()),
+        (),
+        always_failing_syscall_handler,
+    );
+
+    b.iter(|| {
+        let mut result = [Value::I32(0)];
+        strategy
+            .execute(&mut store, "main", &[Value::I32(FIB_VALUE)], &mut result)
+            .unwrap();
+        core::hint::black_box(result);
     });
 }
 

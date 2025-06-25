@@ -34,7 +34,7 @@ macro_rules! op {
     }};
 }
 
-impl<'a, T> RwasmExecutor<'a, T> {
+impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_i32_trunc_f64_s(&mut self) -> Result<(), TrapCode> {
         let value = self.sp.pop_f64();
