@@ -17,9 +17,9 @@ use rwasm::{
     Value,
     WasmtimeWorker,
 };
-use std::sync::Arc;
+use std::rc::Rc;
 
-fn default_import_linker() -> Arc<ImportLinker> {
+fn default_import_linker() -> Rc<ImportLinker> {
     let mut import_linker = ImportLinker::default();
     import_linker.insert_function(
         ImportName::new("hello", "world"),
@@ -28,7 +28,7 @@ fn default_import_linker() -> Arc<ImportLinker> {
         &[],
         &[],
     );
-    Arc::new(import_linker)
+    Rc::new(import_linker)
 }
 
 fn interrupting_syscall_handler<T: Send + Sync>(
@@ -117,7 +117,7 @@ fn test_interrupted_call_wasmtime() {
     assert!(engine.call_stack().is_empty());
     assert_eq!(engine.value_stack().pop().as_u32(), 120);
     // run with wasmtime
-    let module = Arc::new(compile_wasmtime_module(&wasm_binary).unwrap());
+    let module = Rc::new(compile_wasmtime_module(&wasm_binary).unwrap());
     let mut wasmtime_worker = WasmtimeWorker::new(
         module,
         import_linker.clone(),
@@ -212,7 +212,7 @@ fn test_memory_write_during_interruption() {
     };
 
     test_strategy(Strategy::Rwasm {
-        module: Arc::new(module),
+        module: Rc::new(module),
         engine: ExecutionEngine::acquire_shared(),
     });
 }

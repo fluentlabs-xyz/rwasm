@@ -35,7 +35,7 @@ use rwasm::{
     ValueStack,
     F64,
 };
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use wast::token::{Id, Span};
 
 pub struct InstanceInner {
@@ -70,7 +70,7 @@ pub struct TestContext<'a> {
     last_instance: Option<Instance>,
     /// Profiling during the Wasm spec test run.
     profile: TestProfile,
-    import_linker: Arc<ImportLinker>,
+    import_linker: Rc<ImportLinker>,
     /// The descriptor of the test.
     ///
     /// Useful for printing better debug messages in case of failure.
@@ -86,7 +86,7 @@ impl<'a> TestContext<'a> {
             extern_state: Default::default(),
             last_instance: None,
             profile: TestProfile::default(),
-            import_linker: Arc::new(Self::import_linker()),
+            import_linker: Rc::new(Self::import_linker()),
             descriptor,
         }
     }

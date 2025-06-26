@@ -17,14 +17,13 @@ use crate::{
     N_MAX_ELEM_SEGMENTS,
     N_MAX_ELEM_SEGMENTS_BITS,
 };
-use alloc::sync::Arc;
+use alloc::rc::Rc;
 use bitvec::{array::BitArray, bitarr};
 use core::cell::RefCell;
 use hashbrown::HashMap;
 
 pub struct RwasmStore<T: Send + Sync> {
     pub(crate) consumed_fuel: u64,
-    pub(crate) refunded_fuel: i64,
     pub(crate) global_memory: GlobalMemory,
     pub(crate) context: RefCell<T>,
     pub(crate) config: ExecutorConfig,
@@ -38,7 +37,7 @@ pub struct RwasmStore<T: Send + Sync> {
     pub(crate) empty_elem_segments: BitArray<[usize; N_MAX_ELEM_SEGMENTS_BITS]>,
     // list of nested calls return pointers
     pub(crate) syscall_handler: SyscallHandler<T>,
-    pub(crate) import_linker: Arc<ImportLinker>,
+    pub(crate) import_linker: Rc<ImportLinker>,
     #[cfg(feature = "tracing")]
     pub tracer: crate::Tracer,
 }
@@ -47,7 +46,7 @@ impl<T: Default + Send + Sync> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
             ExecutorConfig::default(),
-            Arc::new(ImportLinker::default()),
+            Rc::new(ImportLinker::default()),
             T::default(),
             always_failing_syscall_handler,
         )
@@ -95,7 +94,7 @@ impl<T: Send + Sync> Store<T> for RwasmStore<T> {
 impl<T: Send + Sync> RwasmStore<T> {
     pub fn new(
         config: ExecutorConfig,
-        import_linker: Arc<ImportLinker>,
+        import_linker: Rc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
     ) -> Self {
@@ -107,7 +106,6 @@ impl<T: Send + Sync> RwasmStore<T> {
 
         Self {
             consumed_fuel: 0,
-            refunded_fuel: 0,
             global_memory,
             context: RefCell::new(context),
             #[cfg(feature = "tracing")]
@@ -133,7 +131,7 @@ impl<T: Send + Sync> RwasmStore<T> {
     ///
     /// # Behavior
     /// - Resets the instruction pointer (`ip`) to the specified `pc` or the default value of `0`.
-    /// - Clears the consumed and refunded fuel counters by setting them to `0`.
+    /// - Clears the consumed fuel counters by setting them to `0`.
     /// - Resets the value stack by clearing its contents and updating the stack pointer (`sp`).
     /// - Empties the call stack by setting its length to `0`.
     /// - Resets the data and element segment flags to `false` if `keep_flags` is `false`.
@@ -147,9 +145,8 @@ impl<T: Send + Sync> RwasmStore<T> {
     /// - Preserving the data and element flags with `keep_flags` is particularly useful for
     ///   end-to-end test cases that depend on unchanged segments.
     pub fn reset(&mut self, keep_flags: bool) {
-        // reset consumed and refunded fuel to 0
+        // reset consumed fuel to 0
         self.consumed_fuel = 0;
-        self.refunded_fuel = 0;
         // we might want to keep data/elem flags between calls, it's required for e2e tests
         if !keep_flags {
             self.empty_data_segments.fill(false);
@@ -161,14 +158,6 @@ impl<T: Send + Sync> RwasmStore<T> {
 
     pub fn fuel_consumed(&self) -> u64 {
         self.consumed_fuel
-    }
-
-    pub fn fuel_refunded(&self) -> i64 {
-        self.refunded_fuel
-    }
-
-    pub fn refund_fuel(&mut self, fuel: i64) {
-        self.refunded_fuel += fuel;
     }
 
     pub fn set_syscall_handler(&mut self, handler: SyscallHandler<T>) {

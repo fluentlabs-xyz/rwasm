@@ -14,7 +14,7 @@ use rwasm::{
     TypedCaller,
     Value,
 };
-use std::sync::Arc;
+use std::rc::Rc;
 use wasmparser::ValType;
 
 const ATTESTATION_INPUT: &[u8] = include_bytes!("./nitro-verifier/attestation.bin");
@@ -117,7 +117,7 @@ fn import_linker() -> ImportLinker {
 #[ignore] // run this test manually with the "--release" flag
 fn test_nitro_verifier_rwasm() {
     let wasm_binary = include_bytes!("./nitro-verifier/lib.wasm");
-    let import_linker = Arc::new(import_linker());
+    let import_linker = Rc::new(import_linker());
     let config = CompilationConfig::default()
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true)
@@ -140,14 +140,14 @@ fn test_nitro_verifier_rwasm() {
 fn test_nitro_verifier_wasmtime() {
     use rwasm::WasmtimeWorker;
     let wasm_binary = include_bytes!("./nitro-verifier/lib.wasm");
-    let import_linker = Arc::new(import_linker());
+    let import_linker = Rc::new(import_linker());
     let config = CompilationConfig::default()
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true)
         .with_import_linker(import_linker.clone());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     // compile & run using wasmtime
-    let module = Arc::new(compile_wasmtime_module(&rwasm_module.wasm_section).unwrap());
+    let module = Rc::new(compile_wasmtime_module(&rwasm_module.wasm_section).unwrap());
     let mut worker =
         WasmtimeWorker::new(module, import_linker, (), fluentbase_syscall_handler, None);
     worker.execute("main", &[], &mut []).unwrap();
@@ -158,7 +158,7 @@ fn test_nitro_verifier_wasmtime() {
 #[ignore] // run this test manually with the "--release" flag
 fn test_nitro_verifier_strategy() {
     let wasm_binary = include_bytes!("./nitro-verifier/lib.wasm");
-    let import_linker = Arc::new(import_linker());
+    let import_linker = Rc::new(import_linker());
     let config = CompilationConfig::default()
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true)
@@ -174,7 +174,7 @@ fn test_nitro_verifier_strategy() {
         );
         strategy.execute::<()>(&mut store, "main", &[], &mut [])
     };
-    let rwasm_module = Arc::new(rwasm_module);
+    let rwasm_module = Rc::new(rwasm_module);
     // run with rwasm strategy first
     exec_strategy(Strategy::Rwasm {
         module: rwasm_module.clone(),

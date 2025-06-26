@@ -11,7 +11,7 @@ use crate::{
 };
 #[cfg(feature = "wasmtime")]
 use crate::{WasmtimeCaller, WasmtimeModule, WasmtimeWorker};
-use alloc::{boxed::Box, rc::Rc, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, rc::Rc, vec::Vec};
 use core::cell::RefCell;
 
 pub trait Store<T> {
@@ -158,11 +158,11 @@ impl<'a, T: Send + Sync> Caller<T> for TypedCaller<'a, T> {
 
 pub enum Strategy {
     Rwasm {
-        module: Arc<RwasmModule>,
+        module: Rc<RwasmModule>,
         engine: Rc<RefCell<ExecutionEngine>>,
     },
     #[cfg(feature = "wasmtime")]
-    Wasmtime { module: Arc<WasmtimeModule> },
+    Wasmtime { module: Rc<WasmtimeModule> },
 }
 
 pub enum TypedStore<T: Send + Sync + 'static> {
@@ -225,7 +225,7 @@ impl Strategy {
     pub fn create_store<T: Send + Sync>(
         &self,
         config: ExecutorConfig,
-        import_linker: Arc<ImportLinker>,
+        import_linker: Rc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
     ) -> TypedStore<T> {

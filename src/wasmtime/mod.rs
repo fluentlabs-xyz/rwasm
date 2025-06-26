@@ -11,15 +11,19 @@ use crate::{
     F32,
     F64,
 };
+use alloc::rc::Rc;
+use directories::ProjectDirs;
 use smallvec::{smallvec, SmallVec};
 use std::{
     cell::RefCell,
     marker::PhantomData,
     panic,
+    path::{Path, PathBuf},
     sync::{mpsc, Arc, RwLock},
     thread,
+    time::Instant,
 };
-use wasmtime::{AsContext, AsContextMut};
+use wasmtime::{AsContext, AsContextMut, Cache, CacheConfig};
 
 pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<T>;
@@ -75,8 +79,8 @@ pub struct WasmtimeWorker<T: 'static + Send + Sync> {
 
 impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
     pub fn new(
-        module: Arc<wasmtime::Module>,
-        import_linker: Arc<ImportLinker>,
+        module: Rc<wasmtime::Module>,
+        import_linker: Rc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
         fuel: Option<u64>,
@@ -99,11 +103,6 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
         let moved_store = store.clone();
         let moved_instance = instance.clone();
         thread::spawn(move || {
-            // panic::set_hook(Box::new(|info| {
-            //     let message = format!("{info}");
-            //     println!("panic happens inside the wasmtime worker thread, aborting: {message}");
-            //     std::process::abort();
-            // }));
             let store = moved_store;
             let instance = moved_instance;
             while let Ok(message) = receiver.recv() {
@@ -371,13 +370,41 @@ impl<'a, T: Send + Sync> Caller<T> for WasmtimeCaller<'a, T> {
     }
 }
 
-pub fn compile_wasmtime_module(wasm_binary: impl AsRef<[u8]>) -> anyhow::Result<WasmtimeModule> {
+fn wasmtime_config() -> anyhow::Result<wasmtime::Config> {
     let mut config = wasmtime::Config::new();
     // TODO(dmitry123): "make sure config is correct"
     config.strategy(wasmtime::Strategy::Cranelift);
     config.collector(wasmtime::Collector::Null);
-    let engine = wasmtime::Engine::new(&config)?;
-    wasmtime::Module::new(&engine, wasm_binary)
+    // use caching for artifacts
+    let project_dirs = ProjectDirs::from("com", "bytecodealliance", "wasmtime").unwrap();
+    let cache_dir = project_dirs.cache_dir();
+    std::fs::create_dir_all(cache_dir)?;
+    let mut cache_config = CacheConfig::default();
+    cache_config.with_directory(PathBuf::from(cache_dir));
+    config.cache(Some(Cache::new(cache_config)?));
+    // make sure the caching dir exists
+    std::fs::create_dir_all(Path::new(cache_dir))?;
+    Ok(config)
+}
+
+pub fn deserialize_wasmtime_module(
+    wasmtime_binary: impl AsRef<[u8]>,
+) -> anyhow::Result<WasmtimeModule> {
+    print!("parsing wasmtime module... ");
+    let start = Instant::now();
+    let engine = wasmtime::Engine::new(&wasmtime_config()?)?;
+    let module = unsafe { wasmtime::Module::deserialize(&engine, wasmtime_binary) };
+    println!("{:?}", start.elapsed());
+    module
+}
+
+pub fn compile_wasmtime_module(wasm_binary: impl AsRef<[u8]>) -> anyhow::Result<WasmtimeModule> {
+    print!("compiling wasmtime module... ");
+    let start = Instant::now();
+    let engine = wasmtime::Engine::new(&wasmtime_config()?)?;
+    let module = wasmtime::Module::new(&engine, wasm_binary);
+    println!("{:?}", start.elapsed());
+    module
 }
 
 fn execute_wasmtime_module<T: Send + Sync>(
@@ -529,7 +556,7 @@ fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
 
 fn wasmtime_import_linker<T: Send + Sync + 'static>(
     engine: &wasmtime::Engine,
-    import_linker: Arc<ImportLinker>,
+    import_linker: Rc<ImportLinker>,
 ) -> wasmtime::Linker<WrappedContext<T>> {
     let mut linker = wasmtime::Linker::<WrappedContext<T>>::new(engine);
     for (import_name, import_entity) in import_linker.iter() {

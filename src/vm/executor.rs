@@ -23,65 +23,47 @@ use crate::{
 };
 use smallvec::SmallVec;
 
-/// The `RwasmExecutor` struct represents the state and functionality required to execute
-/// WebAssembly (WASM) instructions within an embedded WASM runtime environment.
-/// It manages the
-/// execution context, configuration, and other runtime parts necessary for the proper
-/// execution and operation of WASM modules, particularly when leveraging the `rwasm` ecosystem.
+/// The `RwasmExecutor` struct is a foundational component for executing WebAssembly modules
+/// in the `rwasm` runtime environment. It acts as the primary execution object, coordinating
+/// the state and execution flow of a WebAssembly module.
 ///
-/// # Generic Parameters
-/// - `T`:
-/// Custom execution context type to enable user-defined functionality during WASM execution.
+/// # Type Parameters
+/// - `'a`: A lifetime tied to borrowed references within the executor, ensuring the validity of
+///   borrowed objects during execution.
+/// - `T`: A generic parameter that must implement the `Send` and `Sync` traits. This allows
+///   multithreaded access and mutable operations on the WASM store.
 ///
 /// # Fields
-/// - `module`: A reference-counted pointer to the `RwasmModule` representing the compiled and
-///   loaded WASM module.
-/// - `config`: Configuration settings for the WASM executor, encapsulated in an `ExecutorConfig`.
-/// - `consumed_fuel`: Tracks the total amount of fuel consumed, where fuel represents computational
-///   resource usage.
-/// - `refunded_fuel`: Tracks the amount of fuel refunded during execution, allowing optimizations
-///   and reimbursements.
-/// - `value_stack`: Stack for runtime values, used for computations and function calls in the WASM
-///   runtime.
-/// - `sp`: Pointer to the current position in the value stack.
-/// - `global_memory`: Representation of the global memory accessible to the WASM module during
-///   execution.
-/// - `ip`: Instruction pointer used to track the next instruction to be executed.
-/// - `context`: Custom execution context provided by the user, allowing external state to interact
-///   with the executor.
-/// - `tracer`: Optional field for an instance of `Tracer`,
-/// used to trace or debug execution flow if
-///   enabled.
-/// - `fuel_costs`: Structure representing fuel consumption costs for various operations, enabling
-///   fine-grained control of execution resources.
-/// - `tables`: A map associating `TableIdx` (table index) to `TableEntity`, representing managed
-///   tables in the WASM module.
-/// - `call_stack`: A stack of instruction pointers,
-/// used to manage nested function calls and return
-///   points during execution.
-/// - `last_signature`: Optionally stores the last used signature index, needed for validating
-///   indirect function calls.
-/// - `next_result`: Optionally stores the result of the next operation, either a valid result or an
-///   error of type `TrapCode`.
-/// - `stop_exec`: A boolean flag indicating whether the execution should halt prematurely.
-/// - `syscall_handler`: A handler of type `SyscallHandler<T>` to execute host function calls or
-///   system calls invoked by the WASM module.
-/// - `default_elements_segment`: A vector of untyped values representing the default elements
-///   segment used in `rwasm`'s modified execution context.
-/// - `global_variables`: A map of global variable indices (`GlobalIdx`) to untyped values,
-///   representing global variables in the WASM runtime.
-/// - `empty_elements_segments`: A bit vector indicating which element segments are considered
-///   empty.
-/// - `empty_data_segments`: A bit vector indicating which data segments are considered empty.
+/// - `module` (`&'a RwasmModule`): A reference to the rWasm module being executed. This contains
+///   the compiled function definitions, memory, and other runtime components for execution.
+///
+/// - `value_stack` (`&'a mut ValueStack`): A mutable reference to the value stack, which is used
+///   during execution to store intermediate values, operand results, and function return values.
+///
+/// - `sp` (`ValueStackPtr`): A pointer to the current position in the value stack. This tracks the
+///   stack pointer (SP) for operand and value management during execution.
+///
+/// - `call_stack` (`&'a mut CallStack`): A mutable reference to the call stack, which is
+///   responsible for managing the function call/return frames to track execution flow across nested
+///   function calls.
+///
+/// - `ip` (`InstructionPtr`): The instruction pointer representing the location of the current
+///   instruction in the execution sequence of the WebAssembly module.
+///
+/// - `store` (`&'a mut RwasmStore<T>`): A mutable reference to the runtime store which maintains
+///   memory, global variables, and another runtime state for the execution context. The store also
+///   allows external data of the type `T` to be integrated with the WebAssembly instance.
 ///
 /// # Usage
-/// The `RwasmExecutor` is designed to be instantiated and used as the main driver for executing
-/// WASM programs.
-/// It maintains the state required for computation, controls the flow of execution,
-/// and integrates user-defined functionality via the `T` generic execution context.
+/// The `RwasmExecutor` is typically constructed internally by the runtime and should be
+/// used to step through execution of instructions within a WebAssembly module.
+/// It provides internal access to the runtime's data structures for fine-grained
+/// control over WebAssembly execution.
 ///
-/// Note: This struct is intended as part of an internal runtime and may not expose all fields to
-/// public interfaces.
+/// # Thread Safety
+/// The `Send` and `Sync` constraints on `T` ensure that the executor's associated runtime
+/// store is safe for concurrent mutation and multithreaded execution scenarios, as
+/// required by the WebAssembly specification's concurrency guarantees.
 pub struct RwasmExecutor<'a, T: Send + Sync> {
     pub(crate) module: &'a RwasmModule,
     pub(crate) value_stack: &'a mut ValueStack,
@@ -272,6 +254,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         for x in result {
             *x = self.sp.pop_value(x.ty());
         }
+        self.value_stack.sync_stack_ptr(self.sp);
         // execution is over, clear stacks
         // TODO(dmitry123): "enable this check after refactoring tests"
         // debug_assert_eq!(
