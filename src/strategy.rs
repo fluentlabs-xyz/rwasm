@@ -11,7 +11,7 @@ use crate::{
 };
 #[cfg(feature = "wasmtime")]
 use crate::{WasmtimeCaller, WasmtimeModule, WasmtimeWorker};
-use alloc::{rc::Rc, sync::Arc};
+use alloc::{boxed::Box, rc::Rc, sync::Arc, vec::Vec};
 use core::cell::RefCell;
 
 pub trait Store<T> {
@@ -299,7 +299,39 @@ impl Strategy {
                     TypedStore::Wasmtime(store) => store,
                     _ => unreachable!(),
                 };
-                store.resume(Ok(interruption_result), result)
+                store.resume(Ok(interruption_result), result, vec![])
+            }
+        }
+    }
+
+    pub fn resume_wth_memory<'a, T: Send + Sync>(
+        &'a self,
+        store: &mut TypedStore<T>,
+        interruption_result: &[Value],
+        result: &mut [Value],
+        memory_changes: Vec<(u32, Box<[u8]>)>,
+    ) -> Result<(), TrapCode> {
+        match self {
+            Strategy::Rwasm { module, engine } => {
+                let store = match store {
+                    TypedStore::Rwasm(store) => store,
+                    #[allow(unreachable_patterns)]
+                    _ => unreachable!(),
+                };
+                for (addr, buf) in memory_changes {
+                    store.memory_write(addr as usize, &buf)?
+                }
+                let mut ctx = engine.borrow_mut();
+                let mut executor = ctx.create_resumable_executor(store, &module);
+                executor.run(interruption_result, result)
+            }
+            #[cfg(feature = "wasmtime")]
+            Strategy::Wasmtime { .. } => {
+                let store = match store {
+                    TypedStore::Wasmtime(store) => store,
+                    _ => unreachable!(),
+                };
+                store.resume(Ok(interruption_result), result, memory_changes)
             }
         }
     }
