@@ -1,4 +1,4 @@
-use rwasm::{Caller, TrapCode, Value};
+use rwasm::{Caller, Store, TrapCode, TypedCaller, Value};
 
 pub const FUNC_ENTRYPOINT: u32 = u32::MAX;
 pub const FUNC_PRINT: u32 = 100;
@@ -16,7 +16,7 @@ pub struct TestingContext {
 }
 
 pub(crate) fn testing_context_syscall_handler(
-    caller: &mut dyn Caller<TestingContext>,
+    caller: &mut TypedCaller<TestingContext>,
     func_idx: u32,
     params: &[Value],
     _result: &mut [Value],
@@ -62,9 +62,10 @@ pub(crate) fn testing_context_syscall_handler(
             // yeah, dirty, but this is how we remember the program counter to reset,
             // since we're 100% sure the function is called using `Call`
             // that we can safely deduct 1 from PC (for `ReturnCall` we need to deduct 2)
-            caller.context_mut().program_counter = caller.program_counter() - 1;
+            let pc = caller.program_counter();
+            caller.context_mut(|ctx| ctx.program_counter = pc - 1);
             // push state value into the stack
-            let state = caller.context().state;
+            let state = caller.context(|ctx| ctx.state);
             caller.stack_push(state.into());
             Ok(())
         }

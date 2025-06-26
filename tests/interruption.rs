@@ -1,7 +1,7 @@
 use rwasm::{
+    always_failing_syscall_handler,
+    compile_wasmtime_module,
     instruction_set,
-    wasmtime::CraneliftExecutor,
-    Caller,
     CompilationConfig,
     ExecutionEngine,
     ExecutorConfig,
@@ -9,13 +9,17 @@ use rwasm::{
     ImportName,
     InstructionSet,
     RwasmModule,
+    RwasmStore,
     Store,
+    Strategy,
     TrapCode,
+    TypedCaller,
     Value,
+    WasmtimeWorker,
 };
 use std::rc::Rc;
 
-fn import_linker() -> Rc<ImportLinker> {
+fn default_import_linker() -> Rc<ImportLinker> {
     let mut import_linker = ImportLinker::default();
     import_linker.insert_function(
         ImportName::new("hello", "world"),
@@ -27,8 +31,8 @@ fn import_linker() -> Rc<ImportLinker> {
     Rc::new(import_linker)
 }
 
-fn syscall_handler<T>(
-    _caller: &mut dyn Caller<T>,
+fn interrupting_syscall_handler<T: Send + Sync>(
+    _caller: &mut TypedCaller<'_, T>,
     _sys_func_idx: u32,
     _params: &[Value],
     _result: &mut [Value],
@@ -44,23 +48,23 @@ fn test_interrupted_call_rwasm() {
         ConsumeFuel(2u32) // +2
         Return
     });
-    let import_linker = import_linker();
-    let mut store = Store::<()>::new(
+    let import_linker = default_import_linker();
+    let mut store = RwasmStore::<()>::new(
         ExecutorConfig::default().fuel_enabled(true),
-        (),
         import_linker,
-    );
-    store.set_syscall_handler(
+        (),
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> {
             // return an empty interruption
             Err(TrapCode::InterruptionCalled)
         },
     );
     let mut engine = ExecutionEngine::new();
-    let err = engine.execute(&mut store, &module).unwrap_err();
+    let err = engine
+        .execute(&mut store, &module, &[], &mut [])
+        .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
     assert_eq!(store.fuel_consumed(), 1);
-    engine.resume(&mut store, &module).unwrap();
+    engine.resume(&mut store, &module, &[], &mut []).unwrap();
     assert_eq!(store.fuel_consumed(), 3);
     // make sure the engine is empty
     let sp = engine.value_stack().stack_ptr();
@@ -84,7 +88,7 @@ fn test_interrupted_call_wasmtime() {
 "#,
     )
     .unwrap();
-    let import_linker = import_linker();
+    let import_linker = default_import_linker();
     let (rwasm_module, _) = RwasmModule::compile(
         CompilationConfig::default()
             .with_import_linker(import_linker.clone())
@@ -93,30 +97,122 @@ fn test_interrupted_call_wasmtime() {
     )
     .unwrap();
     // run with rwasm
-    let mut store = Store::<()>::new(
+    let mut store = RwasmStore::<()>::new(
         ExecutorConfig::default().fuel_enabled(true),
-        (),
         import_linker.clone(),
+        (),
+        always_failing_syscall_handler,
     );
-    store.set_syscall_handler(syscall_handler);
+    store.set_syscall_handler(interrupting_syscall_handler);
     let mut engine = ExecutionEngine::new();
-    let err = engine.execute(&mut store, &rwasm_module).unwrap_err();
+    let err = engine
+        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
-    engine.resume(&mut store, &rwasm_module).unwrap();
+    engine
+        .resume(&mut store, &rwasm_module, &[], &mut [])
+        .unwrap();
     let sp = engine.value_stack().stack_ptr();
     assert_eq!(engine.value_stack().stack_len(sp), 1);
     assert!(engine.call_stack().is_empty());
     assert_eq!(engine.value_stack().pop().as_u32(), 120);
     // run with wasmtime
-    let mut wasmtime_vm = CraneliftExecutor::compile(
-        &rwasm_module.wasm_section,
+    let module = Rc::new(compile_wasmtime_module(&wasm_binary).unwrap());
+    let mut wasmtime_worker = WasmtimeWorker::new(
+        module,
         import_linker.clone(),
         (),
-        syscall_handler,
+        interrupting_syscall_handler,
+        None,
     );
-    let mut result = [wasmtime::Val::I32(0); 1];
-    let err = wasmtime_vm.run_typed("main", &[], &mut result).unwrap_err();
+    let mut result = [Value::I32(0); 1];
+    let err = wasmtime_worker
+        .execute("main", &[], &mut result)
+        .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
-    wasmtime_vm.resume(0, &[], None, &mut result).unwrap();
+    wasmtime_worker
+        .resume(Ok(&[]), &mut result, vec![])
+        .unwrap();
     assert_eq!(result[0].i32().unwrap(), 120);
+}
+
+#[test]
+fn test_call_stack_empty_after_trap_in_nested_call() {
+    let module = RwasmModule::with_one_function(instruction_set! {
+        CallInternal(2) // call to --+
+        Return //                    |
+        ConsumeFuel(1u32) //    <----+
+        Call(0xff)
+        Trap(TrapCode::UnreachableCodeReached)
+    });
+    let import_linker = default_import_linker();
+    let mut store = RwasmStore::<()>::new(
+        ExecutorConfig::default().fuel_enabled(true),
+        import_linker,
+        (),
+        |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> {
+            // return an empty interruption
+            Err(TrapCode::InterruptionCalled)
+        },
+    );
+    let mut engine = ExecutionEngine::new();
+    let err = engine
+        .execute(&mut store, &module, &[], &mut [])
+        .unwrap_err();
+    assert_eq!(err, TrapCode::InterruptionCalled);
+    let err = engine
+        .resume(&mut store, &module, &[], &mut [])
+        .unwrap_err();
+    assert_eq!(err, TrapCode::UnreachableCodeReached);
+    assert!(
+        engine.call_stack().is_empty(),
+        "the call stack must be empty"
+    );
+    // make sure the engine is empty
+    let sp = engine.value_stack().stack_ptr();
+    assert_eq!(engine.value_stack().stack_len(sp), 0);
+    assert!(engine.call_stack().is_empty());
+}
+
+#[test]
+fn test_memory_write_during_interruption() {
+    let module = RwasmModule::with_one_function(instruction_set! {
+        // init some memory
+        I32Const(1)
+        MemoryGrow
+        Drop
+        // call interruption
+        Call(0xff)
+        // copy 4 bytes from memory
+        I32Const(0)
+        I32Load(0)
+        // exit
+        Return
+    });
+    let import_linker = default_import_linker();
+
+    let test_strategy = |strategy: Strategy| {
+        let mut store = strategy.create_store(
+            ExecutorConfig::default(),
+            import_linker.clone(),
+            (),
+            |caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> {
+                caller.memory_write(0, &[0x01, 0x02, 0x03, 0x04])?;
+                // return an empty interruption
+                Err(TrapCode::InterruptionCalled)
+            },
+        );
+        let mut result = [Value::I32(0); 1];
+        let err = strategy
+            .execute(&mut store, "main", &[], &mut result)
+            .unwrap_err();
+        assert_eq!(err, TrapCode::InterruptionCalled);
+        strategy.resume(&mut store, &[], &mut result).unwrap();
+        assert_eq!(result[0].i32().unwrap(), 0x04030201);
+    };
+
+    test_strategy(Strategy::Rwasm {
+        module: Rc::new(module),
+        engine: ExecutionEngine::acquire_shared(),
+    });
 }

@@ -1,47 +1,39 @@
 use crate::{
     types::{TrapCode, UntypedValue},
-    RwasmExecutor,
+    Caller,
+    RwasmStore,
+    Store,
+    ValueStackPtr,
 };
-use core::cell::{Ref, RefMut};
 
-pub trait Caller<T> {
-    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode>;
-
-    fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode>;
-
-    fn program_counter(&self) -> u32;
-
-    fn sync_stack_ptr(&mut self);
-
-    fn context_mut(&mut self) -> RefMut<'_, T>;
-
-    fn context(&self) -> Ref<'_, T>;
-
-    fn stack_push(&mut self, value: UntypedValue);
-
-    fn remaining_fuel(&mut self) -> Option<u64>;
-
-    fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode>;
+pub struct RwasmCaller<'a, T: Send + Sync> {
+    store: &'a mut RwasmStore<T>,
+    program_counter: u32,
+    sp: ValueStackPtr,
 }
 
-pub struct RwasmCaller<'vm, 'a, T> {
-    vm: &'vm mut RwasmExecutor<'a, T>,
-}
+impl<'a, T: Send + Sync> RwasmCaller<'a, T> {
+    pub fn new(store: &'a mut RwasmStore<T>, program_counter: u32, sp: ValueStackPtr) -> Self {
+        Self {
+            store,
+            program_counter,
+            sp,
+        }
+    }
 
-impl<'vm, 'a, T> RwasmCaller<'vm, 'a, T> {
-    pub fn new(vm: &'vm mut RwasmExecutor<'a, T>) -> Self {
-        Self { vm }
+    pub fn sp(&self) -> ValueStackPtr {
+        self.sp
     }
 }
 
-impl<'vm, 'a, T> Caller<T> for RwasmCaller<'vm, 'a, T> {
+impl<'a, T: Send + Sync> Store<T> for RwasmCaller<'a, T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        self.vm.store.global_memory.read(offset, buffer)?;
+        self.store.global_memory.read(offset, buffer)?;
         Ok(())
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        self.vm.store.global_memory.write(offset, buffer)?;
+        self.store.global_memory.write(offset, buffer)?;
         #[cfg(feature = "tracing")]
         self.vm
             .store
@@ -50,31 +42,29 @@ impl<'vm, 'a, T> Caller<T> for RwasmCaller<'vm, 'a, T> {
         Ok(())
     }
 
-    fn program_counter(&self) -> u32 {
-        self.vm.program_counter()
+    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+        func(&mut self.store.context.borrow_mut())
     }
 
-    fn sync_stack_ptr(&mut self) {
-        self.vm.value_stack.sync_stack_ptr(self.vm.sp);
-    }
-
-    fn context_mut(&mut self) -> RefMut<T> {
-        self.vm.store.context.borrow_mut()
-    }
-
-    fn context(&self) -> Ref<T> {
-        self.vm.store.context.borrow()
-    }
-
-    fn stack_push(&mut self, value: UntypedValue) {
-        self.vm.sp.push(value);
-    }
-
-    fn remaining_fuel(&mut self) -> Option<u64> {
-        self.vm.store.remaining_fuel()
+    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+        func(&self.store.context.borrow())
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
-        self.vm.store.try_consume_fuel(delta)
+        self.store.try_consume_fuel(delta)
+    }
+
+    fn remaining_fuel(&mut self) -> Option<u64> {
+        self.store.remaining_fuel()
+    }
+}
+
+impl<'a, T: Send + Sync> Caller<T> for RwasmCaller<'a, T> {
+    fn program_counter(&self) -> u32 {
+        self.program_counter
+    }
+
+    fn stack_push(&mut self, value: UntypedValue) {
+        self.sp.push(value);
     }
 }

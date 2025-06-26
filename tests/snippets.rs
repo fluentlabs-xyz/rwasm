@@ -50,18 +50,18 @@
 /// | op_i64_rem_s          |         |
 /// | op_i64_rem_u          |         |
 /// |-----------------------|---------|
-use rwasm::{ExecutionEngine, InstructionSet, RwasmModule, Store, TrapCode};
+use rwasm::{ExecutionEngine, InstructionSet, RwasmModule, RwasmStore, TrapCode};
 use std::ops::{BitAnd, BitOr, BitXor, Shl, Shr};
 
 fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Result<Vec<u32>, TrapCode> {
     is.op_return();
     let rwasm_module = RwasmModule::with_one_function(is);
-    let mut store = Store::<()>::default();
+    let mut store = RwasmStore::<()>::default();
     let mut engine = ExecutionEngine::new();
     for i in inputs {
         engine.value_stack().push(i.into());
     }
-    engine.execute(&mut store, &rwasm_module)?;
+    engine.execute(&mut store, &rwasm_module, &[], &mut [])?;
     let output = engine
         .value_stack()
         .as_slice()

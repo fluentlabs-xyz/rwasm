@@ -1,4 +1,4 @@
-use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, Store};
+use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore};
 
 #[test]
 fn test_fib() {
@@ -6,10 +6,12 @@ fn test_fib() {
     let config = CompilationConfig::default().with_entrypoint_name("main".into());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     println!("{}", rwasm_module);
-    let mut store = Store::<()>::default();
+    let mut store = RwasmStore::<()>::default();
     let mut engine = ExecutionEngine::new();
     engine.value_stack().push(43.into());
-    engine.execute(&mut store, &rwasm_module).unwrap();
+    engine
+        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .unwrap();
     let result = engine.value_stack().pop();
     assert_eq!(result.as_i64(), 433494437);
 }
@@ -34,10 +36,12 @@ fn test_i64_load8_s() {
         .with_allow_malformed_entrypoint_func_type(true);
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
-    let mut store = Store::<()>::default();
+    let mut store = RwasmStore::<()>::default();
     let mut engine = ExecutionEngine::new();
     engine.value_stack().push(0.into());
-    engine.execute(&mut store, &rwasm_module).unwrap();
+    engine
+        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .unwrap();
     let result = engine.value_stack().pop();
     assert_eq!(result.as_i32(), 0);
     let result = engine.value_stack().pop();
@@ -65,10 +69,12 @@ fn test_i64_load() {
         .with_allow_malformed_entrypoint_func_type(true);
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
-    let mut store = Store::<()>::default();
+    let mut store = RwasmStore::<()>::default();
     let mut engine = ExecutionEngine::new();
     engine.value_stack().push(0.into());
-    engine.execute(&mut store, &rwasm_module).unwrap();
+    engine
+        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .unwrap();
     let hi = engine.value_stack().pop().to_bits() as u64;
     let lo = engine.value_stack().pop().to_bits() as u64;
     assert!(engine.value_stack().as_slice().is_empty());
@@ -127,11 +133,13 @@ fn test_bulk_bench() {
         .with_allow_malformed_entrypoint_func_type(true);
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
-    let mut store = Store::<()>::default();
+    let mut store = RwasmStore::<()>::default();
     let mut engine = ExecutionEngine::new();
     engine.value_stack().push(5000.into());
     engine.value_stack().push(0.into());
-    engine.execute(&mut store, &rwasm_module).unwrap();
+    engine
+        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .unwrap();
     let _result = engine.value_stack().pop();
     let _result = engine.value_stack().pop();
 }

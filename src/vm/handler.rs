@@ -1,17 +1,5 @@
-use crate::{types::TrapCode, vm::context::Caller, Value};
+use crate::{types::TrapCode, Store, TypedCaller, Value};
 use alloc::{vec, vec::Vec};
-
-pub type SyscallHandler<T> =
-    fn(&mut dyn Caller<T>, u32, &[Value], &mut [Value]) -> Result<(), TrapCode>;
-
-pub fn always_failing_syscall_handler<T>(
-    _caller: &mut dyn Caller<T>,
-    _func_idx: u32,
-    _params: &[Value],
-    _result: &mut [Value],
-) -> Result<(), TrapCode> {
-    Err(TrapCode::UnknownExternalFunction)
-}
 
 #[derive(Default)]
 #[allow(dead_code)]
@@ -29,54 +17,50 @@ struct SimpleCallHandler;
 #[allow(dead_code)]
 impl SimpleCallHandler {
     fn fn_proc_exit(
-        caller: &mut dyn Caller<SimpleCallContext>,
+        caller: &mut TypedCaller<SimpleCallContext>,
         params: &[Value],
         _result: &mut [Value],
     ) -> Result<(), TrapCode> {
         let exit_code = params[0].i32().unwrap();
-        caller.context_mut().exit_code = exit_code;
+        caller.context_mut(|ctx| ctx.exit_code = exit_code);
         Err(TrapCode::ExecutionHalted)
     }
 
     fn fn_get_state(
-        caller: &mut dyn Caller<SimpleCallContext>,
+        caller: &mut TypedCaller<SimpleCallContext>,
         _params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        result[0] = Value::I32(caller.context().state as i32);
+        result[0] = Value::I32(caller.context(|ctx| ctx.state as i32));
         Ok(())
     }
 
     fn fn_read_input(
-        caller: &mut dyn Caller<SimpleCallContext>,
+        caller: &mut TypedCaller<SimpleCallContext>,
         params: &[Value],
         _result: &mut [Value],
     ) -> Result<(), TrapCode> {
         let target = params[0].i32().unwrap() as usize;
         let offset = params[1].i32().unwrap() as usize;
         let length = params[2].i32().unwrap() as usize;
-        caller.context_mut().exit_code = -2020;
-        let input = caller
-            .context()
-            .input
-            .get(offset..(offset + length))
-            .unwrap()
-            .to_vec();
+        caller.context_mut(|ctx| ctx.exit_code = -2020);
+        let input =
+            caller.context(|ctx| ctx.input.get(offset..(offset + length)).unwrap().to_vec());
         caller.memory_write(target, &input)?;
         Ok(())
     }
 
     fn fn_input_size(
-        caller: &mut dyn Caller<SimpleCallContext>,
+        caller: &mut TypedCaller<SimpleCallContext>,
         _params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        result[0] = Value::I32(caller.context().input.len() as i32);
+        result[0] = Value::I32(caller.context(|ctx| ctx.input.len() as i32));
         Ok(())
     }
 
     fn fn_write_output(
-        caller: &mut dyn Caller<SimpleCallContext>,
+        caller: &mut TypedCaller<SimpleCallContext>,
         params: &[Value],
         _result: &mut [Value],
     ) -> Result<(), TrapCode> {
@@ -84,12 +68,12 @@ impl SimpleCallHandler {
         let length = params[1].i32().unwrap() as usize;
         let mut buffer = vec![0u8; length];
         caller.memory_read(offset, &mut buffer)?;
-        caller.context_mut().output.extend_from_slice(&buffer);
+        caller.context_mut(|ctx| ctx.output.extend_from_slice(&buffer));
         Ok(())
     }
 
     fn fn_keccak256(
-        caller: &mut dyn Caller<SimpleCallContext>,
+        caller: &mut TypedCaller<SimpleCallContext>,
         params: &[Value],
         _result: &mut [Value],
     ) -> Result<(), TrapCode> {
@@ -110,7 +94,7 @@ impl SimpleCallHandler {
 
 #[allow(dead_code)]
 pub(crate) fn simple_call_handler_syscall_handler(
-    caller: &mut dyn Caller<SimpleCallContext>,
+    caller: &mut TypedCaller<SimpleCallContext>,
     func_idx: u32,
     params: &[Value],
     result: &mut [Value],

@@ -1,6 +1,5 @@
 use rwasm::{
-    wasmtime::CraneliftExecutor,
-    Caller,
+    compile_wasmtime_module,
     CompilationConfig,
     ExecutionEngine,
     ExecutorConfig,
@@ -8,8 +7,11 @@ use rwasm::{
     ImportName,
     InstructionSet,
     RwasmModule,
+    RwasmStore,
     Store,
+    Strategy,
     TrapCode,
+    TypedCaller,
     Value,
 };
 use std::rc::Rc;
@@ -17,8 +19,8 @@ use wasmparser::ValType;
 
 const ATTESTATION_INPUT: &[u8] = include_bytes!("./nitro-verifier/attestation.bin");
 
-fn syscall_handler<T>(
-    caller: &mut dyn Caller<T>,
+fn fluentbase_syscall_handler<T: Send + Sync>(
+    caller: &mut TypedCaller<T>,
     sys_func_idx: u32,
     params: &[Value],
     result: &mut [Value],
@@ -112,7 +114,7 @@ fn import_linker() -> ImportLinker {
 }
 
 #[test]
-#[ignore] // run this test manually with the "-- release" flag
+#[ignore] // run this test manually with the "--release" flag
 fn test_nitro_verifier_rwasm() {
     let wasm_binary = include_bytes!("./nitro-verifier/lib.wasm");
     let import_linker = Rc::new(import_linker());
@@ -122,14 +124,21 @@ fn test_nitro_verifier_rwasm() {
         .with_import_linker(import_linker.clone());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     let mut engine = ExecutionEngine::new();
-    let mut store = Store::<()>::new(ExecutorConfig::default(), (), import_linker.clone());
-    store.set_syscall_handler(syscall_handler);
-    engine.execute(&mut store, &rwasm_module).unwrap();
+    let mut store = RwasmStore::<()>::new(
+        ExecutorConfig::default(),
+        import_linker.clone(),
+        (),
+        fluentbase_syscall_handler,
+    );
+    engine
+        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .unwrap();
 }
 
 #[cfg(feature = "wasmtime")]
 #[test]
 fn test_nitro_verifier_wasmtime() {
+    use rwasm::WasmtimeWorker;
     let wasm_binary = include_bytes!("./nitro-verifier/lib.wasm");
     let import_linker = Rc::new(import_linker());
     let config = CompilationConfig::default()
@@ -138,11 +147,43 @@ fn test_nitro_verifier_wasmtime() {
         .with_import_linker(import_linker.clone());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     // compile & run using wasmtime
-    let mut wasmtime_vm = CraneliftExecutor::compile(
-        &rwasm_module.wasm_section,
-        import_linker,
-        (),
-        syscall_handler,
-    );
-    wasmtime_vm.run_main().unwrap()
+    let module = Rc::new(compile_wasmtime_module(&rwasm_module.wasm_section).unwrap());
+    let mut worker =
+        WasmtimeWorker::new(module, import_linker, (), fluentbase_syscall_handler, None);
+    worker.execute("main", &[], &mut []).unwrap();
+}
+
+#[cfg(feature = "wasmtime")]
+#[test]
+#[ignore] // run this test manually with the "--release" flag
+fn test_nitro_verifier_strategy() {
+    let wasm_binary = include_bytes!("./nitro-verifier/lib.wasm");
+    let import_linker = Rc::new(import_linker());
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("main".into())
+        .with_allow_malformed_entrypoint_func_type(true)
+        .with_import_linker(import_linker.clone());
+    let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
+    // compile & run using wasmtime
+    let exec_strategy = |strategy: Strategy| {
+        let mut store = strategy.create_store(
+            ExecutorConfig::default(),
+            import_linker.clone(),
+            (),
+            fluentbase_syscall_handler,
+        );
+        strategy.execute::<()>(&mut store, "main", &[], &mut [])
+    };
+    let rwasm_module = Rc::new(rwasm_module);
+    // run with rwasm strategy first
+    exec_strategy(Strategy::Rwasm {
+        module: rwasm_module.clone(),
+        engine: ExecutionEngine::acquire_shared(),
+    })
+    .unwrap();
+    // run with wasmtime strategy
+    let module = compile_wasmtime_module(&rwasm_module.wasm_section)
+        .unwrap()
+        .into();
+    exec_strategy(Strategy::Wasmtime { module }).unwrap();
 }
