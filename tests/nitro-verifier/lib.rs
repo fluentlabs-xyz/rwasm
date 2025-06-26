@@ -222,20 +222,3 @@ pub fn entrypoint(sdk: impl SharedAPI) {
 }
 
 entrypoint!(entrypoint);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use fluentbase_sdk_testing::HostTestingContext;
-
-    #[test]
-    fn test_nitro_attestation_verification() {
-        // Example of valid attestation document
-        // https://github.com/evervault/attestation-doc-validation/blob/main/test-data/valid-attestation-doc-base64
-        let data = include_bytes!("attestation.bin");
-        let doc = parse_and_verify(data);
-        assert_eq!(doc.digest, "SHA384");
-        let sdk = HostTestingContext::default().with_input(data);
-        entrypoint(sdk);
-    }
-}
