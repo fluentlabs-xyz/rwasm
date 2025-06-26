@@ -10,6 +10,7 @@ pub enum CompilationError {
     BranchTableTargetsOutOfBounds,
     MalformedWasmBinary(BinaryReaderError),
     NotSupportedImportType,
+    NotSupportedFuncType,
     UnresolvedImportFunction,
     MalformedImportFunctionType,
     NonDefaultMemoryIndex,
@@ -43,6 +44,7 @@ impl core::fmt::Display for CompilationError {
                 write!(f, "malformed wasm binary ({})", err)
             }
             CompilationError::NotSupportedImportType => write!(f, "not supported an import type"),
+            CompilationError::NotSupportedFuncType => write!(f, "not supported func type"),
             CompilationError::UnresolvedImportFunction => write!(f, "unresolved import function"),
             CompilationError::MalformedImportFunctionType => {
                 write!(f, "MalformedImportFunctionType")

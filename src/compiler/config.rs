@@ -1,12 +1,14 @@
 use crate::{ImportLinker, Opcode};
-use alloc::boxed::Box;
+use alloc::{boxed::Box, rc::Rc};
 use wasmparser::WasmFeatures;
 
 #[derive(Debug, Clone)]
 pub struct StateRouterConfig {
-    /// List of states to be router based on the state
+    /// List of states to be router based on the state.
     pub states: Box<[(Box<str>, u32)]>,
-    /// Instruction that describes how we determine an input state
+    /// Instruction that describes how we determine an input state.
+    /// Keep it None only if you already have a state element on the stack, because after execution
+    /// it's being dropped.
     pub opcode: Option<Opcode>,
 }
 
@@ -21,9 +23,11 @@ pub struct CompilationConfig {
     /// Import linker that stores mapping from function to special identifiers that is used
     /// to remember unique external calls ids. We need this to simplify a proving process to
     /// forward external calls to corresponding circuits.
-    pub import_linker: Option<ImportLinker>,
+    pub import_linker: Option<Rc<ImportLinker>>,
     /// An option to disable malformed entrypoint func type check. We need this check for e2e tests
     /// where we manage stack manually.
+    ///
+    /// WARNING: only for trusted environment, can cause stack overflow/underflow
     pub allow_malformed_entrypoint_func_type: bool,
     /// Should fuel-charging instructions be injected before each builtin call.
     pub builtins_consume_fuel: bool,
@@ -32,6 +36,12 @@ pub struct CompilationConfig {
     pub default_imported_global_value: Option<i64>,
     /// Enable fuel metering (always eager mode)
     pub consume_fuel: bool,
+    /// Allow function types with funcref and externref (needed only for e2e testing suite, but
+    /// practically inside a blockchain environment it's not possible)
+    ///
+    /// WARNING: the flag can be removed one funcref/externref type mapping is
+    /// implemented for wasmtime
+    pub allow_func_ref_function_types: bool,
 }
 
 impl Default for CompilationConfig {
@@ -44,6 +54,7 @@ impl Default for CompilationConfig {
             builtins_consume_fuel: false,
             default_imported_global_value: None,
             consume_fuel: true,
+            allow_func_ref_function_types: false,
         }
     }
 }
@@ -73,7 +84,7 @@ impl CompilationConfig {
         self
     }
 
-    pub fn with_import_linker(mut self, import_linker: ImportLinker) -> Self {
+    pub fn with_import_linker(mut self, import_linker: Rc<ImportLinker>) -> Self {
         self.import_linker = Some(import_linker);
         self
     }
@@ -101,6 +112,14 @@ impl CompilationConfig {
 
     pub fn with_consume_fuel(mut self, consume_fuel: bool) -> Self {
         self.consume_fuel = consume_fuel;
+        self
+    }
+
+    pub fn with_allow_func_ref_function_types(
+        mut self,
+        allow_func_ref_function_types: bool,
+    ) -> Self {
+        self.allow_func_ref_function_types = allow_func_ref_function_types;
         self
     }
 }

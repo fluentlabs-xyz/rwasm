@@ -1,25 +1,13 @@
 use crate::{ImportName, InstructionSet};
 use alloc::vec::Vec;
-use core::ops::{Deref, DerefMut};
 use hashbrown::HashMap;
 use wasmparser::{FuncType, ValType};
 
 #[derive(Debug, Default, Clone)]
 pub struct ImportLinker {
-    func_by_name: HashMap<ImportName, ImportLinkerEntity>,
-}
-
-impl Deref for ImportLinker {
-    type Target = HashMap<ImportName, ImportLinkerEntity>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.func_by_name
-    }
-}
-impl DerefMut for ImportLinker {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.func_by_name
-    }
+    entities: Vec<ImportLinkerEntity>,
+    name_to_entity: HashMap<ImportName, usize>,
+    idx_to_entity: HashMap<u32, usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -30,21 +18,13 @@ pub struct ImportLinkerEntity {
     pub result: &'static [ValType],
 }
 
-impl<const N: usize> From<[(&'static str, &'static str, ImportLinkerEntity); N]> for ImportLinker {
-    fn from(arr: [(&'static str, &'static str, ImportLinkerEntity); N]) -> Self {
-        Self {
-            func_by_name: HashMap::from_iter(arr.into_iter().map(
-                |(module_name, fn_name, entity)| (ImportName::new(module_name, fn_name), entity),
-            )),
-        }
-    }
-}
-
 impl<const N: usize> From<[(ImportName, ImportLinkerEntity); N]> for ImportLinker {
     fn from(arr: [(ImportName, ImportLinkerEntity); N]) -> Self {
-        Self {
-            func_by_name: HashMap::from(arr),
+        let mut result = Self::default();
+        for (import_name, entity) in arr {
+            result.insert_entity(import_name, entity);
         }
+        result
     }
 }
 
@@ -69,6 +49,28 @@ impl ImportLinkerEntity {
     }
 }
 
+#[derive(Debug)]
+struct ImportLinkerIter<'a> {
+    items: hashbrown::hash_map::Iter<'a, ImportName, usize>,
+    entities: &'a Vec<ImportLinkerEntity>,
+}
+
+impl<'a> Iterator for ImportLinkerIter<'a> {
+    type Item = (ImportName, ImportLinkerEntity);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let (name, offset) = self.items.next()?;
+        let entity = self.entities.get(*offset)?;
+        Some((name.clone(), entity.clone()))
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.items.size_hint()
+    }
+}
+
 impl ImportLinker {
     pub fn insert_function(
         &mut self,
@@ -78,7 +80,7 @@ impl ImportLinker {
         params: &'static [ValType],
         result: &'static [ValType],
     ) {
-        let last_value = self.func_by_name.insert(
+        self.insert_entity(
             import_name,
             ImportLinkerEntity {
                 sys_func_idx,
@@ -87,23 +89,41 @@ impl ImportLinker {
                 result,
             },
         );
-        debug_assert!(
-            self.func_by_name
-                .values()
-                .find(|v| v.sys_func_idx == sys_func_idx)
-                .is_some(),
-            "import linker sys func idx collision"
-        );
-        assert!(last_value.is_none(), "import linker name collision");
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (ImportName, ImportLinkerEntity)> + use<'_> {
+        ImportLinkerIter {
+            items: self.name_to_entity.iter(),
+            entities: &self.entities,
+        }
+    }
+
+    pub fn insert_entity(&mut self, import_name: ImportName, entity: ImportLinkerEntity) {
+        let sys_func_idx = entity.sys_func_idx;
+        if self.name_to_entity.contains_key(&import_name) {
+            panic!("import linker name collision: {}", import_name)
+        } else if self.idx_to_entity.contains_key(&sys_func_idx) {
+            panic!("import linker name collision: {}", import_name)
+        }
+        let index = self.entities.len();
+        self.entities.push(entity);
+        self.name_to_entity.insert(import_name, index);
+        self.idx_to_entity.insert(sys_func_idx, index);
     }
 
     pub fn find_symbols(&self) -> Vec<ImportName> {
-        let mut symbols: Vec<ImportName> = self.keys().cloned().collect();
+        let mut symbols: Vec<ImportName> = self.name_to_entity.keys().cloned().collect();
         symbols.sort();
         symbols
     }
 
     pub fn resolve_by_import_name(&self, import_name: &ImportName) -> Option<&ImportLinkerEntity> {
-        self.func_by_name.get(import_name)
+        let index = self.name_to_entity.get(import_name).copied()?;
+        self.entities.get(index)
+    }
+
+    pub fn resolve_by_func_idx(&self, sys_func_idx: u32) -> Option<&ImportLinkerEntity> {
+        let index = self.idx_to_entity.get(&sys_func_idx).copied()?;
+        self.entities.get(index)
     }
 }

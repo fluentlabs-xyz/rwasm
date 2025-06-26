@@ -1,4 +1,6 @@
-use crate::{CallStack, RwasmExecutor, RwasmModule, Store, TrapCode, ValueStack};
+use crate::{CallStack, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value, ValueStack};
+#[cfg(feature = "std")]
+use std::{cell::RefCell, rc::Rc};
 
 /// Represents the core execution engine for managing the execution of a program,
 /// including the handling of values and function calls.
@@ -43,21 +45,17 @@ impl ExecutionEngine {
         &mut self.call_stack
     }
 
-    pub fn create_callable_executor<'a, T>(
+    pub fn create_callable_executor<'a, T: Send + Sync>(
         &'a mut self,
-        store: &'a mut Store<T>,
+        store: &'a mut RwasmStore<T>,
         module: &'a RwasmModule,
     ) -> RwasmExecutor<'a, T> {
-        debug_assert!(
-            self.call_stack.is_empty(),
-            "the call stack must be empty before an execution, use `resume` instead"
-        );
         RwasmExecutor::new(&module, &mut self.value_stack, &mut self.call_stack, store)
     }
 
-    pub fn create_resumable_executor<'a, T>(
+    pub fn create_resumable_executor<'a, T: Send + Sync>(
         &'a mut self,
-        store: &'a mut Store<T>,
+        store: &'a mut RwasmStore<T>,
         module: &'a RwasmModule,
     ) -> RwasmExecutor<'a, T> {
         let (ip, sp) = self.call_stack.pop().unwrap_or_else(|| {
@@ -73,25 +71,43 @@ impl ExecutionEngine {
         )
     }
 
-    pub fn execute<T>(
+    pub fn execute<T: Send + Sync>(
         &mut self,
-        store: &mut Store<T>,
+        store: &mut RwasmStore<T>,
         module: &RwasmModule,
+        params: &[Value],
+        result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        self.create_callable_executor(store, module).run()
+        self.create_callable_executor(store, module)
+            .run(params, result)
     }
 
-    pub fn resume<T>(
+    pub fn resume<T: Send + Sync>(
         &mut self,
-        store: &mut Store<T>,
+        store: &mut RwasmStore<T>,
         module: &RwasmModule,
+        params: &[Value],
+        result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        self.create_resumable_executor(store, module).run()
+        self.create_resumable_executor(store, module)
+            .run(params, result)
     }
 
-    pub fn reset<T>(&mut self, store: &mut Store<T>, keep_flags: bool) {
+    pub fn reset<T: Send + Sync>(&mut self, store: &mut RwasmStore<T>, keep_flags: bool) {
         self.value_stack.reset();
         self.call_stack.reset();
         store.reset(keep_flags)
+    }
+}
+
+#[cfg(feature = "std")]
+thread_local! {
+    static ENGINE: Rc<RefCell<ExecutionEngine>> = Rc::new(RefCell::new(ExecutionEngine::new()));
+}
+
+#[cfg(feature = "std")]
+impl ExecutionEngine {
+    pub fn acquire_shared() -> Rc<RefCell<ExecutionEngine>> {
+        ENGINE.with(|e| e.clone())
     }
 }

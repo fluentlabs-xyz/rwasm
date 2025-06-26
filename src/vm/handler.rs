@@ -1,17 +1,5 @@
-use crate::{
-    types::{TrapCode, UntypedValue},
-    vm::context::Caller,
-};
+use crate::{types::TrapCode, Store, TypedCaller, Value};
 use alloc::{vec, vec::Vec};
-
-pub type SyscallHandler<T> = fn(Caller<T>, u32) -> Result<(), TrapCode>;
-
-pub fn always_failing_syscall_handler<T>(
-    _caller: Caller<T>,
-    _func_idx: u32,
-) -> Result<(), TrapCode> {
-    Err(TrapCode::UnknownExternalFunction)
-}
 
 #[derive(Default)]
 #[allow(dead_code)]
@@ -28,69 +16,96 @@ struct SimpleCallHandler;
 
 #[allow(dead_code)]
 impl SimpleCallHandler {
-    fn fn_proc_exit(mut caller: Caller<SimpleCallContext>) -> Result<(), TrapCode> {
-        let exit_code = caller.stack_pop();
-        caller.context_mut().exit_code = exit_code.as_i32();
+    fn fn_proc_exit(
+        caller: &mut TypedCaller<SimpleCallContext>,
+        params: &[Value],
+        _result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        let exit_code = params[0].i32().unwrap();
+        caller.context_mut(|ctx| ctx.exit_code = exit_code);
         Err(TrapCode::ExecutionHalted)
     }
 
-    fn fn_get_state(mut caller: Caller<SimpleCallContext>) -> Result<(), TrapCode> {
-        caller.stack_push(UntypedValue::from(caller.context().state));
+    fn fn_get_state(
+        caller: &mut TypedCaller<SimpleCallContext>,
+        _params: &[Value],
+        result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        result[0] = Value::I32(caller.context(|ctx| ctx.state as i32));
         Ok(())
     }
 
-    fn fn_read_input(mut caller: Caller<SimpleCallContext>) -> Result<(), TrapCode> {
-        let [target, offset, length] = caller.stack_pop_n();
-        caller.context_mut().exit_code = -2020;
-        let input = caller
-            .context()
-            .input
-            .get(offset.as_usize()..(offset.as_usize() + length.as_usize()))
-            .unwrap()
-            .to_vec();
-        caller.memory_write(target.as_usize(), &input)?;
+    fn fn_read_input(
+        caller: &mut TypedCaller<SimpleCallContext>,
+        params: &[Value],
+        _result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        let target = params[0].i32().unwrap() as usize;
+        let offset = params[1].i32().unwrap() as usize;
+        let length = params[2].i32().unwrap() as usize;
+        caller.context_mut(|ctx| ctx.exit_code = -2020);
+        let input =
+            caller.context(|ctx| ctx.input.get(offset..(offset + length)).unwrap().to_vec());
+        caller.memory_write(target, &input)?;
         Ok(())
     }
 
-    fn fn_input_size(mut caller: Caller<SimpleCallContext>) -> Result<(), TrapCode> {
-        caller.stack_push(UntypedValue::from(caller.context().input.len() as i32));
+    fn fn_input_size(
+        caller: &mut TypedCaller<SimpleCallContext>,
+        _params: &[Value],
+        result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        result[0] = Value::I32(caller.context(|ctx| ctx.input.len() as i32));
         Ok(())
     }
 
-    fn fn_write_output(mut caller: Caller<SimpleCallContext>) -> Result<(), TrapCode> {
-        let [offset, length] = caller.stack_pop_n();
-        let mut buffer = vec![0u8; length.as_usize()];
-        caller.memory_read(offset.as_usize(), &mut buffer)?;
-        caller.context_mut().output.extend_from_slice(&buffer);
+    fn fn_write_output(
+        caller: &mut TypedCaller<SimpleCallContext>,
+        params: &[Value],
+        _result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        let offset = params[0].i32().unwrap() as usize;
+        let length = params[1].i32().unwrap() as usize;
+        let mut buffer = vec![0u8; length];
+        caller.memory_read(offset, &mut buffer)?;
+        caller.context_mut(|ctx| ctx.output.extend_from_slice(&buffer));
         Ok(())
     }
 
-    fn fn_keccak256(mut caller: Caller<SimpleCallContext>) -> Result<(), TrapCode> {
+    fn fn_keccak256(
+        caller: &mut TypedCaller<SimpleCallContext>,
+        params: &[Value],
+        _result: &mut [Value],
+    ) -> Result<(), TrapCode> {
         use tiny_keccak::Hasher;
-        let [data_offset, data_len, output32_offset] = caller.stack_pop_n();
-        let mut buffer = vec![0u8; data_len.as_usize()];
-        caller.memory_read(data_offset.as_usize(), &mut buffer)?;
+        let data_offset = params[0].i32().unwrap() as usize;
+        let data_len = params[1].i32().unwrap() as usize;
+        let output32_offset = params[2].i32().unwrap() as usize;
+        let mut buffer = vec![0u8; data_len];
+        caller.memory_read(data_offset, &mut buffer)?;
         let mut hash = tiny_keccak::Keccak::v256();
         hash.update(&buffer);
         let mut output = [0u8; 32];
         hash.finalize(&mut output);
-        caller.memory_write(output32_offset.as_usize(), &output)?;
+        caller.memory_write(output32_offset, &output)?;
         Ok(())
     }
 }
 
 #[allow(dead_code)]
 pub(crate) fn simple_call_handler_syscall_handler(
-    caller: Caller<SimpleCallContext>,
+    caller: &mut TypedCaller<SimpleCallContext>,
     func_idx: u32,
+    params: &[Value],
+    result: &mut [Value],
 ) -> Result<(), TrapCode> {
     match func_idx {
-        0x0001 => SimpleCallHandler::fn_proc_exit(caller),
-        0x0002 => SimpleCallHandler::fn_get_state(caller),
-        0x0003 => SimpleCallHandler::fn_read_input(caller),
-        0x0004 => SimpleCallHandler::fn_input_size(caller),
-        0x0005 => SimpleCallHandler::fn_write_output(caller),
-        0x0101 => SimpleCallHandler::fn_keccak256(caller),
+        0x0001 => SimpleCallHandler::fn_proc_exit(caller, params, result),
+        0x0002 => SimpleCallHandler::fn_get_state(caller, params, result),
+        0x0003 => SimpleCallHandler::fn_read_input(caller, params, result),
+        0x0004 => SimpleCallHandler::fn_input_size(caller, params, result),
+        0x0005 => SimpleCallHandler::fn_write_output(caller, params, result),
+        0x0101 => SimpleCallHandler::fn_keccak256(caller, params, result),
         _ => unreachable!("rwasm: unknown function ({})", func_idx),
     }
 }

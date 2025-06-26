@@ -10,82 +10,67 @@ mod table;
 use crate::{
     types::{AddressOffset, RwasmModule, TableIdx, UntypedValue},
     CallStack,
-    Caller,
     InstructionPtr,
     Opcode,
-    Store,
+    RwasmCaller,
+    RwasmStore,
     SysFuncIdx,
     TrapCode,
+    TypedCaller,
+    Value,
     ValueStack,
     ValueStackPtr,
 };
+use smallvec::SmallVec;
 
-/// The `RwasmExecutor` struct represents the state and functionality required to execute
-/// WebAssembly (WASM) instructions within an embedded WASM runtime environment.
-/// It manages the
-/// execution context, configuration, and other runtime parts necessary for the proper
-/// execution and operation of WASM modules, particularly when leveraging the `rwasm` ecosystem.
+/// The `RwasmExecutor` struct is a foundational component for executing WebAssembly modules
+/// in the `rwasm` runtime environment. It acts as the primary execution object, coordinating
+/// the state and execution flow of a WebAssembly module.
 ///
-/// # Generic Parameters
-/// - `T`:
-/// Custom execution context type to enable user-defined functionality during WASM execution.
+/// # Type Parameters
+/// - `'a`: A lifetime tied to borrowed references within the executor, ensuring the validity of
+///   borrowed objects during execution.
+/// - `T`: A generic parameter that must implement the `Send` and `Sync` traits. This allows
+///   multithreaded access and mutable operations on the WASM store.
 ///
 /// # Fields
-/// - `module`: A reference-counted pointer to the `RwasmModule` representing the compiled and
-///   loaded WASM module.
-/// - `config`: Configuration settings for the WASM executor, encapsulated in an `ExecutorConfig`.
-/// - `consumed_fuel`: Tracks the total amount of fuel consumed, where fuel represents computational
-///   resource usage.
-/// - `refunded_fuel`: Tracks the amount of fuel refunded during execution, allowing optimizations
-///   and reimbursements.
-/// - `value_stack`: Stack for runtime values, used for computations and function calls in the WASM
-///   runtime.
-/// - `sp`: Pointer to the current position in the value stack.
-/// - `global_memory`: Representation of the global memory accessible to the WASM module during
-///   execution.
-/// - `ip`: Instruction pointer used to track the next instruction to be executed.
-/// - `context`: Custom execution context provided by the user, allowing external state to interact
-///   with the executor.
-/// - `tracer`: Optional field for an instance of `Tracer`,
-/// used to trace or debug execution flow if
-///   enabled.
-/// - `fuel_costs`: Structure representing fuel consumption costs for various operations, enabling
-///   fine-grained control of execution resources.
-/// - `tables`: A map associating `TableIdx` (table index) to `TableEntity`, representing managed
-///   tables in the WASM module.
-/// - `call_stack`: A stack of instruction pointers,
-/// used to manage nested function calls and return
-///   points during execution.
-/// - `last_signature`: Optionally stores the last used signature index, needed for validating
-///   indirect function calls.
-/// - `next_result`: Optionally stores the result of the next operation, either a valid result or an
-///   error of type `TrapCode`.
-/// - `stop_exec`: A boolean flag indicating whether the execution should halt prematurely.
-/// - `syscall_handler`: A handler of type `SyscallHandler<T>` to execute host function calls or
-///   system calls invoked by the WASM module.
-/// - `default_elements_segment`: A vector of untyped values representing the default elements
-///   segment used in `rwasm`'s modified execution context.
-/// - `global_variables`: A map of global variable indices (`GlobalIdx`) to untyped values,
-///   representing global variables in the WASM runtime.
-/// - `empty_elements_segments`: A bit vector indicating which element segments are considered
-///   empty.
-/// - `empty_data_segments`: A bit vector indicating which data segments are considered empty.
+/// - `module` (`&'a RwasmModule`): A reference to the rWasm module being executed. This contains
+///   the compiled function definitions, memory, and other runtime components for execution.
+///
+/// - `value_stack` (`&'a mut ValueStack`): A mutable reference to the value stack, which is used
+///   during execution to store intermediate values, operand results, and function return values.
+///
+/// - `sp` (`ValueStackPtr`): A pointer to the current position in the value stack. This tracks the
+///   stack pointer (SP) for operand and value management during execution.
+///
+/// - `call_stack` (`&'a mut CallStack`): A mutable reference to the call stack, which is
+///   responsible for managing the function call/return frames to track execution flow across nested
+///   function calls.
+///
+/// - `ip` (`InstructionPtr`): The instruction pointer representing the location of the current
+///   instruction in the execution sequence of the WebAssembly module.
+///
+/// - `store` (`&'a mut RwasmStore<T>`): A mutable reference to the runtime store which maintains
+///   memory, global variables, and another runtime state for the execution context. The store also
+///   allows external data of the type `T` to be integrated with the WebAssembly instance.
 ///
 /// # Usage
-/// The `RwasmExecutor` is designed to be instantiated and used as the main driver for executing
-/// WASM programs.
-/// It maintains the state required for computation, controls the flow of execution,
-/// and integrates user-defined functionality via the `T` generic execution context.
+/// The `RwasmExecutor` is typically constructed internally by the runtime and should be
+/// used to step through execution of instructions within a WebAssembly module.
+/// It provides internal access to the runtime's data structures for fine-grained
+/// control over WebAssembly execution.
 ///
-/// Note: This struct is intended as part of an internal runtime and may not expose all fields to
-/// public interfaces.
-pub struct RwasmExecutor<'a, T> {
+/// # Thread Safety
+/// The `Send` and `Sync` constraints on `T` ensure that the executor's associated runtime
+/// store is safe for concurrent mutation and multithreaded execution scenarios, as
+/// required by the WebAssembly specification's concurrency guarantees.
+pub struct RwasmExecutor<'a, T: Send + Sync> {
     pub(crate) module: &'a RwasmModule,
     pub(crate) value_stack: &'a mut ValueStack,
     pub(crate) sp: ValueStackPtr,
     pub(crate) call_stack: &'a mut CallStack,
     pub(crate) ip: InstructionPtr,
-    pub(crate) store: &'a mut Store<T>,
+    pub(crate) store: &'a mut RwasmStore<T>,
 }
 
 macro_rules! exec_opcode {
@@ -198,15 +183,17 @@ macro_rules! exec_opcode {
     }};
 }
 
-impl<'a, T> RwasmExecutor<'a, T> {
+impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     pub fn new(
         module: &'a RwasmModule,
         value_stack: &'a mut ValueStack,
         call_stack: &'a mut CallStack,
-        store: &'a mut Store<T>,
+        store: &'a mut RwasmStore<T>,
     ) -> Self {
         let sp = value_stack.stack_ptr();
         let ip = InstructionPtr::new(module.code_section.instr.as_ptr());
+        // we don't commit offset for resumable executor
+        call_stack.commit_offset();
         Self::resumable(module, value_stack, sp, call_stack, ip, store)
     }
 
@@ -216,7 +203,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         sp: ValueStackPtr,
         call_stack: &'a mut CallStack,
         ip: InstructionPtr,
-        store: &'a mut Store<T>,
+        store: &'a mut RwasmStore<T>,
     ) -> Self {
         Self {
             module,
@@ -232,8 +219,13 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.ip.add(offset)
     }
 
-    pub fn caller<'vm>(&'vm mut self) -> Caller<'vm, 'a, T> {
-        Caller::<'vm, 'a, T>::new(self)
+    pub fn caller<'vm>(&'vm mut self) -> TypedCaller<'vm, T> {
+        let program_counter = self.program_counter();
+        TypedCaller::Rwasm(RwasmCaller::<'vm, T>::new(
+            &mut self.store,
+            program_counter,
+            self.sp,
+        ))
     }
 
     pub fn program_counter(&self) -> u32 {
@@ -241,13 +233,45 @@ impl<'a, T> RwasmExecutor<'a, T> {
         diff / size_of::<Opcode>() as u32
     }
 
-    pub fn run(&mut self) -> Result<(), TrapCode> {
+    pub fn run(&mut self, params: &[Value], result: &mut [Value]) -> Result<(), TrapCode> {
+        // copy input params
+        for x in params {
+            self.sp.push_value(x);
+        }
+        // run the loop
+        let status = self.run_the_loop(params, result);
+        // trap halts the execution, we need to clear the stack
+        if let Some(trap_code) = status.err() {
+            // clear stack only for non-interrupted calls
+            if trap_code != TrapCode::InterruptionCalled {
+                // TODO(dmitry123): "do we also need to reset store flags?"
+                self.call_stack.reset();
+            }
+            // forward the error
+            return Err(trap_code);
+        }
+        // copy output values in case of successful execution
+        for x in result {
+            *x = self.sp.pop_value(x.ty());
+        }
+        self.value_stack.sync_stack_ptr(self.sp);
+        // execution is over, clear stacks
+        // TODO(dmitry123): "enable this check after refactoring tests"
+        // debug_assert_eq!(
+        //     self.value_stack.stack_len(self.sp),
+        //     0,
+        //     "after execution the value stack must be empty"
+        // );
+        // we must reset the call stack in case of traps inside nested calls
+        self.call_stack.reset();
+        Ok(())
+    }
+
+    fn run_the_loop(&mut self, params: &[Value], result: &mut [Value]) -> Result<(), TrapCode> {
         loop {
             let instr = self.ip.get();
-
             #[cfg(feature = "debug-print")]
             self.debug_print(&instr);
-
             #[cfg(feature = "tracing")]
             {
                 self.trace_instr_pre(&instr);
@@ -261,7 +285,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
                     break Ok(());
                 }
             }
-
             #[cfg(not(feature = "tracing"))]
             exec_opcode!(self, instr, break Ok(()));
         }
@@ -328,7 +351,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         addr.add(offset);
         match addr.get() {
             Opcode::TableGet(table_idx) => table_idx,
-            _ => unreachable!("rwasm: can't extract table index"),
+            _ => unreachable!("can't extract table index"),
         }
     }
 
@@ -380,38 +403,54 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     pub(crate) fn invoke_syscall(&mut self, sys_func_idx: SysFuncIdx) -> Result<bool, TrapCode> {
-        match (self.store.syscall_handler)(self.caller(), sys_func_idx) {
+        let (params, result) = self
+            .store
+            .import_linker
+            .resolve_by_func_idx(sys_func_idx)
+            .map(|v| (v.params, v.result))
+            .unwrap_or_else(|| unreachable!("can't resolve syscall in the import linker"));
+        let mut buffer = SmallVec::<[Value; 16]>::default();
+        buffer.resize(params.len() + result.len(), Value::I32(0));
+        for (i, x) in params.iter().enumerate() {
+            buffer[params.len() - i - 1] = self.sp.pop_value(*x);
+        }
+        for (i, x) in result.iter().enumerate() {
+            buffer[params.len() + i] = Value::default(*x);
+        }
+        let (params, result) = buffer.split_at_mut(params.len());
+        let syscall_handler = self.store.syscall_handler;
+        let mut caller = self.caller();
+        match syscall_handler(&mut caller, sys_func_idx, params, result) {
             Ok(_) => {
+                // TODO(dmitry123): "resync SP, only for e2e testing suite"
+                self.sp = caller.as_rwasm_ref().sp();
+                // if execution succeeded, then copy output params back to the stack
+                for x in result {
+                    self.sp.push_value(x)
+                }
                 // just continue the execution, don't terminate the loop
                 Ok(false)
             }
             Err(TrapCode::ExecutionHalted) => {
-                // when execution is halted, then we just terminate an execution loop
+                // TODO(dmitry123): "resync SP, only for e2e testing suite"
+                // if execution halted, then copy output params back to the stack because the caller
+                // might want to read these params
+                for x in result {
+                    self.sp.push_value(x)
+                }
+                // when execution is halted, then we terminate an execution loop
                 Ok(true)
             }
             Err(TrapCode::InterruptionCalled) => {
-                // for resumable calls we need to store IP in the call stack
-                self.call_stack.push((self.ip, self.sp));
+                // TODO(dmitry123): "resync SP, only for e2e testing suite"
+                // for resumable calls we need to store IP in the call stack, also the caller is
+                // responsible for putting return params back
+                self.value_stack.sync_stack_ptr(self.sp);
+                self.call_stack.push(self.ip, self.sp);
                 // terminate an execution
                 Err(TrapCode::InterruptionCalled)
             }
             Err(err) => Err(err),
         }
-    }
-
-    pub fn store(&self) -> &Store<T> {
-        &self.store
-    }
-
-    pub fn store_mut(&mut self) -> &mut Store<T> {
-        &mut self.store
-    }
-
-    pub fn context(&self) -> &T {
-        &self.store.context
-    }
-
-    pub fn context_mut(&mut self) -> &mut T {
-        &mut self.store.context
     }
 }
