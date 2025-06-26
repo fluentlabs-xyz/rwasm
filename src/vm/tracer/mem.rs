@@ -258,11 +258,11 @@ pub struct MemoryLocalEvent {
 #[derive(Debug, Copy, Clone, Default)]
 pub struct MemoryAccessRecord {
     /// The memory access of the `a` register.
-    pub a: Option<MemoryRecordEnum>,
+    pub arg1_record: Option<MemoryRecordEnum>,
     /// The memory access of the `b` register.
-    pub b: Option<MemoryRecordEnum>,
+    pub arg2_record: Option<MemoryRecordEnum>,
     /// The memory access of the `c` register.
-    pub c: Option<MemoryRecordEnum>,
+    pub res_record: Option<MemoryRecordEnum>,
     /// The memory access of the `memory` register.
     pub memory: Option<MemoryRecordEnum>,
 }

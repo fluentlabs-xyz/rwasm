@@ -447,6 +447,17 @@ impl Opcode {
         }
     }
 
+    pub fn is_state_instrucition(self) -> bool {
+        match self {
+            Opcode::MemoryCopy
+            | Opcode::MemoryGrow
+            | Opcode::MemorySize
+            | Opcode::ConsumeFuel(_)
+            | Opcode::ConsumeFuelStack => true,
+            _ => false,
+        }
+    }
+
     #[inline]
     pub fn aux_value(&self) -> u32 {
         match self {

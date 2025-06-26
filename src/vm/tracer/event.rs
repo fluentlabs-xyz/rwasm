@@ -1,43 +1,51 @@
 use crate::Opcode;
-
-pub fn opcode_stack_read(ins: Opcode) -> u32 {
-    if ins.is_binary_instruction() {
+impl Opcode{
+    pub fn opcode_stack_read(self) -> u32 {
+    if self.is_binary_instruction() {
         return 2;
-    } else if ins.is_unary_instruction() {
+    } else if self.is_unary_instruction() {
         return 1;
-    } else if ins.is_nullary() {
+    } else if self.is_nullary() {
         return 0;
-    } else if ins.is_memory_load_instruction() {
+    } else if self.is_memory_load_instruction() {
         return 1;
-    } else if ins.is_memory_store_instruction() {
+    } else if self.is_memory_store_instruction() {
         return 2;
-    } else if let Opcode::LocalTee(_) = ins {
+    } else if let Opcode::LocalTee(_) = self {
         return 1;
-    } else if let Opcode::LocalSet(_) = ins {
+    } else if let Opcode::LocalSet(_) = self {
         return 1;
-    } else if ins.is_branch_instruction() {
+    } else if self.is_branch_instruction() {
+        if let Opcode::BrIfEqz(_) = self {
+            return 1;
+        } else if let Opcode::BrIfNez(_) = self {
+            return 1;
+        }
     }
     0
 }
-
-pub fn opcode_stack_write(op: Opcode) -> bool {
-    if op.is_binary_instruction() || op.is_unary_instruction() | op.is_const_instruction() {
+pub fn opcode_stack_write(self) -> bool {
+    if self.is_binary_instruction() || self.is_unary_instruction() | self.is_const_instruction() {
         return true;
     }
-    if op.is_binary_instruction() {
+    if self.is_binary_instruction() {
         return false;
     }
-    if op.is_memory_instruction() {
-        if op.is_memory_load_instruction() {
+    if self.is_memory_instruction() {
+        if self.is_memory_load_instruction() {
             true
         } else {
             false
         }
-    } else if let Opcode::LocalGet(_) = op {
+    } else if let Opcode::LocalGet(_) = self {
         true
-    } else if let Opcode::LocalTee(_) = op {
+    } else if let Opcode::LocalTee(_) = self {
         true
     } else {
         false
     }
 }
+
+}
+
+

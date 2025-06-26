@@ -85,7 +85,7 @@ pub struct RwasmExecutor<'a, T> {
     pub(crate) sp: ValueStackPtr,
     pub(crate) call_stack: &'a mut CallStack,
     pub(crate) ip: InstructionPtr,
-    pub(crate) store: &'a mut Store<T>,
+    pub store: &'a mut Store<T>,
 }
 
 macro_rules! exec_opcode {
@@ -303,7 +303,12 @@ impl<'a, T> RwasmExecutor<'a, T> {
 
         let pc = self.program_counter();
         let stack = self.value_stack.dump_stack(self.sp);
-        self.store.tracer.post_opcode_state(pc, sp, stack);
+        let op_state = self.store.tracer.logs.last_mut().unwrap();
+        op_state.next_pc = pc;
+        op_state.next_sp = sp;
+        let opcode = op_state.opcode;
+        self.store.tracer.post_opcode_state(pc, sp, *instr, stack);
+        println!("op_state:{:?}",self.store.tracer.logs.last());
     }
 
     #[cfg(feature = "debug-print")]
@@ -371,7 +376,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         }
         #[cfg(feature = "tracing")]
         {
-            use crate::{align, mem_index::AddressType};
+            use crate::{align, mem::MemoryRecordEnum, mem_index::AddressType};
 
             let (address, value) = self.sp.pop2();
             println!("base_addrss:{},value:{}", address, value);
@@ -389,11 +394,13 @@ impl<'a, T> RwasmExecutor<'a, T> {
                     .try_into()
                     .unwrap(),
             );
-            println!("addr:{},aligned_addr:{}", addr, aligned_addr);
-            println!("old_val:{},new_val:{}", old_val, new_val);
-            self.store
+
+            let res_memory_record = self.store
                 .tracer
                 .mw(typed_addr.to_virtual_addr(), new_val.into());
+            self.store.tracer.logs.last_mut().unwrap().memory_access.memory=
+            Some(MemoryRecordEnum::Write(res_memory_record));
+            self.store.tracer.logs.last_mut().unwrap().res = value.into();
         }
         self.ip.add(1);
         Ok(())
