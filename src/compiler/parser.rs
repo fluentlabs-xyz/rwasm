@@ -474,6 +474,11 @@ impl ModuleParser {
                 .instruction_set
                 .op_signature_check(signature_index);
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
+            if self.config.builtins_consume_fuel {
+                for instr in import_linker_entity.block_fuel.instr.iter() {
+                    translator.alloc.instruction_set.push(instr.clone());
+                }
+            }
             translator
                 .alloc
                 .instruction_set
