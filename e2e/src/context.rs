@@ -232,8 +232,9 @@ impl TestContext<'_> {
 
         {
             let buffer = rwasm_module.serialize();
-            let parsed_module = RwasmModule::new(&buffer);
+            let (parsed_module, bytes_read) = RwasmModule::new(&buffer);
             assert_eq!(rwasm_module, parsed_module);
+            assert_eq!(buffer[bytes_read..].len(), 0);
         }
 
         #[cfg(feature = "debug-print")]
