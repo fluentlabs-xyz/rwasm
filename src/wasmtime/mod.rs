@@ -28,18 +28,18 @@ use wasmtime::{AsContext, AsContextMut, Cache, CacheConfig};
 pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<T>;
 
-struct WrappedContext<T: Send + Sync> {
+struct WrappedContext<T: Send + Sync + 'static> {
     syscall_handler: SyscallHandler<T>,
     inner: Option<T>,
     message_channel: Option<mpsc::Sender<MessageResponse<T>>>,
     fuel: Option<u64>,
 }
 
-pub struct WasmtimeCaller<'a, T: Send + Sync> {
+pub struct WasmtimeCaller<'a, T: Send + Sync + 'static> {
     caller: RefCell<wasmtime::Caller<'a, WrappedContext<T>>>,
 }
 
-enum MessageResponse<T: Send + Sync> {
+enum MessageResponse<T: Send + Sync + 'static> {
     ExecutionResult {
         result: Result<SmallVec<[Value; 16]>, TrapCode>,
     },
@@ -49,25 +49,25 @@ enum MessageResponse<T: Send + Sync> {
     },
 }
 
-struct MessageRequest<T: Send + Sync> {
+struct MessageRequest<T: Send + Sync + 'static> {
     func_name: &'static str,
     params: SmallVec<[Value; 16]>,
     num_result: usize,
     resp: mpsc::Sender<MessageResponse<T>>,
 }
 
-struct MessageInterruptionResult<T: Send + Sync> {
+struct MessageInterruptionResult<T: Send + Sync + 'static> {
     stolen_context: StolenContext<T>,
     result: Result<SmallVec<[Value; 16]>, TrapCode>,
     memory_changes: Vec<(u32, Box<[u8]>)>,
 }
 
-struct StolenContext<T: Send + Sync> {
+struct StolenContext<T: Send + Sync + 'static> {
     context: T,
     fuel: Option<u64>,
 }
 
-pub struct WasmtimeWorker<T: 'static + Send + Sync> {
+pub struct WasmtimeWorker<T: 'static + Send + Sync + 'static> {
     sender: mpsc::Sender<MessageRequest<T>>,
     interrupt_channel: Option<mpsc::Sender<MessageInterruptionResult<T>>>,
     marker: PhantomData<T>,
@@ -77,7 +77,7 @@ pub struct WasmtimeWorker<T: 'static + Send + Sync> {
     stolen_context: Option<StolenContext<T>>,
 }
 
-impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
+impl<T: 'static + Send + Sync + 'static> WasmtimeWorker<T> {
     pub fn new(
         module: Rc<wasmtime::Module>,
         import_linker: Rc<ImportLinker>,
