@@ -41,6 +41,8 @@ fn test_wasmtime_disabled_f64_div() -> anyhow::Result<()> {
                 f64.const 9.0
                 f64.const 3.0
                 f64.div
+                f64.const 10.0
+                f64.add
             )
         )
     "#;
