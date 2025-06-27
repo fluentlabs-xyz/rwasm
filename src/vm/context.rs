@@ -6,7 +6,7 @@ use crate::{
     ValueStackPtr,
 };
 
-pub struct RwasmCaller<'a, T: Send + Sync> {
+pub struct RwasmCaller<'a, T: Send + Sync + 'static> {
     store: &'a mut RwasmStore<T>,
     program_counter: u32,
     sp: ValueStackPtr,

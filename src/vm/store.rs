@@ -22,7 +22,7 @@ use bitvec::{array::BitArray, bitarr};
 use core::cell::RefCell;
 use hashbrown::HashMap;
 
-pub struct RwasmStore<T: Send + Sync> {
+pub struct RwasmStore<T: Send + Sync + 'static> {
     pub(crate) consumed_fuel: u64,
     pub(crate) global_memory: GlobalMemory,
     pub(crate) context: RefCell<T>,

@@ -20,7 +20,7 @@ env:
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-amd64-8core
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +43,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-amd64-8core
     if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4

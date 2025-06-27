@@ -64,7 +64,7 @@ use smallvec::SmallVec;
 /// The `Send` and `Sync` constraints on `T` ensure that the executor's associated runtime
 /// store is safe for concurrent mutation and multithreaded execution scenarios, as
 /// required by the WebAssembly specification's concurrency guarantees.
-pub struct RwasmExecutor<'a, T: Send + Sync> {
+pub struct RwasmExecutor<'a, T: Send + Sync + 'static> {
     pub(crate) module: &'a RwasmModule,
     pub(crate) value_stack: &'a mut ValueStack,
     pub(crate) sp: ValueStackPtr,

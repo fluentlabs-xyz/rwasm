@@ -48,7 +48,7 @@ pub fn always_failing_syscall_handler<T: Send + Sync>(
     Err(TrapCode::UnknownExternalFunction)
 }
 
-pub enum TypedCaller<'a, T: Send + Sync> {
+pub enum TypedCaller<'a, T: Send + Sync + 'static> {
     Rwasm(RwasmCaller<'a, T>),
     #[cfg(feature = "wasmtime")]
     Wasmtime(WasmtimeCaller<'a, T>),
