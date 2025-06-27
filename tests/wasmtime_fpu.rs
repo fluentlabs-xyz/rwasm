@@ -1,4 +1,4 @@
-use wasmtime::{AsContextMut, Engine, Instance, Module, Store, TypedFunc};
+use wasmtime::{Engine, Instance, Module, Store, TypedFunc};
 
 pub fn run_main<Results>(wat: &str) -> anyhow::Result<Results>
 where
