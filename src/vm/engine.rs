@@ -100,14 +100,15 @@ impl ExecutionEngine {
     }
 }
 
-#[cfg(feature = "std")]
-thread_local! {
-    static ENGINE: Rc<RefCell<ExecutionEngine>> = Rc::new(RefCell::new(ExecutionEngine::new()));
-}
+// #[cfg(feature = "std")]
+// thread_local! {
+//     static ENGINE: Rc<RefCell<ExecutionEngine>> = Rc::new(RefCell::new(ExecutionEngine::new()));
+// }
 
 #[cfg(feature = "std")]
 impl ExecutionEngine {
     pub fn acquire_shared() -> Rc<RefCell<ExecutionEngine>> {
-        ENGINE.with(|e| e.clone())
+        // ENGINE.with(|e| e.clone())
+        Rc::new(RefCell::new(ExecutionEngine::new()))
     }
 }

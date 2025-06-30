@@ -10,6 +10,7 @@ use crate::{
     Value,
     F32,
     F64,
+    N_MAX_STACK_SIZE,
 };
 use alloc::rc::Rc;
 use directories::ProjectDirs;
@@ -375,6 +376,7 @@ fn wasmtime_config() -> anyhow::Result<wasmtime::Config> {
     // TODO(dmitry123): "make sure config is correct"
     config.strategy(wasmtime::Strategy::Cranelift);
     config.collector(wasmtime::Collector::Null);
+    config.max_wasm_stack(N_MAX_STACK_SIZE * size_of::<u32>());
     // use caching for artifacts
     let project_dirs = ProjectDirs::from("com", "bytecodealliance", "wasmtime").unwrap();
     let cache_dir = project_dirs.cache_dir();
