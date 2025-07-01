@@ -1,6 +1,5 @@
 use crate::{CallStack, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value, ValueStack};
-#[cfg(feature = "std")]
-use std::{cell::RefCell, rc::Rc};
+use alloc::vec::Vec;
 
 /// Represents the core execution engine for managing the execution of a program,
 /// including the handling of values and function calls.
@@ -25,50 +24,16 @@ use std::{cell::RefCell, rc::Rc};
 /// Example scenarios include evaluating expressions, executing bytecode, or managing the
 /// execution flow of a higher-level program.
 pub struct ExecutionEngine {
-    value_stack: ValueStack,
-    call_stack: CallStack,
+    value_stack: Vec<ValueStack>,
+    call_stack: Vec<CallStack>,
 }
 
 impl ExecutionEngine {
     pub fn new() -> Self {
         Self {
-            value_stack: ValueStack::default(),
-            call_stack: CallStack::default(),
+            value_stack: Vec::new(),
+            call_stack: Vec::new(),
         }
-    }
-
-    pub fn value_stack(&mut self) -> &mut ValueStack {
-        &mut self.value_stack
-    }
-
-    pub fn call_stack(&mut self) -> &mut CallStack {
-        &mut self.call_stack
-    }
-
-    pub fn create_callable_executor<'a, T: Send + Sync>(
-        &'a mut self,
-        store: &'a mut RwasmStore<T>,
-        module: &'a RwasmModule,
-    ) -> RwasmExecutor<'a, T> {
-        RwasmExecutor::new(&module, &mut self.value_stack, &mut self.call_stack, store)
-    }
-
-    pub fn create_resumable_executor<'a, T: Send + Sync>(
-        &'a mut self,
-        store: &'a mut RwasmStore<T>,
-        module: &'a RwasmModule,
-    ) -> RwasmExecutor<'a, T> {
-        let (ip, sp) = self.call_stack.pop().unwrap_or_else(|| {
-            unreachable!("resume calling without a remaining call stack");
-        });
-        RwasmExecutor::resumable(
-            &module,
-            &mut self.value_stack,
-            sp,
-            &mut self.call_stack,
-            ip,
-            store,
-        )
     }
 
     pub fn execute<T: Send + Sync>(
@@ -78,8 +43,24 @@ impl ExecutionEngine {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        self.create_callable_executor(store, module)
-            .run(params, result)
+        self.value_stack.push(ValueStack::default());
+        self.call_stack.push(CallStack::default());
+        let mut executor = RwasmExecutor::new(
+            &module,
+            self.value_stack.last_mut().unwrap(),
+            self.call_stack.last_mut().unwrap(),
+            store,
+        );
+        match executor.run(params, result) {
+            Err(TrapCode::InterruptionCalled) => Err(TrapCode::InterruptionCalled),
+            res => {
+                let value_stack = self.value_stack.pop().unwrap();
+                // debug_assert!(value_stack.is_empty() || res.is_err());
+                let call_stack = self.call_stack.pop().unwrap();
+                // debug_assert!(call_stack.is_empty() || res.is_err());
+                res
+            }
+        }
     }
 
     pub fn resume<T: Send + Sync>(
@@ -89,26 +70,36 @@ impl ExecutionEngine {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        self.create_resumable_executor(store, module)
-            .run(params, result)
-    }
-
-    pub fn reset<T: Send + Sync>(&mut self, store: &mut RwasmStore<T>, keep_flags: bool) {
-        self.value_stack.reset();
-        self.call_stack.reset();
-        store.reset(keep_flags)
+        let (value_stack, call_stack) = (
+            self.value_stack.last_mut().unwrap(),
+            self.call_stack.last_mut().unwrap(),
+        );
+        let (ip, sp) = call_stack.pop().unwrap_or_else(|| {
+            unreachable!("resume calling without a remaining call stack");
+        });
+        let mut executor =
+            RwasmExecutor::resumable(&module, value_stack, sp, call_stack, ip, store);
+        match executor.run(params, result) {
+            Err(TrapCode::InterruptionCalled) => Err(TrapCode::InterruptionCalled),
+            res => {
+                let value_stack = self.value_stack.pop().unwrap();
+                // debug_assert!(value_stack.is_empty() || res.is_err());
+                let call_stack = self.call_stack.pop().unwrap();
+                // debug_assert!(call_stack.is_empty() || res.is_err());
+                res
+            }
+        }
     }
 }
 
-// #[cfg(feature = "std")]
-// thread_local! {
-//     static ENGINE: Rc<RefCell<ExecutionEngine>> = Rc::new(RefCell::new(ExecutionEngine::new()));
-// }
+#[cfg(feature = "std")]
+thread_local! {
+    static ENGINE: std::rc::Rc<std::cell::RefCell<ExecutionEngine>> = std::rc::Rc::new(std::cell::RefCell::new(ExecutionEngine::new()));
+}
 
 #[cfg(feature = "std")]
 impl ExecutionEngine {
-    pub fn acquire_shared() -> Rc<RefCell<ExecutionEngine>> {
-        // ENGINE.with(|e| e.clone())
-        Rc::new(RefCell::new(ExecutionEngine::new()))
+    pub fn acquire_shared() -> std::rc::Rc<std::cell::RefCell<ExecutionEngine>> {
+        ENGINE.with(|e| e.clone())
     }
 }

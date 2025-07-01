@@ -261,9 +261,7 @@ impl Strategy {
                     #[allow(unreachable_patterns)]
                     _ => unreachable!(),
                 };
-                let mut ctx = engine.borrow_mut();
-                let mut executor = ctx.create_callable_executor(store, &module);
-                executor.run(params, result)
+                engine.borrow_mut().execute(store, &module, params, result)
             }
             #[cfg(feature = "wasmtime")]
             Strategy::Wasmtime { .. } => {
@@ -289,9 +287,9 @@ impl Strategy {
                     #[allow(unreachable_patterns)]
                     _ => unreachable!(),
                 };
-                let mut ctx = engine.borrow_mut();
-                let mut executor = ctx.create_resumable_executor(store, &module);
-                executor.run(interruption_result, result)
+                engine
+                    .borrow_mut()
+                    .resume(store, &module, interruption_result, result)
             }
             #[cfg(feature = "wasmtime")]
             Strategy::Wasmtime { .. } => {
@@ -321,9 +319,9 @@ impl Strategy {
                 for (addr, buf) in memory_changes {
                     store.memory_write(addr as usize, &buf)?
                 }
-                let mut ctx = engine.borrow_mut();
-                let mut executor = ctx.create_resumable_executor(store, &module);
-                executor.run(interruption_result, result)
+                engine
+                    .borrow_mut()
+                    .resume(store, &module, interruption_result, result)
             }
             #[cfg(feature = "wasmtime")]
             Strategy::Wasmtime { .. } => {

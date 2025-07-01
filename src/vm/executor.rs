@@ -192,8 +192,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     ) -> Self {
         let sp = value_stack.stack_ptr();
         let ip = InstructionPtr::new(module.code_section.instr.as_ptr());
-        // we don't commit offset for resumable executor
-        call_stack.commit_offset();
         Self::resumable(module, value_stack, sp, call_stack, ip, store)
     }
 

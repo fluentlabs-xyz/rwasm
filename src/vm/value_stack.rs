@@ -131,7 +131,7 @@ impl ValueStack {
 
     /// Returns `true` if the [`ValueStack`] is empty.
     pub fn is_empty(&self) -> bool {
-        self.entries.capacity() == 0
+        self.stack_ptr == 0
     }
 
     /// Creates a new empty [`ValueStack`].
@@ -210,12 +210,12 @@ impl ValueStack {
     }
 
     /// Returns the capacity of the [`ValueStack`].
-    fn capacity(&self) -> usize {
+    pub(crate) fn capacity(&self) -> usize {
         self.entries.len()
     }
 
     /// Returns the current length of the [`ValueStack`].
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.stack_ptr
     }
 
