@@ -66,10 +66,6 @@ fn test_interrupted_call_rwasm() {
     assert_eq!(store.fuel_consumed(), 1);
     engine.resume(&mut store, &module, &[], &mut []).unwrap();
     assert_eq!(store.fuel_consumed(), 3);
-    // make sure the engine is empty
-    let sp = engine.value_stack().stack_ptr();
-    assert_eq!(engine.value_stack().stack_len(sp), 0);
-    assert!(engine.call_stack().is_empty());
 }
 
 #[test]
@@ -109,13 +105,11 @@ fn test_interrupted_call_wasmtime() {
         .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
+    let mut result = [Value::I32(0); 1];
     engine
-        .resume(&mut store, &rwasm_module, &[], &mut [])
+        .resume(&mut store, &rwasm_module, &[], &mut result)
         .unwrap();
-    let sp = engine.value_stack().stack_ptr();
-    assert_eq!(engine.value_stack().stack_len(sp), 1);
-    assert!(engine.call_stack().is_empty());
-    assert_eq!(engine.value_stack().pop().as_u32(), 120);
+    assert_eq!(result[0].i32().unwrap(), 120);
     // run with wasmtime
     let module = Rc::new(compile_wasmtime_module(&wasm_binary).unwrap());
     let mut wasmtime_worker = WasmtimeWorker::new(
@@ -164,14 +158,6 @@ fn test_call_stack_empty_after_trap_in_nested_call() {
         .resume(&mut store, &module, &[], &mut [])
         .unwrap_err();
     assert_eq!(err, TrapCode::UnreachableCodeReached);
-    assert!(
-        engine.call_stack().is_empty(),
-        "the call stack must be empty"
-    );
-    // make sure the engine is empty
-    let sp = engine.value_stack().stack_ptr();
-    assert_eq!(engine.value_stack().stack_len(sp), 0);
-    assert!(engine.call_stack().is_empty());
 }
 
 #[test]

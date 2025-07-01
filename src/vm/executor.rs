@@ -192,8 +192,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     ) -> Self {
         let sp = value_stack.stack_ptr();
         let ip = InstructionPtr::new(module.code_section.instr.as_ptr());
-        // we don't commit offset for resumable executor
-        call_stack.commit_offset();
         Self::resumable(module, value_stack, sp, call_stack, ip, store)
     }
 
@@ -409,6 +407,10 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .resolve_by_func_idx(sys_func_idx)
             .map(|v| (v.params, v.result))
             .unwrap_or_else(|| unreachable!("can't resolve syscall in the import linker"));
+        let params_len = params.len();
+        let result_len = result.len();
+        let max_in_out = params_len.max(result_len);
+        self.value_stack.reserve(max_in_out)?;
         let mut buffer = SmallVec::<[Value; 16]>::default();
         buffer.resize(params.len() + result.len(), Value::I32(0));
         for (i, x) in params.iter().enumerate() {
@@ -432,7 +434,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 Ok(false)
             }
             Err(TrapCode::ExecutionHalted) => {
-                // TODO(dmitry123): "resync SP, only for e2e testing suite"
                 // if execution halted, then copy output params back to the stack because the caller
                 // might want to read these params
                 for x in result {
@@ -442,7 +443,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 Ok(true)
             }
             Err(TrapCode::InterruptionCalled) => {
-                // TODO(dmitry123): "resync SP, only for e2e testing suite"
                 // for resumable calls we need to store IP in the call stack, also the caller is
                 // responsible for putting return params back
                 self.value_stack.sync_stack_ptr(self.sp);

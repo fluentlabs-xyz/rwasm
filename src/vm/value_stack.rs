@@ -6,7 +6,6 @@ use crate::{
     Value,
     F32,
     F64,
-    N_DEFAULT_STACK_SIZE,
     N_MAX_STACK_SIZE,
 };
 use alloc::{vec, vec::Vec};
@@ -65,7 +64,7 @@ impl Extend<UntypedValue> for ValueStack {
 
 impl Default for ValueStack {
     fn default() -> Self {
-        Self::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE)
+        Self::new(N_MAX_STACK_SIZE, N_MAX_STACK_SIZE)
     }
 }
 
@@ -126,12 +125,13 @@ impl ValueStack {
     #[inline]
     pub fn sync_stack_ptr(&mut self, new_sp: ValueStackPtr) {
         let offset = new_sp.offset_from(self.base_ptr());
+        debug_assert!(offset >= 0, "stack underflow: {}", offset);
         self.stack_ptr = offset as usize;
     }
 
     /// Returns `true` if the [`ValueStack`] is empty.
     pub fn is_empty(&self) -> bool {
-        self.entries.capacity() == 0
+        self.stack_ptr == 0
     }
 
     /// Creates a new empty [`ValueStack`].
@@ -210,12 +210,12 @@ impl ValueStack {
     }
 
     /// Returns the capacity of the [`ValueStack`].
-    fn capacity(&self) -> usize {
+    pub(crate) fn capacity(&self) -> usize {
         self.entries.len()
     }
 
     /// Returns the current length of the [`ValueStack`].
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.stack_ptr
     }
 
@@ -246,6 +246,21 @@ impl ValueStack {
                 .extend(core::iter::repeat(UntypedValue::default()).take(new_len));
         }
         Ok(())
+    }
+
+    /// Extends the value stack by the `additional` amount of zeros.
+    ///
+    /// # Errors
+    ///
+    /// If the value stack cannot fit `additional` stack values.
+    pub fn extend_zeros(&mut self, additional: usize) {
+        let cells = self
+            .entries
+            .get_mut(self.stack_ptr..)
+            .and_then(|slice| slice.get_mut(..additional))
+            .unwrap_or_else(|| panic!("did not reserve enough value stack space"));
+        cells.fill(UntypedValue::default());
+        self.stack_ptr += additional;
     }
 
     /// Drains the remaining value stack.
@@ -403,7 +418,7 @@ impl ValueStackPtr {
         //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
-        debug_assert!(self.ptr >= self.src, "stack underflow");
+        debug_assert!(self.ptr >= self.src, "stack underflow: {}", delta);
     }
 
     /// Decreases the [`ValueStackPtr`] of `self` by one.
@@ -467,6 +482,11 @@ impl ValueStackPtr {
     #[inline]
     pub fn drop(&mut self) {
         self.dec_by(1);
+    }
+
+    #[inline]
+    pub fn drop_n(&mut self, n: usize) {
+        self.dec_by(n);
     }
 
     /// Pops the last [`UntypedValue`] from the [`ValueStack`] as `T`.
