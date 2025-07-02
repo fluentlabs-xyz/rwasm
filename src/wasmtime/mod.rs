@@ -378,14 +378,17 @@ fn wasmtime_config() -> anyhow::Result<wasmtime::Config> {
     config.collector(wasmtime::Collector::Null);
     config.max_wasm_stack(N_MAX_STACK_SIZE * size_of::<u32>());
     // use caching for artifacts
-    let project_dirs = ProjectDirs::from("com", "bytecodealliance", "wasmtime").unwrap();
-    let cache_dir = project_dirs.cache_dir();
-    std::fs::create_dir_all(cache_dir)?;
-    let mut cache_config = CacheConfig::default();
-    cache_config.with_directory(PathBuf::from(cache_dir));
-    config.cache(Some(Cache::new(cache_config)?));
-    // make sure the caching dir exists
-    std::fs::create_dir_all(Path::new(cache_dir))?;
+    #[cfg(feature = "cache-compiled-artifacts")]
+    {
+        let project_dirs = ProjectDirs::from("com", "bytecodealliance", "wasmtime").unwrap();
+        let cache_dir = project_dirs.cache_dir();
+        std::fs::create_dir_all(cache_dir)?;
+        let mut cache_config = CacheConfig::default();
+        cache_config.with_directory(PathBuf::from(cache_dir));
+        config.cache(Some(Cache::new(cache_config)?));
+        // make sure the caching dir exists
+        std::fs::create_dir_all(Path::new(cache_dir))?;
+    }
     Ok(config)
 }
 

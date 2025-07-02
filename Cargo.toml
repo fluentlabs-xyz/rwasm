@@ -48,3 +48,4 @@ tracing = [
 debug-print = []
 fpu = []
 wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:directories"]
+cache-compiled-artifacts = []
