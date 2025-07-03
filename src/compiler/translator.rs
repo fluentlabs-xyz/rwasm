@@ -1509,6 +1509,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let max_pages = memory_type
                 .maximum
                 .and_then(|v| u32::try_from(v).ok())
+                .filter(|v| *v <= N_MAX_MEMORY_PAGES)
                 .unwrap_or(N_MAX_MEMORY_PAGES);
             builder
                 .alloc

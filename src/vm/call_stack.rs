@@ -1,17 +1,17 @@
-use crate::{InstructionPtr, ValueStackPtr};
+use crate::InstructionPtr;
 use smallvec::SmallVec;
 
 #[derive(Default, Clone)]
 pub struct CallStack {
-    buf: SmallVec<[(InstructionPtr, ValueStackPtr); 128]>,
+    buf: SmallVec<[InstructionPtr; 16]>,
 }
 
 impl CallStack {
-    pub fn push(&mut self, ip: InstructionPtr, vs: ValueStackPtr) {
-        self.buf.push((ip, vs));
+    pub fn push(&mut self, ip: InstructionPtr) {
+        self.buf.push(ip);
     }
 
-    pub fn pop(&mut self) -> Option<(InstructionPtr, ValueStackPtr)> {
+    pub fn pop(&mut self) -> Option<InstructionPtr> {
         self.buf.pop()
     }
 

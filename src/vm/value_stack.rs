@@ -6,10 +6,12 @@ use crate::{
     Value,
     F32,
     F64,
+    N_DEFAULT_STACK_SIZE,
     N_MAX_STACK_SIZE,
 };
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
 use core::fmt::Debug;
+use smallvec::{smallvec, SmallVec};
 use wasmparser::ValType;
 
 /// The value stack used to execute Wasm bytecode.
@@ -21,7 +23,7 @@ use wasmparser::ValType;
 #[derive(Clone)]
 pub struct ValueStack {
     /// All currently live stack entries.
-    entries: Vec<UntypedValue>,
+    entries: SmallVec<[UntypedValue; N_DEFAULT_STACK_SIZE]>,
     /// Index of the first free place in the stack.
     stack_ptr: usize,
     /// The maximum value stack height.
@@ -64,7 +66,7 @@ impl Extend<UntypedValue> for ValueStack {
 
 impl Default for ValueStack {
     fn default() -> Self {
-        Self::new(N_MAX_STACK_SIZE, N_MAX_STACK_SIZE)
+        Self::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE)
     }
 }
 
@@ -73,11 +75,11 @@ impl ValueStack {
     ///
     /// # Note
     ///
-    /// This is required for resumable functions in order to replace their
-    /// proper stack with a cheap dummy one.
+    /// This is required for resumable functions to replace their
+    /// proper stack with an inexpensive fake one.
     pub fn empty() -> Self {
         Self {
-            entries: Vec::new(),
+            entries: SmallVec::new(),
             stack_ptr: 0,
             maximum_len: 0,
         }
@@ -147,9 +149,9 @@ impl ValueStack {
         );
         assert!(
             initial_len <= maximum_len,
-            "the initial value stack length is greater than maximum value stack length",
+            "the initial value stack length is greater than the maximum value stack length",
         );
-        let entries = vec![UntypedValue::default(); initial_len];
+        let entries = smallvec![UntypedValue::default(); initial_len];
         Self {
             entries,
             stack_ptr: 0,
@@ -167,8 +169,7 @@ impl ValueStack {
     /// # Safety
     ///
     /// This is safe since all rwasm bytecode has been validated
-    /// during translation and therefore cannot result in out of
-    /// bounds accesses.
+    /// during translation and therefore cannot result in out-of-bounds accesses.
     ///
     /// # Panics (Debug)
     ///
@@ -223,15 +224,15 @@ impl ValueStack {
     ///
     /// # Note
     ///
-    /// This allows to efficiently operate on the [`ValueStack`] through
-    /// [`ValueStackPtr`] which requires external resource management.
+    /// This allows efficiently operating on the [`ValueStack`] through
+    /// [`ValueStackPtr`], which requires external resource management.
     ///
-    /// Before executing a function the interpreter calls this function
+    /// Before executing a function, the interpreter calls this function
     /// to guarantee that enough space on the [`ValueStack`] exists for
-    /// correct execution to occur.
-    /// For this to be working we need a stack-depth analysis during Wasm
+    /// the correct execution to occur.
+    /// For this to be working, we need a stack-depth analysis during Wasm
     /// compilation so that we are aware of all stack-depths for every
-    /// functions.
+    /// function.
     pub fn reserve(&mut self, additional: usize) -> Result<(), TrapCode> {
         let new_len = self
             .len()
@@ -248,7 +249,7 @@ impl ValueStack {
         Ok(())
     }
 
-    /// Extends the value stack by the `additional` amount of zeros.
+    /// Extends the value stack by the `additional` number of zeros.
     ///
     /// # Errors
     ///

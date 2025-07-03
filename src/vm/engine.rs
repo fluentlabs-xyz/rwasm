@@ -1,5 +1,15 @@
-use crate::{CallStack, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value, ValueStack};
-use alloc::vec::Vec;
+use crate::{
+    CallStack,
+    InstructionPtr,
+    RwasmExecutor,
+    RwasmModule,
+    RwasmStore,
+    TrapCode,
+    Value,
+    ValueStack,
+    ValueStackPtr,
+};
+use smallvec::SmallVec;
 
 /// Represents the core execution engine for managing the execution of a program,
 /// including the handling of values and function calls.
@@ -23,19 +33,49 @@ use alloc::vec::Vec;
 ///
 /// Example scenarios include evaluating expressions, executing bytecode, or managing the
 /// execution flow of a higher-level program.
+#[derive(Default)]
 pub struct ExecutionEngine {
-    value_stack: Vec<ValueStack>,
-    call_stack: Vec<CallStack>,
+    value_stack: SmallVec<[ValueStack; 8]>,
+    call_stack: SmallVec<[CallStack; 8]>,
+    resume_stack: SmallVec<[(InstructionPtr, ValueStackPtr); 8]>,
 }
 
 impl ExecutionEngine {
     pub fn new() -> Self {
-        Self {
-            value_stack: Vec::new(),
-            call_stack: Vec::new(),
-        }
+        Self::default()
     }
 
+    /// Executes a rWasm module's function with the given parameters and stores the result.
+    ///
+    /// This method is designed to run an entry point of a Wasm module in the context of a runtime
+    /// execution environment. It handles the value stack and call stack during execution and
+    /// manages interruption and error scenarios.
+    ///
+    /// # Type Parameters
+    /// * `T` - A type that implements the `Send` and `Sync` traits, representing a custom shared
+    ///   state that can be used during execution.
+    ///
+    /// # Parameters
+    /// * `store` - A mutable reference to an `RwasmStore` instance, which holds the runtime state
+    ///   for the execution.
+    /// * `module` - A reference to the `RwasmModule` representing the compiled WebAssembly module
+    ///   to execute.
+    /// * `params` - A slice of `Value` representing the input parameters to pass to the Wasm
+    ///   function being executed.
+    /// * `result` - A mutable slice of `Value` where the result of the function execution will be
+    ///   stored.
+    ///
+    /// # Returns
+    /// * `Ok(())` - If the Wasm module's function executes successfully without any interruption or
+    ///   trap.
+    /// * `Err(TrapCode)` - If the execution is interrupted or encounters a trap. Possible trap
+    ///   codes include:
+    ///   - `TrapCode::InterruptionCalled`: Indicates that execution was interrupted explicitly.
+    ///
+    /// # Panics
+    /// This function assumes that the `value_stack` and `call_stack` are properly initialized. If
+    /// the stacks are accessed while empty due to a programming error, it may result in a
+    /// panic.
     pub fn execute<T: Send + Sync>(
         &mut self,
         store: &mut RwasmStore<T>,
@@ -45,24 +85,63 @@ impl ExecutionEngine {
     ) -> Result<(), TrapCode> {
         self.value_stack.push(ValueStack::default());
         self.call_stack.push(CallStack::default());
-        let mut executor = RwasmExecutor::new(
+        let mut executor = RwasmExecutor::entrypoint(
             &module,
             self.value_stack.last_mut().unwrap(),
             self.call_stack.last_mut().unwrap(),
             store,
         );
         match executor.run(params, result) {
-            Err(TrapCode::InterruptionCalled) => Err(TrapCode::InterruptionCalled),
+            Err(TrapCode::InterruptionCalled) => {
+                self.resume_stack.push((executor.ip, executor.sp));
+                Err(TrapCode::InterruptionCalled)
+            }
             res => {
-                let value_stack = self.value_stack.pop().unwrap();
-                // debug_assert!(value_stack.is_empty() || res.is_err());
-                let call_stack = self.call_stack.pop().unwrap();
-                // debug_assert!(call_stack.is_empty() || res.is_err());
+                self.value_stack.pop().unwrap();
+                self.call_stack.pop().unwrap();
                 res
             }
         }
     }
 
+    /// Resumes the execution of a WASM (WebAssembly) function that was previously interrupted.
+    ///
+    /// # Parameters
+    /// * `store`: A mutable reference to the `RwasmStore` where all WASM runtime resources and
+    ///   shared states are stored. This is required for managing the execution and maintaining host
+    ///   environment interactions.
+    /// * `module`: A reference to the `RwasmModule` object, representing the compiled rWASM module
+    ///   associated with the function being resumed. This contains the function definitions and
+    ///   other module-specific data.
+    /// * `params`: A reference to a slice of `Value` objects, representing the parameters to be
+    ///   passed to the WASM function being resumed. These correspond to the function's input
+    ///   arguments.
+    /// * `result`: A mutable reference to a slice of `Value` objects, where the results of the
+    ///   executed rWASM function will be written. The caller must ensure the slice is large enough
+    ///   to accommodate the expected output values.
+    ///
+    /// # Returns
+    /// - `Ok(())`: If the function execution resumes successfully and completes without traps.
+    /// - `Err(TrapCode)`: If a trap (error or interruption) occurs during execution. For example:
+    ///   - `TrapCode::InterruptionCalled`: Indicates the execution was interrupted explicitly.
+    ///
+    /// # Behavior
+    /// * Retrieves the relevant value stack and call stack from the `resume_stack` to continue
+    ///   execution.
+    /// * Creates a new `RwasmExecutor` object to run the instructions from the previous instruction
+    ///   pointer (`ip`) and stack pointer (`sp`).
+    /// * If an `InterruptionCalled` trap occurs, the current `ip` and `sp` state are saved to
+    ///   `resume_stack`, allowing further resumption of execution later.
+    /// * After successful execution or interruption, modifies the state of internal execution
+    ///   stacks (`value_stack` and `call_stack`).
+    ///
+    /// # Panics
+    /// This function will panic in the following cases:
+    /// - If there is no remaining call stack in `resume_stack` (indicates an invalid or
+    ///   inconsistent state).
+    ///
+    /// This function assumes that it is only called in valid scenarios where there is an already
+    /// interrupted call to be resumed.
     pub fn resume<T: Send + Sync>(
         &mut self,
         store: &mut RwasmStore<T>,
@@ -74,18 +153,18 @@ impl ExecutionEngine {
             self.value_stack.last_mut().unwrap(),
             self.call_stack.last_mut().unwrap(),
         );
-        let (ip, sp) = call_stack.pop().unwrap_or_else(|| {
+        let (ip, sp) = self.resume_stack.pop().unwrap_or_else(|| {
             unreachable!("resume calling without a remaining call stack");
         });
-        let mut executor =
-            RwasmExecutor::resumable(&module, value_stack, sp, call_stack, ip, store);
+        let mut executor = RwasmExecutor::new(&module, value_stack, sp, call_stack, ip, store);
         match executor.run(params, result) {
-            Err(TrapCode::InterruptionCalled) => Err(TrapCode::InterruptionCalled),
+            Err(TrapCode::InterruptionCalled) => {
+                self.resume_stack.push((executor.ip, executor.sp));
+                Err(TrapCode::InterruptionCalled)
+            }
             res => {
-                let value_stack = self.value_stack.pop().unwrap();
-                // debug_assert!(value_stack.is_empty() || res.is_err());
-                let call_stack = self.call_stack.pop().unwrap();
-                // debug_assert!(call_stack.is_empty() || res.is_err());
+                self.value_stack.pop().unwrap();
+                self.call_stack.pop().unwrap();
                 res
             }
         }

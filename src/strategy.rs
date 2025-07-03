@@ -162,7 +162,10 @@ pub enum Strategy {
         engine: Rc<RefCell<ExecutionEngine>>,
     },
     #[cfg(feature = "wasmtime")]
-    Wasmtime { module: Rc<WasmtimeModule> },
+    Wasmtime {
+        module: Rc<WasmtimeModule>,
+        resumable: bool,
+    },
 }
 
 pub enum TypedStore<T: Send + Sync + 'static> {
@@ -237,7 +240,7 @@ impl Strategy {
                 syscall_handler,
             )),
             #[cfg(feature = "wasmtime")]
-            Strategy::Wasmtime { module } => TypedStore::Wasmtime(WasmtimeWorker::new(
+            Strategy::Wasmtime { module, .. } => TypedStore::Wasmtime(WasmtimeWorker::new(
                 module.clone(),
                 import_linker,
                 context,
@@ -264,12 +267,16 @@ impl Strategy {
                 engine.borrow_mut().execute(store, &module, params, result)
             }
             #[cfg(feature = "wasmtime")]
-            Strategy::Wasmtime { .. } => {
+            Strategy::Wasmtime { resumable, .. } => {
                 let store = match store {
                     TypedStore::Wasmtime(store) => store,
                     _ => unreachable!(),
                 };
-                store.execute(func_name, params, result)
+                if *resumable {
+                    store.execute(func_name, params, result)
+                } else {
+                    store.execute_not_resumable(func_name, params, result)
+                }
             }
         }
     }

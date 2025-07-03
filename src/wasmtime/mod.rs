@@ -13,18 +13,16 @@ use crate::{
     N_MAX_STACK_SIZE,
 };
 use alloc::rc::Rc;
-use directories::ProjectDirs;
 use smallvec::{smallvec, SmallVec};
 use std::{
     cell::RefCell,
     marker::PhantomData,
     panic,
-    path::{Path, PathBuf},
     sync::{mpsc, Arc, RwLock},
     thread,
     time::Instant,
 };
-use wasmtime::{AsContext, AsContextMut, Cache, CacheConfig};
+use wasmtime::{AsContext, AsContextMut};
 
 pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<T>;
@@ -133,6 +131,21 @@ impl<T: 'static + Send + Sync + 'static> WasmtimeWorker<T> {
             stolen_context: None,
             instance,
         }
+    }
+
+    pub fn execute_not_resumable(
+        &mut self,
+        func_name: &'static str,
+        params: &[Value],
+        result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        execute_wasmtime_module(
+            self.instance,
+            &mut self.store.write().unwrap(),
+            func_name,
+            params,
+            result,
+        )
     }
 
     pub fn execute(
@@ -380,6 +393,9 @@ fn wasmtime_config() -> anyhow::Result<wasmtime::Config> {
     // use caching for artifacts
     #[cfg(feature = "cache-compiled-artifacts")]
     {
+        use directories::ProjectDirs;
+        use std::path::{Path, PathBuf};
+        use wasmtime::{Cache, CacheConfig};
         let project_dirs = ProjectDirs::from("com", "bytecodealliance", "wasmtime").unwrap();
         let cache_dir = project_dirs.cache_dir();
         std::fs::create_dir_all(cache_dir)?;
