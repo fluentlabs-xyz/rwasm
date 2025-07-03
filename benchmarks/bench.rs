@@ -12,7 +12,7 @@ use rwasm::{
     Strategy,
     Value,
 };
-use std::sync::Arc;
+use std::rc::Rc;
 use test::Bencher;
 
 const FIB_VALUE: i32 = 47;
@@ -76,7 +76,7 @@ fn bench_rwasm_no_cache(b: &mut Bencher) {
     let mut engine = ExecutionEngine::new();
 
     b.iter(|| {
-        let rwasm_module = RwasmModule::new(&encoded_rwasm_module);
+        let (rwasm_module, _) = RwasmModule::new(&encoded_rwasm_module);
         let mut result = [Value::I32(0)];
         engine
             .execute(
@@ -102,14 +102,18 @@ fn bench_rwasm(b: &mut Bencher) {
     let encoded_rwasm_module = rwasm_module.serialize();
     let mut store = RwasmStore::<()>::default();
     let mut engine = ExecutionEngine::new();
-    let rwasm_module = RwasmModule::new(&encoded_rwasm_module);
+    let (rwasm_module, _) = RwasmModule::new(&encoded_rwasm_module);
 
     b.iter(|| {
-        engine.value_stack().push(FIB_VALUE.into());
+        let mut result = [Value::I32(0); 1];
         engine
-            .execute(&mut store, &rwasm_module, &[], &mut [])
+            .execute(
+                &mut store,
+                &rwasm_module,
+                &[Value::I32(FIB_VALUE)],
+                &mut result,
+            )
             .unwrap();
-        let result = engine.value_stack().pop();
         core::hint::black_box(result);
         store.reset(true);
     });
@@ -120,11 +124,36 @@ fn bench_wasmtime(b: &mut Bencher) {
     let wasm_binary = include_bytes!("./lib.wasm");
 
     let strategy = Strategy::Wasmtime {
-        module: Arc::new(compile_wasmtime_module(wasm_binary).unwrap()),
+        module: Rc::new(compile_wasmtime_module(wasm_binary).unwrap()),
+        resumable: false,
     };
     let mut store = strategy.create_store(
         ExecutorConfig::default(),
-        Arc::new(ImportLinker::default()),
+        Rc::new(ImportLinker::default()),
+        (),
+        always_failing_syscall_handler,
+    );
+
+    b.iter(|| {
+        let mut result = [Value::I32(0)];
+        strategy
+            .execute(&mut store, "main", &[Value::I32(FIB_VALUE)], &mut result)
+            .unwrap();
+        core::hint::black_box(result);
+    });
+}
+
+#[bench]
+fn bench_wasmtime_resumable(b: &mut Bencher) {
+    let wasm_binary = include_bytes!("./lib.wasm");
+
+    let strategy = Strategy::Wasmtime {
+        module: Rc::new(compile_wasmtime_module(wasm_binary).unwrap()),
+        resumable: true,
+    };
+    let mut store = strategy.create_store(
+        ExecutorConfig::default(),
+        Rc::new(ImportLinker::default()),
         (),
         always_failing_syscall_handler,
     );

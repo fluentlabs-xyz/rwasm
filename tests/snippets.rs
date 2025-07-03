@@ -71,7 +71,7 @@ fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Result<Vec<u32>, Tr
         value_stack.push(i.into());
     }
     let mut executor =
-        RwasmExecutor::new(&rwasm_module, &mut value_stack, &mut call_stack, &mut store);
+        RwasmExecutor::entrypoint(&rwasm_module, &mut value_stack, &mut call_stack, &mut store);
     executor.run(&[], &mut [])?;
     let output = value_stack
         .as_slice()

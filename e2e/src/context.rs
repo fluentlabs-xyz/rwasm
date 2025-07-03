@@ -48,7 +48,7 @@ pub struct InstanceInner {
 
 impl InstanceInner {
     fn new_executor(&mut self) -> RwasmExecutor<TestingContext> {
-        RwasmExecutor::new(
+        RwasmExecutor::entrypoint(
             &self.module,
             &mut self.value_stack,
             &mut self.call_stack,
@@ -254,7 +254,7 @@ impl TestContext<'_> {
             call_stack: CallStack::default(),
             program_counter: 0,
         };
-        let mut executor = RwasmExecutor::<TestingContext>::new(
+        let mut executor = RwasmExecutor::<TestingContext>::entrypoint(
             &instance_inner.module,
             &mut instance_inner.value_stack,
             &mut instance_inner.call_stack,

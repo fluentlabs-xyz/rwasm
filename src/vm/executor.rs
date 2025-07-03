@@ -184,7 +184,7 @@ macro_rules! exec_opcode {
 }
 
 impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
-    pub fn new(
+    pub fn entrypoint(
         module: &'a RwasmModule,
         value_stack: &'a mut ValueStack,
         call_stack: &'a mut CallStack,
@@ -192,10 +192,10 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     ) -> Self {
         let sp = value_stack.stack_ptr();
         let ip = InstructionPtr::new(module.code_section.instr.as_ptr());
-        Self::resumable(module, value_stack, sp, call_stack, ip, store)
+        Self::new(module, value_stack, sp, call_stack, ip, store)
     }
 
-    pub fn resumable(
+    pub fn new(
         module: &'a RwasmModule,
         value_stack: &'a mut ValueStack,
         sp: ValueStackPtr,
@@ -443,10 +443,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 Ok(true)
             }
             Err(TrapCode::InterruptionCalled) => {
-                // for resumable calls we need to store IP in the call stack, also the caller is
-                // responsible for putting return params back
-                self.value_stack.sync_stack_ptr(self.sp);
-                self.call_stack.push(self.ip, self.sp);
                 // terminate an execution
                 Err(TrapCode::InterruptionCalled)
             }

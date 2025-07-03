@@ -185,5 +185,9 @@ fn test_nitro_verifier_strategy() {
     let module = compile_wasmtime_module(&rwasm_module.wasm_section)
         .unwrap()
         .into();
-    exec_strategy(Strategy::Wasmtime { module }).unwrap();
+    exec_strategy(Strategy::Wasmtime {
+        module,
+        resumable: true,
+    })
+    .unwrap();
 }
