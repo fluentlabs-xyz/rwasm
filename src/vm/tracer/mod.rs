@@ -138,7 +138,7 @@ impl Tracer {
             res: 0,
         };
         let memory_access = self.record_mr(opcode, sp);
-        println!("memory_access:{:?}", memory_access);
+
         if let Some(memory_read_record) = memory_access.arg1_record {
             opcode_state.arg1 = memory_read_record.value();
         }

@@ -296,7 +296,7 @@ impl From<*mut UntypedValue> for ValueStackPtr {
         Self { src: ptr, ptr }
     }
 }
-
+unsafe impl Send for ValueStackPtr {}
 impl ValueStackPtr {
     pub fn new(ptr: *mut UntypedValue) -> ValueStackPtr {
         Self { ptr, src: ptr }

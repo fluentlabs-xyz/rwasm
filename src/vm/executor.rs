@@ -295,7 +295,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
     }
 
-    #[cfg(feature = "tracing")]
     fn trace_instr_post(&mut self, instr: &Opcode, trap_code: Option<TrapCode>) {
         // TODO(wangyao): "track trap codes"
         self.store.tracer.state.next_cycle();
@@ -308,7 +307,12 @@ impl<'a, T> RwasmExecutor<'a, T> {
         op_state.next_sp = sp;
         let opcode = op_state.opcode;
         self.store.tracer.post_opcode_state(pc, sp, *instr, stack);
-        println!("op_state:{:?}",self.store.tracer.logs.last());
+        println!("op_state:{:?}", self.store.tracer.logs.last());
+    }
+
+    #[cfg(feature = "tracing")]
+    pub fn relative_ip(self) -> isize {
+        self.ip.to_offset(self.module.code_section.instr.as_ptr())
     }
 
     #[cfg(feature = "debug-print")]
@@ -395,11 +399,17 @@ impl<'a, T> RwasmExecutor<'a, T> {
                     .unwrap(),
             );
 
-            let res_memory_record = self.store
+            let res_memory_record = self
+                .store
                 .tracer
                 .mw(typed_addr.to_virtual_addr(), new_val.into());
-            self.store.tracer.logs.last_mut().unwrap().memory_access.memory=
-            Some(MemoryRecordEnum::Write(res_memory_record));
+            self.store
+                .tracer
+                .logs
+                .last_mut()
+                .unwrap()
+                .memory_access
+                .memory = Some(MemoryRecordEnum::Write(res_memory_record));
             self.store.tracer.logs.last_mut().unwrap().res = value.into();
         }
         self.ip.add(1);
