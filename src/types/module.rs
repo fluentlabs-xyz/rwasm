@@ -41,9 +41,9 @@ pub struct RwasmModule {
 }
 
 impl RwasmModule {
-    pub fn new_or_empty(sink: &[u8]) -> Self {
+    pub fn new_or_empty(sink: &[u8]) -> (Self, usize) {
         if sink.is_empty() {
-            Self::empty()
+            (Self::empty(), 0)
         } else {
             Self::new(sink)
         }
@@ -76,11 +76,9 @@ impl RwasmModule {
         }
     }
 
-    pub fn new(sink: &[u8]) -> Self {
-        let module: RwasmModule;
-        (module, _) = bincode::decode_from_slice(sink, bincode::config::legacy())
-            .unwrap_or_else(|_| unreachable!("rwasm: malformed rwasm binary"));
-        module
+    pub fn new(sink: &[u8]) -> (Self, usize) {
+        bincode::decode_from_slice(sink, bincode::config::legacy())
+            .unwrap_or_else(|_| unreachable!("rwasm: malformed rwasm binary"))
     }
 
     pub fn serialize(&self) -> Vec<u8> {

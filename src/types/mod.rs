@@ -34,8 +34,8 @@ pub use units::*;
 pub use untyped_value::*;
 pub use value::*;
 
-pub const N_DEFAULT_STACK_SIZE: usize = 1024;
-pub const N_MAX_STACK_SIZE: usize = 4096;
+pub const N_DEFAULT_STACK_SIZE: usize = 32;
+pub const N_MAX_STACK_SIZE: usize = 8192;
 pub const N_MAX_RECURSION_DEPTH: usize = 1024;
 
 /// This constant is driven by WebAssembly standard, default

@@ -22,10 +22,6 @@ p384 = { version = "0.13.0", default-features = false, features = [
     "ecdsa-core",
     "ecdsa",
 ] }
-hex = "0.4.3"
-
-[dev-dependencies]
-fluentbase-sdk-testing = { git = "https://github.com/fluentlabs-xyz/fluentbase", branch = "devel", default-features = false, features = ["debug-print"] }
 
 [build-dependencies]
 fluentbase-build = { git = "https://github.com/fluentlabs-xyz/fluentbase", branch = "devel", default-features = false }

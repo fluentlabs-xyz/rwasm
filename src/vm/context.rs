@@ -1,147 +1,69 @@
 use crate::{
-    split_i64_to_i32,
     types::{TrapCode, UntypedValue},
-    vm::store::Store,
-    InstructionPtr,
-    RwasmExecutor,
+    Caller,
+    RwasmStore,
+    Store,
+    ValueStackPtr,
 };
-use alloc::{vec, vec::Vec};
 
-pub struct Caller<'vm, 'a, T> {
-    vm: &'vm mut RwasmExecutor<'a, T>,
+pub struct RwasmCaller<'a, T: Send + Sync + 'static> {
+    store: &'a mut RwasmStore<T>,
+    program_counter: u32,
+    sp: ValueStackPtr,
 }
 
-impl<'vm, 'a, T> Caller<'vm, 'a, T> {
-    pub fn new(vm: &'vm mut RwasmExecutor<'a, T>) -> Self {
-        Self { vm }
-    }
-
-    pub fn stack_push<I: Into<UntypedValue>>(&mut self, value: I) {
-        self.vm.sp.push_as(value);
-    }
-
-    pub fn stack_push_u32(&mut self, value: u32) {
-        self.vm.sp.push(UntypedValue::from_bits(value));
-    }
-
-    pub fn stack_push_i32(&mut self, value: i32) {
-        self.vm.sp.push(UntypedValue::from_bits(value as u32));
-    }
-
-    pub fn stack_push_u64(&mut self, value: u64) {
-        let (lo, hi) = split_i64_to_i32(value as i64);
-        self.vm.sp.push(UntypedValue::from_bits(lo as u32));
-        self.vm.sp.push(UntypedValue::from_bits(hi as u32));
-    }
-
-    pub fn stack_push_i64(&mut self, value: i64) {
-        let (lo, hi) = split_i64_to_i32(value);
-        self.vm.sp.push(UntypedValue::from_bits(lo as u32));
-        self.vm.sp.push(UntypedValue::from_bits(hi as u32));
-    }
-
-    pub fn sync_stack_ptr(&mut self) {
-        self.vm.value_stack.sync_stack_ptr(self.vm.sp);
-    }
-
-    pub fn stack_pop(&mut self) -> UntypedValue {
-        self.vm.sp.pop()
-    }
-
-    pub fn stack_pop_as<I: From<UntypedValue>>(&mut self) -> I {
-        let lhs = self.stack_pop();
-        I::from(lhs)
-    }
-
-    pub fn stack_pop2_as<I: From<UntypedValue>>(&mut self) -> (I, I) {
-        let (lhs, rhs) = self.stack_pop2();
-        (I::from(lhs), I::from(rhs))
-    }
-
-    pub fn stack_pop_u32(&mut self) -> u32 {
-        self.vm.sp.pop().to_bits()
-    }
-
-    pub fn stack_pop_i32(&mut self) -> i32 {
-        self.vm.sp.pop().to_bits() as i32
-    }
-
-    pub fn stack_pop_u64(&mut self) -> u64 {
-        let (lo, hi) = self.vm.sp.pop2();
-        let value = ((hi.to_bits() as u64) << 32) | (lo.to_bits() as u64);
-        value
-    }
-
-    pub fn stack_pop_i64(&mut self) -> i64 {
-        let (lo, hi) = self.vm.sp.pop2();
-        let value = ((hi.to_bits() as u64) << 32) | (lo.to_bits() as u64);
-        value as i64
-    }
-
-    pub fn stack_pop2(&mut self) -> (UntypedValue, UntypedValue) {
-        self.vm.sp.pop2()
-    }
-
-    pub fn stack_pop3(&mut self) -> (UntypedValue, UntypedValue, UntypedValue) {
-        self.vm.sp.pop3()
-    }
-
-    pub fn stack_pop_n<const N: usize>(&mut self) -> [UntypedValue; N] {
-        let mut result: [UntypedValue; N] = [UntypedValue::default(); N];
-        for i in 0..N {
-            result[N - i - 1] = self.vm.sp.pop();
+impl<'a, T: Send + Sync> RwasmCaller<'a, T> {
+    pub fn new(store: &'a mut RwasmStore<T>, program_counter: u32, sp: ValueStackPtr) -> Self {
+        Self {
+            store,
+            program_counter,
+            sp,
         }
-        result
     }
 
-    pub fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        self.vm.store.global_memory.read(offset, buffer)?;
+    pub fn sp(&self) -> ValueStackPtr {
+        self.sp
+    }
+}
+
+impl<'a, T: Send + Sync> Store<T> for RwasmCaller<'a, T> {
+    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+        self.store.global_memory.read(offset, buffer)?;
         Ok(())
     }
 
-    pub fn memory_read_fixed<const N: usize>(&self, offset: usize) -> Result<[u8; N], TrapCode> {
-        let mut buffer = [0u8; N];
-        self.vm.store.global_memory.read(offset, &mut buffer)?;
-        Ok(buffer)
-    }
-
-    pub fn memory_read_vec(&self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
-        let mut buffer = vec![0u8; length];
-        self.vm.store.global_memory.read(offset, &mut buffer)?;
-        Ok(buffer)
-    }
-
-    pub fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        self.vm.store.global_memory.write(offset, buffer)?;
+    fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
+        self.store.global_memory.write(offset, buffer)?;
         #[cfg(feature = "tracing")]
-        self.vm
-            .store
+        self.store
             .tracer
             .memory_change(offset as u32, buffer.len() as u32, buffer);
         Ok(())
     }
 
-    pub fn program_counter(&self) -> u32 {
-        self.vm.program_counter()
+    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+        func(&mut self.store.context.borrow_mut())
     }
 
-    pub fn instruction_ptr(&self) -> InstructionPtr {
-        self.vm.ip
+    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+        func(&self.store.context.borrow())
     }
 
-    pub fn store_mut(&mut self) -> &mut Store<T> {
-        &mut self.vm.store
+    fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
+        self.store.try_consume_fuel(delta)
     }
 
-    pub fn store(&self) -> &Store<T> {
-        &self.vm.store
+    fn remaining_fuel(&mut self) -> Option<u64> {
+        self.store.remaining_fuel()
+    }
+}
+
+impl<'a, T: Send + Sync> Caller<T> for RwasmCaller<'a, T> {
+    fn program_counter(&self) -> u32 {
+        self.program_counter
     }
 
-    pub fn context_mut(&mut self) -> &mut T {
-        &mut self.vm.store.context
-    }
-
-    pub fn context(&self) -> &T {
-        &self.vm.store.context
+    fn stack_push(&mut self, value: UntypedValue) {
+        self.sp.push(value);
     }
 }

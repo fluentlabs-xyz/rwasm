@@ -1,10 +1,10 @@
-use crate::{BlockFuel, GlobalIdx, MaxStackHeight, RwasmExecutor, SignatureIdx, TrapCode};
+use crate::{BlockFuel, GlobalIdx, MaxStackHeight, RwasmExecutor, SignatureIdx, Store, TrapCode};
 
-impl<'a, T> RwasmExecutor<'a, T> {
+impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_consume_fuel(&mut self, block_fuel: BlockFuel) -> Result<(), TrapCode> {
         if self.store.config.fuel_enabled {
-            self.store.try_consume_fuel(block_fuel)?;
+            self.store.try_consume_fuel(block_fuel as u64)?;
         }
         self.ip.add(1);
         Ok(())
@@ -14,7 +14,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     pub(crate) fn visit_consume_fuel_stack(&mut self) -> Result<(), TrapCode> {
         let block_fuel: u32 = self.sp.pop_as();
         if self.store.config.fuel_enabled {
-            self.store.try_consume_fuel(block_fuel)?;
+            self.store.try_consume_fuel(block_fuel as u64)?;
         }
         self.ip.add(1);
         Ok(())

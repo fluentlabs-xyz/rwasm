@@ -1,13 +1,18 @@
 use crate::{
     split_i64_to_i32,
     types::{TrapCode, UntypedValue},
+    ExternRef,
+    FuncRef,
+    Value,
     F32,
     F64,
     N_DEFAULT_STACK_SIZE,
     N_MAX_STACK_SIZE,
 };
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
 use core::fmt::Debug;
+use smallvec::{smallvec, SmallVec};
+use wasmparser::ValType;
 
 /// The value stack used to execute Wasm bytecode.
 ///
@@ -18,7 +23,7 @@ use core::fmt::Debug;
 #[derive(Clone)]
 pub struct ValueStack {
     /// All currently live stack entries.
-    entries: Vec<UntypedValue>,
+    entries: SmallVec<[UntypedValue; N_DEFAULT_STACK_SIZE]>,
     /// Index of the first free place in the stack.
     stack_ptr: usize,
     /// The maximum value stack height.
@@ -70,11 +75,11 @@ impl ValueStack {
     ///
     /// # Note
     ///
-    /// This is required for resumable functions in order to replace their
-    /// proper stack with a cheap dummy one.
+    /// This is required for resumable functions to replace their
+    /// proper stack with an inexpensive fake one.
     pub fn empty() -> Self {
         Self {
-            entries: Vec::new(),
+            entries: SmallVec::new(),
             stack_ptr: 0,
             maximum_len: 0,
         }
@@ -122,12 +127,13 @@ impl ValueStack {
     #[inline]
     pub fn sync_stack_ptr(&mut self, new_sp: ValueStackPtr) {
         let offset = new_sp.offset_from(self.base_ptr());
+        debug_assert!(offset >= 0, "stack underflow: {}", offset);
         self.stack_ptr = offset as usize;
     }
 
     /// Returns `true` if the [`ValueStack`] is empty.
     pub fn is_empty(&self) -> bool {
-        self.entries.capacity() == 0
+        self.stack_ptr == 0
     }
 
     /// Creates a new empty [`ValueStack`].
@@ -143,9 +149,9 @@ impl ValueStack {
         );
         assert!(
             initial_len <= maximum_len,
-            "the initial value stack length is greater than maximum value stack length",
+            "the initial value stack length is greater than the maximum value stack length",
         );
-        let entries = vec![UntypedValue::default(); initial_len];
+        let entries = smallvec![UntypedValue::default(); initial_len];
         Self {
             entries,
             stack_ptr: 0,
@@ -163,8 +169,7 @@ impl ValueStack {
     /// # Safety
     ///
     /// This is safe since all rwasm bytecode has been validated
-    /// during translation and therefore cannot result in out of
-    /// bounds accesses.
+    /// during translation and therefore cannot result in out-of-bounds accesses.
     ///
     /// # Panics (Debug)
     ///
@@ -206,12 +211,12 @@ impl ValueStack {
     }
 
     /// Returns the capacity of the [`ValueStack`].
-    fn capacity(&self) -> usize {
+    pub(crate) fn capacity(&self) -> usize {
         self.entries.len()
     }
 
     /// Returns the current length of the [`ValueStack`].
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.stack_ptr
     }
 
@@ -219,15 +224,15 @@ impl ValueStack {
     ///
     /// # Note
     ///
-    /// This allows to efficiently operate on the [`ValueStack`] through
-    /// [`ValueStackPtr`] which requires external resource management.
+    /// This allows efficiently operating on the [`ValueStack`] through
+    /// [`ValueStackPtr`], which requires external resource management.
     ///
-    /// Before executing a function the interpreter calls this function
+    /// Before executing a function, the interpreter calls this function
     /// to guarantee that enough space on the [`ValueStack`] exists for
-    /// correct execution to occur.
-    /// For this to be working we need a stack-depth analysis during Wasm
+    /// the correct execution to occur.
+    /// For this to be working, we need a stack-depth analysis during Wasm
     /// compilation so that we are aware of all stack-depths for every
-    /// functions.
+    /// function.
     pub fn reserve(&mut self, additional: usize) -> Result<(), TrapCode> {
         let new_len = self
             .len()
@@ -242,6 +247,21 @@ impl ValueStack {
                 .extend(core::iter::repeat(UntypedValue::default()).take(new_len));
         }
         Ok(())
+    }
+
+    /// Extends the value stack by the `additional` number of zeros.
+    ///
+    /// # Errors
+    ///
+    /// If the value stack cannot fit `additional` stack values.
+    pub fn extend_zeros(&mut self, additional: usize) {
+        let cells = self
+            .entries
+            .get_mut(self.stack_ptr..)
+            .and_then(|slice| slice.get_mut(..additional))
+            .unwrap_or_else(|| panic!("did not reserve enough value stack space"));
+        cells.fill(UntypedValue::default());
+        self.stack_ptr += additional;
     }
 
     /// Drains the remaining value stack.
@@ -399,7 +419,7 @@ impl ValueStackPtr {
         //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
-        debug_assert!(self.ptr >= self.src, "stack underflow");
+        debug_assert!(self.ptr >= self.src, "stack underflow: {}", delta);
     }
 
     /// Decreases the [`ValueStackPtr`] of `self` by one.
@@ -463,6 +483,11 @@ impl ValueStackPtr {
     #[inline]
     pub fn drop(&mut self) {
         self.dec_by(1);
+    }
+
+    #[inline]
+    pub fn drop_n(&mut self, n: usize) {
+        self.dec_by(n);
     }
 
     /// Pops the last [`UntypedValue`] from the [`ValueStack`] as `T`.
@@ -607,8 +632,31 @@ impl ValueStackPtr {
         F64::from_bits(((hi.as_u64()) << 32) | (lo.as_u64()))
     }
 
+    pub fn push_value(&mut self, value: &Value) {
+        match value {
+            Value::I32(value) => self.push_i32(*value),
+            Value::I64(value) => self.push_i64(*value),
+            Value::F32(value) => self.push_f32(*value),
+            Value::F64(value) => self.push_f64(*value),
+            Value::FuncRef(value) => self.push_i32(value.0 as i32),
+            Value::ExternRef(value) => self.push_i32(value.0 as i32),
+        }
+    }
+
     pub fn push_i32(&mut self, value: i32) {
         self.push(value.into());
+    }
+
+    pub fn pop_value(&mut self, value_type: ValType) -> Value {
+        match value_type {
+            ValType::I32 => Value::I32(self.pop_i32()),
+            ValType::I64 => Value::I64(self.pop_i64()),
+            ValType::F32 => Value::F32(self.pop_f32()),
+            ValType::F64 => Value::F64(self.pop_f64()),
+            ValType::V128 => unreachable!("can't invoke syscall with v128"),
+            ValType::FuncRef => Value::FuncRef(FuncRef::new(self.pop_i32() as u32)),
+            ValType::ExternRef => Value::ExternRef(ExternRef::new(self.pop_i32() as u32)),
+        }
     }
 
     pub fn pop_i32(&mut self) -> i32 {

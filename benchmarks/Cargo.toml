@@ -20,5 +20,5 @@ codegen-units = 1
 [dependencies]
 
 [dev-dependencies]
-rwasm = { path = ".." }
+rwasm = { path = "..", features = ["std", "wasmtime"] }
 wasmi = { version = "=0.31.2" }

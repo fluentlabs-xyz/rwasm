@@ -12,7 +12,7 @@ use crate::{
 };
 use core::cmp;
 
-impl<'a, T> RwasmExecutor<'a, T> {
+impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_unreachable(&mut self) -> Result<(), TrapCode> {
         Err(TrapCode::UnreachableCodeReached)
@@ -60,7 +60,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     pub(crate) fn visit_return(&mut self) -> bool {
         self.value_stack.sync_stack_ptr(self.sp);
         match self.call_stack.pop() {
-            Some((ip, _sp)) => {
+            Some(ip) => {
                 self.ip = ip;
                 false
             }
@@ -124,7 +124,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         if self.call_stack.len() > N_MAX_RECURSION_DEPTH {
             return Err(TrapCode::StackOverflow);
         }
-        self.call_stack.push((self.ip, self.sp));
+        self.call_stack.push(self.ip);
         self.sp = self.value_stack.stack_ptr();
         self.ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
         self.ip.add(compiled_func as usize);
@@ -166,7 +166,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         if self.call_stack.len() > N_MAX_RECURSION_DEPTH {
             return Err(TrapCode::StackOverflow);
         }
-        self.call_stack.push((self.ip, self.sp));
+        self.call_stack.push(self.ip);
         self.sp = self.value_stack.stack_ptr();
         self.ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
         self.ip.add(instr_ref as usize);

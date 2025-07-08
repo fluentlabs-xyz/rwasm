@@ -4,14 +4,20 @@
 #![recursion_limit = "750"]
 
 mod compiler;
+mod strategy;
 mod types;
 mod vm;
+#[cfg(feature = "wasmtime")]
+mod wasmtime;
 
 extern crate alloc;
 extern crate core;
 
 pub use compiler::*;
 use libm as _;
+pub use strategy::*;
 pub use types::*;
 pub use vm::*;
 pub use wasmparser::{FuncType, ValType};
+#[cfg(feature = "wasmtime")]
+pub use wasmtime::*;

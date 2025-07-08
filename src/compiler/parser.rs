@@ -367,6 +367,9 @@ impl ModuleParser {
                         adjusted_params.push(ValType::I32);
                         adjusted_params.push(ValType::I32);
                     }
+                    ValType::V128 => {
+                        return Err(CompilationError::NotSupportedFuncType);
+                    }
                     _ => adjusted_params.push(*x),
                 }
             }
@@ -375,6 +378,9 @@ impl ModuleParser {
                     ValType::I64 | ValType::F64 => {
                         adjusted_results.push(ValType::I32);
                         adjusted_results.push(ValType::I32);
+                    }
+                    ValType::V128 => {
+                        return Err(CompilationError::NotSupportedFuncType);
                     }
                     _ => adjusted_results.push(*x),
                 }
@@ -442,14 +448,20 @@ impl ModuleParser {
             if !import_linker_entity.matches_func_type(func_type) {
                 return Err(CompilationError::MalformedImportFunctionType);
             }
+            // don't allow funcref/externref in imported functions
+            if !self.config.allow_func_ref_function_types {
+                for x in func_type.params().iter().chain(func_type.results()) {
+                    if x == &ValType::FuncRef || x == &ValType::ExternRef {
+                        return Err(CompilationError::MalformedImportFunctionType);
+                    }
+                }
+            }
             // inject an import function trampoline to support reffunc
             let func_idx = self.next_func();
             self.allocations
                 .translation
                 .compiled_funcs
                 .push(func_type_index);
-            // #[cfg(feature = "debug-print")]
-            // println!("\nfunc_idx={}", func_idx);
             let allocations = take(&mut self.allocations);
             let mut translator =
                 InstructionTranslator::new(allocations.translation, self.config.consume_fuel);
@@ -462,6 +474,11 @@ impl ModuleParser {
                 .instruction_set
                 .op_signature_check(signature_index);
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
+            if self.config.builtins_consume_fuel {
+                for instr in import_linker_entity.block_fuel.instr.iter() {
+                    translator.alloc.instruction_set.push(instr.clone());
+                }
+            }
             translator
                 .alloc
                 .instruction_set
