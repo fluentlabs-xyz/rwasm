@@ -21,6 +21,7 @@ use alloc::rc::Rc;
 use bitvec::{array::BitArray, bitarr};
 use core::cell::RefCell;
 use hashbrown::HashMap;
+use std::sync::Arc;
 
 pub struct RwasmStore<T: Send + Sync + 'static> {
     pub(crate) consumed_fuel: u64,
@@ -37,7 +38,7 @@ pub struct RwasmStore<T: Send + Sync + 'static> {
     pub(crate) empty_elem_segments: BitArray<[usize; N_MAX_ELEM_SEGMENTS_BITS]>,
     // list of nested calls return pointers
     pub(crate) syscall_handler: SyscallHandler<T>,
-    pub(crate) import_linker: Rc<ImportLinker>,
+    pub(crate) import_linker: Arc<ImportLinker>,
     #[cfg(feature = "tracing")]
     pub tracer: crate::Tracer,
 }
@@ -46,7 +47,7 @@ impl<T: Default + Send + Sync> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
             ExecutorConfig::default(),
-            Rc::new(ImportLinker::default()),
+            Arc::new(ImportLinker::default()),
             T::default(),
             always_failing_syscall_handler,
         )
@@ -94,7 +95,7 @@ impl<T: Send + Sync> Store<T> for RwasmStore<T> {
 impl<T: Send + Sync> RwasmStore<T> {
     pub fn new(
         config: ExecutorConfig,
-        import_linker: Rc<ImportLinker>,
+        import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
     ) -> Self {
