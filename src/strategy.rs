@@ -13,6 +13,7 @@ use crate::{
 use crate::{WasmtimeCaller, WasmtimeModule, WasmtimeWorker};
 use alloc::{boxed::Box, rc::Rc, vec::Vec};
 use core::cell::RefCell;
+use std::sync::Arc;
 
 pub trait Store<T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode>;
@@ -228,7 +229,7 @@ impl Strategy {
     pub fn create_store<T: Send + Sync>(
         &self,
         config: ExecutorConfig,
-        import_linker: Rc<ImportLinker>,
+        import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
     ) -> TypedStore<T> {

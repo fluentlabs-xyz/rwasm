@@ -19,7 +19,7 @@ use rwasm::{
 };
 use std::rc::Rc;
 
-fn default_import_linker() -> Rc<ImportLinker> {
+fn default_import_linker() -> Arc<ImportLinker> {
     let mut import_linker = ImportLinker::default();
     import_linker.insert_function(
         ImportName::new("hello", "world"),

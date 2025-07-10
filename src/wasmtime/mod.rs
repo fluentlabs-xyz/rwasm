@@ -79,7 +79,7 @@ pub struct WasmtimeWorker<T: 'static + Send + Sync + 'static> {
 impl<T: 'static + Send + Sync + 'static> WasmtimeWorker<T> {
     pub fn new(
         module: Rc<wasmtime::Module>,
-        import_linker: Rc<ImportLinker>,
+        import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
         fuel: Option<u64>,
@@ -577,7 +577,7 @@ fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
 
 fn wasmtime_import_linker<T: Send + Sync + 'static>(
     engine: &wasmtime::Engine,
-    import_linker: Rc<ImportLinker>,
+    import_linker: Arc<ImportLinker>,
 ) -> wasmtime::Linker<WrappedContext<T>> {
     let mut linker = wasmtime::Linker::<WrappedContext<T>>::new(engine);
     for (import_name, import_entity) in import_linker.iter() {
