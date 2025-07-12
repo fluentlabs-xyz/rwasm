@@ -50,6 +50,7 @@ pub struct TraceTableSizeState {
 
 #[derive(Debug, Clone)]
 pub struct TracerInstrState {
+    pub clk: u32,
     pub pc: u32,
     pub next_pc: u32,
     pub opcode: Opcode,
@@ -126,6 +127,7 @@ impl Tracer {
         let table_size_changes = take(&mut self.table_size_changes);
         let sp = sp.to_relative_address();
         let mut opcode_state = TracerInstrState {
+            clk: self.state.clk,
             pc: program_counter,
             next_pc: 0,
             opcode,
