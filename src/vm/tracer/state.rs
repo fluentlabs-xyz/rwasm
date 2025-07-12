@@ -14,7 +14,7 @@ impl VMState {
             self.clk = 0;
             self.next_shard();
         } else {
-            self.clk += 4;
+            self.clk += 1;
         }
     }
 
