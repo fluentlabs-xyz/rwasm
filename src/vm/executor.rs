@@ -309,17 +309,17 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "tracing")]
     fn trace_instr_pre(&mut self, instr: &Opcode) {
-        self.store.tracer.state.next_cycle();
+       
         let pc = self.program_counter();
         let memory_size: u32 = self.store.global_memory.current_pages().into();
         let consumed_fuel = self.store.fuel_consumed();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
+        self.store.tracer.state.next_cycle();
     }
 
     #[cfg(feature = "tracing")]
     fn trace_instr_post(&mut self, instr: &Opcode, trap_code: Option<TrapCode>) {
-        // TODO(wangyao): "track trap codes"
-        self.store.tracer.state.next_cycle();
+       
         let sp = self.sp.to_relative_address();
         let pc = self.program_counter();
         let stack = self.value_stack.dump_stack(self.sp);
@@ -329,6 +329,8 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let opcode = op_state.opcode;
         self.store.tracer.post_opcode_state(pc, sp, *instr, stack);
         println!("op_state:{:?}", self.store.tracer.logs.last());
+         // TODO(wangyao): "track trap codes"
+        self.store.tracer.state.next_cycle();
     }
 
     #[cfg(feature = "tracing")]
