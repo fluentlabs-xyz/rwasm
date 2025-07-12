@@ -104,23 +104,24 @@ impl<T: 'static + Send + Sync + 'static> WasmtimeWorker<T> {
         thread::spawn(move || {
             let store = moved_store;
             let instance = moved_instance;
-            while let Ok(message) = receiver.recv() {
-                let mut store = store.write().unwrap();
-                let MessageRequest {
-                    func_name,
-                    params,
-                    num_result,
-                    resp,
-                } = message;
-                let mut result: SmallVec<[Value; 16]> = smallvec![Value::I32(0); num_result];
-                store.data_mut().message_channel = Some(resp);
-                let result =
-                    execute_wasmtime_module(instance, &mut store, func_name, &params, &mut result)
-                        .map(|_| result);
-                let resp = store.data_mut().message_channel.take().unwrap();
-                resp.send(MessageResponse::ExecutionResult { result })
-                    .unwrap();
-            }
+            let Ok(message) = receiver.recv() else {
+                unreachable!("the receiver is dropped");
+            };
+            let mut store = store.write().unwrap();
+            let MessageRequest {
+                func_name,
+                params,
+                num_result,
+                resp,
+            } = message;
+            let mut result: SmallVec<[Value; 16]> = smallvec![Value::I32(0); num_result];
+            store.data_mut().message_channel = Some(resp);
+            let result =
+                execute_wasmtime_module(instance, &mut store, func_name, &params, &mut result)
+                    .map(|_| result);
+            let resp = store.data_mut().message_channel.take().unwrap();
+            resp.send(MessageResponse::ExecutionResult { result })
+                .unwrap();
         });
         Self {
             sender,
