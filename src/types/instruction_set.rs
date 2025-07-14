@@ -249,6 +249,7 @@ impl InstructionSet {
     impl_opcode!(I32Rotr);
     impl_opcode!(I32Extend8S);
     impl_opcode!(I32Extend16S);
+    impl_opcode!(I32Mul64);
 
     // fpu opcodes (emits trap for disable fpu feature flag)
     impl_fpu_emitter!(F32Load(AddressOffset));
