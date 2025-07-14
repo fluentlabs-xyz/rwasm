@@ -20,7 +20,7 @@ env:
 jobs:
   coverage:
     name: Coverage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-amd64-8core
     steps:
       - uses: actions/checkout@v4
         with:

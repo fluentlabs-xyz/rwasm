@@ -1,18 +1,7 @@
 use rwasm::{
-    compile_wasmtime_module,
-    CompilationConfig,
-    ExecutionEngine,
-    ExecutorConfig,
-    ImportLinker,
-    ImportName,
-    InstructionSet,
-    RwasmModule,
-    RwasmStore,
-    Store,
-    Strategy,
-    TrapCode,
-    TypedCaller,
-    Value,
+    compile_wasmtime_module, for_each_strategy, CompilationConfig, ExecutionEngine, ExecutorConfig,
+    ImportLinker, ImportName, InstructionSet, RwasmModule, RwasmStore, Store, Strategy, TrapCode,
+    TypedCaller, Value,
 };
 use std::rc::Rc;
 use wasmparser::ValType;
@@ -147,7 +136,9 @@ fn test_nitro_verifier_wasmtime() {
         .with_import_linker(import_linker.clone());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     // compile & run using wasmtime
-    let module = Rc::new(compile_wasmtime_module(&rwasm_module.wasm_section).unwrap());
+    let module = Rc::new(
+        compile_wasmtime_module(CompilationConfig::default(), &rwasm_module.wasm_section).unwrap(),
+    );
     let mut worker =
         WasmtimeWorker::new(module, import_linker, (), fluentbase_syscall_handler, None);
     worker.execute("main", &[], &mut []).unwrap();
@@ -163,31 +154,17 @@ fn test_nitro_verifier_strategy() {
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true)
         .with_import_linker(import_linker.clone());
-    let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-    // compile & run using wasmtime
     let exec_strategy = |strategy: Strategy| {
         let mut store = strategy.create_store(
-            ExecutorConfig::default(),
+            ExecutorConfig::default().fuel_limit(1_000_000_000),
             import_linker.clone(),
             (),
             fluentbase_syscall_handler,
         );
-        strategy.execute::<()>(&mut store, "main", &[], &mut [])
+        strategy
+            .execute::<()>(&mut store, "main", &[], &mut [])
+            .map_err(Into::into)
     };
-    let rwasm_module = Rc::new(rwasm_module);
     // run with rwasm strategy first
-    exec_strategy(Strategy::Rwasm {
-        module: rwasm_module.clone(),
-        engine: ExecutionEngine::acquire_shared(),
-    })
-    .unwrap();
-    // run with wasmtime strategy
-    let module = compile_wasmtime_module(&rwasm_module.wasm_section)
-        .unwrap()
-        .into();
-    exec_strategy(Strategy::Wasmtime {
-        module,
-        resumable: true,
-    })
-    .unwrap();
+    for_each_strategy(exec_strategy, config, wasm_binary).unwrap();
 }

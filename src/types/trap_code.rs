@@ -1,7 +1,10 @@
 use bincode::{Decode, Encode};
 use core::fmt::Formatter;
+use num_derive::FromPrimitive;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode, FromPrimitive,
+)]
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum TrapCode {
@@ -27,6 +30,7 @@ pub enum TrapCode {
 
 impl core::fmt::Display for TrapCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        // these error code messages are complained with WebAssembly standards, change them carefully
         match self {
             TrapCode::UnreachableCodeReached => write!(f, "unreachable code reached"),
             TrapCode::MemoryOutOfBounds => write!(f, "out of bounds memory access"),

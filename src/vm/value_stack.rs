@@ -111,8 +111,8 @@ impl ValueStack {
 
     /// Dumps a portion of the value stack into a `Vec<UntypedValue>`.
     pub fn dump_stack(&mut self, sp: ValueStackPtr) -> Vec<UntypedValue> {
-        let offset = usize::try_from(sp.offset_from(self.base_ptr())).unwrap();
-        self.entries.as_slice()[..offset].to_vec()
+        self.sync_stack_ptr(sp);
+        self.entries[..self.stack_ptr].to_vec()
     }
 
     /// Returns the base [`ValueStackPtr`] of `self`.
