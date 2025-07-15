@@ -1,6 +1,6 @@
 use super::ValueStackPtr;
 use crate::{
-    mem_index::AddressType,
+    mem_index::{AddressType, UNIT},
     types::Opcode,
     vm::tracer::{
         mem::{
@@ -219,18 +219,18 @@ impl Tracer {
         let mut memory_access = MemoryAccessRecord::default();
         println!("length:{:?},", length);
         for idx in 0..length {
-            println!("idx:{}", idx);
-            let addr = sp - idx;
+            let addr = sp + idx * UNIT;
+            println!("idx:{},addr:{}", idx, addr);
             let read_record = self.mr(addr);
 
             match idx {
                 1 => {
                     println!("arg1:read_record:{:?}", read_record);
-                    memory_access.arg2_record = Some(MemoryRecordEnum::Read(read_record));
+                    memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
                 }
                 0 => {
                     println!("arg2:load:read_record:{:?}", read_record);
-                    memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
+                    memory_access.arg2_record = Some(MemoryRecordEnum::Read(read_record));
                 }
                 _ => unreachable!(),
             }
