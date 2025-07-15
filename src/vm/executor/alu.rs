@@ -71,6 +71,13 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         self.sp.push_i64(res);
         self.ip.add(1);
     }
+
+    pub(crate) fn visit_i32_add64(&mut self) {
+        let (lhs, rhs) = self.sp.pop2();
+        let res = lhs.as_i64().wrapping_add(rhs.as_i64());
+        self.sp.push_i64(res);
+        self.ip.add(1);
+    }
 }
 
 macro_rules! impl_visit_fallible_binary {
