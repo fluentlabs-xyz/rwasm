@@ -67,7 +67,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     pub(crate) fn visit_i32_mul64(&mut self) {
         let (lhs, rhs) = self.sp.pop2();
-        let res = lhs.as_i64().wrapping_add(rhs.as_i64());
+        let res = lhs.as_i64().wrapping_mul(rhs.as_i64());
         self.sp.push_i64(res);
         self.ip.add(1);
     }

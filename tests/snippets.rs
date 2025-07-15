@@ -1,3 +1,4 @@
+use rand::{rngs::StdRng, Rng, SeedableRng};
 /// |-----------------------|---------|
 /// | Opcode                | Covered |
 /// |-----------------------|---------|
@@ -88,7 +89,7 @@ fn run_binary_test_case(is: &InstructionSet, a: u64, b: u64, c: u64) -> Result<(
     )?;
     assert_eq!(output.len(), 2);
     let r = (output[1] as u64) << 32 | output[0] as u64;
-    assert_eq!(c, r);
+    assert_eq!(c, r, "f({a}, {b})={r}, but expected {c}");
     Ok(())
 }
 
@@ -134,6 +135,131 @@ fn test_i64_const() {
     test_case_u64(0x0123_4567_89AB_CDEF); // pattern
 }
 
+fn make_random_u64_values<R: Rng>(rng: &mut R, n: u64) -> Vec<u64> {
+    const U32_MAX: u64 = u32::MAX as u64;
+    const DELTA: u64 = 1000;
+    let mut v = Vec::new();
+
+    for _ in 0..n {
+        v.push(rng.random());
+    }
+
+    // 2. Near u32::MAX
+    for _ in 0..n {
+        let low: u64 = U32_MAX - DELTA;
+        let high: u64 = U32_MAX - 2;
+        v.push(rng.random_range(low..=high));
+    }
+    v.push(U32_MAX - 1);
+    v.push(U32_MAX);
+    v.push(U32_MAX + 1);
+    for _ in 0..n {
+        let low = U32_MAX + 1;
+        let high: u64 = U32_MAX + DELTA;
+        v.push(rng.random_range(low..=high));
+    }
+
+    // 3. Near u64::MAX
+    for _ in 0..n {
+        let low = u64::MAX - DELTA;
+        let high = u64::MAX - 2;
+        v.push(rng.gen_range(low..=high));
+    }
+
+    v.push(0);
+    v.push(1);
+    v.push(u64::MAX - 1);
+
+    v
+}
+
+fn make_random_i64_values<R: Rng>(rng: &mut R, n: u64) -> Vec<i64> {
+    const DELTA: i64 = 1_000;
+    const I32_MAX_I64: i64 = i32::MAX as i64;
+    const I32_MIN_I64: i64 = i32::MIN as i64;
+
+    let mut v = Vec::new();
+
+    // 1. Totally random
+    for _ in 0..n {
+        v.push(rng.random());
+    }
+
+    // 2. Near i32::MAX (23 values)
+    {
+        // just below
+        let low = I32_MAX_I64 - DELTA;
+        let high = I32_MAX_I64 - 2;
+        for _ in 0..n / 2 {
+            v.push(rng.random_range(low..=high));
+        }
+        // the “‑1, exact, +1” trio
+        v.push(I32_MAX_I64 - 1);
+        v.push(I32_MAX_I64);
+        v.push(I32_MAX_I64 + 1);
+        // just above
+        let low = I32_MAX_I64 + 1;
+        let high = I32_MAX_I64 + DELTA;
+        for _ in 0..n / 2 {
+            v.push(rng.random_range(low..=high));
+        }
+    }
+
+    // 3. Near  i32::MIN  (22 values)
+    {
+        // just below
+        let low = I32_MIN_I64 - DELTA;
+        let high = I32_MIN_I64;
+        for _ in 0..n / 2 {
+            v.push(rng.random_range(low..=high));
+        }
+        // the “‑1, exact, +1” trio
+        v.push(I32_MIN_I64 - 1);
+        v.push(I32_MIN_I64);
+        v.push(I32_MIN_I64 + 1);
+        // just above
+        let low = I32_MIN_I64;
+        let high = I32_MIN_I64 + DELTA;
+        for _ in 0..n / 2 {
+            v.push(rng.random_range(low..=high));
+        }
+    }
+
+    // 4. Near i64::MAX (23 values)
+    {
+        let low = i64::MAX - DELTA;
+        let high = i64::MAX - 2;
+        for _ in 0..n {
+            v.push(rng.random_range(low..=high));
+        }
+        v.push(i64::MAX - 1);
+        v.push(i64::MAX); // exact top
+        v.push(i64::MAX - DELTA / 2); // one more mid‑window value
+    }
+
+    // 5. Near i64::MIN (22 values)
+    {
+        v.push(i64::MIN); // exact bottom
+        v.push(i64::MIN + 1); // just above
+        let low = i64::MIN + 2;
+        let high = i64::MIN + DELTA;
+        for _ in 0..20 {
+            v.push(rng.random_range(low..=high));
+        }
+    }
+
+    // 6. Always have an explicit zero for sign‑change corner cases
+    v.push(0);
+    v.push(1);
+    v.push(-1);
+    v.push(i64::MAX);
+    v.push(i64::MAX - 1);
+    v.push(i64::MIN);
+    v.push(i64::MIN + 1);
+
+    v
+}
+
 #[test]
 fn test_i64_mul() {
     let mut is = InstructionSet::new();
@@ -150,6 +276,7 @@ fn test_i64_mul() {
     };
 
     // u64 test cases
+    test_case_u64(15, 71);
     test_case_u64(0x0000_0000_0000_0000, 0x0000_0000_0000_0000); // 0 × 0
     test_case_u64(0x0000_0000_0000_0000, 0x0000_0000_075B_CD15); // 0 × n
     test_case_u64(0x0000_0000_0000_0001, 0xFFFF_FFFF_FFFF_FFFF); // 1 × max
@@ -172,6 +299,24 @@ fn test_i64_mul() {
     test_case_i64(-81_985_529_216_486_895, 538_030_035_483_195_255); // mixed signs, dense
     test_case_i64(-81_985_529_216_486_895, -538_030_035_483_195_255); // neg × neg → pos
     test_case_i64(81_985_529_216_486_895, -81_985_529_216_486_895); // pos × neg
+
+    let mut rng = rand::rng();
+    const FUZZ_COUNT: u64 = 20;
+    // const FUZZ_COUNT: u64 = 200; // ~15 sec
+    // let mut rng = StdRng::seed_from_u64(0xDEAD_BEEF_DEAD_BEEF);
+    let vals = make_random_u64_values(&mut rng, FUZZ_COUNT);
+    for a in &vals {
+        for b in &vals {
+            test_case_u64(*a, *b);
+        }
+    }
+
+    let vals = make_random_i64_values(&mut rng, FUZZ_COUNT);
+    for a in &vals {
+        for b in &vals {
+            test_case_i64(*a, *b);
+        }
+    }
 }
 
 #[test]
