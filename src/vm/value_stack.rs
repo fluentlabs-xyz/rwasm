@@ -1,13 +1,7 @@
 use crate::{
     split_i64_to_i32,
     types::{TrapCode, UntypedValue},
-    ExternRef,
-    FuncRef,
-    Value,
-    F32,
-    F64,
-    N_DEFAULT_STACK_SIZE,
-    N_MAX_STACK_SIZE,
+    ExternRef, FuncRef, Value, F32, F64, N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
 };
 use alloc::vec::Vec;
 use core::fmt::Debug;
@@ -110,9 +104,19 @@ impl ValueStack {
     }
 
     /// Dumps a portion of the value stack into a `Vec<UntypedValue>`.
-    pub fn dump_stack(&mut self, sp: ValueStackPtr) -> Vec<UntypedValue> {
-        self.sync_stack_ptr(sp);
-        self.entries[..self.stack_ptr].to_vec()
+    pub fn dump_stack(&mut self) -> Vec<UntypedValue> {
+        if self.stack_ptr <= self.capacity() {
+            return unsafe { self.entries.get_unchecked_mut(..self.stack_ptr) }.to_vec();
+        } else {
+            return Vec::new();
+        }
+        // debug_assert!(
+        //     self.stack_ptr <= self.capacity(),
+        //     "stack_ptr={}, capacity={}",
+        //     self.stack_ptr,
+        //     self.capacity()
+        // );
+        // unsafe { self.entries.get_unchecked_mut(..self.stack_ptr) }.to_vec()
     }
 
     /// Returns the base [`ValueStackPtr`] of `self`.

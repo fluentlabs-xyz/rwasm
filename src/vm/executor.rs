@@ -9,17 +9,8 @@ mod table;
 
 use crate::{
     types::{AddressOffset, RwasmModule, TableIdx, UntypedValue},
-    CallStack,
-    InstructionPtr,
-    Opcode,
-    RwasmCaller,
-    RwasmStore,
-    SysFuncIdx,
-    TrapCode,
-    TypedCaller,
-    Value,
-    ValueStack,
-    ValueStackPtr,
+    CallStack, InstructionPtr, Opcode, RwasmCaller, RwasmStore, SysFuncIdx, TrapCode, TypedCaller,
+    Value, ValueStack, ValueStackPtr,
 };
 use smallvec::SmallVec;
 
@@ -330,12 +321,18 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[cfg(feature = "debug-print")]
     fn debug_print(&mut self, instr: &Opcode) {
         self.value_stack.sync_stack_ptr(self.sp);
-        // let stack = self.value_stack.dump_stack(self.sp);
         println!(
-            "{:04}:\t {} \tstack_len={}",
+            "{:04}:\t {} \tstack_len={}, stack={:?}",
             self.program_counter(),
             instr,
             self.value_stack.len(),
+            self.value_stack
+                .dump_stack()
+                .iter()
+                .rev()
+                .take(10)
+                .map(|v| v.as_usize())
+                .collect::<Vec<_>>()
         );
     }
 
