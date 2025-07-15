@@ -6,11 +6,13 @@ use crate::{
 use alloc::{rc::Rc, vec::Vec};
 use core::cell::RefCell;
 use num_traits::FromPrimitive;
+use rwasm_legacy::engine::RwasmConfig;
 use rwasm_legacy::errors::FuelError;
 use rwasm_legacy::{AsContext, AsContextMut, StackLimits};
 use smallvec::SmallVec;
 use wasmparser::ValType;
 
+pub type LegacyEngine = rwasm_legacy::Engine;
 pub type LegacyModule = rwasm_legacy::Module;
 
 pub struct LegacyCaller<'a, T: Send + Sync + 'static> {
@@ -373,7 +375,7 @@ impl<T: Send + Sync> LegacyStore<T> {
 fn map_legacy_error(err: rwasm_legacy::Error) -> TrapCode {
     let err = match err {
         rwasm_legacy::Error::Trap(err) => err,
-        _ => unreachable!(),
+        _ => unreachable!("unexpected legacy error: {:?}", err),
     };
     if let Some(trap_code) = err.trap_code() {
         match trap_code {
@@ -459,8 +461,11 @@ impl<T: Send + Sync> Store<T> for LegacyStore<T> {
 pub fn compile_legacy_module(
     compilation_config: CompilationConfig,
     wasm_binary: &[u8],
-) -> Result<LegacyModule, rwasm_legacy::Error> {
+) -> Result<rwasm_legacy::Module, rwasm_legacy::Error> {
     let mut config = rwasm_legacy::Config::default();
+    let mut rwasm_config = RwasmConfig::default();
+    rwasm_config.allow_malformed_entrypoint_func_type = true;
+    config.rwasm_config(rwasm_config);
     config.consume_fuel(compilation_config.consume_fuel);
     // TODO(dmitry123): "in case of FPU opcodes we need to trap"
     // config.floats(cfg!(feature = "fpu"));
@@ -474,5 +479,6 @@ pub fn compile_legacy_module(
     );
     // TODO(dmitry123): "adjust legacy config if needed"
     let engine = rwasm_legacy::Engine::new(&config);
-    LegacyModule::new(&engine, wasm_binary)
+    let rwasm_module = rwasm_legacy::rwasm::RwasmModule::compile_with_config(wasm_binary, &config)?;
+    Ok(rwasm_module.to_module(&engine))
 }
