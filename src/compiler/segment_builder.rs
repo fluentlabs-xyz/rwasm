@@ -20,9 +20,14 @@ pub struct SegmentBuilder {
 impl Default for SegmentBuilder {
     fn default() -> Self {
         let entrypoint_bytecode = instruction_set! {
-            // entrypoint consumes max 3 stack elements during execution, but we should use 4,
-            // because e2e testing suite passes 1 parameter to the stack
-            StackCheck(4)
+            // entrypoint consumes max 3 stack elements during execution, but we should use 5,
+            // because e2e testing suite passes param and state (2)
+            // TODO(dmitry123): "ideally we need to fix the way we calc this"
+            // during the calculation of this stack height we assume that input params have max 1 element
+            // on the stack that is true for e2e testing suite and for fluentbase use cases, but theoretically
+            // the use case with variadic number of params can exist, then we need to take max number
+            // of params per each state config or start function and calc potential max stack height
+            StackCheck(5)
         };
         Self {
             global_memory_section: vec![],
