@@ -321,18 +321,25 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[cfg(feature = "debug-print")]
     fn debug_print(&mut self, instr: &Opcode) {
         self.value_stack.sync_stack_ptr(self.sp);
-        println!(
-            "{:04}:\t {} \tstack_len={}, stack={:?}",
+        print!(
+            "{:04}:\t {} \tstack_len={}, stack_cap={}, ",
             self.program_counter(),
             instr,
             self.value_stack.len(),
+            self.value_stack.capacity(),
+        );
+        use std::io::Write;
+        std::io::stdout().flush().unwrap();
+        println!(
+            "stack={:?}, sp={:?}",
             self.value_stack
                 .dump_stack()
                 .iter()
                 .rev()
                 .take(10)
                 .map(|v| v.as_usize())
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
+            self.sp,
         );
     }
 

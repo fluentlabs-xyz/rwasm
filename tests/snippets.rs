@@ -51,13 +51,7 @@
 /// | op_i64_rem_u          |         |
 /// |-----------------------|---------|
 use rwasm::{
-    CallStack,
-    InstructionSet,
-    RwasmExecutor,
-    RwasmModule,
-    RwasmStore,
-    TrapCode,
-    ValueStack,
+    CallStack, InstructionSet, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, ValueStack,
 };
 use std::ops::{BitAnd, BitOr, BitXor, Shl, Shr};
 
@@ -112,6 +106,7 @@ fn run_cmp_test_case(is: &InstructionSet, a: u64, c: u32) -> Result<(), TrapCode
 fn test_i64_const() {
     let test_case_u64 = |a: i64| {
         let mut is = InstructionSet::new();
+        is.op_stack_check(10);
         is.op_i64_const(a);
         let output = run_vm_instr(is.clone(), vec![]).unwrap();
         assert_eq!(output.len(), 2);
@@ -137,6 +132,7 @@ fn test_i64_const() {
 #[test]
 fn test_i64_mul() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_mul();
 
     let test_case_u64 = |a: u64, b: u64| {
@@ -177,6 +173,7 @@ fn test_i64_mul() {
 #[test]
 fn test_i64_eqz() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_eqz();
 
     let test_case_u64 = |a: u64| {
@@ -209,6 +206,7 @@ fn test_i64_eqz() {
 #[test]
 fn test_i64_sub() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_sub();
 
     let test_case_u64 = |a: u64, b: u64| {
@@ -235,6 +233,7 @@ fn test_i64_sub() {
 #[test]
 fn test_i64_le_u() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_le_u();
 
     let test_case_u64 = |a: u64, b: u64| {
@@ -268,6 +267,7 @@ fn test_i64_le_u() {
 #[test]
 fn test_i64_add() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_add();
 
     let test_case_u64 = |a: u64, b: u64| {
@@ -294,6 +294,7 @@ fn test_i64_add() {
 #[test]
 fn test_i64_div_s() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_div_s();
 
     let test_case_i64 = |a: i64, b: i64| {
@@ -346,6 +347,7 @@ fn test_i64_div_s() {
 #[test]
 fn test_i64_div_u() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_div_u();
 
     let test_case_i64 = |a: u64, b: u64| {
@@ -383,6 +385,7 @@ fn test_i64_div_u() {
 #[test]
 fn test_i64_rem_s() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_rem_s();
 
     let test_case_i64 = |a: i64, b: i64| {
@@ -417,6 +420,7 @@ fn test_i64_rem_s() {
 #[test]
 fn test_i64_rem_u() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_rem_u();
 
     let test_case_i64 = |a: u64, b: u64| {
@@ -452,6 +456,7 @@ fn test_i64_rem_u() {
 #[test]
 fn test_i64_shr_u() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_shr_u();
 
     let test_case_u64 = |a: u64, b: u64| {
@@ -485,6 +490,7 @@ fn test_i64_shr_u() {
 #[test]
 fn test_i64_shr_s() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_shr_s();
 
     let test_case_i64 = |a: i64, b: i64| {
@@ -539,6 +545,7 @@ fn test_i64_shr_s() {
 #[test]
 fn test_i64_shl() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_shl();
 
     let test_case_u64 = |a: u64, b: u64| {
@@ -590,6 +597,7 @@ fn test_i64_shl() {
 #[test]
 fn test_i64_clz() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_clz();
 
     let test_case_u64 = |a: u64| {
@@ -613,6 +621,7 @@ fn test_i64_clz() {
 #[test]
 fn test_i64_ctz() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_ctz();
 
     let test_case_u64 = |a: u64| {
@@ -636,6 +645,7 @@ fn test_i64_ctz() {
 #[test]
 fn test_i64_popcnt() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_popcnt();
 
     let test_case_u64 = |a: u64| {
@@ -664,6 +674,7 @@ fn test_i64_popcnt() {
 #[test]
 fn test_i64_and() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_and();
 
     let test_case_u64 = |a: u64, b: u64| {
@@ -710,6 +721,7 @@ fn test_i64_and() {
 #[test]
 fn test_i64_or() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_or();
 
     let test_case_u64 = |a: u64, b: u64| {
@@ -756,6 +768,7 @@ fn test_i64_or() {
 #[test]
 fn test_i64_xor() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_xor();
 
     let test_case_u64 = |a: u64, b: u64| {
@@ -802,6 +815,7 @@ fn test_i64_xor() {
 #[test]
 fn test_i64_rotl() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_rotl();
 
     let test_case_u64 = |a: u64, b: u64| {
@@ -846,6 +860,7 @@ fn test_i64_rotl() {
 #[test]
 fn test_i64_rotr() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_rotr();
 
     let test_case_u64 = |a: u64, b: u64| {
@@ -890,6 +905,7 @@ fn test_i64_rotr() {
 #[test]
 fn test_i64_extend_i32_s() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_extend_i32_s();
     let test_case = |a: i32, c_lo: i32, c_hi: i32| {
         let output = run_vm_instr(is.clone(), vec![a as u32]).unwrap();
@@ -916,6 +932,7 @@ fn test_i64_extend_i32_s() {
 #[test]
 fn test_i64_extend8_s() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_extend8_s();
     let test_case = |a: i32, c_lo: i32, c_hi: i32| {
         let output = run_vm_instr(is.clone(), vec![a as u32 & 0xff, 0]).unwrap();
@@ -937,6 +954,7 @@ fn test_i64_extend8_s() {
 #[test]
 fn test_i64_extend16_s() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_extend16_s();
     let test_case = |a: i32, c_lo: i32, c_hi: i32| {
         let output = run_vm_instr(is.clone(), vec![a as u32 & 0xffff, 0]).unwrap();
@@ -958,6 +976,7 @@ fn test_i64_extend16_s() {
 #[test]
 fn test_i64_extend32_s() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_i64_extend32_s();
     let test_case = |a: i64, c_lo: i64, c_hi: i64| {
         let a = a as i32;
@@ -979,6 +998,7 @@ fn test_i64_extend32_s() {
 #[test]
 fn test_swap() {
     let mut is = InstructionSet::new();
+    is.op_stack_check(10);
     is.op_swap();
     let output = run_vm_instr(is.clone(), vec![100, 200]).unwrap();
     assert_eq!(output.len(), 2);

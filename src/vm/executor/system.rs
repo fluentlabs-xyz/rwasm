@@ -39,6 +39,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         &mut self,
         max_stack_height: MaxStackHeight,
     ) -> Result<(), TrapCode> {
+        self.value_stack.sync_stack_ptr(self.sp);
         self.value_stack.reserve(max_stack_height as usize)?;
         // we should rewrite SP after reserve because of potential reallocation
         self.sp = self.value_stack.stack_ptr();

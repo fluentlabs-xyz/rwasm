@@ -1,11 +1,6 @@
 use crate::{
-    split_i64_to_i32,
-    AddressOffset,
-    DataSegmentIdx,
-    InstructionSet,
-    TrapCode,
-    MEMORY_BYTES_PER_FUEL_LOG2,
-    N_BYTES_PER_MEMORY_PAGE,
+    split_i64_to_i32, AddressOffset, DataSegmentIdx, InstructionSet, TrapCode,
+    MEMORY_BYTES_PER_FUEL_LOG2, N_BYTES_PER_MEMORY_PAGE,
 };
 
 impl InstructionSet {
@@ -70,7 +65,7 @@ impl InstructionSet {
         self.op_i32_const(0);
     }
 
-    /// Max stack height:
+    /// Max stack height: 2
     pub fn op_i64_store(&mut self, offset: AddressOffset) {
         self.op_local_get(3);
         self.op_local_get(2);
