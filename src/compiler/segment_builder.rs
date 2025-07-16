@@ -1,22 +1,13 @@
 use crate::{
-    split_i64_to_i32,
-    CompilationError,
-    DataSegmentIdx,
-    ElementSegmentIdx,
-    GlobalIdx,
-    GlobalVariable,
-    InstructionSet,
-    TableIdx,
-    DEFAULT_MEMORY_INDEX,
-    NULL_FUNC_IDX,
-    N_BYTES_PER_MEMORY_PAGE,
-    N_MAX_MEMORY_PAGES,
+    instruction_set, split_i64_to_i32, CompilationError, DataSegmentIdx, ElementSegmentIdx,
+    GlobalIdx, GlobalVariable, InstructionSet, TableIdx, DEFAULT_MEMORY_INDEX, NULL_FUNC_IDX,
+    N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES,
 };
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use hashbrown::HashMap;
 use wasmparser::{TableType, ValType};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SegmentBuilder {
     pub(crate) global_memory_section: Vec<u8>,
     pub(crate) memory_sections: HashMap<DataSegmentIdx, (u32, u32)>,
@@ -24,6 +15,24 @@ pub struct SegmentBuilder {
     pub(crate) element_sections: HashMap<ElementSegmentIdx, (u32, u32)>,
     pub(crate) total_allocated_pages: u32,
     pub(crate) entrypoint_bytecode: InstructionSet,
+}
+
+impl Default for SegmentBuilder {
+    fn default() -> Self {
+        let entrypoint_bytecode = instruction_set! {
+            // entrypoint consumes max 3 stack elements during execution, but we should use 4,
+            // because e2e testing suite passes 1 parameter to the stack
+            StackCheck(4)
+        };
+        Self {
+            global_memory_section: vec![],
+            memory_sections: Default::default(),
+            global_element_section: vec![],
+            element_sections: Default::default(),
+            total_allocated_pages: 0,
+            entrypoint_bytecode,
+        }
+    }
 }
 
 impl SegmentBuilder {
