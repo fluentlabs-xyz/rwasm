@@ -1798,7 +1798,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_add(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_add, 8)
+        self.translate_binary(InstructionSet::op_i64_add, 4)
     }
 
     fn visit_i64_sub(&mut self) -> Self::Output {
@@ -1806,7 +1806,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_mul(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_mul, 8)
+        self.translate_binary(InstructionSet::op_i64_mul, 5)
     }
 
     fn visit_i64_div_s(&mut self) -> Self::Output {
