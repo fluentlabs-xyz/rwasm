@@ -1,5 +1,3 @@
-#[cfg(feature = "legacy")]
-use crate::legacy::{LegacyCaller, LegacyModule, LegacyStore};
 use crate::wasmi::WasmiCaller;
 use crate::{
     wasmi::{WasmiModule, WasmiStore},
@@ -50,8 +48,6 @@ pub enum TypedCaller<'a, T: Send + Sync + 'static> {
     #[cfg(feature = "wasmtime")]
     Wasmtime(WasmtimeCaller<'a, T>),
     Wasmi(WasmiCaller<'a, T>),
-    #[cfg(feature = "legacy")]
-    Legacy(LegacyCaller<'a, T>),
 }
 
 impl<'a, T: Send + Sync> TypedCaller<'a, T> {
@@ -95,8 +91,6 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.memory_read(offset, buffer),
             TypedCaller::Wasmi(store) => store.memory_read(offset, buffer),
-            #[cfg(feature = "legacy")]
-            TypedCaller::Legacy(store) => store.memory_read(offset, buffer),
         }
     }
 
@@ -106,8 +100,6 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.memory_write(offset, buffer),
             TypedCaller::Wasmi(store) => store.memory_write(offset, buffer),
-            #[cfg(feature = "legacy")]
-            TypedCaller::Legacy(store) => store.memory_write(offset, buffer),
         }
     }
 
@@ -117,8 +109,6 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.context_mut(func),
             TypedCaller::Wasmi(store) => store.context_mut(func),
-            #[cfg(feature = "legacy")]
-            TypedCaller::Legacy(store) => store.context_mut(func),
         }
     }
 
@@ -128,8 +118,6 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.context(func),
             TypedCaller::Wasmi(store) => store.context(func),
-            #[cfg(feature = "legacy")]
-            TypedCaller::Legacy(store) => store.context(func),
         }
     }
 
@@ -139,8 +127,6 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.try_consume_fuel(delta),
             TypedCaller::Wasmi(store) => store.try_consume_fuel(delta),
-            #[cfg(feature = "legacy")]
-            TypedCaller::Legacy(store) => store.try_consume_fuel(delta),
         }
     }
 
@@ -150,8 +136,6 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.remaining_fuel(),
             TypedCaller::Wasmi(store) => store.remaining_fuel(),
-            #[cfg(feature = "legacy")]
-            TypedCaller::Legacy(store) => store.remaining_fuel(),
         }
     }
 }
@@ -163,8 +147,6 @@ impl<'a, T: Send + Sync> Caller<T> for TypedCaller<'a, T> {
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.program_counter(),
             TypedCaller::Wasmi(store) => store.program_counter(),
-            #[cfg(feature = "legacy")]
-            TypedCaller::Legacy(store) => store.program_counter(),
         }
     }
 
@@ -174,8 +156,6 @@ impl<'a, T: Send + Sync> Caller<T> for TypedCaller<'a, T> {
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.stack_push(value),
             TypedCaller::Wasmi(store) => store.stack_push(value),
-            #[cfg(feature = "legacy")]
-            TypedCaller::Legacy(store) => store.stack_push(value),
         }
     }
 }
@@ -193,10 +173,6 @@ pub enum Strategy {
     Wasmi {
         module: Rc<WasmiModule>,
     },
-    #[cfg(feature = "legacy")]
-    Legacy {
-        module: Rc<LegacyModule>,
-    },
 }
 
 pub enum TypedStore<T: Send + Sync + 'static> {
@@ -204,8 +180,6 @@ pub enum TypedStore<T: Send + Sync + 'static> {
     #[cfg(feature = "wasmtime")]
     Wasmtime(WasmtimeWorker<T>),
     Wasmi(WasmiStore<T>),
-    #[cfg(feature = "legacy")]
-    Legacy(LegacyStore<T>),
 }
 
 impl<T: Send + Sync> Store<T> for TypedStore<T> {
@@ -215,8 +189,6 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.memory_read(offset, buffer),
             TypedStore::Wasmi(store) => store.memory_read(offset, buffer),
-            #[cfg(feature = "legacy")]
-            TypedStore::Legacy(store) => store.memory_read(offset, buffer),
         }
     }
 
@@ -226,8 +198,6 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.memory_write(offset, buffer),
             TypedStore::Wasmi(store) => store.memory_write(offset, buffer),
-            #[cfg(feature = "legacy")]
-            TypedStore::Legacy(store) => store.memory_write(offset, buffer),
         }
     }
 
@@ -237,8 +207,6 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.context_mut(func),
             TypedStore::Wasmi(store) => store.context_mut(func),
-            #[cfg(feature = "legacy")]
-            TypedStore::Legacy(store) => store.context_mut(func),
         }
     }
 
@@ -248,8 +216,6 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.context(func),
             TypedStore::Wasmi(store) => store.context(func),
-            #[cfg(feature = "legacy")]
-            TypedStore::Legacy(store) => store.context(func),
         }
     }
 
@@ -259,8 +225,6 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.try_consume_fuel(delta),
             TypedStore::Wasmi(store) => store.try_consume_fuel(delta),
-            #[cfg(feature = "legacy")]
-            TypedStore::Legacy(store) => store.try_consume_fuel(delta),
         }
     }
 
@@ -270,8 +234,6 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.remaining_fuel(),
             TypedStore::Wasmi(store) => store.remaining_fuel(),
-            #[cfg(feature = "legacy")]
-            TypedStore::Legacy(store) => store.remaining_fuel(),
         }
     }
 }
@@ -309,14 +271,6 @@ impl Strategy {
                 config.fuel_limit,
             )),
             Strategy::Wasmi { module } => TypedStore::Wasmi(WasmiStore::new(
-                module,
-                import_linker,
-                context,
-                syscall_handler,
-                config.fuel_limit,
-            )),
-            #[cfg(feature = "legacy")]
-            Strategy::Legacy { module } => TypedStore::Legacy(LegacyStore::new(
                 module,
                 import_linker,
                 context,
@@ -361,14 +315,6 @@ impl Strategy {
                 };
                 store.execute(func_name, params, result)
             }
-            #[cfg(feature = "legacy")]
-            Strategy::Legacy { module, .. } => {
-                let store = match store {
-                    TypedStore::Legacy(store) => store,
-                    _ => unreachable!(),
-                };
-                store.execute(func_name, params, result)
-            }
         }
     }
 
@@ -400,14 +346,6 @@ impl Strategy {
             Strategy::Wasmi { module, .. } => {
                 let store = match store {
                     TypedStore::Wasmi(store) => store,
-                    _ => unreachable!(),
-                };
-                store.resume(interruption_result, result)
-            }
-            #[cfg(feature = "legacy")]
-            Strategy::Legacy { module, .. } => {
-                let store = match store {
-                    TypedStore::Legacy(store) => store,
                     _ => unreachable!(),
                 };
                 store.resume(interruption_result, result)
@@ -447,17 +385,6 @@ impl Strategy {
             Strategy::Wasmi { module, .. } => {
                 let store = match store {
                     TypedStore::Wasmi(store) => store,
-                    _ => unreachable!(),
-                };
-                for (addr, buf) in memory_changes {
-                    store.memory_write(addr as usize, &buf)?
-                }
-                store.resume(interruption_result, result)
-            }
-            #[cfg(feature = "legacy")]
-            Strategy::Legacy { module, .. } => {
-                let store = match store {
-                    TypedStore::Legacy(store) => store,
                     _ => unreachable!(),
                 };
                 for (addr, buf) in memory_changes {

@@ -404,12 +404,6 @@ dependencies = [
 
 [[package]]
 name = "downcast-rs"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
-
-[[package]]
-name = "downcast-rs"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea8a8b81cacc08888170eef4d13b775126db426d0b348bee9d18c2c1eaf123cf"
@@ -995,14 +989,13 @@ dependencies = [
  "bitvec",
  "bytes",
  "directories",
- "downcast-rs 2.0.1",
+ "downcast-rs",
  "hashbrown",
  "libm",
  "num-derive",
  "num-traits",
  "paste",
  "rand",
- "rwasm-legacy",
  "serde",
  "smallvec",
  "tiny-keccak",
@@ -1010,21 +1003,6 @@ dependencies = [
  "wasmparser-nostd",
  "wasmtime",
  "wat",
-]
-
-[[package]]
-name = "rwasm-legacy"
-version = "0.30.0"
-dependencies = [
- "byteorder",
- "downcast-rs 1.2.1",
- "hashbrown",
- "libm",
- "num-traits",
- "paste",
- "smallvec",
- "spin",
- "wasmparser-nostd",
 ]
 
 [[package]]

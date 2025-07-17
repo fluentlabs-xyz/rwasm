@@ -4,8 +4,6 @@
 #![recursion_limit = "750"]
 
 mod compiler;
-#[cfg(feature = "legacy")]
-mod legacy;
 mod strategy;
 mod types;
 mod vm;
@@ -17,8 +15,6 @@ extern crate alloc;
 extern crate core;
 
 pub use compiler::*;
-#[cfg(feature = "legacy")]
-pub use legacy::*;
 use libm as _;
 pub use strategy::*;
 pub use types::*;
@@ -57,14 +53,6 @@ pub fn for_each_strategy<F: FnMut(Strategy) -> Result<(), StrategyError>>(
     {
         let wasmi_module = compile_wasmi_module(compilation_config.clone(), wasm_binary).unwrap();
         f(Strategy::Wasmi {
-            module: Rc::new(wasmi_module),
-        })?;
-    }
-    // legacy case
-    #[cfg(feature = "legacy")]
-    {
-        let wasmi_module = compile_legacy_module(compilation_config.clone(), wasm_binary).unwrap();
-        f(Strategy::Legacy {
             module: Rc::new(wasmi_module),
         })?;
     }
