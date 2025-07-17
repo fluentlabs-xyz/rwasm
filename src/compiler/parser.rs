@@ -3,21 +3,9 @@ use crate::{
         func_builder::FuncBuilder,
         translator::{InstructionTranslator, ReusableAllocations},
     },
-    CompilationConfig,
-    CompilationError,
-    CompiledExpr,
-    ConstructorParams,
-    DataSegmentIdx,
-    ElementSegmentIdx,
-    FuncIdx,
-    FuncRef,
-    GlobalIdx,
-    GlobalVariable,
-    ImportName,
-    Opcode,
-    RwasmModule,
-    TableIdx,
-    DEFAULT_MEMORY_INDEX,
+    CompilationConfig, CompilationError, CompiledExpr, ConstructorParams, DataSegmentIdx,
+    ElementSegmentIdx, FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName, Opcode,
+    RwasmModule, TableIdx, DEFAULT_MEMORY_INDEX,
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::{
@@ -25,29 +13,10 @@ use core::{
     ops::Range,
 };
 use wasmparser::{
-    CustomSectionReader,
-    DataKind,
-    DataSectionReader,
-    ElementItems,
-    ElementKind,
-    ElementSectionReader,
-    Encoding,
-    ExportSectionReader,
-    ExternalKind,
-    FuncType,
-    FunctionBody,
-    FunctionSectionReader,
-    GlobalSectionReader,
-    ImportSectionReader,
-    MemorySectionReader,
-    Parser,
-    Payload,
-    TableSectionReader,
-    Type,
-    TypeRef,
-    TypeSectionReader,
-    ValType,
-    Validator,
+    CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind,
+    ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType, FunctionBody,
+    FunctionSectionReader, GlobalSectionReader, ImportSectionReader, MemorySectionReader, Parser,
+    Payload, TableSectionReader, Type, TypeRef, TypeSectionReader, ValType, Validator,
 };
 
 pub struct ModuleParser {
@@ -469,10 +438,6 @@ impl ModuleParser {
             let signature_index = translator
                 .alloc
                 .resolve_func_type_signature(func_type_index);
-            translator
-                .alloc
-                .instruction_set
-                .op_signature_check(signature_index);
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
             if self.config.builtins_consume_fuel {
                 for instr in import_linker_entity.block_fuel.instr.iter() {
@@ -861,14 +826,14 @@ impl ModuleParser {
         let allocations = take(&mut self.allocations);
         let validator = self.validator.code_section_entry(&func_body)?;
         let func_validator = validator.into_validator(allocations.validation);
-        let func_builder = FuncBuilder::new(
+        let allocations = FuncBuilder::new(
             func_body,
             func_validator,
             func_idx,
             allocations.translation,
             self.config.consume_fuel,
-        );
-        let allocations = func_builder.translate()?;
+        )
+        .translate()?;
         let _ = replace(&mut self.allocations, allocations);
         Ok(())
     }

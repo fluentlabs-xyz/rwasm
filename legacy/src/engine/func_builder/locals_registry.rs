@@ -21,7 +21,6 @@
 pub struct LocalsRegistry {
     /// The amount of registered local variables.
     len_registered: u32,
-    types_registered: u32,
 }
 
 impl LocalsRegistry {
@@ -34,10 +33,6 @@ impl LocalsRegistry {
     /// and explicitly defined local variables.
     pub fn len_registered(&self) -> u32 {
         self.len_registered
-    }
-
-    pub fn types_registered(&self) -> u32 {
-        self.types_registered
     }
 
     /// Registers an `amount` of local variables.
@@ -53,18 +48,6 @@ impl LocalsRegistry {
             panic!(
                 "tried to register too many local variables for function: got {}, additional {amount}",
                 self.len_registered
-            )
-        });
-    }
-
-    pub fn register_types(&mut self, amount: u32) {
-        if amount == 0 {
-            return;
-        }
-        self.types_registered = self.types_registered.checked_add(amount).unwrap_or_else(|| {
-            panic!(
-                "tried to register too many local variables for function: got {}, additional {amount}",
-                self.types_registered
             )
         });
     }
