@@ -39,6 +39,7 @@ jobs:
       - name: Run tests
         run: |
           rustup target add wasm32-unknown-unknown
+          rustup +nightly target add wasm32-unknown-unknown
           make test-specific-cases
 
   lint:

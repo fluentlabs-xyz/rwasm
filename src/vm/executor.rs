@@ -9,17 +9,8 @@ mod table;
 
 use crate::{
     types::{AddressOffset, RwasmModule, TableIdx, UntypedValue},
-    CallStack,
-    InstructionPtr,
-    Opcode,
-    RwasmCaller,
-    RwasmStore,
-    SysFuncIdx,
-    TrapCode,
-    TypedCaller,
-    Value,
-    ValueStack,
-    ValueStackPtr,
+    CallStack, InstructionPtr, Opcode, RwasmCaller, RwasmStore, SysFuncIdx, TrapCode, TypedCaller,
+    Value, ValueStack, ValueStackPtr,
 };
 use smallvec::SmallVec;
 
@@ -151,6 +142,7 @@ macro_rules! exec_opcode {
         I32Extend8S => $self.visit_i32_extend8_s(),
         I32Extend16S => $self.visit_i32_extend16_s(),
         I32Mul64 => $self.visit_i32_mul64(),
+        I32Add64 => $self.visit_i32_add64(),
 
         // memory
         MemorySize => $self.visit_memory_size(),
@@ -330,18 +322,26 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "debug-print")]
     fn debug_print(&mut self, instr: &Opcode) {
-        let stack = self.value_stack.dump_stack(self.sp);
-        println!(
-            "{:04}:\t {} \tstack({}):{:?}",
+        self.value_stack.sync_stack_ptr(self.sp);
+        print!(
+            "{:04}:\t {} \tstack_len={}, stack_cap={}, ",
             self.program_counter(),
             instr,
-            stack.len(),
-            stack
+            self.value_stack.len(),
+            self.value_stack.capacity(),
+        );
+        use std::io::Write;
+        std::io::stdout().flush().unwrap();
+        println!(
+            "stack={:?}, sp={:?}",
+            self.value_stack
+                .dump_stack()
                 .iter()
                 .rev()
                 .take(10)
                 .map(|v| v.as_usize())
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
+            self.sp,
         );
     }
 

@@ -1,13 +1,8 @@
 use crate::{
     compiler::{
         control_flow::{
-            BlockControlFrame,
-            ControlFlowStack,
-            ControlFrame,
-            ControlFrameKind,
-            IfControlFrame,
-            LoopControlFrame,
-            UnreachableControlFrame,
+            BlockControlFrame, ControlFlowStack, ControlFrame, ControlFrameKind, IfControlFrame,
+            LoopControlFrame, UnreachableControlFrame,
         },
         drop_keep::{translate_drop_keep, DropKeep},
         error::CompilationError,
@@ -18,42 +13,16 @@ use crate::{
         utils::RelativeDepth,
         value_stack::ValueStackHeight,
     },
-    AddressOffset,
-    BranchOffset,
-    BranchTableTargets,
-    ConstructorParams,
-    DataSegmentIdx,
-    ElementSegmentIdx,
-    FuncIdx,
-    FuncTypeIdx,
-    GlobalVariable,
-    InstrLoc,
-    InstructionSet,
-    LabelRef,
-    Opcode,
-    SignatureIdx,
-    TableIdx,
-    BASE_FUEL_COST,
-    DEFAULT_MEMORY_INDEX,
-    N_MAX_MEMORY_PAGES,
+    AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
+    ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
+    Opcode, SignatureIdx, TableIdx, BASE_FUEL_COST, DEFAULT_MEMORY_INDEX, N_MAX_MEMORY_PAGES,
     N_MAX_TABLE_SIZE,
 };
 use alloc::{boxed::Box, vec, vec::Vec};
 use hashbrown::HashMap;
 use wasmparser::{
-    BlockType,
-    BrTable,
-    FuncType,
-    FuncValidatorAllocations,
-    GlobalType,
-    Ieee32,
-    Ieee64,
-    MemArg,
-    MemoryType,
-    TableType,
-    ValType,
-    VisitOperator,
-    V128,
+    BlockType, BrTable, FuncType, FuncValidatorAllocations, GlobalType, Ieee32, Ieee64, MemArg,
+    MemoryType, TableType, ValType, VisitOperator, V128,
 };
 
 /// Reusable allocations of a [`FuncTranslator`].
@@ -256,6 +225,13 @@ impl InstructionTranslator {
         let func_type_idx = self.alloc.resolve_func_type_index(func_idx);
         let block_type = BlockType::FuncType(func_type_idx);
         let end_label = self.alloc.labels.new_label();
+        {
+            let func_type_idx = self.alloc.resolve_func_type_index(func_idx);
+            let signature_index = self.alloc.resolve_func_type_signature(func_type_idx);
+            self.alloc
+                .instruction_set
+                .op_signature_check(signature_index);
+        }
         let consume_fuel = self
             .is_fuel_metering_enabled()
             .then(|| self.push_consume_fuel_base());
@@ -268,6 +244,8 @@ impl InstructionTranslator {
             .unwrap();
         self.alloc.stack_types.extend(original_func_types.params());
         let func_type = self.alloc.func_types.get(func_type_idx as usize).unwrap();
+        debug_assert_eq!(self.stack_height.height(), 0);
+        debug_assert_eq!(self.stack_height.max_stack_height(), 0);
         let func_params_len = func_type.params().len();
         self.locals.register_locals(func_params_len as u32);
     }
@@ -1520,9 +1498,9 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             debug_assert_eq!(popped_type, ValType::I32);
             builder.alloc.stack_types.push(popped_type);
             // calc stack height
-            builder.stack_height.pop_type(ValType::I32);
             builder.stack_height.push2();
             builder.stack_height.pop2();
+            builder.stack_height.pop_type(ValType::I32);
             builder.stack_height.push_type(ValType::I32);
             Ok(())
         })
@@ -1820,7 +1798,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_add(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_add, 8)
+        self.translate_binary(InstructionSet::op_i64_add, 4)
     }
 
     fn visit_i64_sub(&mut self) -> Self::Output {
@@ -1828,7 +1806,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_mul(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_mul, 8)
+        self.translate_binary(InstructionSet::op_i64_mul, 5)
     }
 
     fn visit_i64_div_s(&mut self) -> Self::Output {
@@ -3823,10 +3801,10 @@ impl InstructionTranslator {
             builder.bump_fuel_consumption(|| FuelCosts::LOAD)?;
             let addr_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(addr_type, ValType::I32);
-            builder.stack_height.pop_type(addr_type);
-            builder.stack_height.push_type(loaded_type);
             builder.stack_height.push_n(max_stack_height);
             builder.stack_height.pop_n(max_stack_height);
+            builder.stack_height.pop_type(addr_type);
+            builder.stack_height.push_type(loaded_type);
             builder.alloc.stack_types.push(loaded_type);
             let offset = AddressOffset::from(memarg.offset as u32);
             emitter(&mut builder.alloc.instruction_set, offset);
@@ -3844,14 +3822,14 @@ impl InstructionTranslator {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(|| FuelCosts::STORE)?;
+            builder.stack_height.push_n(max_stack_height);
+            builder.stack_height.pop_n(max_stack_height);
             let value_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(value_type, stored_value);
             builder.stack_height.pop_type(value_type);
             let addr_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(addr_type, ValType::I32);
             builder.stack_height.pop_type(addr_type);
-            builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
             let offset = AddressOffset::from(memarg.offset as u32);
             emitter(&mut builder.alloc.instruction_set, offset);
             Ok(())
@@ -3867,12 +3845,12 @@ impl InstructionTranslator {
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+            builder.stack_height.push_n(max_stack_height);
+            builder.stack_height.pop_n(max_stack_height);
             let lhs_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(lhs_type, input_type);
             builder.alloc.stack_types.push(output_type);
             builder.stack_height.pop_type(input_type);
-            builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
             builder.stack_height.push_type(output_type);
             emitter(&mut builder.alloc.instruction_set);
             Ok(())
@@ -3909,10 +3887,12 @@ impl InstructionTranslator {
             debug_assert_eq!(lhs_type, rhs_type);
             builder.alloc.stack_types.push(lhs_type);
             // calculate max stack height
+            if max_stack_height > 0 {
+                builder.stack_height.push_n(max_stack_height);
+                builder.stack_height.pop_n(max_stack_height);
+            }
             builder.stack_height.pop_type(lhs_type);
             builder.stack_height.pop_type(lhs_type);
-            builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
             builder.stack_height.push_type(lhs_type);
             // emit an instruction
             emitter(&mut builder.alloc.instruction_set);
@@ -3932,10 +3912,12 @@ impl InstructionTranslator {
             debug_assert_eq!(lhs_type, rhs_type);
             builder.alloc.stack_types.push(ValType::I32);
             // do stack height check
+            if max_stack_height > 0 {
+                builder.stack_height.push_n(max_stack_height);
+                builder.stack_height.pop_n(max_stack_height);
+            }
             builder.stack_height.pop_type(lhs_type);
             builder.stack_height.pop_type(rhs_type);
-            builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
             builder.stack_height.push_type(ValType::I32);
             // emit an opcode
             emitter(&mut builder.alloc.instruction_set);
@@ -3954,9 +3936,9 @@ impl InstructionTranslator {
             let lhs_type = builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.push(lhs_type);
             // calc stack height
-            builder.stack_height.pop_type(lhs_type);
             builder.stack_height.push_n(max_stack_height);
             builder.stack_height.pop_n(max_stack_height);
+            builder.stack_height.pop_type(lhs_type);
             builder.stack_height.push_type(lhs_type);
             // emit instruction
             emitter(&mut builder.alloc.instruction_set);
@@ -3975,9 +3957,9 @@ impl InstructionTranslator {
             let lsh_type = builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.push(ValType::I32);
             // calc stack height
-            builder.stack_height.pop_type(lsh_type);
             builder.stack_height.push_n(max_stack_height);
             builder.stack_height.pop_n(max_stack_height);
+            builder.stack_height.pop_type(lsh_type);
             builder.stack_height.push_type(ValType::I32);
             // emit opcode
             emitter(&mut builder.alloc.instruction_set);

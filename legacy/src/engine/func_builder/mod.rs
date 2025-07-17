@@ -5,7 +5,6 @@ mod inst_builder;
 mod labels;
 mod locals_registry;
 mod translator;
-mod translator_i32;
 mod value_stack;
 
 use self::{control_frame::ControlFrame, control_stack::ControlFlowStack};
@@ -13,7 +12,6 @@ pub use self::{
     error::{TranslationError, TranslationErrorInner},
     inst_builder::{Instr, InstructionsBuilder, RelativeDepth},
     translator::{FuncTranslator, FuncTranslatorAllocations},
-    translator_i32::FuncTranslatorI32,
 };
 use super::CompiledFunc;
 pub use crate::engine::func_builder::value_stack::ValueStackHeight;
@@ -47,21 +45,18 @@ pub struct FuncBuilder<'parser> {
 
 pub enum FuncTranslators<'parser> {
     Translator(FuncTranslator<'parser>),
-    TranslatorI32(FuncTranslatorI32<'parser>),
 }
 
 impl<'parser> FuncTranslators<'parser> {
     pub(crate) fn is_i32_translator(&self) -> bool {
         match self {
             FuncTranslators::Translator(_) => false,
-            FuncTranslators::TranslatorI32(_) => true,
         }
     }
 
     pub(crate) fn into_allocations(self) -> FuncTranslatorAllocations {
         match self {
             FuncTranslators::Translator(t) => t.into_allocations(),
-            FuncTranslators::TranslatorI32(t) => t.into_allocations(),
         }
     }
 }
@@ -70,7 +65,6 @@ impl<'parser> FuncTranslators<'parser> {
     pub(crate) fn finish(&mut self) -> Result<(), TranslationError> {
         match self {
             FuncTranslators::Translator(t) => t.finish(),
-            FuncTranslators::TranslatorI32(t) => t.finish(),
         }
     }
 }
@@ -79,7 +73,6 @@ impl<'parser> FuncTranslators<'parser> {
     pub(crate) fn register_opcode_metadata(&mut self, pos: usize, opcode: u16) {
         match self {
             FuncTranslators::Translator(t) => t.register_opcode_metadata(pos, opcode),
-            FuncTranslators::TranslatorI32(t) => t.register_opcode_metadata(pos, opcode),
         }
     }
 }
@@ -88,7 +81,6 @@ impl<'parser> FuncTranslators<'parser> {
     pub(crate) fn finish_translate_locals(&mut self) -> Result<(), TranslationError> {
         match self {
             FuncTranslators::Translator(t) => t.finish_translate_locals(),
-            FuncTranslators::TranslatorI32(t) => t.finish_translate_locals(),
         }
     }
 }
@@ -97,7 +89,6 @@ impl<'parser> FuncTranslators<'parser> {
     pub(crate) fn stack_height(&mut self) -> &mut ValueStackHeight {
         match self {
             FuncTranslators::Translator(t) => &mut t.stack_height,
-            FuncTranslators::TranslatorI32(t) => &mut t.stack_height,
         }
     }
     pub(crate) fn stack_types(&mut self) -> &mut Vec<ValueType> {
@@ -105,20 +96,17 @@ impl<'parser> FuncTranslators<'parser> {
             FuncTranslators::Translator(_) => {
                 panic!("Translator not support stack types")
             }
-            FuncTranslators::TranslatorI32(t) => &mut t.stack_types,
         }
     }
 
     pub(crate) fn register_locals(&mut self, amount: u32) {
         match self {
             FuncTranslators::Translator(t) => t.register_locals(amount),
-            FuncTranslators::TranslatorI32(t) => t.register_locals(amount),
         }
     }
     pub(crate) fn alloc(&mut self) -> &mut FuncTranslatorAllocations {
         match self {
             FuncTranslators::Translator(t) => &mut t.alloc,
-            FuncTranslators::TranslatorI32(t) => &mut t.alloc,
         }
     }
 }
@@ -127,7 +115,6 @@ impl<'parser> FuncTranslators<'parser> {
     pub(crate) fn func(&self) -> FuncIdx {
         match self {
             FuncTranslators::Translator(t) => t.func,
-            FuncTranslators::TranslatorI32(t) => t.func,
         }
     }
 }
@@ -136,7 +123,6 @@ impl<'parser> FuncTranslators<'parser> {
     pub(crate) fn res(&self) -> &ModuleResources<'parser> {
         match self {
             FuncTranslators::Translator(t) => &t.res,
-            FuncTranslators::TranslatorI32(t) => &t.res,
         }
     }
 }
@@ -149,27 +135,17 @@ impl<'parser> FuncBuilder<'parser> {
         res: ModuleResources<'parser>,
         validator: FuncValidator,
         allocations: FuncTranslatorAllocations,
-        i32_translator: bool,
     ) -> Self {
         let is_rwasm = res.res.engine().config().get_rwasm_config().is_some();
         Self {
             pos: 0,
             validator,
-            translator: if i32_translator {
-                FuncTranslators::TranslatorI32(FuncTranslatorI32::new(
-                    func,
-                    compiled_func,
-                    res,
-                    allocations,
-                ))
-            } else {
-                FuncTranslators::Translator(FuncTranslator::new(
-                    func,
-                    compiled_func,
-                    res,
-                    allocations,
-                ))
-            },
+            translator: FuncTranslators::Translator(FuncTranslator::new(
+                func,
+                compiled_func,
+                res,
+                allocations,
+            )),
             is_rwasm,
         }
     }
@@ -323,7 +299,6 @@ macro_rules! impl_visit_operator {
                 |validator| validator.visitor(offset).$visit(arg_cloned),
                 |translator| match translator {
                     FuncTranslators::Translator(t) => {t.$visit($arg)}
-                    FuncTranslators::TranslatorI32(t) => {t.$visit($arg)}
                 }
             )
         }
@@ -354,7 +329,6 @@ macro_rules! impl_visit_operator {
                 |v| v.visitor(offset).$visit($($($arg),*)?),
                 |t|  match t {
                     FuncTranslators::Translator(t) => {t.$visit($($($arg),*)?)}
-                    FuncTranslators::TranslatorI32(t) => {t.$visit($($($arg),*)?)}
                 },
             )
         }

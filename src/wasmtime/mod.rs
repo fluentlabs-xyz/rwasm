@@ -2,18 +2,8 @@ mod thread_pool;
 
 use crate::{
     wasmtime::thread_pool::spawn_on_global_pool,
-    Caller,
-    ImportLinker,
-    Store,
-    SyscallHandler,
-    TrapCode,
-    TypedCaller,
-    UntypedValue,
-    ValType,
-    Value,
-    F32,
-    F64,
-    N_MAX_STACK_SIZE,
+    Caller, CompilationConfig, ImportLinker, Store, SyscallHandler, TrapCode, TypedCaller,
+    UntypedValue, ValType, Value, F32, F64, N_MAX_STACK_SIZE,
 };
 use alloc::rc::Rc;
 use smallvec::{smallvec, SmallVec};
@@ -392,6 +382,7 @@ fn wasmtime_config() -> anyhow::Result<wasmtime::Config> {
     config.strategy(wasmtime::Strategy::Cranelift);
     config.collector(wasmtime::Collector::Null);
     config.max_wasm_stack(N_MAX_STACK_SIZE * size_of::<u32>());
+    // TODO(dmitry123): "adjust wasmtime config if needed"
     // use caching for artifacts
     #[cfg(feature = "cache-compiled-artifacts")]
     {
@@ -421,7 +412,10 @@ pub fn deserialize_wasmtime_module(
     module
 }
 
-pub fn compile_wasmtime_module(wasm_binary: impl AsRef<[u8]>) -> anyhow::Result<WasmtimeModule> {
+pub fn compile_wasmtime_module(
+    _compilation_config: CompilationConfig,
+    wasm_binary: impl AsRef<[u8]>,
+) -> anyhow::Result<WasmtimeModule> {
     print!("compiling wasmtime module... ");
     let start = Instant::now();
     let engine = wasmtime::Engine::new(&wasmtime_config()?)?;
@@ -440,13 +434,14 @@ fn execute_wasmtime_module<T: Send + Sync>(
     let entrypoint = instance
         .get_func(store.as_context_mut(), func_name)
         .unwrap_or_else(|| unreachable!("missing entrypoint: {}", func_name));
-    let mut buffer = SmallVec::<[wasmtime::Val; 128]>::new();
+    let mut buffer = SmallVec::<[wasmtime::Val; 32]>::new();
     for (i, value) in params.iter().enumerate() {
         let value = match value {
             Value::I32(value) => wasmtime::Val::I32(*value),
             Value::I64(value) => wasmtime::Val::I64(*value),
             Value::F32(value) => wasmtime::Val::F32(value.to_bits()),
             Value::F64(value) => wasmtime::Val::F64(value.to_bits()),
+            // this should never happen because rWasm rejects such binaries during compilation
             _ => unreachable!("not supported type: {:?}", value),
         };
         buffer.push(value);
@@ -479,10 +474,10 @@ fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
     sys_func_idx: u32,
     caller: wasmtime::Caller<'a, WrappedContext<T>>,
     params: &[wasmtime::Val],
-    results: &mut [wasmtime::Val],
+    result: &mut [wasmtime::Val],
 ) -> anyhow::Result<()> {
     // convert input values from wasmtime format into rwasm format
-    let mut buffer = SmallVec::<[Value; 128]>::new();
+    let mut buffer = SmallVec::<[Value; 32]>::new();
     buffer.extend(params.iter().map(|x| match x {
         wasmtime::Val::I32(value) => Value::I32(*value),
         wasmtime::Val::I64(value) => Value::I64(*value),
@@ -490,7 +485,7 @@ fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
         wasmtime::Val::F64(value) => Value::F64(F64::from_bits(*value)),
         _ => unreachable!("not supported type: {:?}", x),
     }));
-    buffer.extend(std::iter::repeat(Value::I32(0)).take(results.len()));
+    buffer.extend(std::iter::repeat(Value::I32(0)).take(result.len()));
     // caller adapter is required to provide operations for accessing memory and context
     let syscall_handler = caller.data().syscall_handler;
     let mut caller_adapter = TypedCaller::Wasmtime(WasmtimeCaller::<'a, T> {
@@ -537,7 +532,7 @@ fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
         caller_ctx.data_mut().inner.replace(stolen_context);
         drop(caller_ctx);
         for (i, value) in interruption_result.result?.iter().enumerate() {
-            results[i] = match value {
+            result[i] = match value {
                 Value::I32(value) => wasmtime::Val::I32(*value),
                 Value::I64(value) => wasmtime::Val::I64(*value),
                 Value::F32(value) => wasmtime::Val::F32(value.to_bits()),
@@ -561,7 +556,7 @@ fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
         })?;
         // after call map all values back to wasmtime format
         for (i, value) in mapped_result.iter().enumerate() {
-            results[i] = match value {
+            result[i] = match value {
                 Value::I32(value) => wasmtime::Val::I32(*value),
                 Value::I64(value) => wasmtime::Val::I64(*value),
                 Value::F32(value) => wasmtime::Val::F32(value.to_bits()),

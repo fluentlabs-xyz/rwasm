@@ -34,6 +34,12 @@ pub use units::*;
 pub use untyped_value::*;
 pub use value::*;
 
+/// A default stack size we use for stack allocation.
+///
+/// This value can't be less than 6, because 4 elements we need for an entrypoint and 1 element
+/// we need for running e2e testing suite where one parameter can be passed into the test.
+///
+/// We keep value 32 since it's the most optimal.
 pub const N_DEFAULT_STACK_SIZE: usize = 32;
 pub const N_MAX_STACK_SIZE: usize = 8192;
 pub const N_MAX_RECURSION_DEPTH: usize = 1024;

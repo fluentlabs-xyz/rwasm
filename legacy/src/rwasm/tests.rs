@@ -3,14 +3,7 @@ use crate::{
     engine::{bytecode::Instruction, RwasmConfig, StateRouterConfig},
     module::ImportName,
     rwasm::{BinaryFormat, RwasmModule},
-    AsContextMut,
-    Caller,
-    Config,
-    Engine,
-    Func,
-    Linker,
-    Module,
-    Store,
+    AsContextMut, Caller, Config, Engine, Func, Linker, Module, Store,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -79,13 +72,13 @@ fn execute_binary(wat: &str, host_state: HostState, config: Config) -> HostState
     let mut store = Store::new(&engine, host_state);
     store.add_fuel(1_000_000).unwrap();
     let mut linker = Linker::<HostState>::new(&engine);
-    let sys_halt_func = Func::wrap::<_, _, _, true>(
+    let sys_halt_func = Func::wrap::<_, _, _>(
         store.as_context_mut(),
         |mut caller: Caller<'_, HostState>, exit_code: i32| {
             caller.data_mut().exit_code = exit_code;
         },
     );
-    let sys_state_func = Func::wrap::<_, _, _, true>(
+    let sys_state_func = Func::wrap::<_, _, _>(
         store.as_context_mut(),
         |mut caller: Caller<'_, HostState>| -> u32 { caller.data_mut().state },
     );
@@ -365,7 +358,6 @@ fn test_state_router() {
         wrap_import_functions: true,
         translate_drop_keep: true,
         allow_malformed_entrypoint_func_type: false,
-        use_32bit_mode: true,
         builtins_consume_fuel: false,
     });
     // run with deployment state (a result is 200)

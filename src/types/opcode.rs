@@ -112,6 +112,7 @@ pub enum Opcode {
     I32Extend8S = 0xbe,
     I32Extend16S = 0xbf,
     I32Mul64 = 0xc0,
+    I32Add64 = 0xc1,
 
     // fpu
     #[cfg(feature = "fpu")]
