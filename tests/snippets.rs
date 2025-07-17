@@ -1,3 +1,4 @@
+use rand::Rng;
 /// |-----------------------|---------|
 /// | Opcode                | Covered |
 /// |-----------------------|---------|
@@ -53,7 +54,10 @@
 use rwasm::{
     CallStack, InstructionSet, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, ValueStack,
 };
-use std::ops::{BitAnd, BitOr, BitXor, Shl, Shr};
+use std::{
+    fmt::Debug,
+    ops::{BitAnd, BitOr, BitXor, Shl, Shr},
+};
 
 fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Result<Vec<u32>, TrapCode> {
     is.op_return();
@@ -82,7 +86,7 @@ fn run_binary_test_case(is: &InstructionSet, a: u64, b: u64, c: u64) -> Result<(
     )?;
     assert_eq!(output.len(), 2);
     let r = (output[1] as u64) << 32 | output[0] as u64;
-    assert_eq!(c, r);
+    assert_eq!(c, r, "f({a}, {b})={r}, but expected {c}");
     Ok(())
 }
 
@@ -146,6 +150,7 @@ fn test_i64_mul() {
     };
 
     // u64 test cases
+    test_case_u64(15, 71);
     test_case_u64(0x0000_0000_0000_0000, 0x0000_0000_0000_0000); // 0 × 0
     test_case_u64(0x0000_0000_0000_0000, 0x0000_0000_075B_CD15); // 0 × n
     test_case_u64(0x0000_0000_0000_0001, 0xFFFF_FFFF_FFFF_FFFF); // 1 × max
@@ -168,6 +173,12 @@ fn test_i64_mul() {
     test_case_i64(-81_985_529_216_486_895, 538_030_035_483_195_255); // mixed signs, dense
     test_case_i64(-81_985_529_216_486_895, -538_030_035_483_195_255); // neg × neg → pos
     test_case_i64(81_985_529_216_486_895, -81_985_529_216_486_895); // pos × neg
+
+    pairwise_fuzzing_test(test_case_u64, generate_random_numbers(30));
+    pairwise_fuzzing_test(
+        test_case_i64,
+        generate_random_numbers(30).iter().map(|v| *v as i64),
+    );
 }
 
 #[test]
@@ -289,6 +300,8 @@ fn test_i64_add() {
     test_case_u64(0x1234_5678_9ABC_DEF0, 0x1111_1111_1111_1111);
     test_case_u64(0, u64::MAX); // 0 - max = 1 (wrap)
     test_case_u64(0xDEAD_BEEF_DEAD_BEEF, 0xCAFEBABE_CAFEBABE);
+
+    pairwise_fuzzing_test(test_case_u64, generate_random_numbers(30));
 }
 
 #[test]
@@ -1004,4 +1017,140 @@ fn test_swap() {
     assert_eq!(output.len(), 2);
     assert_eq!(output[0], 200);
     assert_eq!(output[1], 100);
+}
+
+/// Generates a set of random numbers near points of interest,
+/// such as [0, 1, -1, i32::MIN, i32::MAX, u64::MAX, ...]
+fn generate_random_numbers(n: usize) -> Vec<u64> {
+    let mut rng = rand::rng();
+    const I32_MAX_I64: i64 = i32::MAX as i64;
+    const I32_MIN_I64: i64 = i32::MIN as i64;
+    const U32_MAX_U64: u64 = u32::MAX as u64;
+
+    let mut v = Vec::new();
+
+    // 1. Very small values
+    for k in 0..=5 {
+        v.push(k);
+        if k != 0 {
+            v.push(k * -1);
+        }
+    }
+
+    // 2. Small values
+    for _ in 0..n {
+        v.push(rng.random_range(0..1000));
+        v.push(rng.random_range(0..1000) * -1);
+    }
+
+    // 3. Big random values
+    for _ in 0..n {
+        v.push(rng.random());
+    }
+
+    // 4. Near i32::MAX
+    {
+        // just below
+        let low = I32_MAX_I64 - 1_000;
+        let high = I32_MAX_I64 - 2;
+        for _ in 0..n / 2 {
+            v.push(rng.random_range(low..=high));
+        }
+        // the “‑1, exact, +1” trio
+        v.push(I32_MAX_I64 - 1);
+        v.push(I32_MAX_I64);
+        v.push(I32_MAX_I64 + 1);
+        // just above
+        let low = I32_MAX_I64 + 1;
+        let high = I32_MAX_I64 + 1_000;
+        for _ in 0..n / 2 {
+            v.push(rng.random_range(low..=high));
+        }
+    }
+
+    // 5. Near  i32::MIN
+    {
+        // just below
+        let low = I32_MIN_I64 - 1_000;
+        let high = I32_MIN_I64;
+        for _ in 0..n / 2 {
+            v.push(rng.random_range(low..=high));
+        }
+        // the “‑1, exact, +1” trio
+        v.push(I32_MIN_I64 - 1);
+        v.push(I32_MIN_I64);
+        v.push(I32_MIN_I64 + 1);
+        // just above
+        let low = I32_MIN_I64;
+        let high = I32_MIN_I64 + 1_000;
+        for _ in 0..n / 2 {
+            v.push(rng.random_range(low..=high));
+        }
+    }
+
+    // 6. Near i64::MAX
+    {
+        let low = i64::MAX - 1_000;
+        let high = i64::MAX - 2;
+        for _ in 0..n {
+            v.push(rng.random_range(low..=high));
+        }
+        v.push(i64::MAX - 1);
+        v.push(i64::MAX); // exact top
+        v.push(i64::MAX - 1_000 / 2); // one more mid‑window value
+    }
+
+    // 7. Near i64::MIN
+    {
+        v.push(i64::MIN); // exact bottom
+        v.push(i64::MIN + 1); // just above
+        let low = i64::MIN + 2;
+        let high = i64::MIN + 1_000;
+        for _ in 0..n {
+            v.push(rng.random_range(low..=high));
+        }
+    }
+
+    v.push(i64::MAX);
+    v.push(i64::MAX - 1);
+    v.push(i64::MIN);
+    v.push(i64::MIN + 1);
+
+    let mut v: Vec<u64> = v.iter().map(|val| *val as u64).collect();
+
+    // 8. Near u32::MAX
+    for _ in 0..n {
+        let low: u64 = U32_MAX_U64 - 1_000;
+        let high: u64 = U32_MAX_U64;
+        v.push(rng.random_range(low..=high));
+    }
+    v.push(U32_MAX_U64 - 1);
+    v.push(U32_MAX_U64);
+    v.push(U32_MAX_U64 + 1);
+    for _ in 0..n {
+        let low = U32_MAX_U64;
+        let high: u64 = U32_MAX_U64 + 1_000;
+        v.push(rng.random_range(low..=high));
+    }
+
+    // 9. Near u64::MAX
+    for _ in 0..n {
+        let low = u64::MAX - 1_000;
+        let high = u64::MAX;
+        v.push(rng.random_range(low..=high));
+    }
+
+    v.sort_unstable();
+    v.dedup(); // remove duplicates
+
+    v
+}
+
+fn pairwise_fuzzing_test<T: Clone + Debug, F: Fn(T, T)>(f: F, values: impl IntoIterator<Item = T>) {
+    let values: Vec<T> = values.into_iter().collect();
+    for a in &values {
+        for b in &values {
+            f(a.clone(), b.clone());
+        }
+    }
 }
