@@ -1001,6 +1001,7 @@ dependencies = [
  "libm",
  "num-derive",
  "num-traits",
+ "once_cell",
  "paste",
  "rand",
  "serde",

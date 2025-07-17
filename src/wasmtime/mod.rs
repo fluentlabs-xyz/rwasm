@@ -1,4 +1,7 @@
+mod thread_pool;
+
 use crate::{
+    wasmtime::thread_pool::spawn_on_global_pool,
     Caller, CompilationConfig, ImportLinker, Store, SyscallHandler, TrapCode, TypedCaller,
     UntypedValue, ValType, Value, F32, F64, N_MAX_STACK_SIZE,
 };
@@ -9,7 +12,6 @@ use std::{
     marker::PhantomData,
     panic,
     sync::{mpsc, Arc, RwLock},
-    thread,
     time::Instant,
 };
 use wasmtime::{AsContext, AsContextMut};
@@ -91,27 +93,26 @@ impl<T: 'static + Send + Sync + 'static> WasmtimeWorker<T> {
             .unwrap_or_else(|err| panic!("can't instantiate wasmtime: {}", err));
         let moved_store = store.clone();
         let moved_instance = instance.clone();
-        thread::spawn(move || {
+        spawn_on_global_pool(move || {
             let store = moved_store;
             let instance = moved_instance;
-            let Ok(message) = receiver.recv() else {
-                unreachable!("the receiver is dropped");
-            };
-            let mut store = store.write().unwrap();
-            let MessageRequest {
-                func_name,
-                params,
-                num_result,
-                resp,
-            } = message;
-            let mut result: SmallVec<[Value; 16]> = smallvec![Value::I32(0); num_result];
-            store.data_mut().message_channel = Some(resp);
-            let result =
-                execute_wasmtime_module(instance, &mut store, func_name, &params, &mut result)
-                    .map(|_| result);
-            let resp = store.data_mut().message_channel.take().unwrap();
-            resp.send(MessageResponse::ExecutionResult { result })
-                .unwrap();
+            while let Ok(message) = receiver.recv() {
+                let mut store = store.write().unwrap();
+                let MessageRequest {
+                    func_name,
+                    params,
+                    num_result,
+                    resp,
+                } = message;
+                let mut result: SmallVec<[Value; 16]> = smallvec![Value::I32(0); num_result];
+                store.data_mut().message_channel = Some(resp);
+                let result =
+                    execute_wasmtime_module(instance, &mut store, func_name, &params, &mut result)
+                        .map(|_| result);
+                let resp = store.data_mut().message_channel.take().unwrap();
+                resp.send(MessageResponse::ExecutionResult { result })
+                    .unwrap();
+            }
         });
         Self {
             sender,
