@@ -229,8 +229,19 @@ impl Tracer {
                     memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
                 }
                 0 => {
-                    println!("arg2:load:read_record:{:?}", read_record);
+                    match length{
+                        2=>{
+                            println!("arg2:load:read_record:{:?}", read_record);
                     memory_access.arg2_record = Some(MemoryRecordEnum::Read(read_record));
+                        }
+                        1=>{
+                             println!("arg1:load:read_record:{:?}", read_record);
+                    memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
+                        }
+                         _=>unreachable!()
+                    }
+                   
+                    
                 }
                 _ => unreachable!(),
             }
