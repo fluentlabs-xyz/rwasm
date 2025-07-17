@@ -33,6 +33,7 @@ num-derive = "0.4.2"
 [dev-dependencies]
 rand = "0.9.1"
 wat = "1.230.0"
+hex-literal = "1.0.0"
 
 [features]
 default = ["std", "wasmtime"]

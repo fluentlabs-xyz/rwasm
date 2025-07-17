@@ -3,21 +3,19 @@ test-specific-cases:
 	# build all binaries
 	cd benchmarks && make
 	cd wasm && make
-	cd tests/nitro-verifier && make
 	cd snippets && make
 	# run tests
 	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml
 	cargo test --color=always --no-fail-fast --manifest-path e2e/Cargo.toml
 	cargo +nightly test --color=always --no-fail-fast --manifest-path snippets/Cargo.toml
 	# run nitro test (with release flag)
-	cargo test --release --package rwasm --test nitro test_nitro_verifier -- --ignored
+	cargo test --release --package rwasm --test nitro-verifier test_nitro_verifier -- --ignored
 
 .PHONY: coverage
 coverage:
 	# build all binaries
 	cd benchmarks && make
 	cd wasm && make
-	cd tests/nitro-verifier && make
 	cd snippets && make
 	# run tests
 	cargo +nightly llvm-cov --lcov --manifest-path=./snippets/Cargo.toml > lcov1.info
