@@ -1,30 +1,47 @@
 ## **1. Module Structure**
 
-An rWasm module is a **binary format** that consists of a **header**, **sections**, and an **end marker**.
-rWasm binary format follows the [EIP-3540 standard](https://eips.ethereum.org/EIPS/eip-3540).
-It uses EIP-3540 prefix `0xEF` where the second byte is `0x52` (in ASCII stands for `R` - *reduced*)
+An rWasm module is a **binary format** that consists of a **header** followed by **sections** encoded using bincode.
+The format uses magic bytes `0xEF 0x52` where `0x52` stands for `R` (reduced WebAssembly).
 
 ### **Module Layout**
 
-### **Magic Bytes and Version**
+The rWasm module consists of the following components in order:
+
+1. **Magic Bytes** (2 bytes)
+2. **Version** (1 byte)
+3. **Code Section** (variable length)
+4. **Data Section** (variable length)
+5. **Element Section** (variable length)
+6. **WASM Section** (variable length)
+
+### **Header Format**
 
 | **Field**                   | **Size (bytes)** | **Value**   | **Description**                           |
 |-----------------------------|------------------|-------------|-------------------------------------------|
-| **Magic Bytes**             | 2                | `0xEF 0x52` | Identifies an rWasm binary.               |
-| **Version**                 | 1                | `0x01`      | Version of rWasm format.                  |
-| **Code Section**            | 1                | `0x01`      | Indicator of code section.                |
-| **Code Section Length**     | 4                | `U32 LE`    | Length of code section in 4 bytes LE.     |
-| **Memory Section**          | 1                | `0x02`      | Indicator of memory section.              |
-| **Memory Section Length**   | 4                | `U32 LE`    | Length of memory section in 4 bytes LE.   |
-| **Function Section**        | 1                | `0x02`      | Indicator of function section.            |
-| **Function Section Length** | 4                | `U32 LE`    | Length of function section in 4 bytes LE. |
-| **Element Section**         | 1                | `0x02`      | Indicator of element section.             |
-| **Element Section Length**  | 4                | `U32 LE`    | Length of element section in 4 bytes LE.  |
-| **End Flag**                | 1                | `0x00`      | Indicates end of the header.              |
-| **Code Section Body**       | Variable         |             | Body of the code section.                 |
-| **Memory Section Body**     | Variable         |             | Body of the memory section.               |
-| **Function Section Body**   | Variable         |             | Body of the function section.             |
-| **Element Section Body**    | Variable         |             | Body of the element section.              |
+| **Magic Byte 0**            | 1                | `0xEF`      | First magic byte                          |
+| **Magic Byte 1**            | 1                | `0x52`      | Second magic byte (`R` in ASCII)         |
+| **Version**                 | 1                | `0x01`      | Version of rWasm format                   |
+
+### **Module Structure in Rust**
+
+```rust
+pub struct RwasmModule {
+    /// The main instruction set (bytecode) for this module that includes an entrypoint
+    /// and all required functions.
+    pub code_section: InstructionSet,
+    
+    /// Linear read-only memory data initialized when the module is instantiated.
+    pub data_section: Vec<u8>,
+    
+    /// Table initializers, function refs for the module's table section.
+    pub elem_section: Vec<u32>,
+    
+    /// An original Wasm bytecode used during compilation
+    pub wasm_section: Vec<u8>,
+}
+```
+
+All sections are encoded using bincode with legacy configuration for deterministic serialization.
 
 ---
 
@@ -32,202 +49,185 @@ It uses EIP-3540 prefix `0xEF` where the second byte is `0x52` (in ASCII stands 
 
 ### **3.1 Code Section**
 
-The **code section** contains the compiled bytecode for functions. Each function consists of instructions encoded in a
-binary format.
+The **code section** contains the compiled bytecode as an `InstructionSet`. The InstructionSet is a vector of `Opcode` enums, where each instruction is encoded using bincode.
 
-#### **Example: Code Section Encoding**
+#### **Structure**
 
-```hex
-3E 64 00 00 00 00 00 00 00
-3E 14 00 00 00 00 00 00 00
-67 00 00 00 00 00 00 00 00
+```rust
+pub struct InstructionSet {
+    instructions: Vec<Opcode>,
+}
 ```
 
-#### **Breakdown**
+#### **Example: Code Section Content**
 
-- `3E` → `i32.const`
-- `64 00 00 00` → U32 encoding of `100`
-- `00 00 00 00` → instruction padding
-- `3E` → `i32.const`
-- `14 00 00 00` → U32 encoding of `20`
-- `00 00 00 00` → instruction padding
-- `67` → `i32.add`
-- `00 00 00 00` → instruction padding
-- `00 00 00 00` → instruction padding
+```rust
+let code_section = instruction_set! {
+    I32Const(100)
+    I32Const(20)
+    I32Add
+    I32Const(3)
+    I32Add
+    Drop
+};
+```
+
+This represents:
+- `I32Const(UntypedValue::from(100))` → Load constant 100
+- `I32Const(UntypedValue::from(20))` → Load constant 20
+- `I32Add` → Add two values
+- `I32Const(UntypedValue::from(3))` → Load constant 3
+- `I32Add` → Add two values
+- `Drop` → Drop result
+
+#### **Encoding**
+
+Each instruction is encoded as a bincode-serialized `Opcode` enum with embedded operands.
 
 ---
 
-### **3.2 Memory Section**
+### **3.2 Data Section**
 
-The **memory section** defines the **linear memory** for the module,
-it contains concatenation of all data segments from WebAssembly binary.
+The **data section** contains **linear memory data** for the module. It's a concatenation of all data segments from the original WebAssembly binary.
 
-#### **Example: Memory Section Encoding**
+#### **Structure**
 
-```hex
-48 65 6C 6C 6F 2C 20 57 6F 72 6C 64 // Hello, World
-49 74 27 73 20 70 61 6E 69 63 20 74 69 6D 65 // It's panic time
+```rust
+pub data_section: Vec<u8>
 ```
 
-#### **Breakdown**
+#### **Example: Data Section Content**
 
-- `48 65 6C 6C 6F 2C 20 57 6F 72 6C 64` → Data of the first segment
-- `49 74 27 73 20 70 61 6E 69 63 20 74 69 6D 65` → Data of the second segment
+```rust
+let data_section = vec![
+    0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20, 0x57, 0x6F, 0x72, 0x6C, 0x64, // "Hello, World"
+];
+```
+
+This contains raw bytes that will be copied into linear memory during module instantiation.
 
 ---
 
-### **3.3 Function Section**
+### **3.3 Element Section**
 
-The **function section** stores lengths of each function.
+The **element section** defines **function table elements**. It contains function indices that are used to initialize tables via the `table_init` instruction.
 
-#### **Example: Function Section Encoding**
+#### **Structure**
 
-```hex
-07 00 00 00 // function 0 has 7 instructions
-03 00 00 00 // function 1 has 3 instructions
+```rust
+pub elem_section: Vec<u32>
 ```
 
-#### **Breakdown**
+#### **Example: Element Section Content**
 
-- `07 00 00 00` → Function 0 has seven instructions
-- `03 00 00 00` → Function 1 has three instructions
+```rust
+let elem_section = vec![1, 2, 3];
+```
+
+This defines:
+- Element 0 → Function index 1
+- Element 1 → Function index 2
+- Element 2 → Function index 3
 
 ---
 
-### **3.4 Element Section**
+### **3.4 WASM Section**
 
-The **element section** defines **function table elements**.
-It contains function indices that are used to initialize tables.
-Instruction `table_init` use this section to load tables.
+The **WASM section** stores the **original WebAssembly bytecode** used during compilation. This is kept for reference and debugging purposes.
 
-#### **Example: Element Section Encoding**
+#### **Structure**
 
-```hex
-01 00 00 00
-02 00 00 00
-03 00 00 00
+```rust
+pub wasm_section: Vec<u8>
 ```
 
-#### **Breakdown**
+#### **Example: WASM Section Content**
 
-- `01 00 00 00` → The first function is 1
-- `02 00 00 00` → The second function is 2
-- `03 00 00 00` → The third function is 3
+```rust
+let wasm_section = include_bytes!("original_module.wasm").to_vec();
+```
+
+This contains the original WebAssembly binary that was compiled to produce this rWasm module.
 
 ---
 
-## **5. Example: Complete rWasm Module Encoding**
+## **5. Example: Complete rWasm Module**
 
-The following example encodes an **rWasm module**
+Here's a practical example of creating and encoding an rWasm module:
 
-```webassembly
-(module $fluentbase_example_greeting.wasm
-  (type (;0;) (func (param i32 i32)))
-  (type (;1;) (func))
-  (import "fluentbase_v1preview" "_write" (func $_ZN14fluentbase_sdk8bindings6_write17hf99e1d2b50d9dcb9E (type 0)))
-  (func $deploy (type 1))
-  (func $main (type 1)
-    i32.const 262144
-    i32.const 12
-    call $_ZN14fluentbase_sdk8bindings6_write17hf99e1d2b50d9dcb9E)
-  (memory (;0;) 5)
-  (global $__stack_pointer (mut i32) (i32.const 262144))
-  (global (;1;) i32 (i32.const 262156))
-  (global (;2;) i32 (i32.const 262160))
-  (export "memory" (memory 0))
-  (export "deploy" (func $deploy))
-  (export "main" (func $main))
-  (export "__data_end" (global 1))
-  (export "__heap_base" (global 2))
-  (data $.rodata (i32.const 262144) "Hello, World"))
+### **Example Module Creation**
+
+```rust
+use crate::{instruction_set, types::RwasmModule, UntypedValue};
+
+let module = RwasmModule {
+    code_section: instruction_set! {
+        ConsumeFuel(1)
+        I32Const(UntypedValue::from(100))
+        I32Const(UntypedValue::from(20))
+        I32Add
+        Drop
+    },
+    data_section: b"Hello, World".to_vec(),
+    elem_section: vec![1, 2, 3],
+    wasm_section: vec![], // Empty for this example
+};
 ```
 
-The module header:
+### **Serialization Process**
 
-| **Field**              | **Size (bytes)** | **Value**             |
-|------------------------|------------------|-----------------------|
-| **Magic Bytes**        | 2                | `0xEF 0x52`           |
-| **Version**            | 1                | `0x01`                |
-| **Code Signature**     | 1                | `0x01`                |
-| **Code Length**        | 4                | `0xdd 0x01 0x00 0x00` |
-| **Memory Signature**   | 1                | `0x02`                |
-| **Memory Length**      | 4                | `0x0c 0x00 0x00 0x00` |
-| **Function Signature** | 1                | `0x03`                |
-| **Function Length**    | 4                | `0x14 0x00 0x00 0x00` |
-| **Element Signature**  | 1                | `0x04`                |
-| **Element Length**     | 4                | `0x00 0x00 0x00 0x00` |
-| **Header End**         | 1                | `0x00`                |
+```rust
+// Serialize the module to binary format
+let binary = module.serialize();
 
-The code section:
+// The binary format will contain:
+// 1. Magic bytes: [0xEF, 0x52]
+// 2. Version: [0x01]
+// 3. Code section (bincode-encoded InstructionSet)
+// 4. Data section (bincode-encoded Vec<u8>)
+// 5. Element section (bincode-encoded Vec<u32>)
+// 6. WASM section (bincode-encoded Vec<u8>)
+```
 
-| **Field**                | **Size (bytes)** | **Value**                                      | **Description** |
-|--------------------------|------------------|------------------------------------------------|-----------------|
-| `ConsumeFuel(1)`         | 1                | `0x0a 0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00` | Function 0      |
-| `ConsumeFuel(0)`         | 1                | `0x0a 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Call(1)`                | 1                | `0x11 0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Return(drop=0, keep=1)` | 1                | `0x0b 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `ConsumeFuel(1)`         | 1                | `0x0a 0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00` | Function 1      |
-| `ConsumeFuel(0)`         | 1                | `0x0a 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Call(5)`                | 1                | `0x11 0x05 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Return(drop=0, keep=1)` | 1                | `0x0b 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `ConsumeFuel(4)`         | 1                | `0x0a 0x04 0x00 0x00 0x00 0x00 0x00 0x00 0x00` | Function 2      |
-| `SignatureCheck(2)`      | 1                | `0x13 0x02 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I32Const(0)`            | 1                | `0x3e 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Callinternal(0)`        | 1                | `0x10 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `BrTable(0)`             | 1                | `0x09 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `ConsumeFuel(7)`         | 1                | `0x0a 0x07 0x00 0x00 0x00 0x00 0x00 0x00 0x00` | Function 3      |
-| `SignatureCheck(2)`      | 1                | `0x13 0x02 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I32Const(262144)`       | 1                | `0x3e 0x00 0x00 0x04 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I32Const(12)`           | 1                | `0x3e 0x0c 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `CallInternal(1)`        | 1                | `0x10 0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I32Const(0)`            | 1                | `0x3e 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `CallInternal(0)`        | 1                | `0x10 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `BrTable(0)`             | 1                | `0x09 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `ConsumeFuel(1)`         | 1                | `0x0a 0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00` | Entrypoint      |
-| `I64Const(262144)`       | 1                | `0x3f 0x00 0x00 0x04 0x00 0x00 0x00 0x00 0x00` |                 |
-| `GlobalSet(0)`           | 1                | `0x17 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I64Const(262156)`       | 1                | `0x3f 0x0c 0x00 0x04 0x00 0x00 0x00 0x00 0x00` |                 |
-| `GlobalSet(1)`           | 1                | `0x17 0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I64Const(262160)`       | 1                | `0x3f 0x10 0x00 0x04 0x00 0x00 0x00 0x00 0x00` |                 |
-| `GlobalSet(2)`           | 1                | `0x17 0x02 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I32Const(5)`            | 1                | `0x3e 0x05 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `MemoryGrow`             | 1                | `0x30 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Drop`                   | 1                | `0x14 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I32Const(262144)`       | 1                | `0x3e 0x00 0x00 0x04 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I64Const(0)`            | 1                | `0x3f 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I64Const(12)`           | 1                | `0x3f 0x0c 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `MemoryInit(0)`          | 1                | `0x33 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `DataDrop(1)`            | 1                | `0x34 0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Call(FuncIdx(2))`       | 1                | `0x11 0x02 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Unreachable`            | 1                | `0x00 0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I32Const(1)`            | 1                | `0x3e 0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I32Eq`                  | 1                | `0x43 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Br(4)`                  | 1                | `0x04 0x04 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Drop`                   | 1                | `0x14 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `CallInternal(2)`        | 1                | `0x10 0x02 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Return(drop=0, keep=0)` | 1                | `0x0b 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Unreachable`            | 1                | `0x00 0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I32Const(0)`            | 1                | `0x3e 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `I32Eq`                  | 1                | `0x43 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Br(4)`                  | 1                | `0x04 0x04 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Drop`                   | 1                | `0x14 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `CallInternal(3)`        | 1                | `0x10 0x03 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Return(drop=0, keep=0)` | 1                | `0x0b 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Drop`                   | 1                | `0x14 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
-| `Return(drop=0, keep=0)` | 1                | `0x0b 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00` |                 |
+### **Deserialization Process**
 
-The memory section:
+```rust
+// Deserialize the module from binary format
+let (deserialized_module, _bytes_read) = RwasmModule::new(&binary);
 
-| **Field**      | **Size (bytes)** | **Value**                                                     |
-|----------------|------------------|---------------------------------------------------------------|
-| "Hello, World" | 12               | `0x48 0x65 0x6c 0x6c 0x6f 0x2c 0x20 0x57 0x6f 0x72 0x6c 0x64` |
+// The deserialization process:
+// 1. Validates magic bytes (0xEF, 0x52)
+// 2. Validates version (0x01)
+// 3. Decodes each section using bincode
+// 4. Returns the reconstructed RwasmModule
+```
 
-The function section:
+### **Module Display Format**
 
-| **Field**       | **Size (bytes)** | **Value**             |
-|-----------------|------------------|-----------------------|
-| Function Length | 4                | `0x04 0x00 0x00 0x00` |
-| Function Length | 4                | `0x04 0x00 0x00 0x00` |
-| Function Length | 4                | `0x05 0x00 0x00 0x00` |
-| Function Length | 4                | `0x08 0x00 0x00 0x00` |
-| Function Length | 4                | `0x20 0x00 0x00 0x00` |
+When displayed, the module shows a readable representation:
+
+```
+RwasmModule {
+ .function_begin_0 (#0)
+  0000: ConsumeFuel(1)
+  0001: I32Const(100)
+  0002: I32Const(20)
+  0003: I32Add
+  0004: Drop
+ .function_end
+
+ .ro_data: [48, 65, 6c, 6c, 6f, 2c, 20, 57, 6f, 72, 6c, 64],
+ .ro_elem: [1, 2, 3],
+}
+```
+
+### **Binary Format Details**
+
+The resulting binary uses:
+- **Magic bytes**: `0xEF 0x52` (identifies as rWasm)
+- **Version**: `0x01` (version 1)
+- **Bincode encoding**: Deterministic serialization using legacy configuration
+- **Little-endian**: All multi-byte values are little-endian
+- **Variable length**: Each section is variable length based on content
+
+The exact binary representation depends on the bincode serialization format and is optimized for efficient loading and execution rather than human readability.

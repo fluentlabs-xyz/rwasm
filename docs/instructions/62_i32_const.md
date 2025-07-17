@@ -35,7 +35,7 @@ The `i32_const` instruction **pushes a constant 32-bit integer onto the stack**.
 
 ### **Operands**
 
-- `untyped_value` (i32): The 32-bit integer constant to be pushed onto the stack.
+- `untyped_value` (UntypedValue): A 64-bit untyped value that can represent various data types including i32 constants.
 
 ### **Notes**
 
