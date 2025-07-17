@@ -2,7 +2,6 @@ extern crate test;
 
 use rwasm::{
     always_failing_syscall_handler,
-    compile_legacy_module,
     compile_wasmi_module,
     compile_wasmtime_module,
     CompilationConfig,
@@ -166,15 +165,6 @@ fn bench_strategy_wasmi(b: &mut Bencher) {
     let wasm_binary = include_bytes!("./lib.wasm");
     let strategy = Strategy::Wasmi {
         module: Rc::new(compile_wasmi_module(CompilationConfig::default(), wasm_binary).unwrap()),
-    };
-    bench_strategy(b, strategy)
-}
-
-#[bench]
-fn bench_strategy_legacy(b: &mut Bencher) {
-    let wasm_binary = include_bytes!("./lib.wasm");
-    let strategy = Strategy::Legacy {
-        module: Rc::new(compile_legacy_module(CompilationConfig::default(), wasm_binary).unwrap()),
     };
     bench_strategy(b, strategy)
 }
