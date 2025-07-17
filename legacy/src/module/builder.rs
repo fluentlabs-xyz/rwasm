@@ -1,39 +1,16 @@
 use super::{
-    export::ExternIdx,
-    import::FuncTypeIdx,
-    ConstExpr,
-    CustomSectionsBuilder,
-    DataSegment,
-    DataSegmentKind,
-    ElementSegment,
-    ElementSegmentItems,
-    ElementSegmentKind,
-    ExternTypeIdx,
-    FuncIdx,
-    Global,
-    GlobalIdx,
-    Import,
-    ImportName,
-    Module,
+    export::ExternIdx, import::FuncTypeIdx, ConstExpr, CustomSectionsBuilder, DataSegment,
+    DataSegmentKind, ElementSegment, ElementSegmentItems, ElementSegmentKind, ExternTypeIdx,
+    FuncIdx, Global, GlobalIdx, Import, ImportName, Module,
 };
 use crate::{
     core::{
-        ValueType,
-        N_MAX_DATA_SEGMENTS,
-        N_MAX_ELEM_SEGMENTS,
-        N_MAX_GLOBALS,
-        N_MAX_MEMORY_PAGES,
-        N_MAX_TABLES,
-        N_MAX_TABLE_ELEMENTS,
+        ValueType, N_MAX_DATA_SEGMENTS, N_MAX_ELEM_SEGMENTS, N_MAX_GLOBALS, N_MAX_MEMORY_PAGES,
+        N_MAX_TABLES, N_MAX_TABLE_ELEMENTS,
     },
     engine::{CompiledFunc, DedupFuncType},
     errors::ModuleError,
-    Engine,
-    FuncType,
-    GlobalType,
-    MemoryType,
-    Mutability,
-    TableType,
+    Engine, FuncType, GlobalType, MemoryType, Mutability, TableType,
 };
 use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
 
@@ -215,11 +192,7 @@ impl<'engine> ModuleBuilder<'engine> {
     }
 
     pub(crate) fn ensure_empty_func_type_exists(&mut self) -> FuncTypeIdx {
-        if self.engine.config().get_i32_translator() {
-            self.ensure_func_type_index(FuncType::new::<_, _, true>([], []))
-        } else {
-            self.ensure_func_type_index(FuncType::new::<_, _, false>([], []))
-        }
+        self.ensure_func_type_index(FuncType::new::<_, _>([], []))
     }
 
     pub(crate) fn ensure_func_type_index(&mut self, func_type: FuncType) -> FuncTypeIdx {
@@ -233,22 +206,11 @@ impl<'engine> ModuleBuilder<'engine> {
         if let Some(func_type) = found_type {
             return FuncTypeIdx::from(func_type.0 as u32);
         }
-        // try to find inside engine
-        // if let Some(dedup_func_type) = self.engine.find_func_type(&func_type) {
-        //     let type_index = self.func_types.len() as u32;
-        //     self.func_types.push(dedup_func_type);
-        //     return FuncTypeIdx::from(type_index);
-        // }
         // create new func type
-        let empty_func_type = if self.engine.config().get_i32_translator() {
-            FuncType::new::<_, _, true>([], [])
-        } else {
-            FuncType::new::<_, _, false>([], [])
-        };
-
+        let empty_func_type = FuncType::new::<_, _>([], []);
         self.func_types
             .push(self.engine.alloc_func_type(empty_func_type.clone()));
-        return FuncTypeIdx::from(self.func_types.len() as u32 - 1);
+        FuncTypeIdx::from(self.func_types.len() as u32 - 1)
     }
 
     pub fn push_func_type(&mut self, func_type: FuncType) -> Result<(), ModuleError> {

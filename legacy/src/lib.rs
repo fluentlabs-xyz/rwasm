@@ -15,7 +15,7 @@
 //!
 //! ```
 //! use anyhow::{anyhow, Result};
-//! use rwasm::*;
+//! use rwasm_legacy::*;
 //!
 //! fn main() -> Result<()> {
 //!     // First step is to create the Wasm execution engine with some config.
@@ -39,7 +39,7 @@
 //!     // which in this case we are using `42` for.
 //!     type HostState = u32;
 //!     let mut store = Store::new(&engine, 42);
-//!     let host_hello = Func::wrap::<_,_,_,false>(&mut store, |caller: Caller<'_, HostState>, param: i32| {
+//!     let host_hello = Func::wrap::<_,_,_>(&mut store, |caller: Caller<'_, HostState>, param: i32| {
 //!         println!("Got {param} from WebAssembly");
 //!         println!("My host state is: {}", caller.data());
 //!     });
@@ -120,29 +120,14 @@ pub mod errors {
 
 pub use self::{
     engine::{
-        Config,
-        Engine,
-        FuelConsumptionMode,
-        ResumableCall,
-        ResumableInvocation,
-        StackLimits,
-        TypedResumableCall,
-        TypedResumableInvocation,
+        Config, Engine, FuelConsumptionMode, ResumableCall, ResumableInvocation, StackLimits,
+        TypedResumableCall, TypedResumableInvocation,
     },
     error::Error,
     externref::ExternRef,
     func::{
-        Caller,
-        Func,
-        FuncRef,
-        FuncType,
-        IntoFunc,
-        TypedFunc,
-        WasmParams,
-        WasmResults,
-        WasmRet,
-        WasmType,
-        WasmTypeList,
+        Caller, Func, FuncRef, FuncType, IntoFunc, TypedFunc, WasmParams, WasmResults, WasmRet,
+        WasmType, WasmTypeList,
     },
     global::{Global, GlobalType, Mutability},
     instance::{Export, ExportsIter, Extern, ExternType, Instance},
@@ -150,13 +135,7 @@ pub use self::{
     linker::Linker,
     memory::{Memory, MemoryType},
     module::{
-        ExportType,
-        ImportType,
-        InstancePre,
-        Module,
-        ModuleExportsIter,
-        ModuleImportsIter,
-        Read,
+        ExportType, ImportType, InstancePre, Module, ModuleExportsIter, ModuleImportsIter, Read,
     },
     store::{AsContext, AsContextMut, Store, StoreContext, StoreContextMut},
     table::{Table, TableType},

@@ -1,13 +1,8 @@
+use crate::wasmi::WasmiCaller;
 use crate::{
-    ExecutionEngine,
-    ExecutorConfig,
-    ImportLinker,
-    RwasmCaller,
-    RwasmModule,
-    RwasmStore,
-    TrapCode,
-    UntypedValue,
-    Value,
+    wasmi::{WasmiModule, WasmiStore},
+    CompilationError, ExecutionEngine, ExecutorConfig, ImportLinker, RwasmCaller, RwasmModule,
+    RwasmStore, TrapCode, UntypedValue, Value,
 };
 #[cfg(feature = "wasmtime")]
 use crate::{WasmtimeCaller, WasmtimeModule, WasmtimeWorker};
@@ -52,6 +47,7 @@ pub enum TypedCaller<'a, T: Send + Sync + 'static> {
     Rwasm(RwasmCaller<'a, T>),
     #[cfg(feature = "wasmtime")]
     Wasmtime(WasmtimeCaller<'a, T>),
+    Wasmi(WasmiCaller<'a, T>),
 }
 
 impl<'a, T: Send + Sync> TypedCaller<'a, T> {
@@ -94,6 +90,7 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.memory_read(offset, buffer),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.memory_read(offset, buffer),
+            TypedCaller::Wasmi(store) => store.memory_read(offset, buffer),
         }
     }
 
@@ -102,6 +99,7 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.memory_write(offset, buffer),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.memory_write(offset, buffer),
+            TypedCaller::Wasmi(store) => store.memory_write(offset, buffer),
         }
     }
 
@@ -110,6 +108,7 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.context_mut(func),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.context_mut(func),
+            TypedCaller::Wasmi(store) => store.context_mut(func),
         }
     }
 
@@ -118,6 +117,7 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.context(func),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.context(func),
+            TypedCaller::Wasmi(store) => store.context(func),
         }
     }
 
@@ -126,6 +126,7 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.try_consume_fuel(delta),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.try_consume_fuel(delta),
+            TypedCaller::Wasmi(store) => store.try_consume_fuel(delta),
         }
     }
 
@@ -134,6 +135,7 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.remaining_fuel(),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.remaining_fuel(),
+            TypedCaller::Wasmi(store) => store.remaining_fuel(),
         }
     }
 }
@@ -144,6 +146,7 @@ impl<'a, T: Send + Sync> Caller<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.program_counter(),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.program_counter(),
+            TypedCaller::Wasmi(store) => store.program_counter(),
         }
     }
 
@@ -152,6 +155,7 @@ impl<'a, T: Send + Sync> Caller<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.stack_push(value),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.stack_push(value),
+            TypedCaller::Wasmi(store) => store.stack_push(value),
         }
     }
 }
@@ -166,12 +170,16 @@ pub enum Strategy {
         module: Rc<WasmtimeModule>,
         resumable: bool,
     },
+    Wasmi {
+        module: Rc<WasmiModule>,
+    },
 }
 
 pub enum TypedStore<T: Send + Sync + 'static> {
     Rwasm(RwasmStore<T>),
     #[cfg(feature = "wasmtime")]
     Wasmtime(WasmtimeWorker<T>),
+    Wasmi(WasmiStore<T>),
 }
 
 impl<T: Send + Sync> Store<T> for TypedStore<T> {
@@ -180,6 +188,7 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             TypedStore::Rwasm(store) => store.memory_read(offset, buffer),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.memory_read(offset, buffer),
+            TypedStore::Wasmi(store) => store.memory_read(offset, buffer),
         }
     }
 
@@ -188,6 +197,7 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             TypedStore::Rwasm(store) => store.memory_write(offset, buffer),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.memory_write(offset, buffer),
+            TypedStore::Wasmi(store) => store.memory_write(offset, buffer),
         }
     }
 
@@ -196,6 +206,7 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             TypedStore::Rwasm(store) => store.context_mut(func),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.context_mut(func),
+            TypedStore::Wasmi(store) => store.context_mut(func),
         }
     }
 
@@ -204,6 +215,7 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             TypedStore::Rwasm(store) => store.context(func),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.context(func),
+            TypedStore::Wasmi(store) => store.context(func),
         }
     }
 
@@ -212,6 +224,7 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             TypedStore::Rwasm(store) => store.try_consume_fuel(delta),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.try_consume_fuel(delta),
+            TypedStore::Wasmi(store) => store.try_consume_fuel(delta),
         }
     }
 
@@ -220,11 +233,21 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             TypedStore::Rwasm(store) => store.remaining_fuel(),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.remaining_fuel(),
+            TypedStore::Wasmi(store) => store.remaining_fuel(),
         }
     }
 }
 
 impl Strategy {
+    pub fn empty_store(&self, executor_config: ExecutorConfig) -> TypedStore<()> {
+        self.create_store::<()>(
+            executor_config,
+            Rc::new(ImportLinker::default()),
+            (),
+            always_failing_syscall_handler,
+        )
+    }
+
     pub fn create_store<T: Send + Sync>(
         &self,
         config: ExecutorConfig,
@@ -242,6 +265,13 @@ impl Strategy {
             #[cfg(feature = "wasmtime")]
             Strategy::Wasmtime { module, .. } => TypedStore::Wasmtime(WasmtimeWorker::new(
                 module.clone(),
+                import_linker,
+                context,
+                syscall_handler,
+                config.fuel_limit,
+            )),
+            Strategy::Wasmi { module } => TypedStore::Wasmi(WasmiStore::new(
+                module,
                 import_linker,
                 context,
                 syscall_handler,
@@ -278,6 +308,13 @@ impl Strategy {
                     store.execute_not_resumable(func_name, params, result)
                 }
             }
+            Strategy::Wasmi { module, .. } => {
+                let store = match store {
+                    TypedStore::Wasmi(store) => store,
+                    _ => unreachable!(),
+                };
+                store.execute(func_name, params, result)
+            }
         }
     }
 
@@ -305,6 +342,13 @@ impl Strategy {
                     _ => unreachable!(),
                 };
                 store.resume(Ok(interruption_result), result, vec![])
+            }
+            Strategy::Wasmi { module, .. } => {
+                let store = match store {
+                    TypedStore::Wasmi(store) => store,
+                    _ => unreachable!(),
+                };
+                store.resume(interruption_result, result)
             }
         }
     }
@@ -338,6 +382,33 @@ impl Strategy {
                 };
                 store.resume(Ok(interruption_result), result, memory_changes)
             }
+            Strategy::Wasmi { module, .. } => {
+                let store = match store {
+                    TypedStore::Wasmi(store) => store,
+                    _ => unreachable!(),
+                };
+                for (addr, buf) in memory_changes {
+                    store.memory_write(addr as usize, &buf)?
+                }
+                store.resume(interruption_result, result)
+            }
         }
+    }
+}
+
+#[derive(Debug)]
+pub enum StrategyError {
+    CompilationError(CompilationError),
+    TrapCode(TrapCode),
+}
+
+impl From<CompilationError> for StrategyError {
+    fn from(err: CompilationError) -> Self {
+        StrategyError::CompilationError(err)
+    }
+}
+impl From<TrapCode> for StrategyError {
+    fn from(err: TrapCode) -> Self {
+        StrategyError::TrapCode(err)
     }
 }

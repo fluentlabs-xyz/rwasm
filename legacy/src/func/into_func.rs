@@ -5,15 +5,12 @@ use super::{
 use crate::{
     core::{DecodeUntypedSlice, EncodeUntypedSlice, Trap, UntypedValue, ValueType, F32, F64},
     foreach_tuple::for_each_tuple,
-    Caller,
-    ExternRef,
-    FuncRef,
-    FuncType,
+    Caller, ExternRef, FuncRef, FuncType,
 };
 use core::{array, iter::FusedIterator};
 
 /// Closures and functions that can be used as host functions.
-pub trait IntoFunc<T, Params, Results, const I32: bool>: Send + Sync + 'static {
+pub trait IntoFunc<T, Params, Results>: Send + Sync + 'static {
     /// The parameters of the host function.
     #[doc(hidden)]
     type Params: WasmTypeList;
@@ -28,7 +25,7 @@ pub trait IntoFunc<T, Params, Results, const I32: bool>: Send + Sync + 'static {
 
 macro_rules! impl_into_func {
     ( $n:literal $( $tuple:ident )* ) => {
-        impl<T, F, $($tuple,)* R, const I32: bool> IntoFunc<T, ($($tuple,)*), R, I32> for F
+        impl<T, F, $($tuple,)* R> IntoFunc<T, ($($tuple,)*), R> for F
         where
             F: Fn($($tuple),*) -> R,
             F: Send + Sync + 'static,
@@ -42,7 +39,7 @@ macro_rules! impl_into_func {
 
             #[allow(non_snake_case)]
             fn into_func(self) -> (FuncType, TrampolineEntity<T>) {
-                IntoFunc::<_,_,_,I32>::into_func(
+                IntoFunc::<_,_,_>::into_func(
                     move |
                         _: Caller<'_, T>,
                         $(
@@ -55,7 +52,7 @@ macro_rules! impl_into_func {
             }
         }
 
-        impl<T, F, $($tuple,)* R, const I32: bool> IntoFunc<T, (Caller<'_, T>, $($tuple),*), R, I32> for F
+        impl<T, F, $($tuple,)* R> IntoFunc<T, (Caller<'_, T>, $($tuple),*), R> for F
         where
             F: Fn(Caller<T>, $($tuple),*) -> R,
             F: Send + Sync + 'static,
@@ -69,25 +66,15 @@ macro_rules! impl_into_func {
 
             #[allow(non_snake_case)]
             fn into_func(self) -> (FuncType, TrampolineEntity<T>) {
-                let signature = FuncType::new::<_,_,I32>(
+                let signature = FuncType::new::<_,_>(
                     <Self::Params as WasmTypeList>::types(),
                     <Self::Results as WasmTypeList>::types(),
                 );
                 let trampoline = TrampolineEntity::new(
                     move |caller: Caller<T>, params_results: FuncParams| -> Result<FuncFinished, Trap> {
-                        let is_i32_translator = caller.engine().config().get_i32_translator();
-                        let (($($tuple,)*), func_results): (Self::Params, FuncResults) = if is_i32_translator {
-                             params_results.decode_params_i32()
-                        } else {
-                            params_results.decode_params()
-                        };
+                        let (($($tuple,)*), func_results): (Self::Params, FuncResults) = params_results.decode_params();
                         let results: Self::Results = (self)(caller, $($tuple),*).into_fallible()?;
-                        if is_i32_translator {
-                            Ok(func_results.encode_results_i32(results))
-                        } else {
-                            Ok(func_results.encode_results(results))
-                        }
-
+                        Ok(func_results.encode_results(results))
                     },
                 );
                 (signature, trampoline)
