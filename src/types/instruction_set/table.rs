@@ -1,6 +1,11 @@
 use crate::{ElementSegmentIdx, InstructionSet, TableIdx, TrapCode, TABLE_ELEMS_PER_FUEL_LOG2};
 
 impl InstructionSet {
+    pub const MSH_TABLE_INIT_CHECKED: u32 = 2;
+    pub const MSH_TABLE_GROW_CHECKED: u32 = 2;
+    pub const MSH_TABLE_FILL_CHECKED: u32 = 2;
+    pub const MSH_TABLE_COPY_CHECKED: u32 = 2;
+
     /// Max stack height: 2
     pub fn op_table_init_checked(
         &mut self,

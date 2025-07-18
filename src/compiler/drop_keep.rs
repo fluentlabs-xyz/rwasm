@@ -1,4 +1,4 @@
-use crate::{compiler::value_stack::ValueStackHeight, CompilationError, InstructionSet};
+use crate::{types::ValueStackHeight, CompilationError, InstructionSet};
 use bincode::{Decode, Encode};
 use core::fmt;
 
@@ -120,17 +120,17 @@ mod tests {
             let mut stack_height = ValueStackHeight::default();
             translate_drop_keep(&mut instr_builder, *drop_keep, &mut stack_height);
             let mut stack = input.clone();
-            for instr in instr_builder.instr {
+            for instr in instr_builder.iter() {
                 match instr {
                     Opcode::LocalSet(index) => {
                         let last = stack.last().unwrap();
                         let len = stack.len();
-                        *stack.get_mut(len - 1 - index as usize).unwrap() = *last;
+                        *stack.get_mut(len - 1 - *index as usize).unwrap() = *last;
                         stack.pop();
                     }
                     Opcode::LocalGet(index) => {
                         let len = stack.len();
-                        let item = *stack.get(len - index as usize).unwrap();
+                        let item = *stack.get(len - *index as usize).unwrap();
                         stack.push(item);
                     }
                     Opcode::Drop => {
