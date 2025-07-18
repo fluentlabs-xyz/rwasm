@@ -10,7 +10,6 @@ mod parser;
 mod segment_builder;
 mod translator;
 mod utils;
-mod value_stack;
 
 pub use self::{
     config::{CompilationConfig, StateRouterConfig},

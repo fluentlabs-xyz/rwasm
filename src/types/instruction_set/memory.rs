@@ -4,6 +4,23 @@ use crate::{
 };
 
 impl InstructionSet {
+    pub const MSH_I64_LOAD: u32 = 2;
+    pub const MSH_I64_LOAD8_S: u32 = 1;
+    pub const MSH_I64_LOAD8_U: u32 = 1;
+    pub const MSH_I64_LOAD16_S: u32 = 1;
+    pub const MSH_I64_LOAD16_U: u32 = 1;
+    pub const MSH_I64_LOAD32_S: u32 = 1;
+    pub const MSH_I64_LOAD32_U: u32 = 1;
+    pub const MSH_I64_STORE: u32 = 2;
+    pub const MSH_I64_STORE8: u32 = 0;
+    pub const MSH_I64_STORE16: u32 = 0;
+    pub const MSH_I64_STORE32: u32 = 0;
+    pub const MSH_I64_CONST: u32 = 2;
+    pub const MSH_MEMORY_GROW_CHECKED: u32 = 2;
+    pub const MSH_MEMORY_FILL_CHECKED: u32 = 2;
+    pub const MSH_MEMORY_COPY_CHECKED: u32 = 2;
+    pub const MSH_MEMORY_INIT_CHECKED: u32 = 2;
+
     /// Loads a 64-bit word from a memory and copies it on the stack by as 32-bit words
     ///
     /// Input: [addr]
@@ -60,6 +77,7 @@ impl InstructionSet {
         self.op_i32_shr_s();
     }
 
+    /// Max stack height: 1
     pub fn op_i64_load32_u(&mut self, offset: AddressOffset) {
         self.op_i32_load(offset);
         self.op_i32_const(0);
@@ -92,6 +110,7 @@ impl InstructionSet {
         self.op_i32_store(offset);
     }
 
+    /// Max stack height: 2
     pub fn op_i64_const(&mut self, value: i64) {
         let (lo, hi) = split_i64_to_i32(value);
         self.op_i32_const(lo); // [lo]

@@ -1,7 +1,19 @@
 use crate::InstructionSet;
 
 impl InstructionSet {
-    /// Max stack height: 0
+    pub const MSH_I64_EQZ: u32 = 1;
+    pub const MSH_I64_EQ: u32 = 1;
+    pub const MSH_I64_NE: u32 = 1;
+    pub const MSH_I64_LT_S: u32 = 2;
+    pub const MSH_I64_LT_U: u32 = 2;
+    pub const MSH_I64_GT_S: u32 = 2;
+    pub const MSH_I64_GT_U: u32 = 2;
+    pub const MSH_I64_LE_S: u32 = 2;
+    pub const MSH_I64_LE_U: u32 = 2;
+    pub const MSH_I64_GE_S: u32 = 2;
+    pub const MSH_I64_GE_U: u32 = 2;
+
+    /// Max stack height: 1
     pub fn op_i64_eqz(&mut self) {
         self.op_i32_eqz();
         self.op_local_get(2);

@@ -1,21 +1,9 @@
 use crate::{
     types::{
-        AddressOffset,
-        BlockFuel,
-        BranchOffset,
-        BranchTableTargets,
-        CompiledFunc,
-        DataSegmentIdx,
-        ElementSegmentIdx,
-        GlobalIdx,
-        LocalDepth,
-        SignatureIdx,
-        TableIdx,
-        UntypedValue,
+        AddressOffset, BlockFuel, BranchOffset, BranchTableTargets, CompiledFunc, DataSegmentIdx,
+        ElementSegmentIdx, GlobalIdx, LocalDepth, SignatureIdx, TableIdx, UntypedValue,
     },
-    MaxStackHeight,
-    SysFuncIdx,
-    TrapCode,
+    MaxStackHeight, SysFuncIdx, TrapCode,
 };
 use alloc::{format, vec::Vec};
 use bincode::{Decode, Encode};

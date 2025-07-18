@@ -15,6 +15,7 @@ mod trap_code;
 mod units;
 mod untyped_value;
 mod value;
+mod value_stack;
 
 pub use branch_offset::*;
 pub use compiled_expr::*;
@@ -33,6 +34,7 @@ pub use trap_code::*;
 pub use units::*;
 pub use untyped_value::*;
 pub use value::*;
+pub use value_stack::*;
 
 /// A default stack size we use for stack allocation.
 ///
