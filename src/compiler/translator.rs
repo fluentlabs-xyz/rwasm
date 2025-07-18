@@ -276,7 +276,7 @@ impl InstructionTranslator {
     /// the instruction sequence is then returned.
     pub fn push_consume_fuel_base(&mut self) -> InstrLoc {
         let instr_loc = self.alloc.instruction_set.loc();
-        self.alloc.instruction_set.op_consume_fuel(BASE_FUEL_COST);
+        // self.alloc.instruction_set.op_consume_fuel(BASE_FUEL_COST);
         instr_loc as InstrLoc
     }
 
