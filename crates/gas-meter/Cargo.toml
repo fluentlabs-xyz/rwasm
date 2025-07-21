@@ -1,9 +1,9 @@
 [package]
-name = "gas_meter"
+name = "gas-meter"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 wasmparser = { version = "0.100.1", package = "wasmparser-nostd", default-features = false }
 lazy_static = "1.4"
-# gas-charger = { path = "../gas-charger" } # Uncomment and set correct path if needed
+
