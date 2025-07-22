@@ -302,14 +302,6 @@ impl CompiledExpr {
                 wasmparser::Operator::GlobalGet { global_index } => {
                     stack.push(Op::global(global_index));
                 }
-                wasmparser::Operator::RefNull { ty } => {
-                    let value = match ty {
-                        wasmparser::ValType::FuncRef => Value::from(FuncRef::null()),
-                        wasmparser::ValType::ExternRef => Value::from(ExternRef::null()),
-                        ty => panic!("encountered an invalid value type for RefNull: {ty:?}"),
-                    };
-                    stack.push(Op::constant(value));
-                }
                 wasmparser::Operator::RefFunc { function_index } => {
                     stack.push(Op::funcref(function_index));
                 }
@@ -335,9 +327,7 @@ impl CompiledExpr {
                 op => panic!("encountered invalid Wasm const expression operator: {op:?}"),
             };
         }
-        reader
-            .ensure_end()
-            .expect("due to Wasm validation, this is guaranteed to succeed");
+
         let op = stack
             .pop()
             .expect("due to Wasm validation must have one operator on the stack");

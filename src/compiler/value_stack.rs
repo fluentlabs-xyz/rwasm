@@ -1,5 +1,5 @@
 use core::cmp;
-use wasmparser::ValType;
+use wasmparser::{RefType, ValType};
 
 /// The current height of the emulated Wasm value stack.
 #[derive(Debug, Default, Copy, Clone)]
@@ -98,7 +98,8 @@ impl ValueStackHeight {
             ValType::I32 | ValType::F32 => self.pop1(),
             ValType::I64 | ValType::F64 => self.pop2(),
             ValType::V128 => self.pop4(),
-            ValType::FuncRef | ValType::ExternRef => self.pop1(),
+            ValType::Ref(RefType::FUNC) | ValType::Ref(RefType::EXTERN)  => self.pop1(),
+            _ => unreachable!("not supported"),
         }
     }
 
@@ -107,7 +108,8 @@ impl ValueStackHeight {
             ValType::I32 | ValType::F32 => self.push1(),
             ValType::I64 | ValType::F64 => self.push2(),
             ValType::V128 => self.push4(),
-            ValType::FuncRef | ValType::ExternRef => self.push1(),
+            ValType::Ref(RefType::FUNC) | ValType::Ref(RefType::EXTERN)  => self.push1(),
+            _ => unreachable!("not supported"),
         }
     }
 

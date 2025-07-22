@@ -6,13 +6,7 @@ use wast::{
     lexer::Lexer,
     parser::ParseBuffer,
     token::Span,
-    QuoteWat,
-    Wast,
-    WastDirective,
-    WastExecute,
-    WastInvoke,
-    WastRet,
-    Wat,
+    QuoteWat, Wast, WastDirective, WastExecute, WastInvoke, WastRet, Wat,
 };
 
 /// Runs the Wasm test spec identified by the given name.

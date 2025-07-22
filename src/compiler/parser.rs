@@ -12,12 +12,7 @@ use core::{
     mem::{replace, take},
     ops::Range,
 };
-use wasmparser::{
-    CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind,
-    ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType, FunctionBody,
-    FunctionSectionReader, GlobalSectionReader, ImportSectionReader, MemorySectionReader, Parser,
-    Payload, TableSectionReader, Type, TypeRef, TypeSectionReader, ValType, Validator,
-};
+use wasmparser::{CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind, ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType, FunctionBody, FunctionSectionReader, GlobalSectionReader, ImportSectionReader, MemorySectionReader, Parser, Payload, RefType, TableSectionReader, TypeRef, TypeSectionReader, ValType, Validator};
 
 pub struct ModuleParser {
     /// The Wasm validator used throughout stream parsing.
@@ -263,13 +258,13 @@ impl ModuleParser {
             Payload::CodeSectionStart { count, range, .. } => self.process_code_start(count, range),
             Payload::CodeSectionEntry(func_body) => self.process_code_entry(func_body),
             Payload::UnknownSection { id, range, .. } => self.process_unknown(id, range),
-            Payload::ModuleSection { parser: _, range } => {
+            Payload::ModuleSection { parser: _, unchecked_range: range } => {
                 self.process_unsupported_component_model(range)
             }
             Payload::CoreTypeSection(section) => {
                 self.process_unsupported_component_model(section.range())
             }
-            Payload::ComponentSection { parser: _, range } => {
+            Payload::ComponentSection { parser: _, unchecked_range: range } => {
                 self.process_unsupported_component_model(range)
             }
             Payload::ComponentInstanceSection(section) => {
@@ -297,6 +292,7 @@ impl ModuleParser {
                 self.process_end(offset)?;
                 return Ok(true);
             }
+            _ => unreachable!()
         }?;
         Ok(false)
     }
@@ -324,45 +320,45 @@ impl ModuleParser {
     /// If an unsupported function type is encountered.
     fn process_types(&mut self, section: TypeSectionReader) -> Result<(), CompilationError> {
         self.validator.type_section(&section)?;
-        for func_type in section.into_iter() {
-            let func_type = match func_type? {
-                Type::Func(func_type) => func_type,
-            };
-            let mut adjusted_params = Vec::new();
-            let mut adjusted_results = Vec::new();
-            for x in func_type.params() {
-                match x {
-                    ValType::I64 | ValType::F64 => {
-                        adjusted_params.push(ValType::I32);
-                        adjusted_params.push(ValType::I32);
+        for group in section.into_iter() {
+            for sub_type in group?.types() {
+                let func_type = sub_type.unwrap_func();
+                let mut adjusted_params = Vec::new();
+                let mut adjusted_results = Vec::new();
+                for x in func_type.params() {
+                    match x {
+                        ValType::I64 | ValType::F64 => {
+                            adjusted_params.push(ValType::I32);
+                            adjusted_params.push(ValType::I32);
+                        }
+                        ValType::V128 => {
+                            return Err(CompilationError::NotSupportedFuncType);
+                        }
+                        _ => adjusted_params.push(*x),
                     }
-                    ValType::V128 => {
-                        return Err(CompilationError::NotSupportedFuncType);
-                    }
-                    _ => adjusted_params.push(*x),
                 }
-            }
-            for x in func_type.results() {
-                match x {
-                    ValType::I64 | ValType::F64 => {
-                        adjusted_results.push(ValType::I32);
-                        adjusted_results.push(ValType::I32);
+                for x in func_type.results() {
+                    match x {
+                        ValType::I64 | ValType::F64 => {
+                            adjusted_results.push(ValType::I32);
+                            adjusted_results.push(ValType::I32);
+                        }
+                        ValType::V128 => {
+                            return Err(CompilationError::NotSupportedFuncType);
+                        }
+                        _ => adjusted_results.push(*x),
                     }
-                    ValType::V128 => {
-                        return Err(CompilationError::NotSupportedFuncType);
-                    }
-                    _ => adjusted_results.push(*x),
                 }
+                let adjusted_func_type = FuncType::new(adjusted_params, adjusted_results);
+                self.allocations
+                    .translation
+                    .original_func_types
+                    .push(func_type.clone());
+                self.allocations
+                    .translation
+                    .func_types
+                    .push(adjusted_func_type);
             }
-            let adjusted_func_type = FuncType::new(adjusted_params, adjusted_results);
-            self.allocations
-                .translation
-                .original_func_types
-                .push(func_type);
-            self.allocations
-                .translation
-                .func_types
-                .push(adjusted_func_type);
         }
         Ok(())
     }
@@ -420,7 +416,7 @@ impl ModuleParser {
             // don't allow funcref/externref in imported functions
             if !self.config.allow_func_ref_function_types {
                 for x in func_type.params().iter().chain(func_type.results()) {
-                    if x == &ValType::FuncRef || x == &ValType::ExternRef {
+                    if x == &ValType::Ref(RefType::FUNC) || x == &ValType::Ref(RefType::EXTERN) {
                         return Err(CompilationError::MalformedImportFunctionType);
                     }
                 }
@@ -517,8 +513,8 @@ impl ModuleParser {
             self.allocations
                 .translation
                 .segment_builder
-                .emit_table_segment(table_idx, &table_type)?;
-            self.allocations.translation.tables.push(table_type);
+                .emit_table_segment(table_idx, &table_type.ty)?;
+            self.allocations.translation.tables.push(table_type.ty);
         }
         Ok(())
     }
@@ -646,7 +642,7 @@ impl ModuleParser {
             let element_segment_idx = ElementSegmentIdx::from(element_segment_idx as u32);
 
             let element_items_vec = match element.items {
-                ElementItems::Expressions(section) => section
+                ElementItems::Expressions(ref_type, section, ..) => section
                     .into_iter()
                     .map(|v| {
                         let compiled_expr = CompiledExpr::new(v?);
@@ -672,7 +668,7 @@ impl ModuleParser {
                     // We can fail-fast here because we already that know that there an overflow
                     let element_offset = u32::try_from(self.eval_const(compiled_expr)?)
                         .map_err(|_| CompilationError::TableOutOfBounds)?;
-                    let table_idx = TableIdx::try_from(table_index).unwrap();
+                    let table_idx = TableIdx::try_from(table_index.unwrap_or_default()).unwrap();
                     self.allocations
                         .translation
                         .segment_builder
@@ -794,10 +790,10 @@ impl ModuleParser {
     /// If the code start section fails to validate.
     fn process_code_start(
         &mut self,
-        count: u32,
+        _count: u32,
         range: Range<usize>,
     ) -> Result<(), CompilationError> {
-        self.validator.code_section_start(count, &range)?;
+        self.validator.code_section_start(&range)?;
         Ok(())
     }
 

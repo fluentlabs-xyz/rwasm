@@ -20,10 +20,7 @@ use crate::{
 };
 use alloc::{boxed::Box, vec, vec::Vec};
 use hashbrown::HashMap;
-use wasmparser::{
-    BlockType, BrTable, FuncType, FuncValidatorAllocations, GlobalType, Ieee32, Ieee64, MemArg,
-    MemoryType, TableType, ValType, VisitOperator, V128,
-};
+use wasmparser::{BlockType, BrTable, FuncType, FuncValidatorAllocations, GlobalType, HeapType, Ieee32, Ieee64, MemArg, MemoryType, Ordering, RefType, ResumeTable, TableType, TryTable, ValType, VisitOperator, V128};
 
 /// Reusable allocations of a [`FuncTranslator`].
 #[derive(Debug)]
@@ -1150,7 +1147,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         &mut self,
         func_type_index: u32,
         table_index: u32,
-        _table_byte: u8,
     ) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
@@ -1465,7 +1461,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_store(memarg, ValType::I64, InstructionSet::op_i64_store32, 0)
     }
 
-    fn visit_memory_size(&mut self, memory_index: u32, _mem_byte: u8) -> Self::Output {
+    fn visit_memory_size(&mut self, memory_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
@@ -1476,7 +1472,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         })
     }
 
-    fn visit_memory_grow(&mut self, memory_index: u32, _mem_byte: u8) -> Self::Output {
+    fn visit_memory_grow(&mut self, memory_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memory_index, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
@@ -1549,7 +1545,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         })
     }
 
-    fn visit_ref_null(&mut self, _ty: ValType) -> Self::Output {
+    fn visit_ref_null(&mut self, _ty: HeapType) -> Self::Output {
         // Since `rwasm` bytecode is untyped, we have no special `null` instructions
         // but simply reuse the `constant` instruction with an immediate value of 0.
         // Note that `FuncRef` and `ExternRef` are encoded as 64-bit values in `rwasm`.
@@ -1566,7 +1562,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_ref_func(&mut self, function_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
-            builder.alloc.stack_types.push(ValType::FuncRef);
+            builder.alloc.stack_types.push(ValType::Ref(RefType::FUNC));
             builder.stack_height.push1();
             // We do +1 here because 0 offset is reserved for `null` value and an entrypoint
             builder
@@ -2433,7 +2429,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             debug_assert_eq!(popped_type, ValType::I32);
             builder.alloc.instruction_set.op_table_get(table_index);
             let table_type = builder.resolve_table_type(table_index);
-            builder.alloc.stack_types.push(table_type.element_type);
+            builder.alloc.stack_types.push(ValType::Ref(table_type.element_type));
             Ok(())
         })
     }
@@ -2462,7 +2458,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // grow overflow error
             let table_type = builder.resolve_table_type(table_index);
             // TODO(dmitry123): "is this construction correct?"
-            let max_table_elements = table_type.maximum.unwrap_or(N_MAX_TABLE_SIZE);
+            let max_table_elements = table_type.maximum.map(|max| max as u32).unwrap_or(N_MAX_TABLE_SIZE);
             let ib = &mut builder.alloc.instruction_set;
             ib.op_table_grow_checked(
                 TableIdx::try_from(table_index).unwrap(),
@@ -2759,1031 +2755,347 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_ref_eq(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load8x8_s(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_struct_new(&mut self, struct_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load8x8_u(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_struct_new_default(&mut self, struct_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load16x4_s(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_struct_get(&mut self, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load16x4_u(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_struct_get_s(&mut self, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load32x2_s(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_struct_get_u(&mut self, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load32x2_u(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_struct_set(&mut self, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load8_splat(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_array_new(&mut self, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load16_splat(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_array_new_default(&mut self, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load32_splat(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_array_new_fixed(&mut self, array_type_index: u32, array_size: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load64_splat(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_array_new_data(&mut self, array_type_index: u32, array_data_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load32_zero(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_array_new_elem(&mut self, array_type_index: u32, array_elem_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load64_zero(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_array_get(&mut self, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_store(&mut self, _memarg: MemArg) -> Self::Output {
+    fn visit_array_get_s(&mut self, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load8_lane(&mut self, _memarg: MemArg, _lane: u8) -> Self::Output {
+    fn visit_array_get_u(&mut self, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load16_lane(&mut self, _memarg: MemArg, _lane: u8) -> Self::Output {
+    fn visit_array_set(&mut self, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load32_lane(&mut self, _memarg: MemArg, _lane: u8) -> Self::Output {
+    fn visit_array_len(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_load64_lane(&mut self, _memarg: MemArg, _lane: u8) -> Self::Output {
+    fn visit_array_fill(&mut self, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_store8_lane(&mut self, _memarg: MemArg, _lane: u8) -> Self::Output {
+    fn visit_array_copy(&mut self, array_type_index_dst: u32, array_type_index_src: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_store16_lane(&mut self, _memarg: MemArg, _lane: u8) -> Self::Output {
+    fn visit_array_init_data(&mut self, array_type_index: u32, array_data_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_store32_lane(&mut self, _memarg: MemArg, _lane: u8) -> Self::Output {
+    fn visit_array_init_elem(&mut self, array_type_index: u32, array_elem_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_store64_lane(&mut self, _memarg: MemArg, _lane: u8) -> Self::Output {
+    fn visit_ref_test_non_null(&mut self, hty: HeapType) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_v128_const(&mut self, _value: V128) -> Self::Output {
+    fn visit_ref_test_nullable(&mut self, hty: HeapType) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_shuffle(&mut self, _value: [u8; 16]) -> Self::Output {
+    fn visit_ref_cast_non_null(&mut self, hty: HeapType) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_extract_lane_s(&mut self, _lane: u8) -> Self::Output {
+    fn visit_ref_cast_nullable(&mut self, hty: HeapType) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_extract_lane_u(&mut self, _lane: u8) -> Self::Output {
+    fn visit_br_on_cast(&mut self, relative_depth: u32, from_ref_type: RefType, to_ref_type: RefType) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_replace_lane(&mut self, _lane: u8) -> Self::Output {
+    fn visit_br_on_cast_fail(&mut self, relative_depth: u32, from_ref_type: RefType, to_ref_type: RefType) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_extract_lane_s(&mut self, _lane: u8) -> Self::Output {
+    fn visit_any_convert_extern(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_extract_lane_u(&mut self, _lane: u8) -> Self::Output {
+    fn visit_extern_convert_any(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_replace_lane(&mut self, _lane: u8) -> Self::Output {
+    fn visit_ref_i31(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i32x4_extract_lane(&mut self, _lane: u8) -> Self::Output {
+    fn visit_i31_get_s(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i32x4_replace_lane(&mut self, _lane: u8) -> Self::Output {
+    fn visit_i31_get_u(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i64x2_extract_lane(&mut self, _lane: u8) -> Self::Output {
+    fn visit_typed_select_multi(&mut self, tys: Vec<ValType>) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i64x2_replace_lane(&mut self, _lane: u8) -> Self::Output {
+    fn visit_try_table(&mut self, try_table: TryTable) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_f32x4_extract_lane(&mut self, _lane: u8) -> Self::Output {
+    fn visit_throw_ref(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_f32x4_replace_lane(&mut self, _lane: u8) -> Self::Output {
+    fn visit_global_atomic_get(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_f64x2_extract_lane(&mut self, _lane: u8) -> Self::Output {
+    fn visit_global_atomic_set(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_f64x2_replace_lane(&mut self, _lane: u8) -> Self::Output {
+    fn visit_global_atomic_rmw_add(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_swizzle(&mut self) -> Self::Output {
+    fn visit_global_atomic_rmw_sub(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_splat(&mut self) -> Self::Output {
+    fn visit_global_atomic_rmw_and(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_splat(&mut self) -> Self::Output {
+    fn visit_global_atomic_rmw_or(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i32x4_splat(&mut self) -> Self::Output {
+    fn visit_global_atomic_rmw_xor(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i64x2_splat(&mut self) -> Self::Output {
+    fn visit_global_atomic_rmw_xchg(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_f32x4_splat(&mut self) -> Self::Output {
+    fn visit_global_atomic_rmw_cmpxchg(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_f64x2_splat(&mut self) -> Self::Output {
+    fn visit_table_atomic_get(&mut self, ordering: Ordering, table_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_eq(&mut self) -> Self::Output {
+    fn visit_table_atomic_set(&mut self, ordering: Ordering, table_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_ne(&mut self) -> Self::Output {
+    fn visit_table_atomic_rmw_xchg(&mut self, ordering: Ordering, table_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_lt_s(&mut self) -> Self::Output {
+    fn visit_table_atomic_rmw_cmpxchg(&mut self, ordering: Ordering, table_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_lt_u(&mut self) -> Self::Output {
+    fn visit_struct_atomic_get(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_gt_s(&mut self) -> Self::Output {
+    fn visit_struct_atomic_get_s(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_gt_u(&mut self) -> Self::Output {
+    fn visit_struct_atomic_get_u(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_le_s(&mut self) -> Self::Output {
+    fn visit_struct_atomic_set(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_le_u(&mut self) -> Self::Output {
+    fn visit_struct_atomic_rmw_add(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_ge_s(&mut self) -> Self::Output {
+    fn visit_struct_atomic_rmw_sub(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i8x16_ge_u(&mut self) -> Self::Output {
+    fn visit_struct_atomic_rmw_and(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_eq(&mut self) -> Self::Output {
+    fn visit_struct_atomic_rmw_or(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_ne(&mut self) -> Self::Output {
+    fn visit_struct_atomic_rmw_xor(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_lt_s(&mut self) -> Self::Output {
+    fn visit_struct_atomic_rmw_xchg(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_lt_u(&mut self) -> Self::Output {
+    fn visit_struct_atomic_rmw_cmpxchg(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_gt_s(&mut self) -> Self::Output {
+    fn visit_array_atomic_get(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_gt_u(&mut self) -> Self::Output {
+    fn visit_array_atomic_get_s(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_le_s(&mut self) -> Self::Output {
+    fn visit_array_atomic_get_u(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_le_u(&mut self) -> Self::Output {
+    fn visit_array_atomic_set(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_ge_s(&mut self) -> Self::Output {
+    fn visit_array_atomic_rmw_add(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i16x8_ge_u(&mut self) -> Self::Output {
+    fn visit_array_atomic_rmw_sub(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i32x4_eq(&mut self) -> Self::Output {
+    fn visit_array_atomic_rmw_and(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i32x4_ne(&mut self) -> Self::Output {
+    fn visit_array_atomic_rmw_or(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i32x4_lt_s(&mut self) -> Self::Output {
+    fn visit_array_atomic_rmw_xor(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i32x4_lt_u(&mut self) -> Self::Output {
+    fn visit_array_atomic_rmw_xchg(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i32x4_gt_s(&mut self) -> Self::Output {
+    fn visit_array_atomic_rmw_cmpxchg(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i32x4_gt_u(&mut self) -> Self::Output {
+    fn visit_ref_i31_shared(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i32x4_le_s(&mut self) -> Self::Output {
+    fn visit_call_ref(&mut self, type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i32x4_le_u(&mut self) -> Self::Output {
+    fn visit_return_call_ref(&mut self, type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i32x4_ge_s(&mut self) -> Self::Output {
+    fn visit_ref_as_non_null(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i32x4_ge_u(&mut self) -> Self::Output {
+    fn visit_br_on_null(&mut self, relative_depth: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i64x2_eq(&mut self) -> Self::Output {
+    fn visit_br_on_non_null(&mut self, relative_depth: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i64x2_ne(&mut self) -> Self::Output {
+    fn visit_cont_new(&mut self, cont_type_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i64x2_lt_s(&mut self) -> Self::Output {
+    fn visit_cont_bind(&mut self, argument_index: u32, result_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i64x2_gt_s(&mut self) -> Self::Output {
+    fn visit_suspend(&mut self, tag_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i64x2_le_s(&mut self) -> Self::Output {
+    fn visit_resume(&mut self, cont_type_index: u32, resume_table: ResumeTable) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_i64x2_ge_s(&mut self) -> Self::Output {
+    fn visit_resume_throw(&mut self, cont_type_index: u32, tag_index: u32, resume_table: ResumeTable) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_f32x4_eq(&mut self) -> Self::Output {
+    fn visit_switch(&mut self, cont_type_index: u32, tag_index: u32) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_f32x4_ne(&mut self) -> Self::Output {
+    fn visit_i64_add128(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_f32x4_lt(&mut self) -> Self::Output {
+    fn visit_i64_sub128(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_f32x4_gt(&mut self) -> Self::Output {
+    fn visit_i64_mul_wide_s(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_f32x4_le(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_ge(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_eq(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_ne(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_lt(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_gt(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_le(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_ge(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_v128_not(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_v128_and(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_v128_andnot(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_v128_or(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_v128_xor(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_v128_bitselect(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_v128_any_true(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_abs(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_neg(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_popcnt(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_all_true(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_bitmask(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_narrow_i16x8_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_narrow_i16x8_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_shl(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_shr_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_shr_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_add(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_add_sat_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_add_sat_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_sub(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_sub_sat_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_sub_sat_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_min_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_min_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_max_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_max_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_avgr_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_extadd_pairwise_i8x16_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_extadd_pairwise_i8x16_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_abs(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_neg(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_q15mulr_sat_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_all_true(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_bitmask(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_narrow_i32x4_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_narrow_i32x4_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_extend_low_i8x16_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_extend_high_i8x16_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_extend_low_i8x16_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_extend_high_i8x16_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_shl(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_shr_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_shr_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_add(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_add_sat_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_add_sat_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_sub(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_sub_sat_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_sub_sat_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_mul(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_min_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_min_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_max_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_max_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_avgr_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_extmul_low_i8x16_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_extmul_high_i8x16_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_extmul_low_i8x16_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_extmul_high_i8x16_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_extadd_pairwise_i16x8_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_extadd_pairwise_i16x8_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_abs(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_neg(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_all_true(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_bitmask(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_extend_low_i16x8_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_extend_high_i16x8_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_extend_low_i16x8_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_extend_high_i16x8_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_shl(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_shr_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_shr_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_add(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_sub(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_mul(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_min_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_min_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_max_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_max_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_dot_i16x8_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_extmul_low_i16x8_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_extmul_high_i16x8_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_extmul_low_i16x8_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_extmul_high_i16x8_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_abs(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_neg(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_all_true(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_bitmask(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_extend_low_i32x4_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_extend_high_i32x4_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_extend_low_i32x4_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_extend_high_i32x4_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_shl(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_shr_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_shr_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_add(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_sub(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_mul(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_extmul_low_i32x4_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_extmul_high_i32x4_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_extmul_low_i32x4_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_extmul_high_i32x4_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_ceil(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_floor(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_trunc(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_nearest(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_abs(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_neg(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_sqrt(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_add(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_sub(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_mul(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_div(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_min(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_max(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_pmin(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_pmax(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_ceil(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_floor(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_trunc(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_nearest(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_abs(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_neg(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_sqrt(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_add(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_sub(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_mul(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_div(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_min(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_max(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_pmin(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_pmax(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_trunc_sat_f32x4_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_trunc_sat_f32x4_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_convert_i32x4_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_convert_i32x4_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_trunc_sat_f64x2_s_zero(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_trunc_sat_f64x2_u_zero(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_convert_low_i32x4_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_convert_low_i32x4_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_demote_f64x2_zero(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_promote_low_f32x4(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_relaxed_swizzle(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_relaxed_trunc_sat_f32x4_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_relaxed_trunc_sat_f32x4_u(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_relaxed_trunc_sat_f64x2_s_zero(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_relaxed_trunc_sat_f64x2_u_zero(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_relaxed_fma(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_relaxed_fnma(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_relaxed_fma(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_relaxed_fnma(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i8x16_relaxed_laneselect(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_relaxed_laneselect(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_relaxed_laneselect(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i64x2_relaxed_laneselect(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_relaxed_min(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_relaxed_max(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_relaxed_min(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f64x2_relaxed_max(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_relaxed_q15mulr_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i16x8_dot_i8x16_i7x16_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_i32x4_dot_i8x16_i7x16_add_s(&mut self) -> Self::Output {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
-    fn visit_f32x4_relaxed_dot_bf16x8_add_f32x4(&mut self) -> Self::Output {
+    fn visit_i64_mul_wide_u(&mut self) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 }

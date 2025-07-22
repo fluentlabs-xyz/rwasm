@@ -5,7 +5,7 @@ use crate::{
 };
 use alloc::{vec, vec::Vec};
 use hashbrown::HashMap;
-use wasmparser::{TableType, ValType};
+use wasmparser::{RefType, TableType, ValType};
 
 #[derive(Debug)]
 pub struct SegmentBuilder {
@@ -56,7 +56,7 @@ impl SegmentBuilder {
                 self.entrypoint_bytecode.op_i32_const(lower);
                 self.entrypoint_bytecode.op_i32_const(upper)
             }
-            ValType::FuncRef | ValType::ExternRef => self
+            ValType::Ref(RefType::FUNC) | ValType::Ref(RefType::EXTERN)  => self
                 .entrypoint_bytecode
                 .op_ref_func(global_variable.default_value as u32),
             _ => return Err(CompilationError::NotSupportedGlobalType),

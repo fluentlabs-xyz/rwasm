@@ -38,7 +38,6 @@ impl<'a> FuncBuilder<'a> {
         self.translate_stack_alloc();
         self.translate_locals()?;
         let offset = self.translate_operators()?;
-        self.validator.finish(offset)?;
         self.translator.finish()?;
         Ok(ReusableAllocations {
             translation: self.translator.alloc,
@@ -60,7 +59,7 @@ impl<'a> FuncBuilder<'a> {
                 // TODO(dmitry123): "make sure this type is not allowed with floats disabled"
                 ValType::F32 | ValType::F64 => {}
                 ValType::V128 => return Err(CompilationError::NotSupportedLocalType),
-                ValType::FuncRef => {}
+                ValType::Ref(_) => {}
                 _ => return Err(CompilationError::NotSupportedLocalType),
             }
 
@@ -113,7 +112,7 @@ impl<'a> FuncBuilder<'a> {
             }
 
         }
-        reader.ensure_end()?;
+        reader.finish()?;
         Ok(reader.original_position())
     }
 
@@ -134,67 +133,20 @@ impl<'a> FuncBuilder<'a> {
 }
 
 macro_rules! impl_visit_operator {
-    ( @mvp BrTable { $arg:ident: $argty:ty } => $visit:ident $($rest:tt)* ) => {
-        // We need to special case the `BrTable` operand since its
-        // arguments (a.k.a. `BrTable<'a>`) are not `Copy` which all
-        // the other impls make use of.
-        fn $visit(&mut self, $arg: $argty) -> Self::Output {
-            let offset = self.pos;
-            let arg_cloned = $arg.clone();
-            self.validate_then_translate(
-                |validator| validator.visitor(offset).$visit(arg_cloned),
-                |translator| translator.$visit($arg.clone()),
-            )?;
+    ($( @$proposal:ident $op:ident $({ $($arg:ident: $argty:ty),* })? => $visit:ident $ann:tt)*) => {
+        $(
+            fn $visit(&mut self $($(, $arg: $argty)*)?) -> Self::Output {
+                let offset = self.pos;
+                self.validator.visitor(offset).$visit($($($arg.clone()),*)?).unwrap();//.map_err(::core::convert::Into::into)?;
 
-            Ok(Operator::BrTable { targets: $arg })
-        }
-        impl_visit_operator!($($rest)*);
+                Ok(Operator::$op $({ $($arg),* })?)
+            }
+        )*
     };
-    ( @mvp $($rest:tt)* ) => {
-        impl_visit_operator!(@@supported $($rest)*);
-    };
-    ( @sign_extension $($rest:tt)* ) => {
-        impl_visit_operator!(@@supported $($rest)*);
-    };
-    ( @saturating_float_to_int $($rest:tt)* ) => {
-        impl_visit_operator!(@@supported $($rest)*);
-    };
-    ( @bulk_memory $($rest:tt)* ) => {
-        impl_visit_operator!(@@supported $($rest)*);
-    };
-    ( @reference_types $($rest:tt)* ) => {
-        impl_visit_operator!(@@supported $($rest)*);
-    };
-    ( @tail_call $($rest:tt)* ) => {
-        impl_visit_operator!(@@supported $($rest)*);
-    };
-    ( @@supported $op:ident $({ $($arg:ident: $argty:ty),* })? => $visit:ident $($rest:tt)* ) => {
-        fn $visit(&mut self $($(,$arg: $argty)*)?) -> Self::Output {
-            let offset = self.pos;
-            self.validate_then_translate(
-                |v| v.visitor(offset).$visit($($($arg),*)?),
-                |t| t.$visit($($($arg),*)?),
-            )?;
-
-            Ok(Operator::$op $({ $($arg),* })?)
-        }
-        impl_visit_operator!($($rest)*);
-    };
-    ( @$proposal:ident $op:ident $({ $($arg:ident: $argty:ty),* })? => $visit:ident $($rest:tt)* ) => {
-        // Wildcard match arm for all the other (yet) unsupported Wasm proposals.
-        fn $visit(&mut self $($(, $arg: $argty)*)?) -> Self::Output {
-            let offset = self.pos;
-            self.validator.visitor(offset).$visit($($($arg),*)?).unwrap();//.map_err(::core::convert::Into::into)?;
-
-            Ok(Operator::$op $({ $($arg),* })?)
-        }
-        impl_visit_operator!($($rest)*);
-    };
-    () => {};
 }
 
 impl<'a> VisitOperator<'a> for FuncBuilder<'a> {
     type Output = Result<Operator<'a>, CompilationError>;
 
-    wasmparser::for_each_operator!(impl_visit_operator);
+    wasmparser::for_each_visit_operator!(impl_visit_operator);
 }

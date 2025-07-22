@@ -22,12 +22,13 @@ impl GlobalVariable {
             ValType::F32 => Some(Value::F32(F32::from_bits(self.default_value as i32 as u32))),
             ValType::F64 => Some(Value::F64(F64::from_bits(self.default_value as u64))),
             ValType::V128 => None,
-            ValType::FuncRef => Some(Value::FuncRef(FuncRef::new(
+            ValType::Ref(ref_type) if ref_type == wasmparser::RefType::FUNC => Some(Value::FuncRef(FuncRef::new(
                 self.default_value.try_into().ok()?,
             ))),
-            ValType::ExternRef => Some(Value::ExternRef(ExternRef::new(
+            ValType::Ref(ref_type) if ref_type == wasmparser::RefType::EXTERN => Some(Value::ExternRef(ExternRef::new(
                 self.default_value.try_into().ok()?,
             ))),
+            ValType::Ref(ref_type)  => panic!("ref type not supported {:?}", ref_type),
         }
     }
 }

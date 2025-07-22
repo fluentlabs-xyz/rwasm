@@ -6,7 +6,7 @@ use crate::{
     UntypedValue,
 };
 use core::{f32, i32, i64, u32, u64};
-use wasmparser::ValType;
+use wasmparser::{RefType, ValType};
 
 /// Convert one type to another by wrapping.
 pub trait WrapInto<T> {
@@ -944,8 +944,9 @@ impl Value {
             ValType::F32 => Self::F32(0f32.into()),
             ValType::F64 => Self::F64(0f64.into()),
             ValType::V128 => unreachable!("not supported v128 type"),
-            ValType::FuncRef => Self::FuncRef(FuncRef::null()),
-            ValType::ExternRef => Self::ExternRef(ExternRef::null()),
+            ValType::Ref(ref_type) if ref_type == RefType::FUNC => Self::FuncRef(FuncRef::null()),
+            ValType::Ref(ref_type) if ref_type == RefType::EXTERN => Self::ExternRef(ExternRef::null()),
+            ValType::Ref(ref_type)  => panic!("ref type not supported {:?}", ref_type),
         }
     }
 
@@ -957,8 +958,8 @@ impl Value {
             Self::I64(_) => ValType::I64,
             Self::F32(_) => ValType::F32,
             Self::F64(_) => ValType::F64,
-            Self::FuncRef(_) => ValType::FuncRef,
-            Self::ExternRef(_) => ValType::ExternRef,
+            Self::FuncRef(_) => ValType::Ref(RefType::FUNC),
+            Self::ExternRef(_) => ValType::Ref(RefType::EXTERN),
         }
     }
 

@@ -6,7 +6,7 @@ description = "rwasm"
 edition = "2021"
 
 [dependencies]
-wasmparser = { version = "0.100.1", package = "wasmparser-nostd", default-features = false }
+wasmparser = { version = "0.233.0", default-features = false }
 spin = { version = "0.9", default-features = false, features = [
     "mutex",
     "spin_mutex",

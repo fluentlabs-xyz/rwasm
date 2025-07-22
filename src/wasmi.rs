@@ -8,7 +8,7 @@ use core::cell::RefCell;
 use num_traits::FromPrimitive;
 use smallvec::SmallVec;
 use wasmi::{AsContext, AsContextMut, StackLimits};
-use wasmparser::ValType;
+use wasmparser::{RefType, ValType};
 
 pub type WasmiModule = wasmi::Module;
 
@@ -173,8 +173,9 @@ fn map_val_type(val_type: ValType) -> wasmi::core::ValType {
         ValType::F32 => wasmi::core::ValType::F32,
         ValType::F64 => wasmi::core::ValType::F64,
         ValType::V128 => wasmi::core::ValType::V128,
-        ValType::FuncRef => wasmi::core::ValType::FuncRef,
-        ValType::ExternRef => wasmi::core::ValType::ExternRef,
+        ValType::Ref(ref_type) if ref_type == RefType::FUNC => wasmi::core::ValType::FuncRef,
+        ValType::Ref(ref_type) if ref_type == RefType::EXTERN => wasmi::core::ValType::ExternRef,
+        ValType::Ref(ref_type)  => panic!("ref type not supported {:?}", ref_type),
     }
 }
 
