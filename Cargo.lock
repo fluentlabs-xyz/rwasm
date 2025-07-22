@@ -170,6 +170,7 @@ dependencies = [
 [[package]]
 name = "cranelift-assembler-x64"
 version = "0.121.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "cranelift-assembler-x64-meta",
 ]
@@ -177,6 +178,7 @@ dependencies = [
 [[package]]
 name = "cranelift-assembler-x64-meta"
 version = "0.121.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "cranelift-srcgen",
 ]
@@ -184,6 +186,7 @@ dependencies = [
 [[package]]
 name = "cranelift-bforest"
 version = "0.121.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "cranelift-entity",
 ]
@@ -191,6 +194,7 @@ dependencies = [
 [[package]]
 name = "cranelift-bitset"
 version = "0.121.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "serde",
  "serde_derive",
@@ -199,6 +203,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen"
 version = "0.121.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "bumpalo",
  "cranelift-assembler-x64",
@@ -224,6 +229,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen-meta"
 version = "0.121.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "cranelift-assembler-x64-meta",
  "cranelift-codegen-shared",
@@ -234,10 +240,12 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen-shared"
 version = "0.121.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 
 [[package]]
 name = "cranelift-control"
 version = "0.121.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "arbitrary",
 ]
@@ -245,6 +253,7 @@ dependencies = [
 [[package]]
 name = "cranelift-entity"
 version = "0.121.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "cranelift-bitset",
  "serde",
@@ -254,6 +263,7 @@ dependencies = [
 [[package]]
 name = "cranelift-frontend"
 version = "0.121.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "cranelift-codegen",
  "log",
@@ -264,10 +274,12 @@ dependencies = [
 [[package]]
 name = "cranelift-isle"
 version = "0.121.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 
 [[package]]
 name = "cranelift-native"
 version = "0.121.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "cranelift-codegen",
  "libc",
@@ -277,6 +289,7 @@ dependencies = [
 [[package]]
 name = "cranelift-srcgen"
 version = "0.121.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 
 [[package]]
 name = "crc32fast"
@@ -813,6 +826,7 @@ dependencies = [
 [[package]]
 name = "pulley-interpreter"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "cranelift-bitset",
  "log",
@@ -823,6 +837,7 @@ dependencies = [
 [[package]]
 name = "pulley-macros"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1497,6 +1512,7 @@ dependencies = [
 [[package]]
 name = "wasmtime"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "addr2line",
  "anyhow",
@@ -1551,6 +1567,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-asm-macros"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "cfg-if",
 ]
@@ -1558,6 +1575,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-cache"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "anyhow",
  "base64",
@@ -1576,6 +1594,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-component-macro"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -1589,10 +1608,12 @@ dependencies = [
 [[package]]
 name = "wasmtime-component-util"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 
 [[package]]
 name = "wasmtime-cranelift"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -1618,6 +1639,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-environ"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "anyhow",
  "cpp_demangle",
@@ -1643,6 +1665,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-fiber"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "anyhow",
  "cc",
@@ -1657,6 +1680,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit-debug"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "cc",
  "object",
@@ -1667,6 +1691,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit-icache-coherence"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -1677,6 +1702,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-math"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "libm",
 ]
@@ -1684,10 +1710,12 @@ dependencies = [
 [[package]]
 name = "wasmtime-slab"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 
 [[package]]
 name = "wasmtime-versioned-export-macros"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1697,6 +1725,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-winch"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -1712,6 +1741,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-wit-bindgen"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "anyhow",
  "heck",
@@ -1787,6 +1817,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "winch-codegen"
 version = "34.0.1"
+source = "git+https://github.com/fluentlabs-xyz/wasmtime?branch=feat%2Fgas-meter#7a6796b8ce4f12a5dc9ac272ddb25eefd6b88236"
 dependencies = [
  "anyhow",
  "cranelift-assembler-x64",

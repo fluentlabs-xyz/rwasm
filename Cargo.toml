@@ -21,8 +21,8 @@ bincode = { version = "2.0.1", default-features = false, features = ["alloc", "d
 num-traits = { version = "0.2", default-features = false }
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
 libm = "0.2.1"
-#wasmtime = { git = "https://github.com/fluentlabs-xyz/wasmtime", branch = "devel", optional = true, features = ["disable-fpu", "cache"] }
-wasmtime = { path = "../wasmtime/crates/wasmtime", optional = true, features = ["disable-fpu"] }
+wasmtime = { git = "https://github.com/fluentlabs-xyz/wasmtime", branch = "feat/gas-meter", optional = true, features = ["disable-fpu", "cache"] }
+#wasmtime = { path = "../wasmtime/crates/wasmtime", optional = true, features = ["disable-fpu"] }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 smallvec = "1.15.0"
 anyhow = { version = "1.0.98", default-features = false, optional = true }
