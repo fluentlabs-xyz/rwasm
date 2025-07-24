@@ -1,6 +1,18 @@
 use crate::InstructionSet;
 
 impl InstructionSet {
+    pub const MSH_I64_CLZ: u32 = 3;
+    pub const MSH_I64_CTZ: u32 = 3;
+    pub const MSH_I64_POPCNT: u32 = 1;
+    pub const MSH_I64_AND: u32 = 1;
+    pub const MSH_I64_OR: u32 = 1;
+    pub const MSH_I64_XOR: u32 = 1;
+    pub const MSH_I64_SHL: u32 = 10;
+    pub const MSH_I64_SHR_S: u32 = 21;
+    pub const MSH_I64_SHR_U: u32 = 21;
+    pub const MSH_I64_ROTL: u32 = 16;
+    pub const MSH_I64_ROTR: u32 = 16;
+
     /// Max stack height: 3
     pub fn op_i64_clz(&mut self) {
         self.op_i32_clz();
@@ -72,7 +84,7 @@ impl InstructionSet {
         self.op_local_set(2);
     }
 
-    /// Max stack height: 6
+    /// Max stack height: 19
     pub fn op_i64_shl(&mut self) {
         self.op_i32_const(0);
         self.op_i32_const(0);
@@ -186,7 +198,7 @@ impl InstructionSet {
         self.op_drop();
     }
 
-    /// Max stack height: 6
+    /// Max stack height: 21
     pub fn op_i64_shr_s(&mut self) {
         self.op_i32_const(0);
         self.op_i32_const(0);
@@ -376,7 +388,7 @@ impl InstructionSet {
         self.op_drop();
     }
 
-    /// Max stack height: 6
+    /// Max stack height: 21
     pub fn op_i64_shr_u(&mut self) {
         self.op_i32_const(0);
         self.op_i32_const(0);
@@ -490,7 +502,7 @@ impl InstructionSet {
         self.op_drop();
     }
 
-    /// Max stack height: 6
+    /// Max stack height: 16
     pub fn op_i64_rotl(&mut self) {
         self.op_i32_const(0);
         self.op_i32_const(0);
@@ -684,7 +696,7 @@ impl InstructionSet {
         self.op_drop();
     }
 
-    /// Max stack height: 6
+    /// Max stack height: 16
     pub fn op_i64_rotr(&mut self) {
         self.op_i32_const(0);
         self.op_i32_const(0);

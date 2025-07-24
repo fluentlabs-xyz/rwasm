@@ -1,6 +1,8 @@
 use crate::InstructionSet;
 
 impl InstructionSet {
+    pub const MSH_I64_MUL: u32 = 5;
+
     /// Max stack height: 5
     pub fn op_i64_mul(&mut self) {
         self.op_local_get(2);

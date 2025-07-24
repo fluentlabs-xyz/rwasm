@@ -133,35 +133,34 @@ fn wasmi_syscall_handler<'a, T: Send + Sync>(
         mapped_result,
     );
     if let Some(TrapCode::InterruptionCalled) = syscall_result.err() {
-        todo!()
-    } else {
-        // make sure a syscall result is successful
-        let should_terminate = syscall_result
-            .map(|_| false)
-            .or_else(|trap_code| {
-                // if syscall returns execution halted, then don't return this trap code since it's a
-                // successful error code
-                if trap_code == TrapCode::ExecutionHalted {
-                    Ok(true)
-                } else {
-                    Err(trap_code)
-                }
-            })
-            .map_err(|trap_code: TrapCode| wasmi::Error::i32_exit(trap_code as i32))?;
-        // after call map all values back to wasmi format
-        for (i, value) in mapped_result.iter().enumerate() {
-            result[i] = match value {
-                Value::I32(value) => wasmi::Val::I32(*value),
-                Value::I64(value) => wasmi::Val::I64(*value),
-                Value::F32(value) => wasmi::Val::F32(wasmi::core::F32::from_bits(value.to_bits())),
-                Value::F64(value) => wasmi::Val::F64(wasmi::core::F64::from_bits(value.to_bits())),
-                _ => unreachable!("not supported type: {:?}", value),
-            };
-        }
-        // terminate execution if required
-        if should_terminate {
-            return Err(wasmi::Error::i32_exit(TrapCode::ExecutionHalted as i32));
-        }
+        return Err(wasmi::Error::i32_exit(TrapCode::InterruptionCalled as i32));
+    }
+    // make sure a syscall result is successful
+    let should_terminate = syscall_result
+        .map(|_| false)
+        .or_else(|trap_code| {
+            // if syscall returns execution halted, then don't return this trap code since it's a
+            // successful error code
+            if trap_code == TrapCode::ExecutionHalted {
+                Ok(true)
+            } else {
+                Err(trap_code)
+            }
+        })
+        .map_err(|trap_code: TrapCode| wasmi::Error::i32_exit(trap_code as i32))?;
+    // after call map all values back to wasmi format
+    for (i, value) in mapped_result.iter().enumerate() {
+        result[i] = match value {
+            Value::I32(value) => wasmi::Val::I32(*value),
+            Value::I64(value) => wasmi::Val::I64(*value),
+            Value::F32(value) => wasmi::Val::F32(wasmi::core::F32::from_bits(value.to_bits())),
+            Value::F64(value) => wasmi::Val::F64(wasmi::core::F64::from_bits(value.to_bits())),
+            _ => unreachable!("not supported type: {:?}", value),
+        };
+    }
+    // terminate execution if required
+    if should_terminate {
+        return Err(wasmi::Error::i32_exit(TrapCode::ExecutionHalted as i32));
     }
     Ok(())
 }
@@ -284,10 +283,22 @@ impl<T: Send + Sync> WasmiStore<T> {
         match resumable_call {
             wasmi::ResumableCall::Finished => {}
             wasmi::ResumableCall::HostTrap(resumable_context) => {
-                self.resumable_context = Some(resumable_context);
-                // host trap means interruption, but we can't forward any errors since we don't support,
-                // and we don't use it anywhere inside rWasm
-                return Err(TrapCode::InterruptionCalled);
+                let Some(i32_exit_status) = resumable_context.host_error().i32_exit_status() else {
+                    // TODO(dmitry123): "how to map unknown error?"
+                    return Err(TrapCode::IllegalOpcode);
+                };
+                let trap_code = TrapCode::from_i32(i32_exit_status).unwrap();
+                // if trap code is execution halted then just terminate an execution without
+                // any trap code raised
+                if trap_code == TrapCode::ExecutionHalted {
+                    return Ok(());
+                }
+                // same resumable context in case of interruption, otherwise just
+                // teminate an execution
+                if trap_code == TrapCode::InterruptionCalled {
+                    self.resumable_context = Some(resumable_context);
+                }
+                return Err(trap_code);
             }
             wasmi::ResumableCall::OutOfFuel(_) => return Err(TrapCode::OutOfFuel),
         }

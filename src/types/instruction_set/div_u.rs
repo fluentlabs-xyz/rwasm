@@ -1,6 +1,8 @@
 use crate::{InstructionSet, TrapCode};
 
 impl InstructionSet {
+    pub const MSH_I64_DIV_U: u32 = 15;
+
     /// Performs an unsigned 64-bit division using only 32-bit arithmetic,
     /// returning the 64-bit quotient as two `u32` limbs (low, high).
     ///

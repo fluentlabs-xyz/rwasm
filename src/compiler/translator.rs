@@ -11,12 +11,11 @@ use crate::{
         locals_registry::LocalsRegistry,
         segment_builder::SegmentBuilder,
         utils::RelativeDepth,
-        value_stack::ValueStackHeight,
     },
     AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
     ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
-    Opcode, SignatureIdx, TableIdx, BASE_FUEL_COST, DEFAULT_MEMORY_INDEX, N_MAX_MEMORY_PAGES,
-    N_MAX_TABLE_SIZE,
+    Opcode, SignatureIdx, TableIdx, ValueStackHeight, BASE_FUEL_COST, DEFAULT_MEMORY_INDEX,
+    N_MAX_MEMORY_PAGES, N_MAX_TABLE_SIZE,
 };
 use alloc::{boxed::Box, vec, vec::Vec};
 use hashbrown::HashMap;
@@ -379,7 +378,7 @@ impl InstructionTranslator {
     pub fn finish(&mut self) -> Result<(), CompilationError> {
         // update branch offsets in `Branch` opcodes
         for (user, offset) in self.alloc.labels.resolved_users() {
-            self.alloc.instruction_set.instr[user as usize].update_branch_offset(offset?);
+            self.alloc.instruction_set[user as usize].update_branch_offset(offset?);
         }
         let last_func_offset = self.alloc.func_offsets.last().copied().unwrap() as usize;
         // update max stack height in `StackAlloc` opcode
@@ -387,7 +386,6 @@ impl InstructionTranslator {
         let mut iter = self
             .alloc
             .instruction_set
-            .instr
             .iter_mut()
             .skip(last_func_offset)
             .take(how_deep_stack_check);
@@ -1374,7 +1372,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_load(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load, 2)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load,
+            InstructionSet::MSH_I64_LOAD,
+        )
     }
 
     fn visit_f32_load(&mut self, memarg: MemArg) -> Self::Output {
@@ -1402,27 +1405,57 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_load8_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load8_s, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load8_s,
+            InstructionSet::MSH_I64_LOAD8_S,
+        )
     }
 
     fn visit_i64_load8_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load8_u, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load8_u,
+            InstructionSet::MSH_I64_LOAD8_U,
+        )
     }
 
     fn visit_i64_load16_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load16_s, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load16_s,
+            InstructionSet::MSH_I64_LOAD16_S,
+        )
     }
 
     fn visit_i64_load16_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load16_u, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load16_u,
+            InstructionSet::MSH_I64_LOAD16_U,
+        )
     }
 
     fn visit_i64_load32_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load32_s, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load32_s,
+            InstructionSet::MSH_I64_LOAD32_S,
+        )
     }
 
     fn visit_i64_load32_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load32_u, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load32_u,
+            InstructionSet::MSH_I64_LOAD32_U,
+        )
     }
 
     fn visit_i32_store(&mut self, memarg: MemArg) -> Self::Output {
@@ -1430,7 +1463,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_store(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::I64, InstructionSet::op_i64_store, 2)
+        self.translate_store(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_store,
+            InstructionSet::MSH_I64_STORE,
+        )
     }
 
     fn visit_f32_store(&mut self, memarg: MemArg) -> Self::Output {
@@ -1618,47 +1656,47 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_eqz(&mut self) -> Self::Output {
-        self.translate_unary_compare(InstructionSet::op_i64_eqz, 0)
+        self.translate_unary_compare(InstructionSet::op_i64_eqz, InstructionSet::MSH_I64_EQZ)
     }
 
     fn visit_i64_eq(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_eq, 1)
+        self.translate_binary_compare(InstructionSet::op_i64_eq, InstructionSet::MSH_I64_EQ)
     }
 
     fn visit_i64_ne(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_ne, 1)
+        self.translate_binary_compare(InstructionSet::op_i64_ne, InstructionSet::MSH_I64_NE)
     }
 
     fn visit_i64_lt_s(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_lt_s, 2)
+        self.translate_binary_compare(InstructionSet::op_i64_lt_s, InstructionSet::MSH_I64_LT_S)
     }
 
     fn visit_i64_lt_u(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_lt_u, 2)
+        self.translate_binary_compare(InstructionSet::op_i64_lt_u, InstructionSet::MSH_I64_LT_U)
     }
 
     fn visit_i64_gt_s(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_gt_s, 2)
+        self.translate_binary_compare(InstructionSet::op_i64_gt_s, InstructionSet::MSH_I64_GT_S)
     }
 
     fn visit_i64_gt_u(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_gt_u, 2)
+        self.translate_binary_compare(InstructionSet::op_i64_gt_u, InstructionSet::MSH_I64_GT_U)
     }
 
     fn visit_i64_le_s(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_le_s, 2)
+        self.translate_binary_compare(InstructionSet::op_i64_le_s, InstructionSet::MSH_I64_LE_S)
     }
 
     fn visit_i64_le_u(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_le_u, 2)
+        self.translate_binary_compare(InstructionSet::op_i64_le_u, InstructionSet::MSH_I64_LE_U)
     }
 
     fn visit_i64_ge_s(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_ge_s, 2)
+        self.translate_binary_compare(InstructionSet::op_i64_ge_s, InstructionSet::MSH_I64_GE_S)
     }
 
     fn visit_i64_ge_u(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_ge_u, 2)
+        self.translate_binary_compare(InstructionSet::op_i64_ge_u, InstructionSet::MSH_I64_GE_U)
     }
 
     fn visit_f32_eq(&mut self) -> Self::Output {
@@ -1782,75 +1820,78 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_clz(&mut self) -> Self::Output {
-        self.translate_unary(InstructionSet::op_i64_clz, 2)
+        self.translate_unary(InstructionSet::op_i64_clz, InstructionSet::MSH_I64_CLZ)
     }
 
     fn visit_i64_ctz(&mut self) -> Self::Output {
-        self.translate_unary(InstructionSet::op_i64_ctz, 3)
+        self.translate_unary(InstructionSet::op_i64_ctz, InstructionSet::MSH_I64_CTZ)
     }
 
     fn visit_i64_popcnt(&mut self) -> Self::Output {
-        self.translate_unary(InstructionSet::op_i64_popcnt, 1)
+        self.translate_unary(
+            InstructionSet::op_i64_popcnt,
+            InstructionSet::MSH_I64_POPCNT,
+        )
     }
 
     fn visit_i64_add(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_add, 4)
+        self.translate_binary(InstructionSet::op_i64_add, InstructionSet::MSH_I64_ADD)
     }
 
     fn visit_i64_sub(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_sub, 8)
+        self.translate_binary(InstructionSet::op_i64_sub, InstructionSet::MSH_I64_SUB)
     }
 
     fn visit_i64_mul(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_mul, 5)
+        self.translate_binary(InstructionSet::op_i64_mul, InstructionSet::MSH_I64_MUL)
     }
 
     fn visit_i64_div_s(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_div_s, 17)
+        self.translate_binary(InstructionSet::op_i64_div_s, InstructionSet::MSH_I64_DIV_S)
     }
 
     fn visit_i64_div_u(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_div_u, 15)
+        self.translate_binary(InstructionSet::op_i64_div_u, InstructionSet::MSH_I64_DIV_U)
     }
 
     fn visit_i64_rem_s(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rem_s, 12)
+        self.translate_binary(InstructionSet::op_i64_rem_s, InstructionSet::MSH_I64_REM_S)
     }
 
     fn visit_i64_rem_u(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rem_u, 14)
+        self.translate_binary(InstructionSet::op_i64_rem_u, InstructionSet::MSH_I64_REM_U)
     }
 
     fn visit_i64_and(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_and, 1)
+        self.translate_binary(InstructionSet::op_i64_and, InstructionSet::MSH_I64_AND)
     }
 
     fn visit_i64_or(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_or, 1)
+        self.translate_binary(InstructionSet::op_i64_or, InstructionSet::MSH_I64_OR)
     }
 
     fn visit_i64_xor(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_xor, 1)
+        self.translate_binary(InstructionSet::op_i64_xor, InstructionSet::MSH_I64_XOR)
     }
 
     fn visit_i64_shl(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shl, 4)
+        self.translate_binary(InstructionSet::op_i64_shl, InstructionSet::MSH_I64_SHL)
     }
 
     fn visit_i64_shr_s(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shr_s, 6)
+        self.translate_binary(InstructionSet::op_i64_shr_s, InstructionSet::MSH_I64_SHR_S)
     }
 
     fn visit_i64_shr_u(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shr_u, 6)
+        self.translate_binary(InstructionSet::op_i64_shr_u, InstructionSet::MSH_I64_SHR_U)
     }
 
     fn visit_i64_rotl(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rotl, 6)
+        self.translate_binary(InstructionSet::op_i64_rotl, InstructionSet::MSH_I64_ROTL)
     }
 
     fn visit_i64_rotr(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rotr, 6)
+        self.translate_binary(InstructionSet::op_i64_rotr, InstructionSet::MSH_I64_ROTR)
     }
 
     fn visit_f32_abs(&mut self) -> Self::Output {
@@ -2018,7 +2059,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             ValType::I32,
             ValType::I64,
             InstructionSet::op_i64_extend_i32_s,
-            1,
+            InstructionSet::MSH_I64_EXTEND_I32_S,
         )
     }
 
@@ -2027,7 +2068,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             ValType::I32,
             ValType::I64,
             InstructionSet::op_i64_extend_i32_u,
-            1,
+            InstructionSet::MSH_I64_EXTEND_I32_U,
         )
     }
 
@@ -2182,15 +2223,24 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_extend8_s(&mut self) -> Self::Output {
-        self.translate_unary(InstructionSet::op_i64_extend8_s, 2)
+        self.translate_unary(
+            InstructionSet::op_i64_extend8_s,
+            InstructionSet::MSH_I64_EXTEND8_S,
+        )
     }
 
     fn visit_i64_extend16_s(&mut self) -> Self::Output {
-        self.translate_unary(InstructionSet::op_i64_extend16_s, 2)
+        self.translate_unary(
+            InstructionSet::op_i64_extend16_s,
+            InstructionSet::MSH_I64_EXTEND16_S,
+        )
     }
 
     fn visit_i64_extend32_s(&mut self) -> Self::Output {
-        self.translate_unary(InstructionSet::op_i64_extend32_s, 2)
+        self.translate_unary(
+            InstructionSet::op_i64_extend32_s,
+            InstructionSet::MSH_I64_EXTEND32_S,
+        )
     }
 
     fn visit_i32_trunc_sat_f32_s(&mut self) -> Self::Output {
@@ -2368,12 +2418,17 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 offset,
                 is_fuel_metering_enabled,
             );
-            builder.stack_height.push2();
-            builder.stack_height.pop2();
+            builder
+                .stack_height
+                .push_n(InstructionSet::MSH_TABLE_INIT_CHECKED);
+            builder
+                .stack_height
+                .pop_n(InstructionSet::MSH_TABLE_INIT_CHECKED);
             builder.stack_height.pop3();
             Ok(())
         })
     }
+
     fn visit_elem_drop(&mut self, segment_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
@@ -2389,8 +2444,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
-            builder.stack_height.push2();
-            builder.stack_height.pop2();
+            builder
+                .stack_height
+                .push_n(InstructionSet::MSH_TABLE_COPY_CHECKED);
+            builder
+                .stack_height
+                .pop_n(InstructionSet::MSH_TABLE_COPY_CHECKED);
             builder.stack_height.pop3();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
@@ -2408,8 +2467,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
-            builder.stack_height.push2();
-            builder.stack_height.pop2();
+            builder
+                .stack_height
+                .push_n(InstructionSet::MSH_TABLE_FILL_CHECKED);
+            builder
+                .stack_height
+                .pop_n(InstructionSet::MSH_TABLE_FILL_CHECKED);
             builder.stack_height.pop3();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
@@ -2465,8 +2528,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 Some(max_table_elements),
                 is_fuel_metering_enabled,
             );
-            builder.stack_height.push2();
-            builder.stack_height.pop2();
+            builder
+                .stack_height
+                .push_n(InstructionSet::MSH_TABLE_GROW_CHECKED);
+            builder
+                .stack_height
+                .pop_n(InstructionSet::MSH_TABLE_GROW_CHECKED);
             builder.stack_height.pop2();
             builder.stack_height.push1();
             Ok(())
@@ -3114,9 +3181,9 @@ impl InstructionTranslator {
             let addr_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(addr_type, ValType::I32);
             builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
             builder.stack_height.pop_type(addr_type);
             builder.stack_height.push_type(loaded_type);
+            builder.stack_height.pop_n(max_stack_height);
             builder.alloc.stack_types.push(loaded_type);
             let offset = AddressOffset::from(memarg.offset as u32);
             emitter(&mut builder.alloc.instruction_set, offset);
@@ -3135,13 +3202,13 @@ impl InstructionTranslator {
             debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(|| FuelCosts::STORE)?;
             builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
             let value_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(value_type, stored_value);
             builder.stack_height.pop_type(value_type);
             let addr_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(addr_type, ValType::I32);
             builder.stack_height.pop_type(addr_type);
+            builder.stack_height.pop_n(max_stack_height);
             let offset = AddressOffset::from(memarg.offset as u32);
             emitter(&mut builder.alloc.instruction_set, offset);
             Ok(())
@@ -3157,13 +3224,17 @@ impl InstructionTranslator {
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
-            builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
+            if max_stack_height > 0 {
+                builder.stack_height.push_n(max_stack_height);
+            }
             let lhs_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(lhs_type, input_type);
             builder.alloc.stack_types.push(output_type);
             builder.stack_height.pop_type(input_type);
             builder.stack_height.push_type(output_type);
+            if max_stack_height > 0 {
+                builder.stack_height.pop_n(max_stack_height);
+            }
             emitter(&mut builder.alloc.instruction_set);
             Ok(())
         })
@@ -3201,11 +3272,13 @@ impl InstructionTranslator {
             // calculate max stack height
             if max_stack_height > 0 {
                 builder.stack_height.push_n(max_stack_height);
-                builder.stack_height.pop_n(max_stack_height);
             }
             builder.stack_height.pop_type(lhs_type);
             builder.stack_height.pop_type(lhs_type);
             builder.stack_height.push_type(lhs_type);
+            if max_stack_height > 0 {
+                builder.stack_height.pop_n(max_stack_height);
+            }
             // emit an instruction
             emitter(&mut builder.alloc.instruction_set);
             Ok(())
@@ -3226,11 +3299,13 @@ impl InstructionTranslator {
             // do stack height check
             if max_stack_height > 0 {
                 builder.stack_height.push_n(max_stack_height);
-                builder.stack_height.pop_n(max_stack_height);
             }
             builder.stack_height.pop_type(lhs_type);
             builder.stack_height.pop_type(rhs_type);
             builder.stack_height.push_type(ValType::I32);
+            if max_stack_height > 0 {
+                builder.stack_height.pop_n(max_stack_height);
+            }
             // emit an opcode
             emitter(&mut builder.alloc.instruction_set);
             Ok(())
@@ -3249,9 +3324,9 @@ impl InstructionTranslator {
             builder.alloc.stack_types.push(lhs_type);
             // calc stack height
             builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
             builder.stack_height.pop_type(lhs_type);
             builder.stack_height.push_type(lhs_type);
+            builder.stack_height.pop_n(max_stack_height);
             // emit instruction
             emitter(&mut builder.alloc.instruction_set);
             Ok(())
@@ -3270,9 +3345,9 @@ impl InstructionTranslator {
             builder.alloc.stack_types.push(ValType::I32);
             // calc stack height
             builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
             builder.stack_height.pop_type(lsh_type);
             builder.stack_height.push_type(ValType::I32);
+            builder.stack_height.pop_n(max_stack_height);
             // emit opcode
             emitter(&mut builder.alloc.instruction_set);
             Ok(())

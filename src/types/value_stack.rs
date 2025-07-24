@@ -2,7 +2,7 @@ use core::cmp;
 use wasmparser::{RefType, ValType};
 
 /// The current height of the emulated Wasm value stack.
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone, Hash)]
 pub struct ValueStackHeight {
     /// The current height of the emulated value stack of the translated function.
     ///

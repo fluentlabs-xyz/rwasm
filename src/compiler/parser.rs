@@ -436,7 +436,7 @@ impl ModuleParser {
                 .resolve_func_type_signature(func_type_index);
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
             if self.config.builtins_consume_fuel {
-                for instr in import_linker_entity.block_fuel.instr.iter() {
+                for instr in import_linker_entity.block_fuel.iter() {
                     translator.alloc.instruction_set.push(instr.clone());
                 }
             }

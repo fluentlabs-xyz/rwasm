@@ -1,6 +1,8 @@
 use crate::{InstructionSet, TrapCode};
 
 impl InstructionSet {
+    pub const MSH_I64_REM_S: u32 = 12;
+
     /// Computes the signed 64-bit integer remainder (modulus) using only 32-bit arithmetic,
     /// returning the 64-bit remainder as two `u32` limbs (low, high).
     ///
