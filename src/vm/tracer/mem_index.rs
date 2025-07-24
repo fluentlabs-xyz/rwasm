@@ -74,7 +74,7 @@ impl AddressType {
                 v_addr
             }
             AddressType::GlobalMemory(offset) => {
-                let v_addr = GLOBAL_MEM_START + offset * UNIT;
+                let v_addr = GLOBAL_MEM_START + offset;
                 debug_assert!(v_addr >= GLOBAL_MEM_START);
                 debug_assert!(v_addr < GLOBAL_MEM_END);
                 v_addr
