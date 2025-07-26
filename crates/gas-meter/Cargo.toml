@@ -1,9 +1,0 @@
-[package]
-name = "gas-meter"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-wasmparser = { version = "=0.233.0", default-features = false}
-lazy_static = "1.4"
-

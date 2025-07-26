@@ -19,7 +19,11 @@ use crate::{
 };
 use alloc::{boxed::Box, vec, vec::Vec};
 use hashbrown::HashMap;
-use wasmparser::{BlockType, BrTable, FuncType, FuncValidatorAllocations, GlobalType, HeapType, Ieee32, Ieee64, MemArg, MemoryType, Ordering, RefType, ResumeTable, TableType, TryTable, ValType, VisitOperator, V128};
+use wasmparser::{
+    BlockType, BrTable, FuncType, FuncValidatorAllocations, GlobalType, HeapType, Ieee32, Ieee64,
+    MemArg, MemoryType, Ordering, RefType, ResumeTable, TableType, TryTable, ValType,
+    VisitOperator,
+};
 
 /// Reusable allocations of a [`FuncTranslator`].
 #[derive(Debug)]
@@ -272,7 +276,7 @@ impl InstructionTranslator {
     /// the instruction sequence is then returned.
     pub fn push_consume_fuel_base(&mut self) -> InstrLoc {
         let instr_loc = self.alloc.instruction_set.loc();
-        // self.alloc.instruction_set.op_consume_fuel(BASE_FUEL_COST);
+        self.alloc.instruction_set.op_consume_fuel(BASE_FUEL_COST);
         instr_loc as InstrLoc
     }
 
@@ -1141,11 +1145,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         })
     }
 
-    fn visit_call_indirect(
-        &mut self,
-        func_type_index: u32,
-        table_index: u32,
-    ) -> Self::Output {
+    fn visit_call_indirect(&mut self, func_type_index: u32, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
             builder.stack_height.pop1();
@@ -1600,7 +1600,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_ref_func(&mut self, function_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
-            builder.alloc.stack_types.push(ValType::Ref(RefType::FUNC));
+            builder
+                .alloc
+                .stack_types
+                .push(ValType::Ref(RefType::FUNCREF));
             builder.stack_height.push1();
             // We do +1 here because 0 offset is reserved for `null` value and an entrypoint
             builder
@@ -2492,7 +2495,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             debug_assert_eq!(popped_type, ValType::I32);
             builder.alloc.instruction_set.op_table_get(table_index);
             let table_type = builder.resolve_table_type(table_index);
-            builder.alloc.stack_types.push(ValType::Ref(table_type.element_type));
+            builder
+                .alloc
+                .stack_types
+                .push(ValType::Ref(table_type.element_type));
             Ok(())
         })
     }
@@ -2521,7 +2527,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // grow overflow error
             let table_type = builder.resolve_table_type(table_index);
             // TODO(dmitry123): "is this construction correct?"
-            let max_table_elements = table_type.maximum.map(|max| max as u32).unwrap_or(N_MAX_TABLE_SIZE);
+            let max_table_elements = table_type
+                .maximum
+                .map(|max| max as u32)
+                .unwrap_or(N_MAX_TABLE_SIZE);
             let ib = &mut builder.alloc.instruction_set;
             ib.op_table_grow_checked(
                 TableIdx::try_from(table_index).unwrap(),
@@ -2862,11 +2871,19 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_new_data(&mut self, array_type_index: u32, array_data_index: u32) -> Self::Output {
+    fn visit_array_new_data(
+        &mut self,
+        array_type_index: u32,
+        array_data_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_new_elem(&mut self, array_type_index: u32, array_elem_index: u32) -> Self::Output {
+    fn visit_array_new_elem(
+        &mut self,
+        array_type_index: u32,
+        array_elem_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
@@ -2894,15 +2911,27 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_copy(&mut self, array_type_index_dst: u32, array_type_index_src: u32) -> Self::Output {
+    fn visit_array_copy(
+        &mut self,
+        array_type_index_dst: u32,
+        array_type_index_src: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_init_data(&mut self, array_type_index: u32, array_data_index: u32) -> Self::Output {
+    fn visit_array_init_data(
+        &mut self,
+        array_type_index: u32,
+        array_data_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_init_elem(&mut self, array_type_index: u32, array_elem_index: u32) -> Self::Output {
+    fn visit_array_init_elem(
+        &mut self,
+        array_type_index: u32,
+        array_elem_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
@@ -2922,11 +2951,21 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_br_on_cast(&mut self, relative_depth: u32, from_ref_type: RefType, to_ref_type: RefType) -> Self::Output {
+    fn visit_br_on_cast(
+        &mut self,
+        relative_depth: u32,
+        from_ref_type: RefType,
+        to_ref_type: RefType,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_br_on_cast_fail(&mut self, relative_depth: u32, from_ref_type: RefType, to_ref_type: RefType) -> Self::Output {
+    fn visit_br_on_cast_fail(
+        &mut self,
+        relative_depth: u32,
+        from_ref_type: RefType,
+        to_ref_type: RefType,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
@@ -2970,31 +3009,59 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_global_atomic_rmw_add(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
+    fn visit_global_atomic_rmw_add(
+        &mut self,
+        ordering: Ordering,
+        global_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_global_atomic_rmw_sub(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
+    fn visit_global_atomic_rmw_sub(
+        &mut self,
+        ordering: Ordering,
+        global_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_global_atomic_rmw_and(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
+    fn visit_global_atomic_rmw_and(
+        &mut self,
+        ordering: Ordering,
+        global_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_global_atomic_rmw_or(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
+    fn visit_global_atomic_rmw_or(
+        &mut self,
+        ordering: Ordering,
+        global_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_global_atomic_rmw_xor(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
+    fn visit_global_atomic_rmw_xor(
+        &mut self,
+        ordering: Ordering,
+        global_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_global_atomic_rmw_xchg(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
+    fn visit_global_atomic_rmw_xchg(
+        &mut self,
+        ordering: Ordering,
+        global_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_global_atomic_rmw_cmpxchg(&mut self, ordering: Ordering, global_index: u32) -> Self::Output {
+    fn visit_global_atomic_rmw_cmpxchg(
+        &mut self,
+        ordering: Ordering,
+        global_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
@@ -3006,99 +3073,206 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_table_atomic_rmw_xchg(&mut self, ordering: Ordering, table_index: u32) -> Self::Output {
+    fn visit_table_atomic_rmw_xchg(
+        &mut self,
+        ordering: Ordering,
+        table_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_table_atomic_rmw_cmpxchg(&mut self, ordering: Ordering, table_index: u32) -> Self::Output {
+    fn visit_table_atomic_rmw_cmpxchg(
+        &mut self,
+        ordering: Ordering,
+        table_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_struct_atomic_get(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
+    fn visit_struct_atomic_get(
+        &mut self,
+        ordering: Ordering,
+        struct_type_index: u32,
+        field_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_struct_atomic_get_s(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
+    fn visit_struct_atomic_get_s(
+        &mut self,
+        ordering: Ordering,
+        struct_type_index: u32,
+        field_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_struct_atomic_get_u(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
+    fn visit_struct_atomic_get_u(
+        &mut self,
+        ordering: Ordering,
+        struct_type_index: u32,
+        field_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_struct_atomic_set(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
+    fn visit_struct_atomic_set(
+        &mut self,
+        ordering: Ordering,
+        struct_type_index: u32,
+        field_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_struct_atomic_rmw_add(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
+    fn visit_struct_atomic_rmw_add(
+        &mut self,
+        ordering: Ordering,
+        struct_type_index: u32,
+        field_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_struct_atomic_rmw_sub(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
+    fn visit_struct_atomic_rmw_sub(
+        &mut self,
+        ordering: Ordering,
+        struct_type_index: u32,
+        field_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_struct_atomic_rmw_and(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
+    fn visit_struct_atomic_rmw_and(
+        &mut self,
+        ordering: Ordering,
+        struct_type_index: u32,
+        field_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_struct_atomic_rmw_or(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
+    fn visit_struct_atomic_rmw_or(
+        &mut self,
+        ordering: Ordering,
+        struct_type_index: u32,
+        field_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_struct_atomic_rmw_xor(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
+    fn visit_struct_atomic_rmw_xor(
+        &mut self,
+        ordering: Ordering,
+        struct_type_index: u32,
+        field_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_struct_atomic_rmw_xchg(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
+    fn visit_struct_atomic_rmw_xchg(
+        &mut self,
+        ordering: Ordering,
+        struct_type_index: u32,
+        field_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_struct_atomic_rmw_cmpxchg(&mut self, ordering: Ordering, struct_type_index: u32, field_index: u32) -> Self::Output {
+    fn visit_struct_atomic_rmw_cmpxchg(
+        &mut self,
+        ordering: Ordering,
+        struct_type_index: u32,
+        field_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_atomic_get(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
+    fn visit_array_atomic_get(
+        &mut self,
+        ordering: Ordering,
+        array_type_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_atomic_get_s(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
+    fn visit_array_atomic_get_s(
+        &mut self,
+        ordering: Ordering,
+        array_type_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_atomic_get_u(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
+    fn visit_array_atomic_get_u(
+        &mut self,
+        ordering: Ordering,
+        array_type_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_atomic_set(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
+    fn visit_array_atomic_set(
+        &mut self,
+        ordering: Ordering,
+        array_type_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_atomic_rmw_add(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
+    fn visit_array_atomic_rmw_add(
+        &mut self,
+        ordering: Ordering,
+        array_type_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_atomic_rmw_sub(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
+    fn visit_array_atomic_rmw_sub(
+        &mut self,
+        ordering: Ordering,
+        array_type_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_atomic_rmw_and(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
+    fn visit_array_atomic_rmw_and(
+        &mut self,
+        ordering: Ordering,
+        array_type_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_atomic_rmw_or(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
+    fn visit_array_atomic_rmw_or(
+        &mut self,
+        ordering: Ordering,
+        array_type_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_atomic_rmw_xor(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
+    fn visit_array_atomic_rmw_xor(
+        &mut self,
+        ordering: Ordering,
+        array_type_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_atomic_rmw_xchg(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
+    fn visit_array_atomic_rmw_xchg(
+        &mut self,
+        ordering: Ordering,
+        array_type_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_array_atomic_rmw_cmpxchg(&mut self, ordering: Ordering, array_type_index: u32) -> Self::Output {
+    fn visit_array_atomic_rmw_cmpxchg(
+        &mut self,
+        ordering: Ordering,
+        array_type_index: u32,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 
@@ -3142,7 +3316,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         Err(CompilationError::NotSupportedExtension)
     }
 
-    fn visit_resume_throw(&mut self, cont_type_index: u32, tag_index: u32, resume_table: ResumeTable) -> Self::Output {
+    fn visit_resume_throw(
+        &mut self,
+        cont_type_index: u32,
+        tag_index: u32,
+        resume_table: ResumeTable,
+    ) -> Self::Output {
         Err(CompilationError::NotSupportedExtension)
     }
 

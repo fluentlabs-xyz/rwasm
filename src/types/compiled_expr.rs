@@ -6,7 +6,7 @@
 //!
 //! [`s1vm`]: https://github.com/Neopallium/s1vm
 
-use crate::{ExternRef, FuncIdx, FuncRef, GlobalIdx, Value, F32, F64};
+use crate::{FuncIdx, FuncRef, GlobalIdx, Value, F32, F64};
 use alloc::boxed::Box;
 use smallvec::SmallVec;
 use wasmparser::ConstExpr;
@@ -287,6 +287,9 @@ impl CompiledExpr {
                 panic!("unexpectedly encountered invalid const expression operator: {error}")
             });
             match op {
+                wasmparser::Operator::RefNull { hty: _ } => {
+                    stack.push(Op::constant(0));
+                }
                 wasmparser::Operator::I32Const { value } => {
                     stack.push(Op::constant(value));
                 }

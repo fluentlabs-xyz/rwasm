@@ -62,15 +62,7 @@ impl Default for CompilationConfig {
 impl CompilationConfig {
     /// Returns the WebAssembly features configuration for the current instance.
     pub fn wasm_features(&self) -> WasmFeatures {
-        WasmFeatures::default()
-            | WasmFeatures::MUTABLE_GLOBAL
-            | WasmFeatures::SATURATING_FLOAT_TO_INT
-            | WasmFeatures::SIGN_EXTENSION
-            | WasmFeatures::MULTI_VALUE
-            | WasmFeatures::BULK_MEMORY
-            | WasmFeatures::REFERENCE_TYPES
-            | WasmFeatures::TAIL_CALL
-            | WasmFeatures::EXTENDED_CONST
+        WasmFeatures::WASM2 | WasmFeatures::TAIL_CALL | WasmFeatures::EXTENDED_CONST
     }
 
     pub fn with_state_router(mut self, state_router: StateRouterConfig) -> Self {

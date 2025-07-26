@@ -98,8 +98,8 @@ impl ValueStackHeight {
             ValType::I32 | ValType::F32 => self.pop1(),
             ValType::I64 | ValType::F64 => self.pop2(),
             ValType::V128 => self.pop4(),
-            ValType::Ref(RefType::FUNC) | ValType::Ref(RefType::EXTERN)  => self.pop1(),
-            _ => unreachable!("not supported"),
+            ValType::Ref(RefType::FUNCREF) | ValType::Ref(RefType::EXTERNREF) => self.pop1(),
+            _ => unreachable!("not supported type: {:?}", val_type),
         }
     }
 
@@ -108,8 +108,8 @@ impl ValueStackHeight {
             ValType::I32 | ValType::F32 => self.push1(),
             ValType::I64 | ValType::F64 => self.push2(),
             ValType::V128 => self.push4(),
-            ValType::Ref(RefType::FUNC) | ValType::Ref(RefType::EXTERN)  => self.push1(),
-            _ => unreachable!("not supported"),
+            ValType::Ref(RefType::FUNCREF) | ValType::Ref(RefType::EXTERNREF) => self.push1(),
+            _ => unreachable!("not supported type: {:?}", val_type),
         }
     }
 

@@ -1,9 +1,6 @@
 use crate::{
     types::{F32, F64},
-    ExternRef,
-    FuncRef,
-    TrapCode,
-    UntypedValue,
+    ExternRef, FuncRef, TrapCode, UntypedValue,
 };
 use core::{f32, i32, i64, u32, u64};
 use wasmparser::{RefType, ValType};
@@ -945,8 +942,10 @@ impl Value {
             ValType::F64 => Self::F64(0f64.into()),
             ValType::V128 => unreachable!("not supported v128 type"),
             ValType::Ref(ref_type) if ref_type == RefType::FUNC => Self::FuncRef(FuncRef::null()),
-            ValType::Ref(ref_type) if ref_type == RefType::EXTERN => Self::ExternRef(ExternRef::null()),
-            ValType::Ref(ref_type)  => panic!("ref type not supported {:?}", ref_type),
+            ValType::Ref(ref_type) if ref_type == RefType::EXTERN => {
+                Self::ExternRef(ExternRef::null())
+            }
+            ValType::Ref(ref_type) => panic!("ref type not supported {:?}", ref_type),
         }
     }
 
@@ -958,8 +957,8 @@ impl Value {
             Self::I64(_) => ValType::I64,
             Self::F32(_) => ValType::F32,
             Self::F64(_) => ValType::F64,
-            Self::FuncRef(_) => ValType::Ref(RefType::FUNC),
-            Self::ExternRef(_) => ValType::Ref(RefType::EXTERN),
+            Self::FuncRef(_) => ValType::Ref(RefType::FUNCREF),
+            Self::ExternRef(_) => ValType::Ref(RefType::EXTERNREF),
         }
     }
 

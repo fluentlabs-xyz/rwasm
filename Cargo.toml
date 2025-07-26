@@ -11,7 +11,7 @@ keywords = ["wasm", "webassembly", "interpreter", "vm"]
 categories = ["wasm", "no-std", "virtualization"]
 
 [dependencies]
-wasmparser = { version = "0.233.0", default-features = false }
+wasmparser = { version = "=0.235.0", default-features = false, features = ["validate", "features"] }
 hashbrown = { version = "0.15.2", features = ["alloc"] }
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 paste = { version = "1.0", default-features = false }
@@ -27,11 +27,10 @@ serde = { version = "1.0.219", features = ["derive"], optional = true }
 smallvec = "1.15.0"
 anyhow = { version = "1.0.98", default-features = false, optional = true }
 directories = { version = "6.0.0", optional = true }
-wasmi = { version = "0.47.0", default-features = false }
+wasmi = { version = "0.48.0", default-features = false }
 num-derive = "0.4.2"
 once_cell = { version = "1.21.3", optional = true }
-gas-meter = { path = "crates/gas-meter"}
-
+gas-meter = { path = "./gas-meter" }
 
 [dev-dependencies]
 rand = "0.9.1"
@@ -55,10 +54,3 @@ debug-print = []
 fpu = []
 wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:once_cell"]
 cache-compiled-artifacts = ["dep:directories"]
-
-[workspace]
-members = [
-    "crates/gas-meter",
-    "e2e"
-]
-exclude = ["legacy"]

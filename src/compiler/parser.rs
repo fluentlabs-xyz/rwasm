@@ -12,7 +12,12 @@ use core::{
     mem::{replace, take},
     ops::Range,
 };
-use wasmparser::{CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind, ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType, FunctionBody, FunctionSectionReader, GlobalSectionReader, ImportSectionReader, MemorySectionReader, Parser, Payload, RefType, TableSectionReader, TypeRef, TypeSectionReader, ValType, Validator};
+use wasmparser::{
+    CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind,
+    ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType, FunctionBody,
+    FunctionSectionReader, GlobalSectionReader, ImportSectionReader, MemorySectionReader, Parser,
+    Payload, RefType, TableSectionReader, TypeRef, TypeSectionReader, ValType, Validator,
+};
 
 pub struct ModuleParser {
     /// The Wasm validator used throughout stream parsing.
@@ -36,7 +41,8 @@ impl ModuleParser {
     }
 
     pub fn parse(&mut self, wasm_binary: &[u8]) -> Result<(), CompilationError> {
-        let parser = Parser::new(0);
+        let mut parser = Parser::new(0);
+        parser.set_features(self.config.wasm_features());
         let payloads = parser.parse_all(wasm_binary).collect::<Vec<_>>();
         let mut func_bodies = Vec::new();
         for payload in payloads {
@@ -243,7 +249,6 @@ impl ModuleParser {
             } => self.process_version(num, encoding, range),
             Payload::TypeSection(section) => self.process_types(section),
             Payload::ImportSection(section) => self.process_imports(section),
-            Payload::InstanceSection(section) => self.process_instances(section),
             Payload::FunctionSection(section) => self.process_functions(section),
             Payload::TableSection(section) => self.process_tables(section),
             Payload::MemorySection(section) => self.process_memories(section),
@@ -258,41 +263,11 @@ impl ModuleParser {
             Payload::CodeSectionStart { count, range, .. } => self.process_code_start(count, range),
             Payload::CodeSectionEntry(func_body) => self.process_code_entry(func_body),
             Payload::UnknownSection { id, range, .. } => self.process_unknown(id, range),
-            Payload::ModuleSection { parser: _, unchecked_range: range } => {
-                self.process_unsupported_component_model(range)
-            }
-            Payload::CoreTypeSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
-            Payload::ComponentSection { parser: _, unchecked_range: range } => {
-                self.process_unsupported_component_model(range)
-            }
-            Payload::ComponentInstanceSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
-            Payload::ComponentAliasSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
-            Payload::ComponentTypeSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
-            Payload::ComponentCanonicalSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
-            Payload::ComponentStartSection { start: _, range } => {
-                self.process_unsupported_component_model(range)
-            }
-            Payload::ComponentImportSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
-            Payload::ComponentExportSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
             Payload::End(offset) => {
                 self.process_end(offset)?;
                 return Ok(true);
             }
-            _ => unreachable!()
+            _ => unreachable!("not supported payload"),
         }?;
         Ok(false)
     }
@@ -416,7 +391,9 @@ impl ModuleParser {
             // don't allow funcref/externref in imported functions
             if !self.config.allow_func_ref_function_types {
                 for x in func_type.params().iter().chain(func_type.results()) {
-                    if x == &ValType::Ref(RefType::FUNC) || x == &ValType::Ref(RefType::EXTERN) {
+                    if x == &ValType::Ref(RefType::FUNCREF)
+                        || x == &ValType::Ref(RefType::EXTERNREF)
+                    {
                         return Err(CompilationError::MalformedImportFunctionType);
                     }
                 }
@@ -455,21 +432,6 @@ impl ModuleParser {
             );
         }
         Ok(())
-    }
-
-    /// Process module instances.
-    ///
-    /// # Note
-    ///
-    /// This is part of the module linking a Wasm proposal and not yet supported
-    /// by `rwasm`.
-    fn process_instances(
-        &mut self,
-        section: wasmparser::InstanceSectionReader,
-    ) -> Result<(), CompilationError> {
-        self.validator
-            .instance_section(&section)
-            .map_err(Into::into)
     }
 
     /// Process module function declarations.
@@ -843,17 +805,6 @@ impl ModuleParser {
         self.validator
             .unknown_section(id, &range)
             .map_err(Into::into)
-    }
-
-    /// Process the entries for the Wasm component model proposal.
-    fn process_unsupported_component_model(
-        &mut self,
-        range: Range<usize>,
-    ) -> Result<(), CompilationError> {
-        panic!(
-            "rwasm does not support the `component-model` Wasm proposal: bytes[{}..{}]",
-            range.start, range.end
-        )
     }
 
     /// Processes the end of the Wasm binary.

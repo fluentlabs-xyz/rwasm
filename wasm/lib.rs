@@ -1,3 +1,6 @@
+#![no_std]
+#![no_main]
+
 use rwasm::{CompilationConfig, RwasmModule};
 
 #[no_mangle]

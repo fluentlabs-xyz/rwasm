@@ -385,10 +385,8 @@ impl TestContext<'_> {
                     let value = (hi << 32) | lo;
                     Value::F64(F64::from_bits(value))
                 }
-                ValType::Ref(ref_type) if ref_type == &wasmparser::RefType::FUNC => {
-                    Value::FuncRef(popped_value.into())
-                }
-                ValType::Ref(ref_type) if ref_type == &wasmparser::RefType::EXTERN => {
+                ValType::Ref(wasmparser::RefType::FUNCREF) => Value::FuncRef(popped_value.into()),
+                ValType::Ref(wasmparser::RefType::EXTERNREF) => {
                     Value::ExternRef(popped_value.into())
                 }
                 _ => unreachable!("unsupported result type: {:?}", val_type),

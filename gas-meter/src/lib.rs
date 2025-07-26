@@ -33,12 +33,43 @@ impl CostModel for DefaultCostModel {
         use Operator::*;
         match op {
             // Memory operations
-            MemoryGrow { .. } | MemoryInit { .. } | MemoryCopy { .. } | MemoryFill { .. } | MemorySize { .. } => (MEMORY_BYTES_PER_FUEL as u64),
+            MemoryGrow { .. }
+            | MemoryInit { .. }
+            | MemoryCopy { .. }
+            | MemoryFill { .. }
+            | MemorySize { .. } => MEMORY_BYTES_PER_FUEL as u64,
             // Table operations
-            TableInit { .. } | TableCopy { .. } | TableFill { .. } | TableGet { .. } | TableSet { .. } | TableGrow { .. } | TableSize { .. } => (TABLE_ELEMS_PER_FUEL as u64),
+            TableInit { .. }
+            | TableCopy { .. }
+            | TableFill { .. }
+            | TableGet { .. }
+            | TableSet { .. }
+            | TableGrow { .. }
+            | TableSize { .. } => TABLE_ELEMS_PER_FUEL as u64,
             // Load/store operations
-            I32Load { .. } | I64Load { .. } | F32Load { .. } | F64Load { .. } | I32Load8S { .. } | I32Load8U { .. } | I32Load16S { .. } | I32Load16U { .. } | I64Load8S { .. } | I64Load8U { .. } | I64Load16S { .. } | I64Load16U { .. } | I64Load32S { .. } | I64Load32U { .. } => LOAD_FUEL_COST as u64,
-            I32Store { .. } | I64Store { .. } | F32Store { .. } | F64Store { .. } | I32Store8 { .. } | I32Store16 { .. } | I64Store8 { .. } | I64Store16 { .. } | I64Store32 { .. } => STORE_FUEL_COST as u64,
+            I32Load { .. }
+            | I64Load { .. }
+            | F32Load { .. }
+            | F64Load { .. }
+            | I32Load8S { .. }
+            | I32Load8U { .. }
+            | I32Load16S { .. }
+            | I32Load16U { .. }
+            | I64Load8S { .. }
+            | I64Load8U { .. }
+            | I64Load16S { .. }
+            | I64Load16U { .. }
+            | I64Load32S { .. }
+            | I64Load32U { .. } => LOAD_FUEL_COST as u64,
+            I32Store { .. }
+            | I64Store { .. }
+            | F32Store { .. }
+            | F64Store { .. }
+            | I32Store8 { .. }
+            | I32Store16 { .. }
+            | I64Store8 { .. }
+            | I64Store16 { .. }
+            | I64Store32 { .. } => STORE_FUEL_COST as u64,
             // Call operations
             Call { .. } | CallIndirect { .. } => CALL_FUEL_COST as u64,
             // Control flow, entity ops
@@ -85,10 +116,22 @@ impl<T: CostModel + Default> GasMeter<T> {
     pub fn charge_gas_for(&mut self, op: &Operator) -> ShouldInject {
         use Operator::*;
         // List of control operators
-        let is_control = matches!(op,
-            Unreachable | Block { .. } | Loop { .. } | If { .. } | Else | End |
-            Br { .. } | BrIf { .. } | BrTable { .. } | Return |
-            Call { .. } | CallIndirect { .. } | ReturnCall { .. } | ReturnCallIndirect { .. }
+        let is_control = matches!(
+            op,
+            Unreachable
+                | Block { .. }
+                | Loop { .. }
+                | If { .. }
+                | Else
+                | End
+                | Br { .. }
+                | BrIf { .. }
+                | BrTable { .. }
+                | Return
+                | Call { .. }
+                | CallIndirect { .. }
+                | ReturnCall { .. }
+                | ReturnCallIndirect { .. }
         );
         let cost = self.model.cost_for(op);
         self.gas_spent += cost;
@@ -105,4 +148,3 @@ impl<T: CostModel + Default> GasMeter<T> {
         self.gas_spent
     }
 }
-

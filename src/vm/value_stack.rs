@@ -679,9 +679,11 @@ impl ValueStackPtr {
             ValType::F32 => Value::F32(self.pop_f32()),
             ValType::F64 => Value::F64(self.pop_f64()),
             ValType::V128 => unreachable!("can't invoke syscall with v128"),
-            ValType::Ref(ref_type) if ref_type == RefType::FUNC => Value::FuncRef(FuncRef::new(self.pop_i32() as u32)),
-            ValType::Ref(ref_type) if ref_type == RefType::EXTERN => Value::ExternRef(ExternRef::new(self.pop_i32() as u32)),
-            ValType::Ref(ref_type)  => panic!("ref type not supported {:?}", ref_type),
+            ValType::Ref(RefType::FUNCREF) => Value::FuncRef(FuncRef::new(self.pop_i32() as u32)),
+            ValType::Ref(RefType::EXTERNREF) => {
+                Value::ExternRef(ExternRef::new(self.pop_i32() as u32))
+            }
+            ValType::Ref(ref_type) => panic!("ref type isn't supported {:?}", ref_type),
         }
     }
 
