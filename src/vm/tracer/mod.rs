@@ -1,6 +1,6 @@
 use super::ValueStackPtr;
 use crate::{
-    mem_index::{AddressType, UNIT},
+    mem_index::{AddressType, GLOBAL_MEM_START, UNIT},
     types::Opcode,
     vm::tracer::{
         mem::{
@@ -217,7 +217,8 @@ impl Tracer {
     pub fn record_mr(&mut self, ins: Opcode, sp: u32) -> MemoryAccessRecord {
         let length = ins.opcode_stack_read();
         let mut memory_access = MemoryAccessRecord::default();
-        println!("length:{:?},", length);
+        println!("length:{:?},sp:{},", length,sp);
+       
         for idx in 0..length {
             let addr = sp + idx * UNIT;
             println!("idx:{},addr:{}", idx, addr);
@@ -250,9 +251,11 @@ impl Tracer {
         if ins.is_memory_load_instruction() {
             let offset = ins.aux_value();
             let raw_addr = memory_access.arg1_record.unwrap().value();
-            let aligned_addr = align(raw_addr + offset);
-            let read_record = self.mr(aligned_addr);
-            println!("load:read_record:{:?}", read_record);
+            println!("rawaddr load:{}",raw_addr);
+            let aligned_addr = align(raw_addr);
+            let typed_addr=AddressType::GlobalMemory(aligned_addr);
+            let read_record = self.mr(typed_addr.to_virtual_addr());
+            println!("load:addr{},read_record:{:?}",typed_addr.to_virtual_addr(), read_record);
             memory_access.memory = Some(MemoryRecordEnum::Read(read_record));
         }
 
