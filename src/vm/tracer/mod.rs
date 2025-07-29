@@ -249,7 +249,7 @@ impl Tracer {
             let offset = ins.aux_value();
             let raw_addr = memory_access.arg1_record.unwrap().value();
             println!("rawaddr load:{}", raw_addr);
-            let aligned_addr = align(raw_addr);
+            let aligned_addr = align(raw_addr.wrapping_add(offset));
             let typed_addr = AddressType::GlobalMemory(aligned_addr);
             let read_record = self.mr(typed_addr.to_virtual_addr());
             println!(
@@ -258,6 +258,11 @@ impl Tracer {
                 read_record
             );
             memory_access.memory = Some(MemoryRecordEnum::Read(read_record));
+            if is_multi_align(ins, raw_addr.wrapping_add(offset)) {
+                let typed_addr_hi = AddressType::GlobalMemory(aligned_addr + UNIT);
+                let read_record_hi = self.mr(typed_addr_hi.to_virtual_addr());
+                memory_access.memory_hi = Some(MemoryRecordEnum::Read(read_record_hi));
+            }
         }
 
         if let Opcode::LocalGet(_) = ins {
