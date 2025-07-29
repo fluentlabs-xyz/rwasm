@@ -17,7 +17,7 @@ use rwasm::{
     Value,
     WasmtimeWorker,
 };
-use std::rc::Rc;
+use std::{rc::Rc, sync::Arc};
 
 fn default_import_linker() -> Arc<ImportLinker> {
     let mut import_linker = ImportLinker::default();
@@ -28,7 +28,7 @@ fn default_import_linker() -> Arc<ImportLinker> {
         &[],
         &[],
     );
-    Rc::new(import_linker)
+    Arc::new(import_linker)
 }
 
 fn interrupting_syscall_handler<T: Send + Sync>(

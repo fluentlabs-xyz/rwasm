@@ -265,4 +265,7 @@ pub struct MemoryAccessRecord {
     pub res_record: Option<MemoryRecordEnum>,
     /// The memory access of the `memory` register.
     pub memory: Option<MemoryRecordEnum>,
+
+    /// The high memory access of memory op. This is only valid when the memory op is not aligned.
+    pub memory_hi: Option<MemoryRecordEnum>,
 }

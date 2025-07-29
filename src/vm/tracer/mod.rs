@@ -59,6 +59,7 @@ pub struct TracerInstrState {
     pub call_id: u32,
     pub memory_access: MemoryAccessRecord,
     pub arg1: u32,
+
     pub arg2: u32,
     pub res: u32,
 }
@@ -217,8 +218,8 @@ impl Tracer {
     pub fn record_mr(&mut self, ins: Opcode, sp: u32) -> MemoryAccessRecord {
         let length = ins.opcode_stack_read();
         let mut memory_access = MemoryAccessRecord::default();
-        println!("length:{:?},sp:{},", length,sp);
-       
+        println!("length:{:?},sp:{},", length, sp);
+
         for idx in 0..length {
             let addr = sp + idx * UNIT;
             println!("idx:{},addr:{}", idx, addr);
@@ -229,21 +230,17 @@ impl Tracer {
                     println!("arg1:read_record:{:?}", read_record);
                     memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
                 }
-                0 => {
-                    match length{
-                        2=>{
-                            println!("arg2:load:read_record:{:?}", read_record);
-                    memory_access.arg2_record = Some(MemoryRecordEnum::Read(read_record));
-                        }
-                        1=>{
-                             println!("arg1:load:read_record:{:?}", read_record);
-                    memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
-                        }
-                         _=>unreachable!()
+                0 => match length {
+                    2 => {
+                        println!("arg2:load:read_record:{:?}", read_record);
+                        memory_access.arg2_record = Some(MemoryRecordEnum::Read(read_record));
                     }
-                   
-                    
-                }
+                    1 => {
+                        println!("arg1:load:read_record:{:?}", read_record);
+                        memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
+                    }
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             }
         }
@@ -251,11 +248,15 @@ impl Tracer {
         if ins.is_memory_load_instruction() {
             let offset = ins.aux_value();
             let raw_addr = memory_access.arg1_record.unwrap().value();
-            println!("rawaddr load:{}",raw_addr);
+            println!("rawaddr load:{}", raw_addr);
             let aligned_addr = align(raw_addr);
-            let typed_addr=AddressType::GlobalMemory(aligned_addr);
+            let typed_addr = AddressType::GlobalMemory(aligned_addr);
             let read_record = self.mr(typed_addr.to_virtual_addr());
-            println!("load:addr{},read_record:{:?}",typed_addr.to_virtual_addr(), read_record);
+            println!(
+                "load:addr{},read_record:{:?}",
+                typed_addr.to_virtual_addr(),
+                read_record
+            );
             memory_access.memory = Some(MemoryRecordEnum::Read(read_record));
         }
 
@@ -344,4 +345,17 @@ impl Tracer {
 
 pub fn align(addr: u32) -> u32 {
     return addr - addr % 4;
+}
+// This checks whether the memory read or write need to touch multiple aligned  address.
+pub fn is_multi_align(opcode: Opcode, addr: u32) -> bool {
+    println!("opcode:{}addr:{}", opcode, addr);
+    match opcode {
+        Opcode::I32Store(_) => addr % 4 != 0,
+        Opcode::I32Store16(_) => addr % 4 == 3,
+        Opcode::I32Load(_) => addr % 4 != 0,
+        Opcode::I32Load16S(_) => addr % 4 == 3,
+        Opcode::I32Load16U(_) => addr % 4 == 3,
+
+        _ => false,
+    }
 }

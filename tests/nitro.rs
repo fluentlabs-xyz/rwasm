@@ -14,7 +14,7 @@ use rwasm::{
     TypedCaller,
     Value,
 };
-use std::rc::Rc;
+use std::{rc::Rc, sync::Arc};
 use wasmparser::ValType;
 
 const ATTESTATION_INPUT: &[u8] = include_bytes!("./nitro-verifier/attestation.bin");
@@ -117,7 +117,7 @@ fn import_linker() -> ImportLinker {
 #[ignore] // run this test manually with the "--release" flag
 fn test_nitro_verifier_rwasm() {
     let wasm_binary = include_bytes!("./nitro-verifier/lib.wasm");
-    let import_linker = Rc::new(import_linker());
+    let import_linker = Arc::new(import_linker());
     let config = CompilationConfig::default()
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true)
@@ -140,7 +140,7 @@ fn test_nitro_verifier_rwasm() {
 fn test_nitro_verifier_wasmtime() {
     use rwasm::WasmtimeWorker;
     let wasm_binary = include_bytes!("./nitro-verifier/lib.wasm");
-    let import_linker = Rc::new(import_linker());
+    let import_linker = Arc::new(import_linker());
     let config = CompilationConfig::default()
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true)
@@ -158,7 +158,7 @@ fn test_nitro_verifier_wasmtime() {
 #[ignore] // run this test manually with the "--release" flag
 fn test_nitro_verifier_strategy() {
     let wasm_binary = include_bytes!("./nitro-verifier/lib.wasm");
-    let import_linker = Rc::new(import_linker());
+    let import_linker = Arc::new(import_linker());
     let config = CompilationConfig::default()
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true)

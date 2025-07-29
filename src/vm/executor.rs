@@ -8,6 +8,7 @@ mod system;
 mod table;
 
 use crate::{
+    mem_index::UNIT,
     types::{AddressOffset, RwasmModule, TableIdx, UntypedValue},
     CallStack,
     InstructionPtr,
@@ -401,7 +402,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         }
         #[cfg(feature = "tracing")]
         {
-            use crate::{align, mem::MemoryRecordEnum, mem_index::AddressType};
+            use crate::{align, is_multi_align, mem::MemoryRecordEnum, mem_index::AddressType};
             let (address, value) = self.sp.pop2();
             println!("base_addrss:{},value:{}", address, value);
             let memory = self.store.global_memory.data_mut();
@@ -411,19 +412,22 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 Some(record) => record.value,
                 None => 0,
             };
+
             store_wrap(memory, address, offset, value)?;
+
             let typed_addr = AddressType::GlobalMemory(aligned_addr.into());
             let new_val = u32::from_le_bytes(
-                memory[aligned_addr as usize..(aligned_addr + 4) as usize]
+                memory[aligned_addr as usize..(aligned_addr + UNIT) as usize]
                     .try_into()
                     .unwrap(),
             );
-            println!("rawaddr store:{}",aligned_addr);
-            println!("virtual_addr:{}",typed_addr.to_virtual_addr());
+            println!("rawaddr store:{}", aligned_addr);
+            println!("virtual_addr:{}", typed_addr.to_virtual_addr());
             let res_memory_record = self
                 .store
                 .tracer
                 .mw(typed_addr.to_virtual_addr(), new_val.into());
+
             self.store
                 .tracer
                 .logs
@@ -431,7 +435,30 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 .unwrap()
                 .memory_access
                 .memory = Some(MemoryRecordEnum::Write(res_memory_record));
+
             self.store.tracer.logs.last_mut().unwrap().res = value.into();
+            let opcode = self.ip.get();
+
+            if is_multi_align(opcode, addr) {
+                let aligned_addr_hi = aligned_addr + UNIT;
+                let new_val_hi = u32::from_le_bytes(
+                    memory[(aligned_addr_hi) as usize..(aligned_addr_hi + UNIT) as usize]
+                        .try_into()
+                        .unwrap(),
+                );
+                let typed_addr_hi = AddressType::GlobalMemory(aligned_addr_hi.into());
+                let res_record_hi = self
+                    .store
+                    .tracer
+                    .mw(typed_addr_hi.to_virtual_addr(), new_val_hi);
+                self.store
+                    .tracer
+                    .logs
+                    .last_mut()
+                    .unwrap()
+                    .memory_access
+                    .memory_hi = Some(MemoryRecordEnum::Write(res_record_hi));
+            }
         }
         self.ip.add(1);
         Ok(())
