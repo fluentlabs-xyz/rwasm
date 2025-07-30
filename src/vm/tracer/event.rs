@@ -40,8 +40,6 @@ impl Opcode {
             }
         } else if let Opcode::LocalGet(_) = self {
             true
-        } else if let Opcode::LocalTee(_) = self {
-            true
         } else {
             false
         }

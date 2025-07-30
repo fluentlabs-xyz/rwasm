@@ -151,6 +151,9 @@ impl Tracer {
         if opcode.is_branch_instruction() {
             opcode_state.arg2 = opcode.aux_value();
         }
+        if opcode.is_local_instruction() {
+            opcode_state.arg2 = opcode.aux_value();
+        }
         println!("op_code_state:{:?}", opcode_state);
 
         opcode_state.memory_access = memory_access;
@@ -165,22 +168,25 @@ impl Tracer {
         opcode: Opcode,
         stack: Vec<UntypedValue>,
     ) {
-        if let Opcode::LocalSet(offset) = opcode {
-            let v_addr = AddressType::Stack(opcode.aux_value()).to_virtual_addr();
-            let value = self
-                .logs
-                .last_mut()
-                .unwrap()
-                .memory_access
-                .arg1_record
-                .unwrap()
-                .value();
-            let res_record = Some(MemoryRecordEnum::Write(self.mw(v_addr, value)));
-            self.logs.last_mut().unwrap().memory_access.memory = res_record;
-            self.logs.last_mut().unwrap().res = res_record.unwrap().value();
-        } else {
-            self.record_sw(opcode, new_sp, stack);
+        match opcode {
+            Opcode::LocalSet(_) | Opcode::LocalTee(_) => {
+                let v_addr = new_sp + opcode.aux_value() * UNIT - UNIT;
+                let value = self
+                    .logs
+                    .last_mut()
+                    .unwrap()
+                    .memory_access
+                    .arg1_record
+                    .unwrap()
+                    .value();
+                println!("value:{},addr:{}", value, v_addr);
+                let res_record = Some(MemoryRecordEnum::Write(self.mw(v_addr, value)));
+                self.logs.last_mut().unwrap().memory_access.res_record = res_record;
+                self.logs.last_mut().unwrap().res = res_record.unwrap().value();
+            }
+            _ => self.record_sw(opcode, new_sp, stack),
         }
+
         self.state.sp = new_sp;
     }
 
@@ -266,7 +272,10 @@ impl Tracer {
         }
 
         if let Opcode::LocalGet(_) = ins {
-            let v_addr = AddressType::Stack(ins.aux_value()).to_virtual_addr();
+            println!("sp:{},aux_val:{}", sp, ins.aux_value());
+            let v_addr = sp + ins.aux_value() * UNIT - UNIT;
+
+            println!("localgetaddr:{}", v_addr);
             let read_record = self.mr(v_addr);
             memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
         }
@@ -275,6 +284,7 @@ impl Tracer {
     }
 
     pub fn record_sw(&mut self, ins: Opcode, sp: u32, stack: Vec<UntypedValue>) {
+        println!("opcode:{},write to stack?{}", ins, ins.opcode_stack_write());
         if ins.opcode_stack_write() {
             let value = stack.last().unwrap().as_u32();
             let res_record = self.mw(sp, value);
