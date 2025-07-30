@@ -1842,11 +1842,11 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_add(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_add, InstructionSet::MSH_I64_ADD)
+        self.translate_to_snippet_call(Snippet::I64Add)
     }
 
     fn visit_i64_sub(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_sub, InstructionSet::MSH_I64_SUB)
+        self.translate_to_snippet_call(Snippet::I64Sub)
     }
 
     fn visit_i64_mul(&mut self) -> Self::Output {
@@ -1854,19 +1854,19 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_div_s(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_div_s, InstructionSet::MSH_I64_DIV_S)
+        self.translate_to_snippet_call(Snippet::I64DivS)
     }
 
     fn visit_i64_div_u(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_div_u, InstructionSet::MSH_I64_DIV_U)
+        self.translate_to_snippet_call(Snippet::I64DivU)
     }
 
     fn visit_i64_rem_s(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rem_s, InstructionSet::MSH_I64_REM_S)
+        self.translate_to_snippet_call(Snippet::I64RemS)
     }
 
     fn visit_i64_rem_u(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rem_u, InstructionSet::MSH_I64_REM_U)
+        self.translate_to_snippet_call(Snippet::I64RemU)
     }
 
     fn visit_i64_and(&mut self) -> Self::Output {
@@ -1882,23 +1882,23 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_shl(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shl, InstructionSet::MSH_I64_SHL)
+        self.translate_to_snippet_call(Snippet::I64Shl)
     }
 
     fn visit_i64_shr_s(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shr_s, InstructionSet::MSH_I64_SHR_S)
+        self.translate_to_snippet_call(Snippet::I64ShrS)
     }
 
     fn visit_i64_shr_u(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shr_u, InstructionSet::MSH_I64_SHR_U)
+        self.translate_to_snippet_call(Snippet::I64ShrU)
     }
 
     fn visit_i64_rotl(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rotl, InstructionSet::MSH_I64_ROTL)
+        self.translate_to_snippet_call(Snippet::I64RotL)
     }
 
     fn visit_i64_rotr(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rotr, InstructionSet::MSH_I64_ROTR)
+        self.translate_to_snippet_call(Snippet::I64RotR)
     }
 
     fn visit_f32_abs(&mut self) -> Self::Output {
