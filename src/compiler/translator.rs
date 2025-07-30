@@ -1,3 +1,4 @@
+use crate::compiler::snippets::{Snippet, SnippetCall};
 use crate::{
     compiler::{
         control_flow::{
@@ -15,7 +16,7 @@ use crate::{
     AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
     ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
     Opcode, SignatureIdx, TableIdx, ValueStackHeight, BASE_FUEL_COST, DEFAULT_MEMORY_INDEX,
-    N_MAX_MEMORY_PAGES, N_MAX_TABLE_SIZE,
+    N_MAX_MEMORY_PAGES, N_MAX_TABLE_SIZE, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec, vec::Vec};
 use hashbrown::HashMap;
@@ -63,6 +64,7 @@ pub struct FuncTranslatorAllocations {
     pub(crate) start_func: Option<FuncIdx>,
     pub(crate) func_offsets: Vec<u32>,
     pub(crate) constructor_params: ConstructorParams,
+    pub(crate) snippet_calls: Vec<SnippetCall>,
 }
 
 impl Default for FuncTranslatorAllocations {
@@ -84,6 +86,7 @@ impl Default for FuncTranslatorAllocations {
             start_func: None,
             func_offsets: vec![],
             constructor_params: Default::default(),
+            snippet_calls: Default::default(),
         }
     }
 }
@@ -1847,7 +1850,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_mul(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_mul, InstructionSet::MSH_I64_MUL)
+        self.translate_to_snippet_call(Snippet::I64Mul)
     }
 
     fn visit_i64_div_s(&mut self) -> Self::Output {
@@ -3969,6 +3972,36 @@ impl InstructionTranslator {
             }
             // emit an instruction
             emitter(&mut builder.alloc.instruction_set);
+            Ok(())
+        })
+    }
+
+    fn translate_to_snippet_call(&mut self, snippet: Snippet) -> Result<(), CompilationError> {
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+            let snippet_definition = snippet.definition();
+            builder
+                .stack_height
+                .pop_n(snippet_definition.params.len() as u32);
+            builder
+                .stack_height
+                .push_n(snippet_definition.results.len() as u32);
+            for func_type in snippet_definition.orig_params.iter().rev() {
+                let popped_type = builder.alloc.stack_types.pop().unwrap();
+                assert_eq!(*func_type, popped_type)
+            }
+            for result in snippet_definition.orig_results {
+                builder.alloc.stack_types.push(*result);
+            }
+            let loc = builder.alloc.instruction_set.loc();
+            builder
+                .alloc
+                .instruction_set
+                .op_call_internal(SNIPPET_FUNC_IDX_UNRESOLVED);
+            builder
+                .alloc
+                .snippet_calls
+                .push(SnippetCall { loc, snippet });
             Ok(())
         })
     }

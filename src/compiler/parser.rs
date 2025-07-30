@@ -1,3 +1,4 @@
+use crate::compiler::snippets::Snippet;
 use crate::{
     compiler::{
         func_builder::FuncBuilder,
@@ -5,13 +6,14 @@ use crate::{
     },
     CompilationConfig, CompilationError, CompiledExpr, ConstructorParams, DataSegmentIdx,
     ElementSegmentIdx, FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName, Opcode,
-    RwasmModule, TableIdx, DEFAULT_MEMORY_INDEX,
+    RwasmModule, TableIdx, DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::{
     mem::{replace, take},
     ops::Range,
 };
+use hashbrown::HashMap;
 use wasmparser::{
     CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind,
     ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType, FunctionBody,
@@ -107,6 +109,7 @@ impl ModuleParser {
             // we need to compile it?
             return Err(CompilationError::MissingEntrypoint);
         }
+        self.emit_snippets();
         // we can emit state router only at the end of a translation process
         self.emit_state_router()?;
         // the entrypoint always ends with an empty return
@@ -230,6 +233,44 @@ impl ModuleParser {
             .entrypoint_bytecode
             .op_drop();
         Ok(())
+    }
+
+    pub fn emit_snippets(&mut self) {
+        let mut emitted_snippets: HashMap<Snippet, FuncIdx> = HashMap::new();
+
+        let snippet_calls = self.allocations.translation.snippet_calls.clone();
+        for snippet_call in snippet_calls {
+            let snippet = snippet_call.snippet;
+
+            let snippet_func_idx = *emitted_snippets.entry(snippet).or_insert_with(|| {
+                let snippet_definition = snippet.definition();
+                let new_func_idx = self.next_func();
+                let alloc = &mut self.allocations.translation;
+                let func_offset = alloc.instruction_set.len() as u32;
+                alloc.func_offsets.push(func_offset);
+                alloc
+                    .instruction_set
+                    .op_stack_check(snippet_definition.max_stack_height);
+                (snippet_definition.emitter)(&mut alloc.instruction_set);
+                alloc.instruction_set.op_return();
+                new_func_idx
+            });
+
+            let loc = snippet_call.loc;
+            let alloc = &mut self.allocations.translation;
+            let opcode = alloc.instruction_set.get_nth_mut(loc as usize)
+                .unwrap_or_else(|| panic!("expected snippet call at index {loc}, but instruction set length is smaller"));
+
+            match opcode {
+                Opcode::CallInternal(func_idx) => {
+                    assert_eq!(*func_idx, SNIPPET_FUNC_IDX_UNRESOLVED);
+                    *func_idx = snippet_func_idx + 1;
+                }
+                other => {
+                    panic!("expected Opcode::CallInternal at index {loc}, but found {other:?}")
+                }
+            }
+        }
     }
 
     /// Processes the `wasmparser` payload.
