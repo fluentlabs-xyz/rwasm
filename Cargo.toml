@@ -11,7 +11,7 @@ keywords = ["wasm", "webassembly", "interpreter", "vm"]
 categories = ["wasm", "no-std", "virtualization"]
 
 [dependencies]
-wasmparser = { version = "=0.235.0", default-features = false, features = ["validate", "features"] }
+wasmparser = { version = "=0.233.0", default-features = false, features = ["validate", "features"] }
 hashbrown = { version = "0.15.2", features = ["alloc"] }
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 paste = { version = "1.0", default-features = false }
@@ -54,3 +54,11 @@ debug-print = []
 fpu = []
 wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:once_cell"]
 cache-compiled-artifacts = ["dep:directories"]
+
+[workspace]
+members = [
+    "gas-meter",
+    "e2e"
+]
+exclude = ["legacy"]
+
