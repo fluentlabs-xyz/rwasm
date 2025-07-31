@@ -3,7 +3,6 @@ use crate::{
     CompilationError, FuelCosts, FuncIdx,
 };
 use alloc::vec::Vec;
-use gas_meter::{DefaultCostModel, GasMeter};
 use wasmparser::{
     BinaryReaderError, FuncValidator, FunctionBody, ValType, ValidatorResources, VisitOperator,
 };
@@ -14,7 +13,6 @@ pub struct FuncBuilder<'a> {
     pub(crate) func_idx: FuncIdx,
     pub(crate) translator: InstructionTranslator,
     pub(crate) pos: usize,
-    pub(crate) gas_meter: GasMeter<DefaultCostModel>,
 }
 
 impl<'a> FuncBuilder<'a> {
@@ -31,7 +29,6 @@ impl<'a> FuncBuilder<'a> {
             func_idx,
             translator: InstructionTranslator::new(allocations, with_consume_fuel),
             pos: 0,
-            gas_meter: GasMeter::new(),
         }
     }
 

@@ -138,7 +138,6 @@ macro_rules! exec_opcode {
         I32ShrU => $self.visit_i32_shr_u(),
         I32Rotl => $self.visit_i32_rotl(),
         I32Rotr => $self.visit_i32_rotr(),
-        I32WrapI64 => $self.visit_i32_wrap_i64(),
         I32Extend8S => $self.visit_i32_extend8_s(),
         I32Extend16S => $self.visit_i32_extend16_s(),
         I32Mul64 => $self.visit_i32_mul64(),

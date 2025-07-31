@@ -1,9 +1,9 @@
 mod thread_pool;
 
 use crate::{
-    wasmtime::thread_pool::spawn_on_global_pool,
-    Caller, CompilationConfig, ImportLinker, Store, SyscallHandler, TrapCode, TypedCaller,
-    UntypedValue, ValType, Value, F32, F64, N_MAX_STACK_SIZE,
+    wasmtime::thread_pool::spawn_on_global_pool, Caller, CompilationConfig, ImportLinker, Store,
+    SyscallHandler, TrapCode, TypedCaller, UntypedValue, ValType, Value, F32, F64,
+    N_MAX_STACK_SIZE,
 };
 use alloc::rc::Rc;
 use smallvec::{smallvec, SmallVec};

@@ -62,7 +62,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[inline(always)]
     pub(crate) fn visit_return_call_internal(&mut self, compiled_func: CompiledFunc) {
-        self.ip.add(1);
         self.value_stack.sync_stack_ptr(self.sp);
         self.sp = self.value_stack.stack_ptr();
         self.ip = InstructionPtr::new(self.module.code_section.as_ptr());

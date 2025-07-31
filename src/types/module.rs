@@ -1,9 +1,5 @@
 use crate::{
-    types::InstructionSet,
-    CompilationConfig,
-    CompilationError,
-    ConstructorParams,
-    ModuleParser,
+    types::InstructionSet, CompilationConfig, CompilationError, ConstructorParams, ModuleParser,
     Opcode,
 };
 use alloc::{vec, vec::Vec};
@@ -11,8 +7,7 @@ use bincode::{
     de::Decoder,
     enc::Encoder,
     error::{DecodeError, EncodeError},
-    Decode,
-    Encode,
+    Decode, Encode,
 };
 
 /// Represents a compiled rWasm module.
@@ -55,7 +50,7 @@ impl RwasmModule {
     ) -> Result<(Self, ConstructorParams), CompilationError> {
         let mut parser = ModuleParser::new(config);
         parser.parse(wasm_binary)?;
-        parser.finalize(wasm_binary)
+        parser.finalize()
     }
 
     pub fn empty() -> Self {

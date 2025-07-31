@@ -96,7 +96,7 @@ pub enum Opcode {
     I32ShrU = 0xba,
     I32Rotl = 0xbb,
     I32Rotr = 0xbc,
-    I32WrapI64 = 0xbd,
+    // I32WrapI64 = 0xbd, // deleted unused
     I32Extend8S = 0xbe,
     I32Extend16S = 0xbf,
     I32Mul64 = 0xc0,

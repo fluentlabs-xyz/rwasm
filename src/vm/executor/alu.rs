@@ -20,8 +20,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         fn visit_i32_ctz(i32_ctz);
         fn visit_i32_popcnt(i32_popcnt);
 
-        fn visit_i32_wrap_i64(i32_wrap_i64);
-
         fn visit_i32_extend8_s(i32_extend8_s);
         fn visit_i32_extend16_s(i32_extend16_s);
     }

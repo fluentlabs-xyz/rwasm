@@ -1,18 +1,6 @@
 use crate::{
-    ArithmeticOps,
-    ExtendInto,
-    Float,
-    Integer,
-    LittleEndianConvert,
-    LoadInto,
-    SignExtendFrom,
-    StoreFrom,
-    TrapCode,
-    TruncateSaturateInto,
-    TryTruncateInto,
-    WrapInto,
-    F32,
-    F64,
+    ArithmeticOps, ExtendInto, Float, Integer, LittleEndianConvert, LoadInto, SignExtendFrom,
+    StoreFrom, TrapCode, TruncateSaturateInto, TryTruncateInto, WrapInto, F32, F64,
 };
 use bincode::{Decode, Encode};
 use core::{
@@ -901,11 +889,6 @@ impl UntypedValue {
     /// Execute `f32.div` Wasm operation.
     pub fn f32_div(self, rhs: Self) -> Self {
         self.execute_binary(rhs, <F32 as Float<F32>>::div)
-    }
-
-    /// Execute `i32.wrap_i64` Wasm operation.
-    pub fn i32_wrap_i64(self) -> Self {
-        self.execute_unary(<i64 as WrapInto<i32>>::wrap_into)
     }
 
     /// Execute `i32.trunc_f32_s` Wasm operation.

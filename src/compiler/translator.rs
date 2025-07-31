@@ -64,6 +64,7 @@ pub struct FuncTranslatorAllocations {
     pub(crate) start_func: Option<FuncIdx>,
     pub(crate) func_offsets: Vec<u32>,
     pub(crate) constructor_params: ConstructorParams,
+    pub(crate) wasm_section: Vec<u8>,
 }
 
 impl Default for FuncTranslatorAllocations {
@@ -85,6 +86,7 @@ impl Default for FuncTranslatorAllocations {
             start_func: None,
             func_offsets: vec![],
             constructor_params: Default::default(),
+            wasm_section: vec![],
         }
     }
 }

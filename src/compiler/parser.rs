@@ -13,10 +13,11 @@ use core::{
     ops::Range,
 };
 use wasmparser::{
-    CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind,
-    ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType, FunctionBody,
-    FunctionSectionReader, GlobalSectionReader, ImportSectionReader, MemorySectionReader, Parser,
-    Payload, RefType, TableSectionReader, TypeRef, TypeSectionReader, ValType, Validator,
+    Chunk, CompositeInnerType, CustomSectionReader, DataKind, DataSectionReader, ElementItems,
+    ElementKind, ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType,
+    FunctionBody, FunctionSectionReader, GlobalSectionReader, ImportSectionReader,
+    MemorySectionReader, Parser, Payload, RefType, TableSectionReader, TypeRef, TypeSectionReader,
+    ValType, Validator,
 };
 
 pub struct ModuleParser {
@@ -43,18 +44,46 @@ impl ModuleParser {
     pub fn parse(&mut self, wasm_binary: &[u8]) -> Result<(), CompilationError> {
         let mut parser = Parser::new(0);
         parser.set_features(self.config.wasm_features());
-        let payloads = parser.parse_all(wasm_binary).collect::<Vec<_>>();
         let mut func_bodies = Vec::new();
-        for payload in payloads {
-            match payload? {
+        let mut data = wasm_binary;
+        loop {
+            let payload = match parser.parse(&data, true)? {
+                Chunk::NeedMoreData(_) => {
+                    // this is not possible since eof is unreachable
+                    unreachable!()
+                }
+                Chunk::Parsed { consumed, payload } => {
+                    match payload {
+                        Payload::CodeSectionEntry(_) => {
+                            // don't inject wasm for code entry
+                            // since it might be modified by gas injector
+                        }
+                        _ => {
+                            // extend the wasm section with the consumed bytes
+                            self.allocations
+                                .translation
+                                .wasm_section
+                                .extend(&data[..consumed]);
+                        }
+                    }
+                    data = &data[consumed..];
+                    payload
+                }
+            };
+            match payload {
                 Payload::CodeSectionEntry(func_body) => {
+                    // we always process all code entries in the end,
+                    // it doesn't violate wasm standards,
+                    // but is required for rwasm
+                    // to optimize emitting of entrypoint
                     func_bodies.push(func_body);
                 }
                 Payload::End(offset) => {
-                    for func_body in take(&mut func_bodies) {
+                    for func_body in func_bodies {
                         self.process_code_entry(func_body)?;
                     }
                     self.process_end(offset)?;
+                    break;
                 }
                 payload => {
                     self.process_payload(payload)?;
@@ -76,16 +105,11 @@ impl ModuleParser {
             let func_type =
                 parser.allocations.translation.original_func_types[func_type_idx as usize].clone();
             result.push((k.clone(), *v, func_type));
-            #[cfg(feature = "debug-print")]
-            print!("{}: func_idx={}, func_type_idx={}\n", k, v, func_type_idx);
         }
         Ok(result)
     }
 
-    pub fn finalize(
-        mut self,
-        wasm_binary: &[u8],
-    ) -> Result<(RwasmModule, ConstructorParams), CompilationError> {
+    pub fn finalize(mut self) -> Result<(RwasmModule, ConstructorParams), CompilationError> {
         if let Some(start_func) = self.allocations.translation.start_func {
             // for the start section we must always invoke even if there is a main function,
             // otherwise it might be super misleading for devs
@@ -153,6 +177,7 @@ impl ModuleParser {
                     + entrypoint_length;
             }
         }
+        let wasm_section = self.allocations.translation.wasm_section;
 
         let module = RwasmModule {
             code_section,
@@ -162,7 +187,7 @@ impl ModuleParser {
                 .segment_builder
                 .global_memory_section,
             elem_section: element_section,
-            wasm_section: wasm_binary.to_vec(),
+            wasm_section,
         };
         let constructor_params = self.allocations.translation.constructor_params;
 
@@ -297,7 +322,10 @@ impl ModuleParser {
         self.validator.type_section(&section)?;
         for group in section.into_iter() {
             for sub_type in group?.types() {
-                let func_type = sub_type.unwrap_func();
+                let func_type = match &sub_type.composite_type.inner {
+                    CompositeInnerType::Func(func_type) => func_type,
+                    _ => continue,
+                };
                 let mut adjusted_params = Vec::new();
                 let mut adjusted_results = Vec::new();
                 for x in func_type.params() {
@@ -779,8 +807,6 @@ impl ModuleParser {
     /// If the function body fails to validate.
     fn process_code_entry(&mut self, func_body: FunctionBody) -> Result<(), CompilationError> {
         let func_idx = self.next_func();
-        // #[cfg(feature = "debug-print")]
-        // println!("\nfunc_idx={}", func_idx);
         let allocations = take(&mut self.allocations);
         let validator = self.validator.code_section_entry(&func_body)?;
         let func_validator = validator.into_validator(allocations.validation);

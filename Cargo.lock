@@ -495,13 +495,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gas-meter"
-version = "0.1.0"
-dependencies = [
- "wasmparser 0.235.0",
-]
-
-[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1000,7 +993,6 @@ dependencies = [
  "bytes",
  "directories",
  "downcast-rs",
- "gas-meter",
  "hashbrown",
  "hex-literal",
  "libm",
@@ -1009,6 +1001,7 @@ dependencies = [
  "once_cell",
  "paste",
  "rand",
+ "rwasm-gas-injector",
  "serde",
  "smallvec",
  "tiny-keccak",
@@ -1016,6 +1009,14 @@ dependencies = [
  "wasmparser 0.235.0",
  "wasmtime",
  "wat",
+]
+
+[[package]]
+name = "rwasm-gas-injector"
+version = "0.1.0"
+dependencies = [
+ "wasm-encoder 0.235.0",
+ "wasmparser 0.235.0",
 ]
 
 [[package]]

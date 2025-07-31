@@ -1,0 +1,13 @@
+[package]
+name = "rwasm-gas-injector"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wasmparser = { version = "0.235.0", default-features = false, features = ["validate", "features"] }
+wasm-encoder = { version = "0.235.0", features = ["wasmparser"] }
+
+[dev-dependencies]
+wasmprinter = { version = "0.235.0", default-features = false }
+wat = "1.230.0"
+hex-literal = "1.0.0"
