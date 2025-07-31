@@ -3,10 +3,8 @@ use crate::{
     CompilationError, FuelCosts, FuncIdx,
 };
 use alloc::vec::Vec;
-use gas_meter::{DefaultCostModel, GasMeter};
-use wasmparser::{
-    BinaryReaderError, FuncValidator, FunctionBody, ValType, ValidatorResources, VisitOperator,
-};
+use gas_meter::{DefaultCostModel, GasMeter, ShouldInject};
+use wasmparser::{BinaryReaderError, FuncValidator, FunctionBody, Operator, ValType, ValidatorResources, VisitOperator};
 
 pub struct FuncBuilder<'a> {
     pub(crate) func_body: FunctionBody<'a>,
@@ -109,12 +107,13 @@ impl<'a> FuncBuilder<'a> {
             // }
             self.pos = reader.original_position();
             let operator = reader.visit_operator(self)??;
-            // if let ShouldInject::InjectCost(gas_spent) = self.gas_meter.charge_gas_for(&operator) {
-            //     self.translator
-            //         .alloc
-            //         .instruction_set
-            //         .op_consume_fuel(gas_spent);
-            // }
+
+            if let ShouldInject::InjectCost(gas_spent) = self.gas_meter.charge_gas_for(&operator) {
+                self.translator
+                    .alloc
+                    .instruction_set
+                    .op_consume_fuel(gas_spent);
+            }
         }
         reader.finish()?;
         Ok(reader.original_position())
@@ -147,8 +146,7 @@ macro_rules! impl_visit_operator {
                 |validator| validator.visitor(offset).$visit($arg.clone()),
                 |translator| translator.$visit($arg.clone()),
             )?;
-            // Ok(Operator::BrTable { targets: $arg })
-            Ok(())
+            Ok(Operator::BrTable { targets: $arg })
         }
         impl_visit_operator!($($rest)*);
     };
@@ -185,23 +183,21 @@ macro_rules! impl_visit_operator {
     };
     ( @@supported $op:ident $({ $($arg:ident: $argty:ty),* })? => $visit:ident $_ann:tt $($rest:tt)* ) => {
         fn $visit(&mut self $($(,$arg: $argty)*)?) -> Self::Output {
-            // let op = Operator::$op $({ $($arg),* })?;
             let offset = self.pos;
             self.validate_then_translate(
                 move |validator| validator.visitor(offset).$visit($($($arg),*)?),
                 move |translator| translator.$visit($($($arg),*)?),
             )?;
-            Ok(())
+            Ok(Operator::$op $({ $($arg),* })?)
         }
         impl_visit_operator!($($rest)*);
     };
     ( @$proposal:ident $op:ident $({ $($arg:ident: $argty:ty),* })? => $visit:ident $ann:tt $($rest:tt)* ) => {
         // Wildcard match arm for all the other (yet) unsupported Wasm proposals.
         fn $visit(&mut self $($(, $arg: $argty)*)?) -> Self::Output {
-            // let op = Operator::$op $({ $($arg),* })?;
             let offset = self.pos;
-            self.validator.visitor(offset).$visit($($($arg),*)?)?;
-            Ok(())
+            self.validator.visitor(offset).$visit($($($arg.clone()),*)?)?;
+            Ok(Operator::$op $({ $($arg),* })?)
         }
         impl_visit_operator!($($rest)*);
     };
@@ -209,7 +205,7 @@ macro_rules! impl_visit_operator {
 }
 
 impl<'a> VisitOperator<'a> for FuncBuilder<'a> {
-    type Output = Result<(), CompilationError>;
+    type Output = Result<Operator<'a>, CompilationError>;
 
     wasmparser::for_each_visit_operator!(impl_visit_operator);
 }
