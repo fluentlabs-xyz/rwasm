@@ -1,9 +1,11 @@
+use wasm_encoder::reencode::{Error, Reencode, RoundtripReencoder};
 use wasm_encoder::{
-    CodeSection, Encode, ImportSection, InstructionSink, Section, SectionId, TypeSection,
+    CodeSection, ElementSection, Encode, ExportSection, ImportSection, InstructionSink, Section,
+    SectionId, TypeSection,
 };
 use wasmparser::{
-    BinaryReaderError, Chunk, FunctionBody, ImportSectionReader, Operator, Parser, Payload,
-    TypeSectionReader, ValType,
+    BinaryReaderError, Chunk, ElementKind, ElementSectionReader, ExportSectionReader, ExternalKind,
+    FunctionBody, ImportSectionReader, Operator, Parser, Payload, TypeSectionReader, ValType,
 };
 
 pub const BASE_FUEL_COST: u32 = 1;
@@ -28,7 +30,6 @@ pub struct GasInjectorConfig {
 
 pub struct GasInjector<T: CostModel> {
     config: GasInjectorConfig,
-    wasm_parser: Parser,
     gas_meter: GasMeter<T>,
     charge_gas_func_type_idx: Option<u32>,
     charge_gas_func_idx: Option<u32>,
@@ -37,16 +38,10 @@ pub struct GasInjector<T: CostModel> {
     wasm_output: Vec<u8>,
 }
 
-enum InjectionProcessResult {
-    Injected,
-    KeepOriginal,
-}
-
 impl<T: CostModel> GasInjector<T> {
     pub fn new(config: GasInjectorConfig, cost_model: T) -> Self {
         Self {
             config,
-            wasm_parser: Parser::new(0),
             gas_meter: GasMeter::new(cost_model),
             charge_gas_func_type_idx: None,
             charge_gas_func_idx: None,
@@ -56,16 +51,42 @@ impl<T: CostModel> GasInjector<T> {
         }
     }
 
-    pub fn process_payload<'a>(
-        &'a mut self,
+    pub fn inject(mut self, wasm_binary: &[u8]) -> Result<Vec<u8>, BinaryReaderError> {
+        let mut parser = Parser::new(0);
+        let mut data = &wasm_binary[..];
+        loop {
+            match parser.parse(&data, true)? {
+                Chunk::NeedMoreData(_) => {
+                    // this is not possible since eof is unreachable
+                    unreachable!()
+                }
+                Chunk::Parsed { consumed, payload } => {
+                    let should_break = if let Payload::End(_) = payload {
+                        true
+                    } else {
+                        false
+                    };
+                    self.process_payload(payload, &data, consumed)?;
+                    data = &data[consumed..];
+                    if should_break {
+                        break;
+                    }
+                }
+            };
+        }
+        Ok(self.wasm_output)
+    }
+
+    fn process_payload(
+        &mut self,
         payload: Payload,
         data: &[u8],
         consumed_bytes: usize,
-    ) -> Result<Payload<'a>, BinaryReaderError> {
-        let section_id = payload
-            .as_section()
-            .map(|section| section.0)
-            .unwrap_or(u8::MAX);
+    ) -> Result<(), BinaryReaderError> {
+        let section_id = match payload {
+            Payload::CodeSectionEntry(_) => SectionId::Code as u8,
+            _ => payload.as_section().map(|section| section.0).unwrap_or(0),
+        };
         // if we're missing type/import sections, then forcibly inject them
         if section_id > SectionId::Type as u8 && self.charge_gas_func_type_idx.is_none() {
             self.process_type_section(None)?;
@@ -73,56 +94,32 @@ impl<T: CostModel> GasInjector<T> {
             self.process_import_section(None)?;
         }
         // if we've passed a code section, then commit it
-        if section_id > SectionId::Code as u8 && self.code_section.is_some() {
+        if section_id != SectionId::Code as u8 && self.code_section.is_some() {
             let code_section = self.code_section.take().unwrap();
+            self.wasm_output.push(SectionId::Code as u8);
             code_section.encode(&mut self.wasm_output);
         }
         // process the payload
-        let offset = self.wasm_output.len();
-        let injection_result = match payload {
+        match payload {
             Payload::TypeSection(reader) => self.process_type_section(Some(reader))?,
             Payload::ImportSection(reader) => self.process_import_section(Some(reader))?,
-            Payload::CodeSectionStart { count, .. } => {
+            Payload::ExportSection(reader) => self.process_export_section(reader)?,
+            Payload::ElementSection(reader) => self.process_elem_section(reader)?,
+            Payload::CodeSectionStart { .. } => {
                 self.code_section = Some(CodeSection::new());
-                // encode code section begins
-                self.wasm_output.push(SectionId::Code as u8);
-                count.encode(&mut self.wasm_output);
-                // don't do any injections here, we do this during section finalization
-                InjectionProcessResult::Injected
             }
             Payload::CodeSectionEntry(function_body) => {
                 self.process_code_section_entry(function_body)?
             }
-            _ => InjectionProcessResult::KeepOriginal,
-        };
-        match injection_result {
-            InjectionProcessResult::Injected => {}
-            InjectionProcessResult::KeepOriginal => {
-                self.wasm_output.extend(&data[..consumed_bytes]);
-            }
+            _ => self.wasm_output.extend(&data[..consumed_bytes]),
         }
-        let payload = self
-            .wasm_parser
-            .parse(&self.wasm_output[offset..], true)
-            .unwrap_or_else(|err| {
-                unreachable!("wasm parse failed, but it shouldn't: {:?}", err);
-            });
-        match injection_result {
-            InjectionProcessResult::Injected => {}
-            InjectionProcessResult::KeepOriginal => {
-                debug_assert_eq!(&data[..consumed_bytes], &self.wasm_output[offset..]);
-            }
-        }
-        match payload {
-            Chunk::NeedMoreData(_) => unreachable!(),
-            Chunk::Parsed { payload, .. } => Ok(payload),
-        }
+        Ok(())
     }
 
     fn process_type_section(
         &mut self,
         type_section_reader: Option<TypeSectionReader>,
-    ) -> Result<InjectionProcessResult, BinaryReaderError> {
+    ) -> Result<(), BinaryReaderError> {
         let mut type_section = TypeSection::new();
         // try to find a type with the same function name
         let mut func_type_idx = 0u32;
@@ -161,13 +158,13 @@ impl<T: CostModel> GasInjector<T> {
         self.wasm_output.push(type_section.id());
         type_section.encode(&mut self.wasm_output);
         // mark a section as injected
-        Ok(InjectionProcessResult::Injected)
+        Ok(())
     }
 
     fn process_import_section(
         &mut self,
         import_section_reader: Option<ImportSectionReader>,
-    ) -> Result<InjectionProcessResult, BinaryReaderError> {
+    ) -> Result<(), BinaryReaderError> {
         let mut import_section = ImportSection::new();
         let mut func_idx = 0u32;
         if let Some(import_section_reader) = import_section_reader {
@@ -182,11 +179,8 @@ impl<T: CostModel> GasInjector<T> {
                 import_section.import(import.module, import.name, entity_type);
                 func_idx += 1;
             }
-            if self.charge_gas_func_idx.is_some() {
-                return Ok(InjectionProcessResult::KeepOriginal);
-            }
         }
-        // since we inject function in the middle, then we need to remap all indices
+        // since we inject function in the middle, then we'll need to remap all indices
         if self.charge_gas_func_idx.is_none() {
             self.remap_func_indices = true;
             import_section.import(
@@ -199,13 +193,104 @@ impl<T: CostModel> GasInjector<T> {
         // encode a type section into wasm output
         self.wasm_output.push(import_section.id());
         import_section.encode(&mut self.wasm_output);
-        Ok(InjectionProcessResult::Injected)
+        Ok(())
+    }
+
+    fn process_export_section(
+        &mut self,
+        import_section_reader: ExportSectionReader,
+    ) -> Result<(), BinaryReaderError> {
+        let mut export_section = ExportSection::new();
+        for export in import_section_reader.into_iter() {
+            let mut export = export?;
+            if export.kind == ExternalKind::Func
+                && export.index >= self.charge_gas_func_idx.unwrap()
+            {
+                export.index += 1;
+            }
+            export_section.export(
+                export.name,
+                wasm_encoder::ExportKind::try_from(export.kind).unwrap(),
+                export.index,
+            );
+        }
+        // encode a type section into wasm output
+        self.wasm_output.push(export_section.id());
+        export_section.encode(&mut self.wasm_output);
+        Ok(())
+    }
+
+    fn process_elem_section(
+        &mut self,
+        elem_section_reader: ElementSectionReader,
+    ) -> Result<(), BinaryReaderError> {
+        let mut element_section = ElementSection::new();
+        pub fn element_items<'a, T: ?Sized + Reencode>(
+            charge_gas_func_idx: u32,
+            re_encoder: &mut T,
+            items: wasmparser::ElementItems<'a>,
+        ) -> Result<wasm_encoder::Elements<'a>, Error<T::Error>> {
+            Ok(match items {
+                wasmparser::ElementItems::Functions(f) => {
+                    let mut funcs = Vec::new();
+                    for func in f {
+                        let mut func_index = func?;
+                        if func_index >= charge_gas_func_idx {
+                            func_index += 1;
+                        }
+                        funcs.push(re_encoder.function_index(func_index)?);
+                    }
+                    wasm_encoder::Elements::Functions(funcs.into())
+                }
+                wasmparser::ElementItems::Expressions(ty, e) => {
+                    let mut expressions = Vec::new();
+                    for expr in e {
+                        expressions.push(re_encoder.const_expr(expr?)?);
+                    }
+                    wasm_encoder::Elements::Expressions(
+                        re_encoder.ref_type(ty)?,
+                        expressions.into(),
+                    )
+                }
+            })
+        }
+        for element in elem_section_reader.into_iter() {
+            let element = element?;
+            let items = element_items(
+                self.charge_gas_func_idx.unwrap(),
+                &mut RoundtripReencoder,
+                element.items,
+            )
+            .unwrap();
+            match element.kind {
+                ElementKind::Passive => {
+                    element_section.passive(items);
+                }
+                ElementKind::Active {
+                    table_index,
+                    offset_expr,
+                } => {
+                    element_section.active(
+                        table_index,
+                        &wasm_encoder::ConstExpr::try_from(offset_expr).unwrap(),
+                        items,
+                    );
+                }
+                ElementKind::Declared => {
+                    element_section.declared(items);
+                }
+            }
+        }
+        // encode a type section into wasm output
+        self.wasm_output.push(element_section.id());
+        element_section.encode(&mut self.wasm_output);
+        Ok(())
     }
 
     fn process_code_section_entry(
         &mut self,
         function_body: FunctionBody,
-    ) -> Result<InjectionProcessResult, BinaryReaderError> {
+    ) -> Result<(), BinaryReaderError> {
         let mut func_output = Vec::new();
         // re-encode locals (we don't change them)
         let locals_reader = function_body.get_locals_reader()?;
@@ -227,13 +312,34 @@ impl<T: CostModel> GasInjector<T> {
                 sink.i32_const(i32::try_from(consume_gas).unwrap());
                 sink.call(self.charge_gas_func_idx.unwrap());
             }
-            let op_size = operators_reader.original_position() - offset;
-            let raw_op = binary_reader.read_bytes(op_size)?;
-            func_output.extend_from_slice(&raw_op);
+            match op {
+                Operator::Call { mut function_index } if self.remap_func_indices => {
+                    if function_index >= self.charge_gas_func_idx.unwrap() {
+                        function_index += 1;
+                    }
+                    InstructionSink::new(&mut func_output).call(function_index);
+                }
+                Operator::RefFunc { mut function_index } if self.remap_func_indices => {
+                    if function_index >= self.charge_gas_func_idx.unwrap() {
+                        function_index += 1;
+                    }
+                    InstructionSink::new(&mut func_output).call(function_index);
+                }
+                Operator::ReturnCall { mut function_index } if self.remap_func_indices => {
+                    if function_index >= self.charge_gas_func_idx.unwrap() {
+                        function_index += 1;
+                    }
+                    InstructionSink::new(&mut func_output).call(function_index);
+                }
+                _ => {
+                    let op_len = operators_reader.original_position() - offset;
+                    func_output.extend_from_slice(binary_reader.read_bytes(op_len)?);
+                }
+            }
         }
         // inject func output into a code section
         self.code_section.as_mut().unwrap().raw(&func_output);
-        Ok(InjectionProcessResult::Injected)
+        Ok(())
     }
 }
 
@@ -386,32 +492,8 @@ mod tests {
         let config = GasInjectorConfig {
             charge_gas_func_name: ("env", "_charge_gas"),
         };
-        let mut gas_injector = GasInjector::new(config, DefaultCostModel::default());
-        let mut parser = Parser::new(0);
-        let mut data = &wasm_binary[..];
-        loop {
-            match parser.parse(&data, true).unwrap() {
-                Chunk::NeedMoreData(_) => {
-                    // this is not possible since eof is unreachable
-                    unreachable!()
-                }
-                Chunk::Parsed { consumed, payload } => {
-                    let should_break = if let Payload::End(_) = payload {
-                        true
-                    } else {
-                        false
-                    };
-                    gas_injector
-                        .process_payload(payload, &data, consumed)
-                        .unwrap();
-                    data = &data[consumed..];
-                    if should_break {
-                        break;
-                    }
-                }
-            };
-        }
-        let new_wasm = gas_injector.wasm_output;
+        let gas_injector = GasInjector::new(config, DefaultCostModel::default());
+        let new_wasm = gas_injector.inject(&wasm_binary).unwrap();
         let new_wat = wasmprinter::print_bytes(&new_wasm).unwrap();
         println!("{}", new_wat);
         new_wat
