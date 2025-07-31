@@ -3,11 +3,11 @@ test-specific-cases:
 	# build all binaries
 	cd benchmarks && make
 	cd wasm && make
-	# cd snippets && make
+	cd snippets && make
 	# run tests
 	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml
 	cargo test --color=always --no-fail-fast --manifest-path e2e/Cargo.toml
-	# cargo test --color=always --no-fail-fast --manifest-path snippets/Cargo.toml
+	cargo +nightly test --color=always --no-fail-fast --manifest-path snippets/Cargo.toml
 	# run nitro test (with release flag)
 	cargo test --release --package rwasm --test nitro-verifier test_nitro_verifier -- --ignored
 
