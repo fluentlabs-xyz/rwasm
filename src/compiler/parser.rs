@@ -243,15 +243,14 @@ impl ModuleParser {
             let snippet = snippet_call.snippet;
 
             let snippet_func_idx = *emitted_snippets.entry(snippet).or_insert_with(|| {
-                let snippet_definition = snippet.definition();
                 let new_func_idx = self.next_func();
                 let alloc = &mut self.allocations.translation;
                 let func_offset = alloc.instruction_set.len() as u32;
                 alloc.func_offsets.push(func_offset);
                 alloc
                     .instruction_set
-                    .op_stack_check(snippet_definition.max_stack_height);
-                (snippet_definition.emitter)(&mut alloc.instruction_set);
+                    .op_stack_check(snippet.max_stack_height());
+                snippet.emit(&mut alloc.instruction_set);
                 alloc.instruction_set.op_return();
                 new_func_idx
             });
