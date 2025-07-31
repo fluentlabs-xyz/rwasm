@@ -326,13 +326,13 @@ impl InstructionSet {
         instr: u32,
         delta: u32,
     ) -> Result<(), CompilationError> {
-        let fuel = match &mut self.instr[instr as usize] {
-            Opcode::ConsumeFuel(fuel) => fuel,
-            _ => unreachable!("instruction {} is not a `ConsumeFuel` instruction", instr),
-        };
-        *fuel = fuel
-            .checked_add(delta)
-            .ok_or(CompilationError::BlockFuelOutOfBounds)?;
+        // let fuel = match &mut self.instr[instr as usize] {
+        //     Opcode::ConsumeFuel(fuel) => fuel,
+        //     _ => unreachable!("instruction {} is not a `ConsumeFuel` instruction", instr),
+        // };
+        // *fuel = fuel
+        //     .checked_add(delta)
+        //     .ok_or(CompilationError::BlockFuelOutOfBounds)?;
         Ok(())
     }
 }

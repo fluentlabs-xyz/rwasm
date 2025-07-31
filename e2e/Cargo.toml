@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 rwasm = { path = "..", features = ["fpu"] }
 anyhow = "1.0.71"
-wasmparser = { version = "0.235.0", default-features = false, features = ["validate", "features"] }
+wasmparser = { version = "0.233.0", default-features = false, features = ["validate", "features"] }
 wast = "=64.0"
 
 [features]
