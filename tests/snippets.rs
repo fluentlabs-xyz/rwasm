@@ -52,7 +52,8 @@ use rand::Rng;
 /// | op_i64_rem_u          |         |
 /// |-----------------------|---------|
 use rwasm::{
-    CallStack, InstructionSet, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, ValueStack,
+    CallStack, CompilationConfig, ExecutionEngine, InstructionSet, RwasmExecutor, RwasmModule,
+    RwasmStore, TrapCode, Value, ValueStack,
 };
 use std::{
     fmt::Debug,
@@ -1211,4 +1212,153 @@ fn pairwise_fuzzing_test<T: Clone + Debug, F: Fn(T, T)>(f: F, values: impl IntoI
             f(a.clone(), b.clone());
         }
     }
+}
+
+fn run_i64_binary_op(op: &str, a: i64, b: i64, expected: i64) {
+    let wat_source = format!(
+        r#"
+(module
+  (func (export "main") (param i64 i64) (result i64)
+    local.get 0
+    local.get 1
+    {op}
+  )
+)
+"#,
+        op = op
+    );
+
+    let wasm_binary = wat::parse_str(&wat_source).unwrap();
+
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("main".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+
+    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+
+    let mut store = RwasmStore::<()>::default();
+    let mut engine = ExecutionEngine::new();
+    let mut result = [Value::I64(0); 1];
+
+    let execution_result = engine.execute(
+        &mut store,
+        &rwasm_module,
+        &[Value::I64(a), Value::I64(b)],
+        &mut result,
+    );
+    if !execution_result.is_ok() {
+        println!("{:?}", execution_result);
+    }
+
+    assert!(
+        matches!(execution_result, Ok(_)),
+        "Execution failed for {}",
+        op
+    );
+    assert_eq!(
+        result[0].i64().unwrap(),
+        expected,
+        "Mismatch for operation {} with inputs ({}, {})",
+        op,
+        a,
+        b
+    );
+}
+
+fn run_i64_comparation_op(op: &str, a: i64, b: i64, expected: bool) {
+    let wat_source = format!(
+        r#"
+(module
+  (func (export "main") (param i64 i64) (result i32)
+    local.get 0
+    local.get 1
+    {op}
+  )
+)
+"#,
+        op = op
+    );
+
+    let wasm_binary = wat::parse_str(&wat_source).unwrap();
+
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("main".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+
+    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+
+    let mut store = RwasmStore::<()>::default();
+    let mut engine = ExecutionEngine::new();
+    let mut result = [Value::I32(0); 1];
+
+    let execution_result = engine.execute(
+        &mut store,
+        &rwasm_module,
+        &[Value::I64(a), Value::I64(b)],
+        &mut result,
+    );
+    if !execution_result.is_ok() {
+        println!("{:?}", execution_result);
+    }
+
+    assert!(
+        matches!(execution_result, Ok(_)),
+        "Execution failed for {}",
+        op
+    );
+    let expected = if expected { 1 } else { 0 };
+    assert_eq!(
+        result[0].i32().unwrap(),
+        expected,
+        "Mismatch for operation {} with inputs ({}, {})",
+        op,
+        a,
+        b
+    );
+}
+
+#[test]
+fn test_i64_ops_in_rwasm_interpreter() {
+    // Arithmetic
+    run_i64_binary_op("i64.add", 10, 732, 10 + 732);
+    run_i64_binary_op("i64.sub", 732, 10, 732 - 10);
+    run_i64_binary_op("i64.mul", 10, 732, 10 * 732);
+    run_i64_binary_op("i64.div_s", 732, 33, 732 / 33);
+    run_i64_binary_op("i64.div_u", 732, 33, (732u64 / 33u64) as i64);
+    run_i64_binary_op("i64.rem_s", 732, 33, 732 % 33);
+    run_i64_binary_op("i64.rem_u", 732, 33, (732u64 % 33u64) as i64);
+
+    // Bitwise
+    run_i64_binary_op("i64.and", 0b1101, 0b1011, 0b1001);
+    run_i64_binary_op("i64.or", 0b1101, 0b1011, 0b1111);
+    run_i64_binary_op("i64.xor", 0b1101, 0b1011, 0b0110);
+
+    // Shifts and rotations
+    run_i64_binary_op("i64.shl", 1, 3, 1 << 3);
+    run_i64_binary_op("i64.shr_s", -16, 2, -16 >> 2);
+    run_i64_binary_op("i64.shr_u", -16, 2, ((-16i64 as u64) >> 2) as i64);
+    run_i64_binary_op("i64.rotl", 0x12, 8, 0x12i64.rotate_left(8));
+    run_i64_binary_op("i64.rotr", 0x1200, 8, 0x1200i64.rotate_right(8));
+
+    // Comparisons (true = 1, false = 0)
+    run_i64_comparation_op("i64.eq", 42, 42, true);
+    run_i64_comparation_op("i64.eq", 42, 24, false);
+    run_i64_comparation_op("i64.ne", 42, 24, true);
+    run_i64_comparation_op("i64.ne", 42, 42, false);
+    run_i64_comparation_op("i64.lt_s", -5, 10, true);
+    run_i64_comparation_op("i64.lt_s", 10, -5, false);
+    run_i64_comparation_op("i64.lt_u", 5, 10, true);
+    run_i64_comparation_op("i64.lt_u", 10, 5, false);
+    run_i64_comparation_op("i64.gt_s", 10, -5, true);
+    run_i64_comparation_op("i64.gt_s", -5, 10, false);
+    run_i64_comparation_op("i64.gt_u", 10, 5, true);
+    run_i64_comparation_op("i64.gt_u", 5, 10, false);
+    run_i64_comparation_op("i64.le_s", -5, -5, true);
+    run_i64_comparation_op("i64.le_s", 5, 2, false);
+    run_i64_comparation_op("i64.le_u", 5, 5, true);
+    run_i64_comparation_op("i64.le_u", 10, 5, false);
+    run_i64_comparation_op("i64.ge_s", 5, 5, true);
+    run_i64_comparation_op("i64.ge_s", -1, 1, false);
+    run_i64_comparation_op("i64.ge_u", 5, 5, true);
+    run_i64_comparation_op("i64.ge_u", 5, 10, false);
 }

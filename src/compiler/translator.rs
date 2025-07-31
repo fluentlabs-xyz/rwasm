@@ -1,3 +1,4 @@
+use crate::compiler::snippets::{Snippet, SnippetCall};
 use crate::{
     compiler::{
         control_flow::{
@@ -15,7 +16,7 @@ use crate::{
     AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
     ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
     Opcode, SignatureIdx, TableIdx, ValueStackHeight, BASE_FUEL_COST, DEFAULT_MEMORY_INDEX,
-    N_MAX_MEMORY_PAGES, N_MAX_TABLE_SIZE,
+    N_MAX_MEMORY_PAGES, N_MAX_TABLE_SIZE, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec, vec::Vec};
 use hashbrown::HashMap;
@@ -63,6 +64,7 @@ pub struct FuncTranslatorAllocations {
     pub(crate) start_func: Option<FuncIdx>,
     pub(crate) func_offsets: Vec<u32>,
     pub(crate) constructor_params: ConstructorParams,
+    pub(crate) snippet_calls: Vec<SnippetCall>,
 }
 
 impl Default for FuncTranslatorAllocations {
@@ -84,6 +86,7 @@ impl Default for FuncTranslatorAllocations {
             start_func: None,
             func_offsets: vec![],
             constructor_params: Default::default(),
+            snippet_calls: Default::default(),
         }
     }
 }
@@ -1664,43 +1667,43 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_eq(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_eq, InstructionSet::MSH_I64_EQ)
+        self.translate_to_snippet_call(Snippet::I64Eq)
     }
 
     fn visit_i64_ne(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_ne, InstructionSet::MSH_I64_NE)
+        self.translate_to_snippet_call(Snippet::I64Ne)
     }
 
     fn visit_i64_lt_s(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_lt_s, InstructionSet::MSH_I64_LT_S)
+        self.translate_to_snippet_call(Snippet::I64LtS)
     }
 
     fn visit_i64_lt_u(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_lt_u, InstructionSet::MSH_I64_LT_U)
+        self.translate_to_snippet_call(Snippet::I64LtU)
     }
 
     fn visit_i64_gt_s(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_gt_s, InstructionSet::MSH_I64_GT_S)
+        self.translate_to_snippet_call(Snippet::I64GtS)
     }
 
     fn visit_i64_gt_u(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_gt_u, InstructionSet::MSH_I64_GT_U)
+        self.translate_to_snippet_call(Snippet::I64GtU)
     }
 
     fn visit_i64_le_s(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_le_s, InstructionSet::MSH_I64_LE_S)
+        self.translate_to_snippet_call(Snippet::I64LeS)
     }
 
     fn visit_i64_le_u(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_le_u, InstructionSet::MSH_I64_LE_U)
+        self.translate_to_snippet_call(Snippet::I64LeU)
     }
 
     fn visit_i64_ge_s(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_ge_s, InstructionSet::MSH_I64_GE_S)
+        self.translate_to_snippet_call(Snippet::I64GeS)
     }
 
     fn visit_i64_ge_u(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_ge_u, InstructionSet::MSH_I64_GE_U)
+        self.translate_to_snippet_call(Snippet::I64GeU)
     }
 
     fn visit_f32_eq(&mut self) -> Self::Output {
@@ -1839,31 +1842,31 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_add(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_add, InstructionSet::MSH_I64_ADD)
+        self.translate_to_snippet_call(Snippet::I64Add)
     }
 
     fn visit_i64_sub(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_sub, InstructionSet::MSH_I64_SUB)
+        self.translate_to_snippet_call(Snippet::I64Sub)
     }
 
     fn visit_i64_mul(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_mul, InstructionSet::MSH_I64_MUL)
+        self.translate_to_snippet_call(Snippet::I64Mul)
     }
 
     fn visit_i64_div_s(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_div_s, InstructionSet::MSH_I64_DIV_S)
+        self.translate_to_snippet_call(Snippet::I64DivS)
     }
 
     fn visit_i64_div_u(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_div_u, InstructionSet::MSH_I64_DIV_U)
+        self.translate_to_snippet_call(Snippet::I64DivU)
     }
 
     fn visit_i64_rem_s(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rem_s, InstructionSet::MSH_I64_REM_S)
+        self.translate_to_snippet_call(Snippet::I64RemS)
     }
 
     fn visit_i64_rem_u(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rem_u, InstructionSet::MSH_I64_REM_U)
+        self.translate_to_snippet_call(Snippet::I64RemU)
     }
 
     fn visit_i64_and(&mut self) -> Self::Output {
@@ -1879,23 +1882,23 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_shl(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shl, InstructionSet::MSH_I64_SHL)
+        self.translate_to_snippet_call(Snippet::I64Shl)
     }
 
     fn visit_i64_shr_s(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shr_s, InstructionSet::MSH_I64_SHR_S)
+        self.translate_to_snippet_call(Snippet::I64ShrS)
     }
 
     fn visit_i64_shr_u(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shr_u, InstructionSet::MSH_I64_SHR_U)
+        self.translate_to_snippet_call(Snippet::I64ShrU)
     }
 
     fn visit_i64_rotl(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rotl, InstructionSet::MSH_I64_ROTL)
+        self.translate_to_snippet_call(Snippet::I64RotL)
     }
 
     fn visit_i64_rotr(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rotr, InstructionSet::MSH_I64_ROTR)
+        self.translate_to_snippet_call(Snippet::I64RotR)
     }
 
     fn visit_f32_abs(&mut self) -> Self::Output {
@@ -3969,6 +3972,35 @@ impl InstructionTranslator {
             }
             // emit an instruction
             emitter(&mut builder.alloc.instruction_set);
+            Ok(())
+        })
+    }
+
+    fn translate_to_snippet_call(&mut self, snippet: Snippet) -> Result<(), CompilationError> {
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+            builder
+                .stack_height
+                .pop_n(snippet.func_type().params().len() as u32);
+            builder
+                .stack_height
+                .push_n(snippet.func_type().results().len() as u32);
+            for func_type in snippet.orig_func_type().params().iter().rev() {
+                let popped_type = builder.alloc.stack_types.pop().unwrap();
+                assert_eq!(*func_type, popped_type)
+            }
+            for result in snippet.orig_func_type().results() {
+                builder.alloc.stack_types.push(*result);
+            }
+            let loc = builder.alloc.instruction_set.loc();
+            builder
+                .alloc
+                .instruction_set
+                .op_call_internal(SNIPPET_FUNC_IDX_UNRESOLVED);
+            builder
+                .alloc
+                .snippet_calls
+                .push(SnippetCall { loc, snippet });
             Ok(())
         })
     }

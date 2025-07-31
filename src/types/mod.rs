@@ -78,6 +78,11 @@ pub const N_MAX_ELEM_SEGMENTS_BITS: usize =
 /// because 0 offset is reserved under an entrypoint that can't be re-called
 pub const NULL_FUNC_IDX: u32 = 0u32;
 
+/// Placeholder for the function index of a snippet.
+/// The actual index is resolved in later compilation stages
+/// once the snippet's final location is known.
+pub const SNIPPET_FUNC_IDX_UNRESOLVED: u32 = u32::MAX;
+
 /// That maximum possible number of tables allowed, the limited is driven from Wasm standards
 pub const N_MAX_TABLES: u32 = 100;
 

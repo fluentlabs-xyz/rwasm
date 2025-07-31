@@ -141,6 +141,10 @@ impl InstructionSet {
         self.instr.iter_mut().rev().nth(offset)
     }
 
+    pub fn get_nth_mut(&mut self, n: usize) -> Option<&mut Opcode> {
+        self.instr.get_mut(n)
+    }
+
     pub fn op_dup(&mut self) {
         self.op_local_get(1);
     }
