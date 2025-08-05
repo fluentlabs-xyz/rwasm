@@ -17,8 +17,7 @@ use crate::{
 };
 use alloc::{string::String, vec::Vec};
 use core::{
-    fmt::{Debug, Formatter},
-    mem::take,
+    cmp, fmt::{Debug, Formatter}, mem::take
 };
 use hashbrown::HashMap;
 
@@ -148,9 +147,11 @@ impl Tracer {
         if let Some(memory_read_record) = memory_access.arg2_record {
             opcode_state.arg2 = memory_read_record.value();
         }
-        if opcode.is_branch_instruction() {
-            opcode_state.arg2 = opcode.aux_value();
+
+        if let Opcode::BrTable(_)=opcode{
+            opcode_state.arg2 =opcode.aux_value();
         }
+        
         if opcode.is_local_instruction() {
             opcode_state.arg2 = opcode.aux_value();
         }
@@ -183,6 +184,30 @@ impl Tracer {
                 let res_record = Some(MemoryRecordEnum::Write(self.mw(v_addr, value)));
                 self.logs.last_mut().unwrap().memory_access.res_record = res_record;
                 self.logs.last_mut().unwrap().res = res_record.unwrap().value();
+            }
+            //We are different from RISCV so that we have to send the branching offset with res because 
+            //we have no register to read.
+            Opcode::Br(_)|Opcode::BrIfEqz(_)|Opcode::BrIfNez(_)=>{
+
+
+                self.logs.last_mut().unwrap().res=opcode.aux_value();
+                // let fake_res_record = MemoryWriteRecord::new(opcode.aux_value(),0, 1,0,0,0);
+                // self.logs.last_mut().unwrap().memory_access.res_record=Some(MemoryRecordEnum::Write(fake_res_record));
+                
+            }
+            Opcode::BrTable(_)=>{
+                 let index =self.logs.last_mut().unwrap().arg1;
+                let max_index = opcode.aux_value() - 1;
+                    let normalized_index = cmp::min(index, max_index);
+                 self.logs.last_mut().unwrap().res=2*normalized_index+1;
+                 self.logs.last_mut().unwrap().arg2=opcode.aux_value();
+                //  let fake_arg2_record = MemoryReadRecord{ value: opcode.aux_value()-1, shard: 0, timestamp: 0, prev_timestamp:1,prev_shard: 0 };
+                //  self.logs.last_mut().unwrap().memory_access.arg2_record = Some(MemoryRecordEnum::Read(fake_arg2_record));
+                //  self.logs.last_mut().unwrap().arg2=opcode.aux_value()-1;
+                //   let fake_res_record = MemoryWriteRecord::new(2*normalized_index+1,0, 1,0,0,0);
+                //   self.logs.last_mut().unwrap().memory_access.res_record=Some(MemoryRecordEnum::Write(fake_res_record));
+                
+                  
             }
             _ => self.record_sw(opcode, new_sp, stack),
         }

@@ -360,7 +360,7 @@ impl Opcode {
 
     pub fn is_branch_instruction(self) -> bool {
         match self {
-            Opcode::Br(_) | Opcode::BrIfEqz(_) | Opcode::BrIfNez(_) => true,
+            Opcode::Br(_) | Opcode::BrIfEqz(_) | Opcode::BrIfNez(_)|Opcode::BrTable(_) => true,
             _ => false,
         }
     }

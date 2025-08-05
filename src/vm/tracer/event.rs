@@ -20,6 +20,8 @@ impl Opcode {
                 return 1;
             } else if let Opcode::BrIfNez(_) = self {
                 return 1;
+            } else if let Opcode::BrTable(_)=self {
+                return 1;
             }
         }
         0
