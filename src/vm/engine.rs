@@ -1,12 +1,5 @@
 use crate::{
-    CallStack,
-    InstructionPtr,
-    RwasmExecutor,
-    RwasmModule,
-    RwasmStore,
-    TrapCode,
-    Value,
-    ValueStack,
+    CallStack, InstructionPtr, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value, ValueStack,
     ValueStackPtr,
 };
 use smallvec::SmallVec;

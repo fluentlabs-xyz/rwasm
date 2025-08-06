@@ -3,11 +3,7 @@ use crate::{
     types::{Opcode, TableIdx},
     vm::tracer::{
         mem::{
-            MemoryAccessRecord,
-            MemoryLocalEvent,
-            MemoryReadRecord,
-            MemoryRecord,
-            MemoryRecordEnum,
+            MemoryAccessRecord, MemoryLocalEvent, MemoryReadRecord, MemoryRecord, MemoryRecordEnum,
             MemoryWriteRecord,
         },
         state::VMState,
