@@ -1,9 +1,6 @@
 use crate::{
     types::{TrapCode, UntypedValue},
-    Caller,
-    RwasmStore,
-    Store,
-    ValueStackPtr,
+    Caller, RwasmStore, Store, ValueStackPtr,
 };
 
 pub struct RwasmCaller<'a, T: Send + Sync + 'static> {

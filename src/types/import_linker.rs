@@ -2,6 +2,7 @@ use crate::{ImportName, InstructionSet};
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use wasmparser::{FuncType, ValType};
+use crate::intrinsic::Intrinsic;
 
 #[derive(Debug, Default, Clone)]
 pub struct ImportLinker {
@@ -16,6 +17,7 @@ pub struct ImportLinkerEntity {
     pub block_fuel: InstructionSet,
     pub params: &'static [ValType],
     pub result: &'static [ValType],
+    pub intrinsic: Option<Intrinsic>,
 }
 
 impl<const N: usize> From<[(ImportName, ImportLinkerEntity); N]> for ImportLinker {
@@ -87,6 +89,27 @@ impl ImportLinker {
                 block_fuel,
                 params,
                 result,
+                intrinsic: None,
+            },
+        );
+    }
+
+    pub fn insert_intrinsic(
+        &mut self,
+        import_name: ImportName,
+        sys_func_idx: u32,
+        intrinsic: Intrinsic,
+        params: &'static [ValType],
+        result: &'static [ValType],
+    ) {
+        self.insert_entity(
+            import_name,
+            ImportLinkerEntity {
+                sys_func_idx,
+                block_fuel: InstructionSet::default(),
+                params,
+                result,
+                intrinsic: Some(intrinsic),
             },
         );
     }
