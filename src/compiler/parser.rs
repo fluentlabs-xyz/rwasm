@@ -432,6 +432,15 @@ impl ModuleParser {
                 .translation
                 .compiled_funcs
                 .push(func_type_index);
+
+            if let Some(intrinsic) = import_linker_entity.intrinsic {
+                self.allocations
+                    .translation
+                    .intrinsic_handler
+                    .intrinsics
+                    .insert(func_idx, intrinsic);
+            }
+
             let allocations = take(&mut self.allocations);
             let mut translator =
                 InstructionTranslator::new(allocations.translation, self.config.consume_fuel);
