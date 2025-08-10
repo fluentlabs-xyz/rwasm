@@ -426,9 +426,11 @@ impl Opcode {
         match self {
             Opcode::CallIndirect(_)
             | Opcode::CallInternal(_)
+            |Opcode::Call(_)
+            |Opcode::Return
             | Opcode::ReturnCallIndirect(_)
             | Opcode::ReturnCallInternal(_)
-            | Opcode::Return => true,
+            | Opcode::ReturnCall(_)=>true,
             _ => false,
         }
     }

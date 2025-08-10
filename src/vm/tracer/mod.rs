@@ -17,7 +17,9 @@ use crate::{
 };
 use alloc::{string::String, vec::Vec};
 use core::{
-    cmp, fmt::{Debug, Formatter}, mem::take
+    cmp,
+    fmt::{Debug, Formatter},
+    mem::take,
 };
 use hashbrown::HashMap;
 
@@ -46,6 +48,20 @@ pub struct TraceTableSizeState {
     pub init: u32,
     pub delta: u32,
 }
+#[derive(Debug, Clone)]
+pub enum CallType {
+    Call,
+    CallInternal,
+    CallIndirect,
+}
+#[derive(Debug, Clone)]
+pub struct TraceCallData {
+    pub calltype: CallType,
+    pub table_id: u32,
+    pub table_idx: u32,
+    pub func_ref: u32,
+    pub signature_id: u32,
+}
 
 #[derive(Debug, Clone)]
 pub struct TracerInstrState {
@@ -55,12 +71,16 @@ pub struct TracerInstrState {
     pub opcode: Opcode,
     pub sp: u32,
     pub next_sp: u32,
+    pub call_sp:u32,
+    pub next_call_sp:u32,
     pub call_id: u32,
     pub memory_access: MemoryAccessRecord,
     pub arg1: u32,
 
     pub arg2: u32,
     pub res: u32,
+    
+    pub call_state:Option<TraceCallData>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -131,6 +151,8 @@ impl Tracer {
             pc: program_counter,
             next_pc: 0,
             opcode,
+            call_sp:self.state.call_sp,
+            next_call_sp:0,
             call_id: 0,
             memory_access: MemoryAccessRecord::default(),
             sp,
@@ -138,6 +160,7 @@ impl Tracer {
             arg1: 0,
             arg2: 0,
             res: 0,
+            call_state:None,
         };
         let memory_access = self.record_mr(opcode, sp);
 
@@ -148,10 +171,10 @@ impl Tracer {
             opcode_state.arg2 = memory_read_record.value();
         }
 
-        if let Opcode::BrTable(_)=opcode{
-            opcode_state.arg2 =opcode.aux_value();
+        if let Opcode::BrTable(_) = opcode {
+            opcode_state.arg2 = opcode.aux_value();
         }
-        
+
         if opcode.is_local_instruction() {
             opcode_state.arg2 = opcode.aux_value();
         }
@@ -185,34 +208,46 @@ impl Tracer {
                 self.logs.last_mut().unwrap().memory_access.res_record = res_record;
                 self.logs.last_mut().unwrap().res = res_record.unwrap().value();
             }
-            //We are different from RISCV so that we have to send the branching offset with res because 
-            //we have no register to read.
-            Opcode::Br(_)|Opcode::BrIfEqz(_)|Opcode::BrIfNez(_)=>{
-
-
-                self.logs.last_mut().unwrap().res=opcode.aux_value();
+            //We are different from RISCV so that we have to send the branching offset with res
+            // because we have no register to read.
+            Opcode::Br(_) | Opcode::BrIfEqz(_) | Opcode::BrIfNez(_) => {
+                self.logs.last_mut().unwrap().res = opcode.aux_value();
                 // let fake_res_record = MemoryWriteRecord::new(opcode.aux_value(),0, 1,0,0,0);
-                // self.logs.last_mut().unwrap().memory_access.res_record=Some(MemoryRecordEnum::Write(fake_res_record));
-                
+                // self.logs.last_mut().unwrap().memory_access.
+                // res_record=Some(MemoryRecordEnum::Write(fake_res_record));
             }
-            Opcode::BrTable(_)=>{
-                 let index =self.logs.last_mut().unwrap().arg1;
+            Opcode::BrTable(_) => {
+                let index = self.logs.last_mut().unwrap().arg1;
                 let max_index = opcode.aux_value() - 1;
-                    let normalized_index = cmp::min(index, max_index);
-                 self.logs.last_mut().unwrap().res=2*normalized_index+1;
-                 self.logs.last_mut().unwrap().arg2=opcode.aux_value();
-                //  let fake_arg2_record = MemoryReadRecord{ value: opcode.aux_value()-1, shard: 0, timestamp: 0, prev_timestamp:1,prev_shard: 0 };
-                //  self.logs.last_mut().unwrap().memory_access.arg2_record = Some(MemoryRecordEnum::Read(fake_arg2_record));
-                //  self.logs.last_mut().unwrap().arg2=opcode.aux_value()-1;
+                let normalized_index = cmp::min(index, max_index);
+                self.logs.last_mut().unwrap().res = 2 * normalized_index + 1;
+                self.logs.last_mut().unwrap().arg2 = opcode.aux_value();
+                //  let fake_arg2_record = MemoryReadRecord{ value: opcode.aux_value()-1, shard: 0,
+                // timestamp: 0, prev_timestamp:1,prev_shard: 0 };  self.logs.
+                // last_mut().unwrap().memory_access.arg2_record =
+                // Some(MemoryRecordEnum::Read(fake_arg2_record));  self.logs.
+                // last_mut().unwrap().arg2=opcode.aux_value()-1;
                 //   let fake_res_record = MemoryWriteRecord::new(2*normalized_index+1,0, 1,0,0,0);
-                //   self.logs.last_mut().unwrap().memory_access.res_record=Some(MemoryRecordEnum::Write(fake_res_record));
-                
-                  
+                //   self.logs.last_mut().unwrap().memory_access.
+                // res_record=Some(MemoryRecordEnum::Write(fake_res_record));
+            }
+            Opcode::CallInternal(compiled_func)=>{
+                let old_pc = self.logs.last_mut().unwrap().pc+1;
+                let new_call_sp = self.state.call_sp+1;
+                let typed_addr = AddressType::FuncFrame(new_call_sp);
+                let v_addr = typed_addr.to_virtual_addr();
+                let write_record = self.mw(v_addr,old_pc);
+                 let res_record = Some(MemoryRecordEnum::Write(write_record));
+                self.logs.last_mut().unwrap().memory_access.res_record =res_record;
+                self.state.call_sp=new_call_sp;
+
+
             }
             _ => self.record_sw(opcode, new_sp, stack),
         }
 
         self.state.sp = new_sp;
+       
     }
 
     // pub fn global_variable(&mut self, value: UntypedValue, index: u32) {
@@ -304,6 +339,15 @@ impl Tracer {
             let read_record = self.mr(v_addr);
             memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
         }
+
+        if let Opcode::Return=ins{
+             let typed_addr = AddressType::FuncFrame(self.state.call_sp);
+             let read_record = self.mr(typed_addr.to_virtual_addr());
+             memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
+
+        }
+
+        
 
         memory_access
     }
