@@ -48,13 +48,16 @@ pub struct TraceTableSizeState {
     pub init: u32,
     pub delta: u32,
 }
-#[derive(Debug, Clone)]
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy)]
 pub enum CallType {
     Call,
     CallInternal,
     CallIndirect,
+    Return,
 }
-#[derive(Debug, Clone)]
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Copy, Clone)]
 pub struct TraceCallData {
     pub calltype: CallType,
     pub table_id: u32,
@@ -71,16 +74,16 @@ pub struct TracerInstrState {
     pub opcode: Opcode,
     pub sp: u32,
     pub next_sp: u32,
-    pub call_sp:u32,
-    pub next_call_sp:u32,
+    pub call_sp: u32,
+    pub next_call_sp: u32,
     pub call_id: u32,
     pub memory_access: MemoryAccessRecord,
     pub arg1: u32,
 
     pub arg2: u32,
     pub res: u32,
-    
-    pub call_state:Option<TraceCallData>,
+
+    pub call_state: Option<TraceCallData>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -151,8 +154,8 @@ impl Tracer {
             pc: program_counter,
             next_pc: 0,
             opcode,
-            call_sp:self.state.call_sp,
-            next_call_sp:0,
+            call_sp: self.state.call_sp,
+            next_call_sp: 0,
             call_id: 0,
             memory_access: MemoryAccessRecord::default(),
             sp,
@@ -160,7 +163,7 @@ impl Tracer {
             arg1: 0,
             arg2: 0,
             res: 0,
-            call_state:None,
+            call_state: None,
         };
         let memory_access = self.record_mr(opcode, sp);
 
@@ -181,6 +184,10 @@ impl Tracer {
         println!("op_code_state:{:?}", opcode_state);
 
         opcode_state.memory_access = memory_access;
+          if opcode==Opcode::Return{
+            let call_state = TraceCallData{ calltype:CallType::Return, table_id: 0, table_idx: 0, func_ref: 0, signature_id: 0 };
+            opcode_state.call_state=Some(call_state);
+        }
 
         self.logs.push(opcode_state);
     }
@@ -231,23 +238,22 @@ impl Tracer {
                 //   self.logs.last_mut().unwrap().memory_access.
                 // res_record=Some(MemoryRecordEnum::Write(fake_res_record));
             }
-            Opcode::CallInternal(compiled_func)=>{
-                let old_pc = self.logs.last_mut().unwrap().pc+1;
-                let new_call_sp = self.state.call_sp+1;
+            Opcode::CallInternal(compiled_func) => {
+                let old_pc = self.logs.last_mut().unwrap().pc + 1;
+                let new_call_sp = self.state.call_sp + 1;
                 let typed_addr = AddressType::FuncFrame(new_call_sp);
                 let v_addr = typed_addr.to_virtual_addr();
-                let write_record = self.mw(v_addr,old_pc);
-                 let res_record = Some(MemoryRecordEnum::Write(write_record));
-                self.logs.last_mut().unwrap().memory_access.res_record =res_record;
-                self.state.call_sp=new_call_sp;
-
-
+                let write_record = self.mw(v_addr, old_pc);
+                let res_record = Some(MemoryRecordEnum::Write(write_record));
+                self.logs.last_mut().unwrap().memory_access.res_record = res_record;
+                 self.logs.last_mut().unwrap().call_state=Some(TraceCallData { calltype: CallType::CallInternal, table_id: 0, table_idx: 0, func_ref: opcode.aux_value(), signature_id: 0 });
+                self.state.call_sp = new_call_sp;
+                
             }
             _ => self.record_sw(opcode, new_sp, stack),
         }
 
         self.state.sp = new_sp;
-       
     }
 
     // pub fn global_variable(&mut self, value: UntypedValue, index: u32) {
@@ -340,14 +346,14 @@ impl Tracer {
             memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
         }
 
-        if let Opcode::Return=ins{
-             let typed_addr = AddressType::FuncFrame(self.state.call_sp);
-             let read_record = self.mr(typed_addr.to_virtual_addr());
-             memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
-
+        if let Opcode::Return = ins {
+            if self.state.call_sp != 0 {
+                let typed_addr = AddressType::FuncFrame(self.state.call_sp);
+                let read_record = self.mr(typed_addr.to_virtual_addr());
+                memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
+                self.state.call_sp-=1;
+            }
         }
-
-        
 
         memory_access
     }
