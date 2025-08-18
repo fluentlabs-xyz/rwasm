@@ -268,4 +268,6 @@ pub struct MemoryAccessRecord {
 
     /// The high memory access of memory op. This is only valid when the memory op is not aligned.
     pub memory_hi: Option<MemoryRecordEnum>,
+
+    pub call_sp_access:Option<MemoryRecordEnum>,
 }

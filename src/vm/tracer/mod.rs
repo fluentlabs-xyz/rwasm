@@ -155,7 +155,7 @@ impl Tracer {
             next_pc: 0,
             opcode,
             call_sp: self.state.call_sp,
-            next_call_sp: 0,
+            next_call_sp: self.state.call_sp,
             call_id: 0,
             memory_access: MemoryAccessRecord::default(),
             sp,
@@ -184,9 +184,16 @@ impl Tracer {
         println!("op_code_state:{:?}", opcode_state);
 
         opcode_state.memory_access = memory_access;
-          if opcode==Opcode::Return{
-            let call_state = TraceCallData{ calltype:CallType::Return, table_id: 0, table_idx: 0, func_ref: 0, signature_id: 0 };
-            opcode_state.call_state=Some(call_state);
+        if opcode == Opcode::Return &&self.state.call_sp!=0{
+            let call_state = TraceCallData {
+                calltype: CallType::Return,
+                table_id: 0,
+                table_idx: 0,
+                func_ref: 0,
+                signature_id: 0,
+            };
+            opcode_state.call_state = Some(call_state);
+            opcode_state.next_call_sp=self.state.call_sp-1;
         }
 
         self.logs.push(opcode_state);
@@ -245,10 +252,17 @@ impl Tracer {
                 let v_addr = typed_addr.to_virtual_addr();
                 let write_record = self.mw(v_addr, old_pc);
                 let res_record = Some(MemoryRecordEnum::Write(write_record));
-                self.logs.last_mut().unwrap().memory_access.res_record = res_record;
-                 self.logs.last_mut().unwrap().call_state=Some(TraceCallData { calltype: CallType::CallInternal, table_id: 0, table_idx: 0, func_ref: opcode.aux_value(), signature_id: 0 });
+                self.logs.last_mut().unwrap().memory_access.call_sp_access =
+                    Some(MemoryRecordEnum::Write(write_record));
+                self.logs.last_mut().unwrap().call_state = Some(TraceCallData {
+                    calltype: CallType::CallInternal,
+                    table_id: 0,
+                    table_idx: 0,
+                    func_ref: opcode.aux_value(),
+                    signature_id: 0,
+                });
+                self.logs.last_mut().unwrap().next_call_sp=new_call_sp;
                 self.state.call_sp = new_call_sp;
-                
             }
             _ => self.record_sw(opcode, new_sp, stack),
         }
@@ -350,8 +364,8 @@ impl Tracer {
             if self.state.call_sp != 0 {
                 let typed_addr = AddressType::FuncFrame(self.state.call_sp);
                 let read_record = self.mr(typed_addr.to_virtual_addr());
-                memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
-                self.state.call_sp-=1;
+                memory_access.call_sp_access = Some(MemoryRecordEnum::Read(read_record));
+                self.state.call_sp -= 1;
             }
         }
 
