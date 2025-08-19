@@ -34,7 +34,7 @@ pub struct WasmtimeCaller<'a, T: Send + Sync + 'static> {
 }
 
 pub struct WasmtimeWorker<T: 'static + Send + Sync> {
-    store: wasmtime::Store<WrappedContext<T>>,
+    store: RefCell<wasmtime::Store<WrappedContext<T>>>,
     instance: wasmtime::Instance,
     execution_handle: Option<wasmtime::ExecutionHandle>,
 }
@@ -62,7 +62,7 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
             .unwrap_or_else(|err| panic!("can't instantiate wasmtime: {}", err));
 
         Self {
-            store,
+            store: RefCell::new(store),
             instance,
             execution_handle: None,
         }
@@ -74,7 +74,8 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        execute_wasmtime_module(self.instance, &mut self.store, func_name, params, result)
+        let mut store = self.store.borrow_mut();
+        execute_wasmtime_module(self.instance, &mut *store, func_name, params, result)
     }
 
     pub fn execute(
@@ -84,10 +85,11 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
         assert!(self.execution_handle.is_none(), "execution already in progress");
-        match execute_wasmtime_module(self.instance, &mut self.store, func_name, params, result) {
+        let mut store = self.store.borrow_mut();
+        match execute_wasmtime_module(self.instance, &mut *store, func_name, params, result) {
             Ok(()) => Ok(()),
             Err(TrapCode::InterruptionCalled) => {
-                self.execution_handle = Some(self.instance.get_execution_handle().expect("execution should be paused"));
+                self.execution_handle = Some(self.instance.get_execution_handle(&mut *store).expect("execution should be paused"));
                 Err(TrapCode::InterruptionCalled)
             }
             Err(other) => Err(other),
@@ -98,22 +100,10 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
         &mut self,
         interruption_result: Result<&[Value], TrapCode>,
         result: &mut [Value],
-        _memory_changes: Vec<(u32, Box<[u8]>)>, // Ignored - wasmtime handles memory consistency
     ) -> Result<(), TrapCode> {
         let handle = self.execution_handle.take().expect("no execution to resume");
-
-        // Convert interruption result to wasmtime format
-        let wasmtime_result = interruption_result.map(|values| {
-            values.iter().map(|v| match v {
-                Value::I32(x) => wasmtime::Val::I32(*x),
-                Value::I64(x) => wasmtime::Val::I64(*x),
-                Value::F32(x) => wasmtime::Val::F32(x.to_bits()),
-                Value::F64(x) => wasmtime::Val::F64(x.to_bits()),
-                _ => unreachable!("unsupported value type"),
-            }).collect::<Vec<_>>()
-        });
-
-        match handle.resume(&mut self.store, wasmtime_result) {
+        let mut store = self.store.borrow_mut();
+        match handle.resume(&mut *store) {
             Ok(wasmtime_results) => {
                 for (i, val) in wasmtime_results.into_iter().enumerate() {
                     if i < result.len() {
@@ -128,62 +118,73 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
                 }
                 Ok(())
             }
-            Err(TrapCode::InterruptionCalled) => {
-                // Interrupted again - get new handle
-                self.execution_handle = Some(self.instance.get_execution_handle().expect("execution should be paused"));
-                Err(TrapCode::InterruptionCalled)
+            Err(trap) => {
+                let trap_code = map_anyhow_error(trap.into());
+                if trap_code == TrapCode::InterruptionCalled {
+                    self.execution_handle = Some(self.instance.get_execution_handle(&mut *store).expect("execution should be paused"));
+                    Err(TrapCode::InterruptionCalled)
+                } else {
+                    Err(trap_code)
+                }
             }
-            Err(other) => Err(other),
         }
     }
 }
 
 impl<T: Send + Sync> Store<T> for WasmtimeWorker<T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+        let mut store = self.store.borrow_mut();
         let memory = self
             .instance
-            .get_export(&self.store, "memory")
+            .get_export(&mut *store, "memory")
             .unwrap_or_else(|| unreachable!("missing memory export"))
             .into_memory()
             .unwrap_or_else(|| unreachable!("missing memory export"));
         memory
-            .read(&self.store, offset, buffer)
+            .read(&*store, offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        let memory = self
-            .unwrap_or_else(|| unreachable!("missing memory export"))
-            .into_memory()
-            .unwrap_or_else(|| unreachable!("missing memory export"));
-        memory
-            .write(&mut self.store, offset, buffer)
-            .map_err(|_| TrapCode::MemoryOutOfBounds)
+        let mut store = self.store.borrow_mut();
+        		let memory = self
+			.instance
+			.get_export(&mut *store, "memory")
+			.unwrap_or_else(|| unreachable!("missing memory export"))
+			.into_memory()
+			.unwrap_or_else(|| unreachable!("missing memory export"));
+		memory
+			.write(&mut *store, offset, buffer)
+			.map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
     fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
-        func(&mut self.store.data_mut().inner)
+        let mut store = self.store.borrow_mut();
+        func(&mut store.data_mut().inner)
     }
 
     fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
-        func(&self.store.data().inner)
+        let store = self.store.borrow();
+        func(&store.data().inner)
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
-        if let Ok(remaining_fuel) = self.store.get_fuel() {
+        let mut store = self.store.borrow_mut();
+        if let Ok(remaining_fuel) = store.get_fuel() {
             let new_fuel = remaining_fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
-            self.store.set_fuel(new_fuel).unwrap_or_else(|_| unreachable!("fuel mode should be enabled"));
-        } else if let Some(fuel) = self.store.data_mut().fuel.as_mut() {
+            store.set_fuel(new_fuel).unwrap_or_else(|_| unreachable!("fuel mode should be enabled"));
+        } else if let Some(fuel) = store.data_mut().fuel.as_mut() {
             *fuel = fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
         }
         Ok(())
     }
 
     fn remaining_fuel(&mut self) -> Option<u64> {
-        if let Ok(fuel) = self.store.get_fuel() {
+        let store = self.store.borrow();
+        if let Ok(fuel) = store.get_fuel() {
             Some(fuel)
         } else {
-            self.store.data().fuel
+            store.data().fuel
         }
     }
 }
@@ -345,7 +346,7 @@ fn execute_wasmtime_module<T: Send + Sync>(
 
 fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
     sys_func_idx: u32,
-    mut caller: wasmtime::Caller<'a, WrappedContext<T>>,
+    caller: wasmtime::Caller<'a, WrappedContext<T>>,
     params: &[wasmtime::Val],
     results: &mut [wasmtime::Val],
 ) -> anyhow::Result<()> {
@@ -383,7 +384,7 @@ fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
             Ok(())
         }
         Err(TrapCode::InterruptionCalled) => {
-            caller_adapter.as_wasmtime_mut().caller.into_inner().pause_execution()?;
+            caller_adapter.as_wasmtime_mut().caller.borrow_mut().pause_execution()?;
             Ok(())
         }
         Err(TrapCode::ExecutionHalted) => {
@@ -456,6 +457,7 @@ fn map_anyhow_error(err: anyhow::Error) -> TrapCode {
             Trap::CastFailure => TrapCode::BadConversionToInteger,
             Trap::CannotEnterComponent => unreachable!("component-model is not supported"),
             Trap::NoAsyncResult => unreachable!("async mode must be disabled"),
+            Trap::PauseExecution => TrapCode::InterruptionCalled,
             _ => unreachable!("unknown trap wasmtime code"),
         }
     } else if let Some(trap) = err.downcast_ref::<TrapCode>() {

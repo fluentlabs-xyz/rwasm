@@ -125,7 +125,7 @@ fn test_interrupted_call_wasmtime() {
         .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
     wasmtime_worker
-        .resume(Ok(&[]), &mut result, vec![])
+        .resume(Ok(&[]), &mut result)
         .unwrap();
     assert_eq!(result[0].i32().unwrap(), 120);
 }

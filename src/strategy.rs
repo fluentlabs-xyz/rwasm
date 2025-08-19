@@ -304,7 +304,7 @@ impl Strategy {
                     TypedStore::Wasmtime(store) => store,
                     _ => unreachable!(),
                 };
-                store.resume(Ok(interruption_result), result, vec![])
+                store.resume(Ok(interruption_result), result)
             }
         }
     }
@@ -336,7 +336,7 @@ impl Strategy {
                     TypedStore::Wasmtime(store) => store,
                     _ => unreachable!(),
                 };
-                store.resume(Ok(interruption_result), result, memory_changes)
+                store.resume(Ok(interruption_result), result)
             }
         }
     }
