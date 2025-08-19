@@ -184,7 +184,7 @@ impl Tracer {
         println!("op_code_state:{:?}", opcode_state);
 
         opcode_state.memory_access = memory_access;
-        if opcode == Opcode::Return &&self.state.call_sp!=0{
+        if opcode == Opcode::Return && self.state.call_sp != 0 {
             let call_state = TraceCallData {
                 calltype: CallType::Return,
                 table_id: 0,
@@ -193,7 +193,7 @@ impl Tracer {
                 signature_id: 0,
             };
             opcode_state.call_state = Some(call_state);
-            opcode_state.next_call_sp=self.state.call_sp-1;
+            opcode_state.next_call_sp = self.state.call_sp - 1;
         }
 
         self.logs.push(opcode_state);
@@ -261,8 +261,14 @@ impl Tracer {
                     func_ref: opcode.aux_value(),
                     signature_id: 0,
                 });
-                self.logs.last_mut().unwrap().next_call_sp=new_call_sp;
+                self.logs.last_mut().unwrap().next_call_sp = new_call_sp;
                 self.state.call_sp = new_call_sp;
+            }
+            Opcode::Return => {
+                if self.logs.last_mut().unwrap().call_sp != 0 {
+                    self.state.call_sp = self.logs.last_mut().unwrap().call_sp - 1;
+                    self.logs.last_mut().unwrap().next_call_sp = self.state.call_sp;
+                }
             }
             _ => self.record_sw(opcode, new_sp, stack),
         }

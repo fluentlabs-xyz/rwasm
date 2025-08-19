@@ -3,7 +3,7 @@ pub struct VMState {
     pub clk: u32,
     pub shard: u32,
     pub sp: u32,
-    pub call_sp:u32,
+    pub call_sp: u32,
 }
 
 pub const MAX_CYCLE_FOR_OP: u32 = 8; // TODO determine this for all instructions
