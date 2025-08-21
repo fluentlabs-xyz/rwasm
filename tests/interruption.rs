@@ -1,21 +1,7 @@
 use rwasm::{
-    always_failing_syscall_handler,
-    compile_wasmtime_module,
-    instruction_set,
-    CompilationConfig,
-    ExecutionEngine,
-    ExecutorConfig,
-    ImportLinker,
-    ImportName,
-    InstructionSet,
-    RwasmModule,
-    RwasmStore,
-    Store,
-    Strategy,
-    TrapCode,
-    TypedCaller,
-    Value,
-    WasmtimeWorker,
+    always_failing_syscall_handler, compile_wasmtime_module, instruction_set, CompilationConfig,
+    ExecutionEngine, ExecutorConfig, ImportLinker, ImportName, InstructionSet, RwasmModule,
+    RwasmStore, Store, Strategy, TrapCode, TypedCaller, Value, WasmtimeWorker,
 };
 use std::rc::Rc;
 
@@ -111,7 +97,8 @@ fn test_interrupted_call_wasmtime() {
         .unwrap();
     assert_eq!(result[0].i32().unwrap(), 120);
     // run with wasmtime
-    let module = Rc::new(compile_wasmtime_module(&wasm_binary).unwrap());
+    let module =
+        Rc::new(compile_wasmtime_module(CompilationConfig::default(), &wasm_binary).unwrap());
     let mut wasmtime_worker = WasmtimeWorker::new(
         module,
         import_linker.clone(),

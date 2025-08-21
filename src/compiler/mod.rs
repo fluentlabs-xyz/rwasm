@@ -8,9 +8,9 @@ mod labels;
 mod locals_registry;
 mod parser;
 mod segment_builder;
+mod snippets;
 mod translator;
 mod utils;
-mod value_stack;
 
 pub use self::{
     config::{CompilationConfig, StateRouterConfig},

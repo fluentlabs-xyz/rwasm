@@ -20,7 +20,7 @@ env:
 jobs:
   coverage:
     name: Coverage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-amd64-8core
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,7 +33,9 @@ jobs:
       - name: Setup cache
         uses: Swatinem/rust-cache@v2
       - name: Install wasm32 target
-        run: rustup target add wasm32-unknown-unknown
+        run: |
+          rustup target add wasm32-unknown-unknown
+          rustup +nightly target add wasm32-unknown-unknown
       - name: Run cargo check
         run: cargo check
       - name: Generate code coverage

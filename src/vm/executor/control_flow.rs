@@ -1,14 +1,6 @@
 use crate::{
-    BranchOffset,
-    BranchTableTargets,
-    CompiledFunc,
-    InstructionPtr,
-    RwasmExecutor,
-    SignatureIdx,
-    SysFuncIdx,
-    TrapCode,
-    NULL_FUNC_IDX,
-    N_MAX_RECURSION_DEPTH,
+    BranchOffset, BranchTableTargets, CompiledFunc, InstructionPtr, RwasmExecutor, SignatureIdx,
+    SysFuncIdx, TrapCode, NULL_FUNC_IDX, N_MAX_RECURSION_DEPTH,
 };
 use core::cmp;
 
@@ -73,7 +65,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         self.ip.add(1);
         self.value_stack.sync_stack_ptr(self.sp);
         self.sp = self.value_stack.stack_ptr();
-        self.ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
+        self.ip = InstructionPtr::new(self.module.code_section.as_ptr());
         self.ip.add(compiled_func as usize);
     }
 
@@ -109,7 +101,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         self.ip.add(2);
         self.value_stack.sync_stack_ptr(self.sp);
         self.sp = self.value_stack.stack_ptr();
-        self.ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
+        self.ip = InstructionPtr::new(self.module.code_section.as_ptr());
         self.ip.add(instr_ref as usize);
         Ok(())
     }
@@ -126,7 +118,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         }
         self.call_stack.push(self.ip);
         self.sp = self.value_stack.stack_ptr();
-        self.ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
+        self.ip = InstructionPtr::new(self.module.code_section.as_ptr());
         self.ip.add(compiled_func as usize);
         Ok(())
     }
@@ -168,7 +160,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         }
         self.call_stack.push(self.ip);
         self.sp = self.value_stack.stack_ptr();
-        self.ip = InstructionPtr::new(self.module.code_section.instr.as_ptr());
+        self.ip = InstructionPtr::new(self.module.code_section.as_ptr());
         self.ip.add(instr_ref as usize);
         Ok(())
     }

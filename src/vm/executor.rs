@@ -9,17 +9,8 @@ mod table;
 
 use crate::{
     types::{AddressOffset, RwasmModule, TableIdx, UntypedValue},
-    CallStack,
-    InstructionPtr,
-    Opcode,
-    RwasmCaller,
-    RwasmStore,
-    SysFuncIdx,
-    TrapCode,
-    TypedCaller,
-    Value,
-    ValueStack,
-    ValueStackPtr,
+    CallStack, InstructionPtr, Opcode, RwasmCaller, RwasmStore, SysFuncIdx, TrapCode, TypedCaller,
+    Value, ValueStack, ValueStackPtr,
 };
 use smallvec::SmallVec;
 
@@ -150,6 +141,8 @@ macro_rules! exec_opcode {
         I32WrapI64 => $self.visit_i32_wrap_i64(),
         I32Extend8S => $self.visit_i32_extend8_s(),
         I32Extend16S => $self.visit_i32_extend16_s(),
+        I32Mul64 => $self.visit_i32_mul64(),
+        I32Add64 => $self.visit_i32_add64(),
 
         // memory
         MemorySize => $self.visit_memory_size(),
@@ -191,7 +184,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         store: &'a mut RwasmStore<T>,
     ) -> Self {
         let sp = value_stack.stack_ptr();
-        let ip = InstructionPtr::new(module.code_section.instr.as_ptr());
+        let ip = InstructionPtr::new(module.code_section.as_ptr());
         Self::new(module, value_stack, sp, call_stack, ip, store)
     }
 
@@ -227,7 +220,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     }
 
     pub fn program_counter(&self) -> u32 {
-        let diff = self.ip.ptr as u32 - self.module.code_section.instr.as_ptr() as u32;
+        let diff = self.ip.ptr as u32 - self.module.code_section.as_ptr() as u32;
         diff / size_of::<Opcode>() as u32
     }
 
@@ -237,7 +230,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             self.sp.push_value(x);
         }
         // run the loop
-        let status = self.run_the_loop(params, result);
+        let status = self.run_the_loop();
         // trap halts the execution, we need to clear the stack
         if let Some(trap_code) = status.err() {
             // clear stack only for non-interrupted calls
@@ -265,7 +258,39 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         Ok(())
     }
 
-    fn run_the_loop(&mut self, params: &[Value], result: &mut [Value]) -> Result<(), TrapCode> {
+    pub fn run_with_stack_check(&mut self) -> Result<(), TrapCode> {
+        // run the loop
+        let status = loop {
+            let instr = self.ip.get();
+            #[cfg(feature = "debug-print")]
+            self.debug_print(&instr);
+            exec_opcode!(self, instr, break Ok(()));
+            self.value_stack.check_max_stack_height(self.sp);
+        };
+        // trap halts the execution, we need to clear the stack
+        if let Some(trap_code) = status.err() {
+            // clear stack only for non-interrupted calls
+            if trap_code != TrapCode::InterruptionCalled {
+                // TODO(dmitry123): "do we also need to reset store flags?"
+                self.call_stack.reset();
+            }
+            // forward the error
+            return Err(trap_code);
+        }
+        self.value_stack.sync_stack_ptr(self.sp);
+        // execution is over, clear stacks
+        // TODO(dmitry123): "enable this check after refactoring tests"
+        // debug_assert_eq!(
+        //     self.value_stack.stack_len(self.sp),
+        //     0,
+        //     "after execution the value stack must be empty"
+        // );
+        // we must reset the call stack in case of traps inside nested calls
+        self.call_stack.reset();
+        Ok(())
+    }
+
+    fn run_the_loop(&mut self) -> Result<(), TrapCode> {
         loop {
             let instr = self.ip.get();
             #[cfg(feature = "debug-print")]
@@ -329,18 +354,26 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "debug-print")]
     fn debug_print(&mut self, instr: &Opcode) {
-        let stack = self.value_stack.dump_stack(self.sp);
-        println!(
-            "{:04}:\t {} \tstack({}):{:?}",
+        self.value_stack.sync_stack_ptr(self.sp);
+        print!(
+            "{:04}:\t {} \tstack_len={}, stack_cap={}, ",
             self.program_counter(),
             instr,
-            stack.len(),
-            stack
+            self.value_stack.len(),
+            self.value_stack.capacity(),
+        );
+        use std::io::Write;
+        std::io::stdout().flush().unwrap();
+        println!(
+            "stack={:?}, sp={:?}",
+            self.value_stack
+                .dump_stack()
                 .iter()
                 .rev()
                 .take(10)
                 .map(|v| v.as_usize())
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
+            self.sp,
         );
     }
 

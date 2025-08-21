@@ -2,6 +2,7 @@ extern crate test;
 
 use rwasm::{
     always_failing_syscall_handler,
+    compile_wasmi_module,
     compile_wasmtime_module,
     CompilationConfig,
     ExecutionEngine,
@@ -119,21 +120,13 @@ fn bench_rwasm(b: &mut Bencher) {
     });
 }
 
-#[bench]
-fn bench_wasmtime(b: &mut Bencher) {
-    let wasm_binary = include_bytes!("./lib.wasm");
-
-    let strategy = Strategy::Wasmtime {
-        module: Rc::new(compile_wasmtime_module(wasm_binary).unwrap()),
-        resumable: false,
-    };
+fn bench_strategy(b: &mut Bencher, strategy: Strategy) {
     let mut store = strategy.create_store(
-        ExecutorConfig::default(),
+        ExecutorConfig::default().fuel_limit(1_000_000_000_000),
         Rc::new(ImportLinker::default()),
         (),
         always_failing_syscall_handler,
     );
-
     b.iter(|| {
         let mut result = [Value::I32(0)];
         strategy
@@ -144,27 +137,36 @@ fn bench_wasmtime(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_wasmtime_resumable(b: &mut Bencher) {
+fn bench_strategy_wasmtime(b: &mut Bencher) {
     let wasm_binary = include_bytes!("./lib.wasm");
-
     let strategy = Strategy::Wasmtime {
-        module: Rc::new(compile_wasmtime_module(wasm_binary).unwrap()),
+        module: Rc::new(
+            compile_wasmtime_module(CompilationConfig::default(), wasm_binary).unwrap(),
+        ),
+        resumable: false,
+    };
+    bench_strategy(b, strategy)
+}
+
+#[bench]
+fn bench_strategy_wasmtime_resumable(b: &mut Bencher) {
+    let wasm_binary = include_bytes!("./lib.wasm");
+    let strategy = Strategy::Wasmtime {
+        module: Rc::new(
+            compile_wasmtime_module(CompilationConfig::default(), wasm_binary).unwrap(),
+        ),
         resumable: true,
     };
-    let mut store = strategy.create_store(
-        ExecutorConfig::default(),
-        Rc::new(ImportLinker::default()),
-        (),
-        always_failing_syscall_handler,
-    );
+    bench_strategy(b, strategy)
+}
 
-    b.iter(|| {
-        let mut result = [Value::I32(0)];
-        strategy
-            .execute(&mut store, "main", &[Value::I32(FIB_VALUE)], &mut result)
-            .unwrap();
-        core::hint::black_box(result);
-    });
+#[bench]
+fn bench_strategy_wasmi(b: &mut Bencher) {
+    let wasm_binary = include_bytes!("./lib.wasm");
+    let strategy = Strategy::Wasmi {
+        module: Rc::new(compile_wasmi_module(CompilationConfig::default(), wasm_binary).unwrap()),
+    };
+    bench_strategy(b, strategy)
 }
 
 #[bench]

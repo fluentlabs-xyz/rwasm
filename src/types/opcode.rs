@@ -1,21 +1,9 @@
 use crate::{
     types::{
-        AddressOffset,
-        BlockFuel,
-        BranchOffset,
-        BranchTableTargets,
-        CompiledFunc,
-        DataSegmentIdx,
-        ElementSegmentIdx,
-        GlobalIdx,
-        LocalDepth,
-        SignatureIdx,
-        TableIdx,
-        UntypedValue,
+        AddressOffset, BlockFuel, BranchOffset, BranchTableTargets, CompiledFunc, DataSegmentIdx,
+        ElementSegmentIdx, GlobalIdx, LocalDepth, SignatureIdx, TableIdx, UntypedValue,
     },
-    MaxStackHeight,
-    SysFuncIdx,
-    TrapCode,
+    MaxStackHeight, SysFuncIdx, TrapCode,
 };
 use alloc::{format, vec::Vec};
 use bincode::{Decode, Encode};
@@ -111,6 +99,8 @@ pub enum Opcode {
     I32WrapI64 = 0xbd,
     I32Extend8S = 0xbe,
     I32Extend16S = 0xbf,
+    I32Mul64 = 0xc0,
+    I32Add64 = 0xc1,
 
     // fpu
     #[cfg(feature = "fpu")]

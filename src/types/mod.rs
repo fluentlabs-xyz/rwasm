@@ -15,6 +15,7 @@ mod trap_code;
 mod units;
 mod untyped_value;
 mod value;
+mod value_stack;
 
 pub use branch_offset::*;
 pub use compiled_expr::*;
@@ -33,7 +34,14 @@ pub use trap_code::*;
 pub use units::*;
 pub use untyped_value::*;
 pub use value::*;
+pub use value_stack::*;
 
+/// A default stack size we use for stack allocation.
+///
+/// This value can't be less than 6, because 4 elements we need for an entrypoint and 1 element
+/// we need for running e2e testing suite where one parameter can be passed into the test.
+///
+/// We keep value 32 since it's the most optimal.
 pub const N_DEFAULT_STACK_SIZE: usize = 32;
 pub const N_MAX_STACK_SIZE: usize = 8192;
 pub const N_MAX_RECURSION_DEPTH: usize = 1024;
@@ -69,6 +77,11 @@ pub const N_MAX_ELEM_SEGMENTS_BITS: usize =
 /// For null RefFunc/ExternRef types we use 0. We can do this
 /// because 0 offset is reserved under an entrypoint that can't be re-called
 pub const NULL_FUNC_IDX: u32 = 0u32;
+
+/// Placeholder for the function index of a snippet.
+/// The actual index is resolved in later compilation stages
+/// once the snippet's final location is known.
+pub const SNIPPET_FUNC_IDX_UNRESOLVED: u32 = u32::MAX;
 
 /// That maximum possible number of tables allowed, the limited is driven from Wasm standards
 pub const N_MAX_TABLES: u32 = 100;
