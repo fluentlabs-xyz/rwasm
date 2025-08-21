@@ -1,23 +1,10 @@
 use crate::{
-    Caller,
-    ImportLinker,
-    Store,
-    SyscallHandler,
-    TrapCode,
-    TypedCaller,
-    UntypedValue,
-    ValType,
-    Value,
-    F32,
-    F64,
-    N_MAX_STACK_SIZE,
+    Caller, CompilationConfig, ImportLinker, Store, SyscallHandler, TrapCode, TypedCaller,
+    UntypedValue, ValType, Value, F32, F64, N_MAX_STACK_SIZE,
 };
 use alloc::rc::Rc;
 use smallvec::SmallVec;
-use std::{
-    cell::RefCell,
-    time::Instant,
-};
+use std::{cell::RefCell, time::Instant};
 use wasmtime::{AsContext, AsContextMut};
 
 pub type WasmtimeModule = wasmtime::Module;
@@ -84,12 +71,19 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        assert!(self.execution_handle.is_none(), "execution already in progress");
+        assert!(
+            self.execution_handle.is_none(),
+            "execution already in progress"
+        );
         let mut store = self.store.borrow_mut();
         match execute_wasmtime_module(self.instance, &mut *store, func_name, params, result) {
             Ok(()) => Ok(()),
             Err(TrapCode::InterruptionCalled) => {
-                self.execution_handle = Some(self.instance.get_execution_handle(&mut *store).expect("execution should be paused"));
+                self.execution_handle = Some(
+                    self.instance
+                        .get_execution_handle(&mut *store)
+                        .expect("execution should be paused"),
+                );
                 Err(TrapCode::InterruptionCalled)
             }
             Err(other) => Err(other),
@@ -101,7 +95,10 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
         interruption_result: Result<&[Value], TrapCode>,
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        let handle = self.execution_handle.take().expect("no execution to resume");
+        let handle = self
+            .execution_handle
+            .take()
+            .expect("no execution to resume");
         let mut store = self.store.borrow_mut();
         match handle.resume(&mut *store) {
             Ok(wasmtime_results) => {
@@ -121,7 +118,11 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
             Err(trap) => {
                 let trap_code = map_anyhow_error(trap.into());
                 if trap_code == TrapCode::InterruptionCalled {
-                    self.execution_handle = Some(self.instance.get_execution_handle(&mut *store).expect("execution should be paused"));
+                    self.execution_handle = Some(
+                        self.instance
+                            .get_execution_handle(&mut *store)
+                            .expect("execution should be paused"),
+                    );
                     Err(TrapCode::InterruptionCalled)
                 } else {
                     Err(trap_code)
@@ -147,15 +148,15 @@ impl<T: Send + Sync> Store<T> for WasmtimeWorker<T> {
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
         let mut store = self.store.borrow_mut();
-        		let memory = self
-			.instance
-			.get_export(&mut *store, "memory")
-			.unwrap_or_else(|| unreachable!("missing memory export"))
-			.into_memory()
-			.unwrap_or_else(|| unreachable!("missing memory export"));
-		memory
-			.write(&mut *store, offset, buffer)
-			.map_err(|_| TrapCode::MemoryOutOfBounds)
+        let memory = self
+            .instance
+            .get_export(&mut *store, "memory")
+            .unwrap_or_else(|| unreachable!("missing memory export"))
+            .into_memory()
+            .unwrap_or_else(|| unreachable!("missing memory export"));
+        memory
+            .write(&mut *store, offset, buffer)
+            .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
     fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
@@ -171,8 +172,12 @@ impl<T: Send + Sync> Store<T> for WasmtimeWorker<T> {
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
         let mut store = self.store.borrow_mut();
         if let Ok(remaining_fuel) = store.get_fuel() {
-            let new_fuel = remaining_fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
-            store.set_fuel(new_fuel).unwrap_or_else(|_| unreachable!("fuel mode should be enabled"));
+            let new_fuel = remaining_fuel
+                .checked_sub(delta)
+                .ok_or(TrapCode::OutOfFuel)?;
+            store
+                .set_fuel(new_fuel)
+                .unwrap_or_else(|_| unreachable!("fuel mode should be enabled"));
         } else if let Some(fuel) = store.data_mut().fuel.as_mut() {
             *fuel = fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
         }
@@ -227,8 +232,11 @@ impl<'a, T: Send + Sync> Store<T> for WasmtimeCaller<'a, T> {
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
         let mut ctx = self.caller.borrow_mut();
         if let Ok(remaining_fuel) = ctx.get_fuel() {
-            let new_fuel = remaining_fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
-            ctx.set_fuel(new_fuel).unwrap_or_else(|_| unreachable!("fuel mode should be enabled"));
+            let new_fuel = remaining_fuel
+                .checked_sub(delta)
+                .ok_or(TrapCode::OutOfFuel)?;
+            ctx.set_fuel(new_fuel)
+                .unwrap_or_else(|_| unreachable!("fuel mode should be enabled"));
         } else if let Some(fuel) = ctx.data_mut().fuel.as_mut() {
             *fuel = fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
         }
@@ -290,7 +298,10 @@ pub fn deserialize_wasmtime_module(
     module
 }
 
-pub fn compile_wasmtime_module(wasm_binary: impl AsRef<[u8]>) -> anyhow::Result<WasmtimeModule> {
+pub fn compile_wasmtime_module(
+    _compilation_config: CompilationConfig,
+    wasm_binary: impl AsRef<[u8]>,
+) -> anyhow::Result<WasmtimeModule> {
     print!("compiling wasmtime module... ");
     let start = Instant::now();
     let engine = wasmtime::Engine::new(&wasmtime_config()?)?;
@@ -369,7 +380,12 @@ fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
     let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
 
     // Execute the syscall
-    match syscall_handler(&mut caller_adapter, sys_func_idx, mapped_params, mapped_result) {
+    match syscall_handler(
+        &mut caller_adapter,
+        sys_func_idx,
+        mapped_params,
+        mapped_result,
+    ) {
         Ok(_) => {
             // Convert results back to wasmtime format
             for (i, value) in mapped_result.iter().enumerate() {
@@ -384,15 +400,15 @@ fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
             Ok(())
         }
         Err(TrapCode::InterruptionCalled) => {
-            caller_adapter.as_wasmtime_mut().caller.borrow_mut().pause_execution()?;
+            caller_adapter
+                .as_wasmtime_mut()
+                .caller
+                .borrow_mut()
+                .pause_execution()?;
             Ok(())
         }
-        Err(TrapCode::ExecutionHalted) => {
-            Err(TrapCode::ExecutionHalted.into())
-        }
-        Err(trap_code) => {
-            Err(trap_code.into())
-        }
+        Err(TrapCode::ExecutionHalted) => Err(TrapCode::ExecutionHalted.into()),
+        Err(trap_code) => Err(trap_code.into()),
     }
 }
 
