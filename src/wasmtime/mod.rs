@@ -77,15 +77,18 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
         );
         let mut store = self.store.borrow_mut();
         match execute_wasmtime_module(self.instance, &mut *store, func_name, params, result) {
-            Ok(()) => Ok(()),
-            Err(TrapCode::InterruptionCalled) => {
-                self.execution_handle = Some(
-                    self.instance
-                        .get_execution_handle(&mut *store)
-                        .expect("execution should be paused"),
-                );
-                Err(TrapCode::InterruptionCalled)
-            }
+            Ok(()) => {
+                if store.is_execution_paused() {
+                    self.execution_handle = Some(
+                        self.instance
+                            .get_execution_handle(&mut *store)
+                            .expect("execution should be paused"),
+                    );
+                    Err(TrapCode::InterruptionCalled)
+                } else {
+                    Ok(())
+                }
+            },
             Err(other) => Err(other),
         }
     }
@@ -100,7 +103,22 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
             .take()
             .expect("no execution to resume");
         let mut store = self.store.borrow_mut();
-        match handle.resume(&mut *store) {
+        
+        // Convert interruption_result to wasmtime::Val for resume
+        let resume_values = match interruption_result {
+            Ok(values) => {
+                values.iter().map(|val| match val {
+                    Value::I32(x) => wasmtime::Val::I32(*x),
+                    Value::I64(x) => wasmtime::Val::I64(*x),
+                    Value::F32(x) => wasmtime::Val::F32(x.to_bits()),
+                    Value::F64(x) => wasmtime::Val::F64(x.to_bits()),
+                    _ => unreachable!("unsupported value type"),
+                }).collect::<Vec<_>>()
+            },
+            Err(_) => Vec::new(), // TODO: Handle error case appropriately
+        };
+        
+        match handle.resume(&mut *store, resume_values) {
             Ok(wasmtime_results) => {
                 for (i, val) in wasmtime_results.into_iter().enumerate() {
                     if i < result.len() {
@@ -118,11 +136,14 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
             Err(trap) => {
                 let trap_code = map_anyhow_error(trap.into());
                 if trap_code == TrapCode::InterruptionCalled {
-                    self.execution_handle = Some(
-                        self.instance
-                            .get_execution_handle(&mut *store)
-                            .expect("execution should be paused"),
-                    );
+                    // Check if execution is still paused after resume attempt
+                    if store.is_execution_paused() {
+                        self.execution_handle = Some(
+                            self.instance
+                                .get_execution_handle(&mut *store)
+                                .expect("execution should be paused"),
+                        );
+                    }
                     Err(TrapCode::InterruptionCalled)
                 } else {
                     Err(trap_code)
@@ -400,11 +421,13 @@ fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
             Ok(())
         }
         Err(TrapCode::InterruptionCalled) => {
+            // Use new cooperative pause model - pause_execution() returns Ok(())
             caller_adapter
                 .as_wasmtime_mut()
                 .caller
                 .borrow_mut()
-                .pause_execution()?;
+                .pause_execution()
+                .map_err(|trap| anyhow::Error::from(trap))?;
             Ok(())
         }
         Err(TrapCode::ExecutionHalted) => Err(TrapCode::ExecutionHalted.into()),
