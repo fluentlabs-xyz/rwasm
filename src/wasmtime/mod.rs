@@ -85,7 +85,7 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
                 } else {
                     Ok(())
                 }
-            },
+            }
             Err(other) => Err(other),
         }
     }
@@ -100,21 +100,22 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
             .take()
             .expect("no execution to resume");
         let mut store = self.store.borrow_mut();
-        
+
         // Convert interruption_result to wasmtime::Val for resume
         let resume_values = match interruption_result {
-            Ok(values) => {
-                values.iter().map(|val| match val {
+            Ok(values) => values
+                .iter()
+                .map(|val| match val {
                     Value::I32(x) => wasmtime::Val::I32(*x),
                     Value::I64(x) => wasmtime::Val::I64(*x),
                     Value::F32(x) => wasmtime::Val::F32(x.to_bits()),
                     Value::F64(x) => wasmtime::Val::F64(x.to_bits()),
                     _ => unreachable!("unsupported value type"),
-                }).collect::<Vec<_>>()
-            },
+                })
+                .collect::<Vec<_>>(),
             Err(_) => Vec::new(), // TODO: Handle error case appropriately
         };
-        
+
         match handle.resume(&mut *store, resume_values) {
             Ok(wasmtime_results) => {
                 for (i, val) in wasmtime_results.into_iter().enumerate() {
