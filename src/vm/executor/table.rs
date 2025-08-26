@@ -145,7 +145,39 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .get_mut(&table_idx)
             .expect("rwasm: missing table");
         table.init_untyped(dst_index, module_elements_section, src_index, len)?;
+        #[cfg(feature = "tracing")]
+        {
+            use crate::event::FatOpEvent;
 
+            let mut fat_op = self
+                .store
+                .tracer
+                .logs
+                .last()
+                .unwrap()
+                .fat_op
+                .clone()
+                .unwrap();
+            if let FatOpEvent::TableInit(mut table_init_event) = fat_op {
+                for offset in 0..len {
+                    use crate::mem_index::AddressType;
+
+                    let src_addr = AddressType::Element(src_index + offset);
+                    let dst_addr = AddressType::Table(table_idx as u32 * 1024 + dst_index);
+                    let read_clk = self.store.tracer.state.clk;
+                    let write_clk = read_clk + 1;
+                    let shard = self.store.tracer.state.shard;
+                    let read_record = self.store.tracer.mr(src_addr.to_virtual_addr());
+                    let value = read_record.value;
+                    let write_record = self.store.tracer.mw(dst_addr.to_virtual_addr(), value);
+                    table_init_event.memory_read_access.push(read_record);
+                    table_init_event.memory_write_acess.push(write_record);
+                    table_init_event.table_idx = table_idx as u32;
+                }
+                self.store.tracer.logs.last_mut().unwrap().fat_op =
+                    Some(FatOpEvent::TableInit(table_init_event));
+            }
+        }
         self.ip.add(2);
         Ok(())
     }

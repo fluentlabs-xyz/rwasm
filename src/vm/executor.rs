@@ -327,9 +327,9 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         op_state.next_sp = sp;
         let opcode = op_state.opcode;
         self.store.tracer.post_opcode_state(pc, sp, *instr, stack);
+
         println!("op_state:{:?}", self.store.tracer.logs.last());
         // TODO(wangyao): "track trap codes"
-        self.store.tracer.state.next_cycle();
     }
 
     #[cfg(feature = "tracing")]

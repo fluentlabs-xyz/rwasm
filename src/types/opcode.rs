@@ -460,6 +460,25 @@ impl Opcode {
         }
     }
 
+    pub fn is_table_instruction(self) -> bool {
+        match self {
+            Opcode::TableCopy(_, _)
+            | Opcode::TableFill(_)
+            | Opcode::TableInit(_)
+            | Opcode::TableGet(_)
+            | Opcode::TableSize(_)
+            | Opcode::TableSet(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_fat_op(self) -> bool {
+        match self {
+            Opcode::TableInit(_) => true,
+            _ => false,
+        }
+    }
+
     #[inline]
     pub fn aux_value(&self) -> u32 {
         match self {

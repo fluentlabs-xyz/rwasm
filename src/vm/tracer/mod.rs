@@ -1,5 +1,6 @@
 use super::ValueStackPtr;
 use crate::{
+    event::{FatOpEvent, TableInitEvent},
     mem_index::{AddressType, GLOBAL_MEM_START, UNIT},
     types::Opcode,
     vm::tracer::{
@@ -84,6 +85,7 @@ pub struct TracerInstrState {
     pub res: u32,
 
     pub call_state: Option<TraceCallData>,
+    pub fat_op: Option<FatOpEvent>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -114,6 +116,7 @@ pub struct Tracer {
     pub local_memory_event: HashMap<u32, MemoryLocalEvent>,
     pub state: VMState,
     pub ip_max: u64,
+    pub last_opcode: Option<Opcode>,
 }
 
 impl Debug for Tracer {
@@ -164,6 +167,7 @@ impl Tracer {
             arg2: 0,
             res: 0,
             call_state: None,
+            fat_op: None,
         };
         let memory_access = self.record_mr(opcode, sp);
 
@@ -194,6 +198,34 @@ impl Tracer {
             };
             opcode_state.call_state = Some(call_state);
             opcode_state.next_call_sp = self.state.call_sp - 1;
+        }
+        if opcode.is_table_instruction() {
+            if let Opcode::TableInit(_) = opcode {
+                let mut fat_op_event = TableInitEvent::default();
+                for idx in 0..3 {
+                    let addr = sp + idx * UNIT;
+                    println!("idx:{},addr:{}", idx, addr);
+                    let read_record = self.mr(addr);
+
+                    match idx {
+                        2 => {
+                            fat_op_event.stack_access[0] = read_record;
+                            fat_op_event.d = read_record.value;
+                        }
+                        1 => {
+                            println!("s: read_record:{:?}", read_record);
+                            fat_op_event.stack_access[1] = read_record;
+                            fat_op_event.s = read_record.value;
+                        }
+                        0 => {
+                            fat_op_event.stack_access[2] = read_record;
+                            fat_op_event.n = read_record.value;
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                opcode_state.fat_op = Some(FatOpEvent::TableInit(fat_op_event));
+            }
         }
 
         self.logs.push(opcode_state);
@@ -272,8 +304,16 @@ impl Tracer {
             }
             _ => self.record_sw(opcode, new_sp, stack),
         }
-
+        if opcode.is_fat_op() {
+            let main_op_evnet = self.logs.last().unwrap();
+            let sub_op_event = self.make_sub_op_event(main_op_evnet.clone());
+        }
         self.state.sp = new_sp;
+        self.last_opcode = Some(opcode);
+        self.state.next_cycle();
+        if opcode.is_fat_op() {
+            self.state.next_cycle();
+        }
     }
 
     // pub fn global_variable(&mut self, value: UntypedValue, index: u32) {
@@ -305,6 +345,38 @@ impl Tracer {
             init,
             delta,
         });
+    }
+
+    pub fn make_sub_op_event(&mut self, main_op_log: TracerInstrState) -> TracerInstrState {
+        let sub_op = {
+            match main_op_log.opcode {
+                Opcode::TableInit(_) => {
+                    if let FatOpEvent::TableInit(table_init_event) = main_op_log.fat_op.unwrap() {
+                        Opcode::TableGet(table_init_event.table_idx as u16)
+                    } else {
+                        unreachable!()
+                    }
+                }
+                _ => unreachable!(),
+            }
+        };
+        TracerInstrState {
+            clk: main_op_log.clk + 2,
+            pc: main_op_log.pc + 1,
+            opcode: sub_op,
+            sp: main_op_log.next_sp,
+            next_sp: main_op_log.next_sp,
+            call_sp: main_op_log.next_call_sp,
+            next_call_sp: main_op_log.next_call_sp,
+            call_id: 0,
+            memory_access: MemoryAccessRecord::default(),
+            arg1: 0,
+            arg2: 0,
+            res: 0,
+            call_state: None,
+            fat_op: None,
+            next_pc: main_op_log.next_pc + 1,
+        }
     }
 
     pub fn record_mr(&mut self, ins: Opcode, sp: u32) -> MemoryAccessRecord {

@@ -1,4 +1,7 @@
-use crate::Opcode;
+use crate::{
+    mem::{MemoryReadRecord, MemoryWriteRecord},
+    Opcode,
+};
 impl Opcode {
     pub fn opcode_stack_read(self) -> u32 {
         if self.is_binary_instruction() {
@@ -23,6 +26,10 @@ impl Opcode {
             } else if let Opcode::BrTable(_) = self {
                 return 1;
             }
+        } else if self.is_table_instruction() {
+            if let Opcode::TableGrow(_) = self {
+                return 2;
+            }
         }
         0
     }
@@ -42,8 +49,28 @@ impl Opcode {
             }
         } else if let Opcode::LocalGet(_) = self {
             true
+        } else if let Opcode::TableGrow(_) = self {
+            true
         } else {
             false
         }
     }
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
+pub enum FatOpEvent {
+    TableInit(TableInitEvent),
+}
+
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
+pub struct TableInitEvent {
+    pub d: u32,
+    pub s: u32,
+    pub n: u32,
+    pub table_idx: u32,
+    pub stack_access: [MemoryReadRecord; 3],
+    pub memory_read_access: Vec<MemoryReadRecord>,
+    pub memory_write_acess: Vec<MemoryWriteRecord>,
 }

@@ -1,6 +1,7 @@
 use crate::{
     N_DEFAULT_STACK_SIZE,
     N_MAX_DATA_SEGMENTS_BITS,
+    N_MAX_ELEM_SEGMENTS_BITS,
     N_MAX_RECURSION_DEPTH,
     N_MAX_STACK_SIZE,
     N_MAX_TABLES,
@@ -35,7 +36,10 @@ pub const TABLE_SEG_END: u32 = TABLE_SEG_START + N_MAX_TABLES * N_MAX_TABLE_SIZE
 pub const DATA_SEG_ELEM_SIZE: u32 = UNIT;
 pub const DATA_SEG_START: u32 = TABLE_SEG_END + UNIT;
 pub const DATA_SEG_END: u32 = DATA_SEG_START + N_MAX_DATA_SEGMENTS_BITS as u32 * DATA_SEG_ELEM_SIZE;
-pub const GLOBAL_MEM_START: u32 = DATA_SEG_END + UNIT;
+pub const ELEMENT_SEG_SIZE: u32 = UNIT;
+pub const ELEMENT_SEG_START: u32 = DATA_SEG_END + UNIT;
+pub const ELEMENT_SEG_END: u32 = ELEMENT_SEG_START + N_MAX_ELEM_SEGMENTS_BITS as u32;
+pub const GLOBAL_MEM_START: u32 = ELEMENT_SEG_END + UNIT;
 pub const GLOBAL_MEM_END: u32 = GLOBAL_MEM_START + (1 << 8) << 20;
 
 pub enum AddressType {
@@ -43,6 +47,7 @@ pub enum AddressType {
     FuncFrame(u32),
     Table(u32),
     Data(u32),
+    Element(u32),
     GlobalMemory(u32),
 }
 
@@ -70,6 +75,12 @@ impl AddressType {
             AddressType::Data(offset) => {
                 let v_addr = DATA_SEG_START + offset * UNIT;
                 debug_assert!(v_addr >= DATA_SEG_START);
+                debug_assert!(v_addr < DATA_SEG_END);
+                v_addr
+            }
+            AddressType::Element(offset) => {
+                let v_addr = ELEMENT_SEG_START + offset * UNIT;
+                debug_assert!(v_addr >= ELEMENT_SEG_START);
                 debug_assert!(v_addr < DATA_SEG_END);
                 v_addr
             }
