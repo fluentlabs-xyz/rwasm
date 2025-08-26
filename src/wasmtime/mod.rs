@@ -40,9 +40,6 @@ impl<T: 'static + Send + Sync> WasmtimeWorker<T> {
             fuel,
         };
         let mut store = wasmtime::Store::new(module.engine(), wrapped_context);
-        if let Some(fuel) = fuel {
-            store.set_fuel(fuel).expect("fuel should be supported");
-        }
         let linker = wasmtime_import_linker(module.engine(), import_linker);
         let instance = linker
             .instantiate(&mut store, &module)
