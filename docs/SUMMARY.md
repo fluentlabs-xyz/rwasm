@@ -1,8 +1,5 @@
 # rWasm Documentation
 
-## Overview
-- [Technical Details](technical-details.md)
-
 ## Encoding Specification
 - [Module Format](encoding/module.md)
 - [Instruction Encoding](encoding/instruction.md)
