@@ -29,14 +29,26 @@ enum FutureStateChange {
 }
 
 #[derive(Default)]
-struct SharedControlState {
+struct SharedControlState<T: 'static + Send + Sync> {
     interrupt_channel: Option<oneshot::Sender<MessageInterruptionResult>>,
+    inner: T,
     state_changes: SmallVec<[FutureStateChange; 8]>,
+    fuel_remaining: Option<u64>,
 }
 
-struct WrappedContext<T: 'static + Send> {
-    shared_control_state: Arc<RwLock<SharedControlState>>,
-    inner: Option<T>,
+impl<T: 'static + Send + Sync> SharedControlState<T> {
+    fn new(inner: T) -> Self {
+        Self {
+            interrupt_channel: None,
+            inner,
+            state_changes: Default::default(),
+            fuel_remaining: None,
+        }
+    }
+}
+
+struct WrappedContext<T: 'static + Send + Sync> {
+    shared_control_state: Arc<RwLock<SharedControlState<T>>>,
     syscall_handler: SyscallHandler<T>,
     fuel: Option<u64>,
 }
@@ -44,7 +56,7 @@ struct WrappedContext<T: 'static + Send> {
 type StoreFuture<'a> = Pin<Box<dyn Future<Output = Result<(), TrapCode>> + 'a>>;
 
 #[self_referencing]
-pub struct FutureContextHolder<T: 'static + Send> {
+pub struct FutureContextHolder<T: 'static + Send + Sync> {
     store: wasmtime::Store<WrappedContext<T>>,
     params_len: usize,
     buffer: Vec<wasmtime::Val>,
@@ -53,14 +65,14 @@ pub struct FutureContextHolder<T: 'static + Send> {
     dependent: StoreFuture<'this>,
 }
 
-pub struct WasmtimeStore<T: 'static + Send> {
+pub struct WasmtimeStore<T: 'static + Send + Sync> {
     store: Option<wasmtime::Store<WrappedContext<T>>>,
     instance: wasmtime::Instance,
     fut: Option<FutureContextHolder<T>>,
-    shared_control_state: Arc<RwLock<SharedControlState>>,
+    shared_control_state: Arc<RwLock<SharedControlState<T>>>,
 }
 
-impl<T: 'static + Send> WasmtimeStore<T> {
+impl<T: 'static + Send + Sync> WasmtimeStore<T> {
     pub fn new(
         module: Rc<wasmtime::Module>,
         import_linker: Rc<ImportLinker>,
@@ -80,10 +92,9 @@ impl<T: 'static + Send> WasmtimeStore<T> {
         syscall_handler: SyscallHandler<T>,
         fuel: Option<u64>,
     ) -> Self {
-        let shared_control_state = Arc::new(RwLock::new(SharedControlState::default()));
+        let shared_control_state = Arc::new(RwLock::new(SharedControlState::new(context)));
         let context = WrappedContext {
             shared_control_state: shared_control_state.clone(),
-            inner: Some(context),
             syscall_handler,
             fuel,
         };
@@ -219,17 +230,9 @@ impl<T: 'static + Send> WasmtimeStore<T> {
             f(self.store.as_mut().unwrap())
         }
     }
-
-    fn with_store<R, F: FnOnce(&wasmtime::Store<WrappedContext<T>>) -> R>(&self, f: F) -> R {
-        if let Some(fut) = self.fut.as_ref() {
-            unimplemented!("wasmtime: you can't access store with locked future state")
-        } else {
-            f(self.store.as_ref().unwrap())
-        }
-    }
 }
 
-impl<T: Send> Store<T> for WasmtimeStore<T> {
+impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let instance = self.instance;
         self.with_store_mut(|store| {
@@ -278,11 +281,13 @@ impl<T: Send> Store<T> for WasmtimeStore<T> {
     }
 
     fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
-        self.with_store_mut(|store| func(store.data_mut().inner.as_mut().unwrap()))
+        let mut context = self.shared_control_state.write().unwrap();
+        func(&mut context.inner)
     }
 
     fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
-        self.with_store(|store| func(store.data().inner.as_ref().unwrap()))
+        let context = self.shared_control_state.read().unwrap();
+        func(&context.inner)
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
@@ -302,6 +307,9 @@ impl<T: Send> Store<T> for WasmtimeStore<T> {
     }
 
     fn remaining_fuel(&mut self) -> Option<u64> {
+        if self.fut.is_some() {
+            return self.shared_control_state.read().unwrap().fuel_remaining;
+        }
         self.with_store_mut(|store| {
             if let Ok(fuel) = store.get_fuel() {
                 Some(fuel)
@@ -363,7 +371,7 @@ pub fn compile_wasmtime_module(
     module
 }
 
-async fn wasmtime_syscall_handler<'a, T: Send + 'static>(
+async fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
     sys_func_idx: u32,
     mut caller: wasmtime::Caller<'a, WrappedContext<T>>,
     params: &[wasmtime::Val],
@@ -390,16 +398,19 @@ async fn wasmtime_syscall_handler<'a, T: Send + 'static>(
             mapped_params,
             mapped_result,
         );
+        let remaining_fuel = caller_adapter.remaining_fuel();
         caller = caller_adapter.into_wasmtime().unwrap();
         match result {
             Err(TrapCode::InterruptionCalled) => {
                 let (resp_tx, resp_rx) = oneshot::channel();
                 let shared_control_state = caller.data().shared_control_state.clone();
-                shared_control_state
-                    .write()
-                    .expect("interruption called, but lock was poisoned")
-                    .interrupt_channel
-                    .replace(resp_tx);
+                {
+                    let mut write_lock = shared_control_state
+                        .write()
+                        .expect("interruption called, but lock was poisoned");
+                    write_lock.interrupt_channel.replace(resp_tx);
+                    write_lock.fuel_remaining = remaining_fuel;
+                }
                 Either::Left((resp_rx, shared_control_state))
             }
             result => Either::Right(result),
@@ -467,7 +478,7 @@ async fn wasmtime_syscall_handler<'a, T: Send + 'static>(
     Ok(())
 }
 
-fn wasmtime_import_linker<T: Send + 'static>(
+fn wasmtime_import_linker<T: Send + Sync + 'static>(
     engine: &wasmtime::Engine,
     import_linker: Rc<ImportLinker>,
 ) -> wasmtime::Linker<WrappedContext<T>> {
@@ -558,11 +569,11 @@ fn map_val_type(val_type: ValType) -> wasmtime::ValType {
     }
 }
 
-pub struct WasmtimeCaller<'a, T: 'static + Send> {
+pub struct WasmtimeCaller<'a, T: 'static + Send + Sync> {
     caller: wasmtime::Caller<'a, WrappedContext<T>>,
 }
 
-impl<'a, T: 'static + Send> WasmtimeCaller<'a, T> {
+impl<'a, T: 'static + Send + Sync> WasmtimeCaller<'a, T> {
     fn wrap_typed(caller: wasmtime::Caller<'a, WrappedContext<T>>) -> TypedCaller<'a, T> {
         TypedCaller::Wasmtime(Self { caller })
     }
@@ -571,7 +582,7 @@ impl<'a, T: 'static + Send> WasmtimeCaller<'a, T> {
     }
 }
 
-impl<'a, T: 'static + Send> Store<T> for WasmtimeCaller<'a, T> {
+impl<'a, T: 'static + Send + Sync> Store<T> for WasmtimeCaller<'a, T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let global_memory = self
             .caller
@@ -597,11 +608,13 @@ impl<'a, T: 'static + Send> Store<T> for WasmtimeCaller<'a, T> {
     }
 
     fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
-        func(self.caller.data_mut().inner.as_mut().unwrap())
+        let mut context = self.caller.data_mut().shared_control_state.write().unwrap();
+        func(&mut context.inner)
     }
 
     fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
-        func(self.caller.data().inner.as_ref().unwrap())
+        let context = self.caller.data().shared_control_state.read().unwrap();
+        func(&context.inner)
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
@@ -630,7 +643,7 @@ impl<'a, T: 'static + Send> Store<T> for WasmtimeCaller<'a, T> {
     }
 }
 
-impl<'a, T: 'static + Send> Caller<T> for WasmtimeCaller<'a, T> {
+impl<'a, T: 'static + Send + Sync> Caller<T> for WasmtimeCaller<'a, T> {
     fn program_counter(&self) -> u32 {
         unimplemented!("wasmtime: not allowed im wasmtime mode")
     }

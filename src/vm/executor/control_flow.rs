@@ -4,7 +4,7 @@ use crate::{
 };
 use core::cmp;
 
-impl<'a, T: Send> RwasmExecutor<'a, T> {
+impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_unreachable(&mut self) -> Result<(), TrapCode> {
         Err(TrapCode::UnreachableCodeReached)

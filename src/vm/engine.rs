@@ -69,7 +69,7 @@ impl ExecutionEngine {
     /// This function assumes that the `value_stack` and `call_stack` are properly initialized. If
     /// the stacks are accessed while empty due to a programming error, it may result in a
     /// panic.
-    pub fn execute<T: Send>(
+    pub fn execute<T: Send + Sync>(
         &mut self,
         store: &mut RwasmStore<T>,
         module: &RwasmModule,
@@ -135,7 +135,7 @@ impl ExecutionEngine {
     ///
     /// This function assumes that it is only called in valid scenarios where there is an already
     /// interrupted call to be resumed.
-    pub fn resume<T: Send>(
+    pub fn resume<T: Send + Sync>(
         &mut self,
         store: &mut RwasmStore<T>,
         module: &RwasmModule,

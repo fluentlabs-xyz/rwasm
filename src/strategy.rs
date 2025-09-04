@@ -33,7 +33,7 @@ pub trait Caller<T>: Store<T> {
 pub type SyscallHandler<T> =
     fn(&mut TypedCaller<'_, T>, u32, &[Value], &mut [Value]) -> Result<(), TrapCode>;
 
-pub fn always_failing_syscall_handler<T: 'static + Send>(
+pub fn always_failing_syscall_handler<T: 'static + Send + Sync>(
     _caller: &mut TypedCaller<'_, T>,
     _func_idx: u32,
     _params: &[Value],
@@ -42,14 +42,14 @@ pub fn always_failing_syscall_handler<T: 'static + Send>(
     Err(TrapCode::UnknownExternalFunction)
 }
 
-pub enum TypedCaller<'a, T: 'static + Send> {
+pub enum TypedCaller<'a, T: 'static + Send + Sync> {
     Rwasm(RwasmCaller<'a, T>),
     #[cfg(feature = "wasmtime")]
     Wasmtime(WasmtimeCaller<'a, T>),
     Wasmi(WasmiCaller<'a, T>),
 }
 
-impl<'a, T: Send> TypedCaller<'a, T> {
+impl<'a, T: Send + Sync> TypedCaller<'a, T> {
     pub fn as_rwasm_mut(&mut self) -> &mut RwasmCaller<'a, T> {
         match self {
             TypedCaller::Rwasm(store) => store,
@@ -91,7 +91,7 @@ impl<'a, T: Send> TypedCaller<'a, T> {
     }
 }
 
-impl<'a, T: Send> Store<T> for TypedCaller<'a, T> {
+impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         match self {
             TypedCaller::Rwasm(store) => store.memory_read(offset, buffer),
@@ -147,7 +147,7 @@ impl<'a, T: Send> Store<T> for TypedCaller<'a, T> {
     }
 }
 
-impl<'a, T: Send> Caller<T> for TypedCaller<'a, T> {
+impl<'a, T: Send + Sync> Caller<T> for TypedCaller<'a, T> {
     fn program_counter(&self) -> u32 {
         match self {
             TypedCaller::Rwasm(store) => store.program_counter(),
@@ -181,14 +181,14 @@ pub enum Strategy {
     },
 }
 
-pub enum TypedStore<T: Send + 'static> {
+pub enum TypedStore<T: 'static + Send + Sync> {
     Rwasm(RwasmStore<T>),
     #[cfg(feature = "wasmtime")]
     Wasmtime(WasmtimeStore<T>),
     Wasmi(WasmiStore<T>),
 }
 
-impl<T: Send> Store<T> for TypedStore<T> {
+impl<T: Send + Sync> Store<T> for TypedStore<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         match self {
             TypedStore::Rwasm(store) => store.memory_read(offset, buffer),
@@ -254,7 +254,7 @@ impl Strategy {
         )
     }
 
-    pub fn create_store<T: Send>(
+    pub fn create_store<T: Send + Sync>(
         &self,
         config: ExecutorConfig,
         import_linker: Rc<ImportLinker>,
@@ -286,7 +286,7 @@ impl Strategy {
         }
     }
 
-    pub fn execute<'a, T: Send>(
+    pub fn execute<'a, T: Send + Sync>(
         &'a self,
         store: &mut TypedStore<T>,
         func_name: &'static str,
@@ -320,7 +320,7 @@ impl Strategy {
         }
     }
 
-    pub fn resume<'a, T: Send>(
+    pub fn resume<'a, T: Send + Sync>(
         &'a self,
         store: &mut TypedStore<T>,
         interruption_result: &[Value],

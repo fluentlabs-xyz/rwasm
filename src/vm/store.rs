@@ -8,7 +8,7 @@ use bitvec::{array::BitArray, bitarr};
 use core::cell::RefCell;
 use hashbrown::HashMap;
 
-pub struct RwasmStore<T: 'static + Send> {
+pub struct RwasmStore<T: 'static + Send + Sync> {
     pub(crate) consumed_fuel: u64,
     pub(crate) global_memory: GlobalMemory,
     pub(crate) context: RefCell<T>,
@@ -28,7 +28,7 @@ pub struct RwasmStore<T: 'static + Send> {
     pub tracer: crate::Tracer,
 }
 
-impl<T: 'static + Send + Default> Default for RwasmStore<T> {
+impl<T: 'static + Send + Sync + Default> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
             ExecutorConfig::default(),
@@ -39,7 +39,7 @@ impl<T: 'static + Send + Default> Default for RwasmStore<T> {
     }
 }
 
-impl<T: 'static + Send> Store<T> for RwasmStore<T> {
+impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.global_memory.read(offset, buffer)?;
         Ok(())
@@ -77,7 +77,7 @@ impl<T: 'static + Send> Store<T> for RwasmStore<T> {
     }
 }
 
-impl<T: 'static + Send> RwasmStore<T> {
+impl<T: 'static + Send + Sync> RwasmStore<T> {
     pub fn new(
         config: ExecutorConfig,
         import_linker: Rc<ImportLinker>,

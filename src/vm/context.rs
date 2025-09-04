@@ -3,13 +3,13 @@ use crate::{
     Caller, RwasmStore, Store, ValueStackPtr,
 };
 
-pub struct RwasmCaller<'a, T: 'static + Send> {
+pub struct RwasmCaller<'a, T: 'static + Send + Sync> {
     store: &'a mut RwasmStore<T>,
     program_counter: u32,
     sp: ValueStackPtr,
 }
 
-impl<'a, T: 'static + Send> RwasmCaller<'a, T> {
+impl<'a, T: 'static + Send + Sync> RwasmCaller<'a, T> {
     pub fn new(store: &'a mut RwasmStore<T>, program_counter: u32, sp: ValueStackPtr) -> Self {
         Self {
             store,
@@ -23,7 +23,7 @@ impl<'a, T: 'static + Send> RwasmCaller<'a, T> {
     }
 }
 
-impl<'a, T: 'static + Send> Store<T> for RwasmCaller<'a, T> {
+impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.store.global_memory.read(offset, buffer)?;
         Ok(())
@@ -56,7 +56,7 @@ impl<'a, T: 'static + Send> Store<T> for RwasmCaller<'a, T> {
     }
 }
 
-impl<'a, T: 'static + Send> Caller<T> for RwasmCaller<'a, T> {
+impl<'a, T: 'static + Send + Sync> Caller<T> for RwasmCaller<'a, T> {
     fn program_counter(&self) -> u32 {
         self.program_counter
     }
