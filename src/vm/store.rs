@@ -40,7 +40,7 @@ impl<T: 'static + Send + Default> Default for RwasmStore<T> {
 }
 
 impl<T: 'static + Send> Store<T> for RwasmStore<T> {
-    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+    fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.global_memory.read(offset, buffer)?;
         Ok(())
     }

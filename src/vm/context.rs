@@ -24,7 +24,7 @@ impl<'a, T: 'static + Send> RwasmCaller<'a, T> {
 }
 
 impl<'a, T: 'static + Send> Store<T> for RwasmCaller<'a, T> {
-    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+    fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.store.global_memory.read(offset, buffer)?;
         Ok(())
     }

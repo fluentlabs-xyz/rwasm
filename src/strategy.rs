@@ -9,7 +9,7 @@ use alloc::rc::Rc;
 use core::cell::RefCell;
 
 pub trait Store<T> {
-    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode>;
+    fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode>;
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode>;
 
@@ -81,10 +81,18 @@ impl<'a, T: Send> TypedCaller<'a, T> {
             _ => unreachable!(),
         }
     }
+
+    #[cfg(feature = "wasmtime")]
+    pub fn into_wasmtime(self) -> WasmtimeCaller<'a, T> {
+        match self {
+            TypedCaller::Wasmtime(store) => store,
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl<'a, T: Send> Store<T> for TypedCaller<'a, T> {
-    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+    fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         match self {
             TypedCaller::Rwasm(store) => store.memory_read(offset, buffer),
             #[cfg(feature = "wasmtime")]
@@ -181,7 +189,7 @@ pub enum TypedStore<T: Send + 'static> {
 }
 
 impl<T: Send> Store<T> for TypedStore<T> {
-    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+    fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         match self {
             TypedStore::Rwasm(store) => store.memory_read(offset, buffer),
             #[cfg(feature = "wasmtime")]

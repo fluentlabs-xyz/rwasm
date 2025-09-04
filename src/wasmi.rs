@@ -17,7 +17,7 @@ pub struct WasmiCaller<'a, T: 'static + Send> {
 }
 
 impl<'a, T: 'static + Send> Store<T> for WasmiCaller<'a, T> {
-    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+    fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let global_memory = self
             .caller
             .borrow_mut()
@@ -400,7 +400,7 @@ fn map_wasmi_error(err: wasmi::Error) -> TrapCode {
 }
 
 impl<T: 'static + Send> Store<T> for WasmiStore<T> {
-    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+    fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let memory = self
             .instance
             .get_export(self.store.as_context(), "memory")
