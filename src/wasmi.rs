@@ -12,11 +12,11 @@ use wasmparser::ValType;
 
 pub type WasmiModule = wasmi::Module;
 
-pub struct WasmiCaller<'a, T: Send + Sync + 'static> {
+pub struct WasmiCaller<'a, T: 'static + Send> {
     caller: RefCell<wasmi::Caller<'a, WasmiContextWrapper<T>>>,
 }
 
-impl<'a, T: Send + Sync> Store<T> for WasmiCaller<'a, T> {
+impl<'a, T: 'static + Send> Store<T> for WasmiCaller<'a, T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let global_memory = self
             .caller
@@ -74,7 +74,7 @@ impl<'a, T: Send + Sync> Store<T> for WasmiCaller<'a, T> {
     }
 }
 
-impl<'a, T: Send + Sync> Caller<T> for WasmiCaller<'a, T> {
+impl<'a, T: 'static + Send> Caller<T> for WasmiCaller<'a, T> {
     fn program_counter(&self) -> u32 {
         unimplemented!("not allowed im wasmtime mode")
     }
@@ -84,7 +84,7 @@ impl<'a, T: Send + Sync> Caller<T> for WasmiCaller<'a, T> {
     }
 }
 
-pub struct WasmiStore<T: Send + Sync + 'static> {
+pub struct WasmiStore<T: 'static + Send> {
     store: wasmi::Store<WasmiContextWrapper<T>>,
     instance: wasmi::Instance,
     resumable_context: Option<wasmi::ResumableCallHostTrap>,
@@ -99,12 +99,12 @@ impl Into<TrapCode> for wasmi::core::MemoryError {
     }
 }
 
-struct WasmiContextWrapper<T: Send + Sync + 'static> {
+struct WasmiContextWrapper<T: 'static + Send> {
     inner: T,
     syscall_handler: SyscallHandler<T>,
 }
 
-fn wasmi_syscall_handler<'a, T: Send + Sync>(
+fn wasmi_syscall_handler<'a, T: 'static + Send>(
     sys_func_idx: SysFuncIdx,
     caller: wasmi::Caller<'a, WasmiContextWrapper<T>>,
     params: &[wasmi::Val],
@@ -177,7 +177,7 @@ fn map_val_type(val_type: ValType) -> wasmi::core::ValType {
     }
 }
 
-fn wasmi_import_linker<T: Send + Sync>(
+fn wasmi_import_linker<T: 'static + Send>(
     engine: &wasmi::Engine,
     import_linker: Rc<ImportLinker>,
 ) -> wasmi::Linker<WasmiContextWrapper<T>> {
@@ -210,7 +210,7 @@ fn wasmi_import_linker<T: Send + Sync>(
     linker
 }
 
-impl<T: Send + Sync> WasmiStore<T> {
+impl<T: 'static + Send> WasmiStore<T> {
     pub fn new(
         module: &WasmiModule,
         import_linker: Rc<ImportLinker>,
@@ -399,7 +399,7 @@ fn map_wasmi_error(err: wasmi::Error) -> TrapCode {
     }
 }
 
-impl<T: Send + Sync> Store<T> for WasmiStore<T> {
+impl<T: 'static + Send> Store<T> for WasmiStore<T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let memory = self
             .instance

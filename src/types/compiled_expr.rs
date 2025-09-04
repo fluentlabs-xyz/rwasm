@@ -133,7 +133,7 @@ impl Eval for FuncRefOp {
 #[allow(clippy::type_complexity)]
 pub struct ExprOp {
     /// The underlying closure that implements the expression.
-    expr: Box<dyn Fn(&dyn EvalContext) -> Option<i64> + Send + Sync>,
+    expr: Box<dyn Fn(&dyn EvalContext) -> Option<i64> + Send>,
 }
 
 impl core::fmt::Debug for ExprOp {
@@ -179,7 +179,7 @@ impl Op {
     /// Creates a new expression operator for the given `expr`.
     pub fn expr<T>(expr: T) -> Self
     where
-        T: Fn(&dyn EvalContext) -> Option<i64> + Send + Sync + 'static,
+        T: Fn(&dyn EvalContext) -> Option<i64> + Send + 'static,
     {
         Self::Expr(ExprOp {
             expr: Box::new(expr),

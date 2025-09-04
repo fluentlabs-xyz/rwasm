@@ -12,7 +12,7 @@ macro_rules! impl_visit_unary {
     }
 }
 
-impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
+impl<'a, T: Send> RwasmExecutor<'a, T> {
     impl_visit_unary! {
         fn visit_i32_eqz(i32_eqz);
 
@@ -39,7 +39,7 @@ macro_rules! impl_visit_binary {
     }
 }
 
-impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
+impl<'a, T: Send> RwasmExecutor<'a, T> {
     impl_visit_binary! {
         fn visit_i32_eq(i32_eq);
         fn visit_i32_ne(i32_ne);
@@ -93,7 +93,7 @@ macro_rules! impl_visit_fallible_binary {
     }
 }
 
-impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
+impl<'a, T: Send> RwasmExecutor<'a, T> {
     impl_visit_fallible_binary! {
         fn visit_i32_div_s(i32_div_s);
         fn visit_i32_div_u(i32_div_u);

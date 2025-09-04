@@ -128,7 +128,7 @@ fn test_nitro_verifier_rwasm() {
 #[cfg(feature = "wasmtime")]
 #[test]
 fn test_nitro_verifier_wasmtime() {
-    use rwasm::WasmtimeWorker;
+    use rwasm::WasmtimeStore;
     let wasm_binary = include_bytes!("./assets/nitro-verifier.wasm");
     let import_linker = Rc::new(import_linker());
     let config = CompilationConfig::default()
@@ -141,7 +141,7 @@ fn test_nitro_verifier_wasmtime() {
         compile_wasmtime_module(CompilationConfig::default(), &rwasm_module.wasm_section).unwrap(),
     );
     let mut worker =
-        WasmtimeWorker::new(module, import_linker, (), fluentbase_syscall_handler, None);
+        WasmtimeStore::new(module, import_linker, (), fluentbase_syscall_handler, None);
     worker.execute("main", &[], &mut []).unwrap();
 }
 

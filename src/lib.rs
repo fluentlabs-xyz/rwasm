@@ -46,7 +46,6 @@ pub fn for_each_strategy<F: FnMut(Strategy) -> Result<(), StrategyError>>(
             compile_wasmtime_module(compilation_config.clone(), wasm_binary).unwrap();
         f(Strategy::Wasmtime {
             module: Rc::new(wasmtime_module),
-            resumable: true,
         })?;
     }
     // wasmi case

@@ -1,7 +1,7 @@
 use rwasm::{
     always_failing_syscall_handler, compile_wasmtime_module, instruction_set, CompilationConfig,
     ExecutionEngine, ExecutorConfig, ImportLinker, ImportName, InstructionSet, RwasmModule,
-    RwasmStore, Store, Strategy, TrapCode, TypedCaller, Value, WasmtimeWorker,
+    RwasmStore, Store, Strategy, TrapCode, TypedCaller, Value, WasmtimeStore,
 };
 use std::rc::Rc;
 
@@ -64,6 +64,9 @@ fn test_interrupted_call_wasmtime() {
     (i32.const 100)
     (call $interrupt)
     (i32.const 20)
+    (call $interrupt)
+    (i32.const 3)
+    (i32.add)
     (i32.add)
   )
 )
@@ -87,19 +90,23 @@ fn test_interrupted_call_wasmtime() {
     );
     store.set_syscall_handler(interrupting_syscall_handler);
     let mut engine = ExecutionEngine::new();
+    let mut result = [Value::I32(0); 1];
     let err = engine
-        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .execute(&mut store, &rwasm_module, &[], &mut result)
         .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
-    let mut result = [Value::I32(0); 1];
+    let err = engine
+        .resume(&mut store, &rwasm_module, &[], &mut result)
+        .unwrap_err();
+    assert_eq!(err, TrapCode::InterruptionCalled);
     engine
         .resume(&mut store, &rwasm_module, &[], &mut result)
         .unwrap();
-    assert_eq!(result[0].i32().unwrap(), 120);
+    assert_eq!(result[0].i32().unwrap(), 123);
     // run with wasmtime
     let module =
         Rc::new(compile_wasmtime_module(CompilationConfig::default(), &wasm_binary).unwrap());
-    let mut wasmtime_worker = WasmtimeWorker::new(
+    let mut wasmtime_worker = WasmtimeStore::new(
         module,
         import_linker.clone(),
         (),
@@ -111,10 +118,10 @@ fn test_interrupted_call_wasmtime() {
         .execute("main", &[], &mut result)
         .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
-    wasmtime_worker
-        .resume(Ok(&[]), &mut result, vec![])
-        .unwrap();
-    assert_eq!(result[0].i32().unwrap(), 120);
+    let err = wasmtime_worker.resume(Ok(&[]), &mut result).unwrap_err();
+    assert_eq!(err, TrapCode::InterruptionCalled);
+    wasmtime_worker.resume(Ok(&[]), &mut result).unwrap();
+    assert_eq!(result[0].i32().unwrap(), 123);
 }
 
 #[test]

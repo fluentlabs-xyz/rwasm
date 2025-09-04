@@ -22,7 +22,7 @@ macro_rules! impl_visit_store {
     }
 }
 
-impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
+impl<'a, T: Send> RwasmExecutor<'a, T> {
     impl_visit_load! {
         fn visit_i32_load(i32_load);
 

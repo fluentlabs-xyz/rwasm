@@ -1,28 +1,14 @@
 use crate::{
-    always_failing_syscall_handler,
-    ExecutorConfig,
-    GlobalIdx,
-    GlobalMemory,
-    ImportLinker,
-    Pages,
-    SignatureIdx,
-    Store,
-    SyscallHandler,
-    TableEntity,
-    TableIdx,
-    TrapCode,
-    UntypedValue,
-    N_MAX_DATA_SEGMENTS,
-    N_MAX_DATA_SEGMENTS_BITS,
-    N_MAX_ELEM_SEGMENTS,
-    N_MAX_ELEM_SEGMENTS_BITS,
+    always_failing_syscall_handler, ExecutorConfig, GlobalIdx, GlobalMemory, ImportLinker, Pages,
+    SignatureIdx, Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue,
+    N_MAX_DATA_SEGMENTS, N_MAX_DATA_SEGMENTS_BITS, N_MAX_ELEM_SEGMENTS, N_MAX_ELEM_SEGMENTS_BITS,
 };
 use alloc::rc::Rc;
 use bitvec::{array::BitArray, bitarr};
 use core::cell::RefCell;
 use hashbrown::HashMap;
 
-pub struct RwasmStore<T: Send + Sync + 'static> {
+pub struct RwasmStore<T: 'static + Send> {
     pub(crate) consumed_fuel: u64,
     pub(crate) global_memory: GlobalMemory,
     pub(crate) context: RefCell<T>,
@@ -42,7 +28,7 @@ pub struct RwasmStore<T: Send + Sync + 'static> {
     pub tracer: crate::Tracer,
 }
 
-impl<T: Default + Send + Sync> Default for RwasmStore<T> {
+impl<T: 'static + Send + Default> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
             ExecutorConfig::default(),
@@ -53,7 +39,7 @@ impl<T: Default + Send + Sync> Default for RwasmStore<T> {
     }
 }
 
-impl<T: Send + Sync> Store<T> for RwasmStore<T> {
+impl<T: 'static + Send> Store<T> for RwasmStore<T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.global_memory.read(offset, buffer)?;
         Ok(())
@@ -91,7 +77,7 @@ impl<T: Send + Sync> Store<T> for RwasmStore<T> {
     }
 }
 
-impl<T: Send + Sync> RwasmStore<T> {
+impl<T: 'static + Send> RwasmStore<T> {
     pub fn new(
         config: ExecutorConfig,
         import_linker: Rc<ImportLinker>,

@@ -1,18 +1,15 @@
 use crate::{
     types::{TrapCode, UntypedValue},
-    Caller,
-    RwasmStore,
-    Store,
-    ValueStackPtr,
+    Caller, RwasmStore, Store, ValueStackPtr,
 };
 
-pub struct RwasmCaller<'a, T: Send + Sync + 'static> {
+pub struct RwasmCaller<'a, T: 'static + Send> {
     store: &'a mut RwasmStore<T>,
     program_counter: u32,
     sp: ValueStackPtr,
 }
 
-impl<'a, T: Send + Sync> RwasmCaller<'a, T> {
+impl<'a, T: 'static + Send> RwasmCaller<'a, T> {
     pub fn new(store: &'a mut RwasmStore<T>, program_counter: u32, sp: ValueStackPtr) -> Self {
         Self {
             store,
@@ -26,7 +23,7 @@ impl<'a, T: Send + Sync> RwasmCaller<'a, T> {
     }
 }
 
-impl<'a, T: Send + Sync> Store<T> for RwasmCaller<'a, T> {
+impl<'a, T: 'static + Send> Store<T> for RwasmCaller<'a, T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.store.global_memory.read(offset, buffer)?;
         Ok(())
@@ -59,7 +56,7 @@ impl<'a, T: Send + Sync> Store<T> for RwasmCaller<'a, T> {
     }
 }
 
-impl<'a, T: Send + Sync> Caller<T> for RwasmCaller<'a, T> {
+impl<'a, T: 'static + Send> Caller<T> for RwasmCaller<'a, T> {
     fn program_counter(&self) -> u32 {
         self.program_counter
     }

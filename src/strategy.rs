@@ -1,12 +1,11 @@
-use crate::wasmi::WasmiCaller;
 use crate::{
-    wasmi::{WasmiModule, WasmiStore},
+    wasmi::{WasmiCaller, WasmiModule, WasmiStore},
     CompilationError, ExecutionEngine, ExecutorConfig, ImportLinker, RwasmCaller, RwasmModule,
     RwasmStore, TrapCode, UntypedValue, Value,
 };
 #[cfg(feature = "wasmtime")]
-use crate::{WasmtimeCaller, WasmtimeModule, WasmtimeWorker};
-use alloc::{boxed::Box, rc::Rc, vec::Vec};
+use crate::{WasmtimeCaller, WasmtimeModule, WasmtimeStore};
+use alloc::rc::Rc;
 use core::cell::RefCell;
 
 pub trait Store<T> {
@@ -34,7 +33,7 @@ pub trait Caller<T>: Store<T> {
 pub type SyscallHandler<T> =
     fn(&mut TypedCaller<'_, T>, u32, &[Value], &mut [Value]) -> Result<(), TrapCode>;
 
-pub fn always_failing_syscall_handler<T: Send + Sync>(
+pub fn always_failing_syscall_handler<T: 'static + Send>(
     _caller: &mut TypedCaller<'_, T>,
     _func_idx: u32,
     _params: &[Value],
@@ -43,14 +42,14 @@ pub fn always_failing_syscall_handler<T: Send + Sync>(
     Err(TrapCode::UnknownExternalFunction)
 }
 
-pub enum TypedCaller<'a, T: Send + Sync + 'static> {
+pub enum TypedCaller<'a, T: 'static + Send> {
     Rwasm(RwasmCaller<'a, T>),
     #[cfg(feature = "wasmtime")]
     Wasmtime(WasmtimeCaller<'a, T>),
     Wasmi(WasmiCaller<'a, T>),
 }
 
-impl<'a, T: Send + Sync> TypedCaller<'a, T> {
+impl<'a, T: Send> TypedCaller<'a, T> {
     pub fn as_rwasm_mut(&mut self) -> &mut RwasmCaller<'a, T> {
         match self {
             TypedCaller::Rwasm(store) => store,
@@ -84,7 +83,7 @@ impl<'a, T: Send + Sync> TypedCaller<'a, T> {
     }
 }
 
-impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
+impl<'a, T: Send> Store<T> for TypedCaller<'a, T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         match self {
             TypedCaller::Rwasm(store) => store.memory_read(offset, buffer),
@@ -140,7 +139,7 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
     }
 }
 
-impl<'a, T: Send + Sync> Caller<T> for TypedCaller<'a, T> {
+impl<'a, T: Send> Caller<T> for TypedCaller<'a, T> {
     fn program_counter(&self) -> u32 {
         match self {
             TypedCaller::Rwasm(store) => store.program_counter(),
@@ -168,21 +167,20 @@ pub enum Strategy {
     #[cfg(feature = "wasmtime")]
     Wasmtime {
         module: Rc<WasmtimeModule>,
-        resumable: bool,
     },
     Wasmi {
         module: Rc<WasmiModule>,
     },
 }
 
-pub enum TypedStore<T: Send + Sync + 'static> {
+pub enum TypedStore<T: Send + 'static> {
     Rwasm(RwasmStore<T>),
     #[cfg(feature = "wasmtime")]
-    Wasmtime(WasmtimeWorker<T>),
+    Wasmtime(WasmtimeStore<T>),
     Wasmi(WasmiStore<T>),
 }
 
-impl<T: Send + Sync> Store<T> for TypedStore<T> {
+impl<T: Send> Store<T> for TypedStore<T> {
     fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         match self {
             TypedStore::Rwasm(store) => store.memory_read(offset, buffer),
@@ -248,7 +246,7 @@ impl Strategy {
         )
     }
 
-    pub fn create_store<T: Send + Sync>(
+    pub fn create_store<T: Send>(
         &self,
         config: ExecutorConfig,
         import_linker: Rc<ImportLinker>,
@@ -263,7 +261,7 @@ impl Strategy {
                 syscall_handler,
             )),
             #[cfg(feature = "wasmtime")]
-            Strategy::Wasmtime { module, .. } => TypedStore::Wasmtime(WasmtimeWorker::new(
+            Strategy::Wasmtime { module, .. } => TypedStore::Wasmtime(WasmtimeStore::new(
                 module.clone(),
                 import_linker,
                 context,
@@ -280,7 +278,7 @@ impl Strategy {
         }
     }
 
-    pub fn execute<'a, T: Send + Sync>(
+    pub fn execute<'a, T: Send>(
         &'a self,
         store: &mut TypedStore<T>,
         func_name: &'static str,
@@ -297,16 +295,12 @@ impl Strategy {
                 engine.borrow_mut().execute(store, &module, params, result)
             }
             #[cfg(feature = "wasmtime")]
-            Strategy::Wasmtime { resumable, .. } => {
+            Strategy::Wasmtime { .. } => {
                 let store = match store {
                     TypedStore::Wasmtime(store) => store,
                     _ => unreachable!(),
                 };
-                if *resumable {
-                    store.execute(func_name, params, result)
-                } else {
-                    store.execute_not_resumable(func_name, params, result)
-                }
+                store.execute(func_name, params, result)
             }
             Strategy::Wasmi { module, .. } => {
                 let store = match store {
@@ -318,7 +312,7 @@ impl Strategy {
         }
     }
 
-    pub fn resume<'a, T: Send + Sync>(
+    pub fn resume<'a, T: Send>(
         &'a self,
         store: &mut TypedStore<T>,
         interruption_result: &[Value],
@@ -341,55 +335,13 @@ impl Strategy {
                     TypedStore::Wasmtime(store) => store,
                     _ => unreachable!(),
                 };
-                store.resume(Ok(interruption_result), result, vec![])
+                store.resume(Ok(interruption_result), result)
             }
             Strategy::Wasmi { module, .. } => {
                 let store = match store {
                     TypedStore::Wasmi(store) => store,
                     _ => unreachable!(),
                 };
-                store.resume(interruption_result, result)
-            }
-        }
-    }
-
-    pub fn resume_wth_memory<'a, T: Send + Sync>(
-        &'a self,
-        store: &mut TypedStore<T>,
-        interruption_result: &[Value],
-        result: &mut [Value],
-        memory_changes: Vec<(u32, Box<[u8]>)>,
-    ) -> Result<(), TrapCode> {
-        match self {
-            Strategy::Rwasm { module, engine } => {
-                let store = match store {
-                    TypedStore::Rwasm(store) => store,
-                    #[allow(unreachable_patterns)]
-                    _ => unreachable!(),
-                };
-                for (addr, buf) in memory_changes {
-                    store.memory_write(addr as usize, &buf)?
-                }
-                engine
-                    .borrow_mut()
-                    .resume(store, &module, interruption_result, result)
-            }
-            #[cfg(feature = "wasmtime")]
-            Strategy::Wasmtime { .. } => {
-                let store = match store {
-                    TypedStore::Wasmtime(store) => store,
-                    _ => unreachable!(),
-                };
-                store.resume(Ok(interruption_result), result, memory_changes)
-            }
-            Strategy::Wasmi { module, .. } => {
-                let store = match store {
-                    TypedStore::Wasmi(store) => store,
-                    _ => unreachable!(),
-                };
-                for (addr, buf) in memory_changes {
-                    store.memory_write(addr as usize, &buf)?
-                }
                 store.resume(interruption_result, result)
             }
         }

@@ -29,7 +29,8 @@ anyhow = { version = "1.0.98", default-features = false, optional = true }
 directories = { version = "6.0.0", optional = true }
 wasmi = { version = "0.47.0", default-features = false }
 num-derive = "0.4.2"
-once_cell = { version = "1.21.3", optional = true }
+futures = { version = "0.3.31", optional = true }
+ouroboros = { version = "0.18.5", optional = true }
 
 [dev-dependencies]
 rand = "0.9.1"
@@ -51,5 +52,5 @@ tracing = [
 ]
 debug-print = []
 fpu = []
-wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:once_cell"]
+wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:futures", "dep:ouroboros"]
 cache-compiled-artifacts = ["dep:directories"]

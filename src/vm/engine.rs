@@ -1,12 +1,5 @@
 use crate::{
-    CallStack,
-    InstructionPtr,
-    RwasmExecutor,
-    RwasmModule,
-    RwasmStore,
-    TrapCode,
-    Value,
-    ValueStack,
+    CallStack, InstructionPtr, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value, ValueStack,
     ValueStackPtr,
 };
 use smallvec::SmallVec;
@@ -76,7 +69,7 @@ impl ExecutionEngine {
     /// This function assumes that the `value_stack` and `call_stack` are properly initialized. If
     /// the stacks are accessed while empty due to a programming error, it may result in a
     /// panic.
-    pub fn execute<T: Send + Sync>(
+    pub fn execute<T: Send>(
         &mut self,
         store: &mut RwasmStore<T>,
         module: &RwasmModule,
@@ -142,7 +135,7 @@ impl ExecutionEngine {
     ///
     /// This function assumes that it is only called in valid scenarios where there is an already
     /// interrupted call to be resumed.
-    pub fn resume<T: Send + Sync>(
+    pub fn resume<T: Send>(
         &mut self,
         store: &mut RwasmStore<T>,
         module: &RwasmModule,
