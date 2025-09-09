@@ -496,7 +496,6 @@ impl Tracer {
         )
     }
     pub fn mw(&mut self, addr: u32, value: u32) -> MemoryWriteRecord {
-        assert!(addr % 4 == 0);
         let record = self.memory_records.entry(addr).or_default();
 
         let prev_record = *record;
