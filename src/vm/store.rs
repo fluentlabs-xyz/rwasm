@@ -31,7 +31,7 @@ pub struct RwasmStore<T: Send + Sync + 'static> {
     // the last used signature (needed for indirect calls type checks)
     pub(crate) last_signature: Option<SignatureIdx>,
     // rwasm modified segments
-    pub(crate) tables: HashMap<TableIdx, TableEntity>,
+    pub tables: HashMap<TableIdx, TableEntity>,
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
     // elem/data emptiness flags
     pub(crate) empty_data_segments: BitArray<[usize; N_MAX_DATA_SEGMENTS_BITS]>,

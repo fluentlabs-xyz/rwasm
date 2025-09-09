@@ -116,7 +116,8 @@ pub struct Tracer {
     pub local_memory_event: HashMap<u32, MemoryLocalEvent>,
     pub state: VMState,
     pub ip_max: u64,
-    pub last_opcode: Option<Opcode>,
+    // We need once generate all memory record for elements and data segements before execution.
+    pub is_memory_inited: bool,
 }
 
 impl Debug for Tracer {
@@ -309,7 +310,7 @@ impl Tracer {
             let sub_op_event = self.make_sub_op_event(main_op_evnet.clone());
         }
         self.state.sp = new_sp;
-        self.last_opcode = Some(opcode);
+
         self.state.next_cycle();
         if opcode.is_fat_op() {
             self.state.next_cycle();
@@ -475,7 +476,7 @@ impl Tracer {
         record.shard = self.state.shard;
         record.timestamp = self.state.clk;
         let local_memory_access = &mut self.local_memory_event;
-        local_memory_access
+        let entry = local_memory_access
             .entry(addr)
             .and_modify(|e| {
                 e.final_mem_access = *record;

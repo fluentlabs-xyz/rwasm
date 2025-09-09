@@ -169,7 +169,9 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                     let shard = self.store.tracer.state.shard;
                     let read_record = self.store.tracer.mr(src_addr.to_virtual_addr());
                     let value = read_record.value;
+                    println!("e addr: {:?}rrecord:{:?}", src_addr, read_record);
                     let write_record = self.store.tracer.mw(dst_addr.to_virtual_addr(), value);
+                    println!("t addr: {:?}rrecord:{:?}", dst_addr, read_record);
                     table_init_event.memory_read_access.push(read_record);
                     table_init_event.memory_write_acess.push(write_record);
                     table_init_event.table_idx = table_idx as u32;

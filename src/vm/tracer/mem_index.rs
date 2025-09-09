@@ -41,7 +41,7 @@ pub const ELEMENT_SEG_START: u32 = DATA_SEG_END + UNIT;
 pub const ELEMENT_SEG_END: u32 = ELEMENT_SEG_START + N_MAX_ELEM_SEGMENTS_BITS as u32;
 pub const GLOBAL_MEM_START: u32 = ELEMENT_SEG_END + UNIT;
 pub const GLOBAL_MEM_END: u32 = GLOBAL_MEM_START + (1 << 8) << 20;
-
+#[derive(Debug)]
 pub enum AddressType {
     Stack(u32),
     FuncFrame(u32),
@@ -81,7 +81,7 @@ impl AddressType {
             AddressType::Element(offset) => {
                 let v_addr = ELEMENT_SEG_START + offset * UNIT;
                 debug_assert!(v_addr >= ELEMENT_SEG_START);
-                debug_assert!(v_addr < DATA_SEG_END);
+                debug_assert!(v_addr < ELEMENT_SEG_END);
                 v_addr
             }
             AddressType::GlobalMemory(offset) => {
@@ -90,6 +90,16 @@ impl AddressType {
                 debug_assert!(v_addr < GLOBAL_MEM_END);
                 v_addr
             }
+        }
+    }
+
+    pub fn v_addr_to_pre_addr(v_addr: u32) -> Option<AddressType> {
+        if v_addr >= ELEMENT_SEG_START && v_addr < ELEMENT_SEG_END {
+            Some(AddressType::Element((v_addr - ELEMENT_SEG_START) / UNIT))
+        } else if v_addr >= DATA_SEG_START && v_addr < DATA_SEG_END {
+            Some(AddressType::Element((v_addr - DATA_SEG_START) / UNIT))
+        } else {
+            None
         }
     }
 }

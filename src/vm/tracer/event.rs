@@ -1,7 +1,8 @@
 use crate::{
-    mem::{MemoryReadRecord, MemoryWriteRecord},
+    mem::{MemoryLocalEvent, MemoryReadRecord, MemoryWriteRecord},
     Opcode,
 };
+use hashbrown::HashMap;
 impl Opcode {
     pub fn opcode_stack_read(self) -> u32 {
         if self.is_binary_instruction() {
@@ -73,4 +74,6 @@ pub struct TableInitEvent {
     pub stack_access: [MemoryReadRecord; 3],
     pub memory_read_access: Vec<MemoryReadRecord>,
     pub memory_write_acess: Vec<MemoryWriteRecord>,
+    //If a memory addr is nenver touched by cpu it will ended up here.
+    pub local_mem_access: Vec<MemoryLocalEvent>,
 }

@@ -291,6 +291,10 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "tracing")]
     pub fn step(mut self) -> (Result<bool, TrapCode>, InstructionPtr, ValueStackPtr) {
+        if self.store.tracer.is_memory_inited == false {
+            self.prepare_memory_record();
+            self.store.tracer.is_memory_inited = true;
+        }
         if !self
             .ip
             .is_valid((self.module.code_section.instr.last().unwrap()) as *const Opcode as u64)
@@ -306,6 +310,39 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let res = wrapper(instr);
         self.trace_instr_post(&instr, res.err());
         (res, self.ip, self.sp)
+    }
+
+    #[cfg(feature = "tracing")]
+    pub fn prepare_memory_record(&mut self) {
+        use crate::{mem::MemoryRecord, mem_index::AddressType};
+
+        for item in self.module.data_section.windows(4).enumerate() {
+            let (addr, data) = item;
+            let addr = addr as u32;
+            let word = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+            let v_addr = AddressType::Data(addr).to_virtual_addr();
+            let record = MemoryRecord {
+                shard: 0,
+                timestamp: 0,
+                value: word,
+            };
+            println!("addr:{:?}drecord:{:?}", addr, record);
+
+            self.store.tracer.memory_records.insert(v_addr, record);
+        }
+        for item in self.module.elem_section.iter().enumerate() {
+            let (addr, data) = item;
+            let addr = addr as u32;
+
+            let v_addr = AddressType::Element(addr).to_virtual_addr();
+            let record = MemoryRecord {
+                shard: 0,
+                timestamp: 0,
+                value: *data,
+            };
+
+            self.store.tracer.memory_records.insert(v_addr, record);
+        }
     }
 
     #[cfg(feature = "tracing")]
