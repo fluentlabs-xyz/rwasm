@@ -225,6 +225,10 @@ impl Tracer {
                         _ => unreachable!(),
                     }
                 }
+                fat_op_event.clk = self.state.clk;
+                fat_op_event.shard = self.state.shard;
+                fat_op_event.sp = sp;
+                fat_op_event.next_sp = sp + 3 * UNIT;
                 opcode_state.fat_op = Some(FatOpEvent::TableInit(fat_op_event));
             }
         }

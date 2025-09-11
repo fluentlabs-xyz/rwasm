@@ -67,6 +67,10 @@ pub enum FatOpEvent {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
 pub struct TableInitEvent {
+    pub clk: u32,
+    pub shard: u32,
+    pub sp: u32,
+    pub next_sp: u32,
     pub d: u32,
     pub s: u32,
     pub n: u32,

@@ -163,7 +163,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                     use crate::mem_index::AddressType;
 
                     let src_addr = AddressType::Element(src_index + offset);
-                    let dst_addr = AddressType::Table(table_idx as u32 * 1024 + dst_index);
+                    let dst_addr = AddressType::Table(table_idx as u32 * 1024 + offset);
                     let read_clk = self.store.tracer.state.clk;
                     let write_clk = read_clk + 1;
                     let shard = self.store.tracer.state.shard;
