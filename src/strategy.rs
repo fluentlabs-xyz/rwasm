@@ -1,7 +1,7 @@
 use crate::{
     wasmi::{WasmiCaller, WasmiModule, WasmiStore},
-    CompilationError, ExecutionEngine, ExecutorConfig, ImportLinker, RwasmCaller, RwasmModule,
-    RwasmStore, TrapCode, UntypedValue, Value,
+    CompilationError, ExecutionEngine, ImportLinker, RwasmCaller, RwasmModule, RwasmStore,
+    TrapCode, UntypedValue, Value,
 };
 #[cfg(feature = "wasmtime")]
 use crate::{WasmtimeCaller, WasmtimeModule, WasmtimeStore};
@@ -13,9 +13,9 @@ pub trait Store<T> {
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode>;
 
-    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, func: F) -> R;
+    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R;
 
-    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R;
+    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R;
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode>;
 
@@ -110,7 +110,7 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
         }
     }
 
-    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, func: F) -> R {
+    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
         match self {
             TypedCaller::Rwasm(store) => store.context_mut(func),
             #[cfg(feature = "wasmtime")]
@@ -119,7 +119,7 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
         }
     }
 
-    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
         match self {
             TypedCaller::Rwasm(store) => store.context(func),
             #[cfg(feature = "wasmtime")]
@@ -207,7 +207,7 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
         }
     }
 
-    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, func: F) -> R {
+    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
         match self {
             TypedStore::Rwasm(store) => store.context_mut(func),
             #[cfg(feature = "wasmtime")]
@@ -216,7 +216,7 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
         }
     }
 
-    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
         match self {
             TypedStore::Rwasm(store) => store.context(func),
             #[cfg(feature = "wasmtime")]
@@ -245,9 +245,8 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
 }
 
 impl Strategy {
-    pub fn empty_store(&self, executor_config: ExecutorConfig) -> TypedStore<()> {
+    pub fn empty_store(&self) -> TypedStore<()> {
         self.create_store::<()>(
-            executor_config,
             Rc::new(ImportLinker::default()),
             (),
             always_failing_syscall_handler,
@@ -256,32 +255,26 @@ impl Strategy {
 
     pub fn create_store<T: Send + Sync>(
         &self,
-        config: ExecutorConfig,
         import_linker: Rc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
     ) -> TypedStore<T> {
         match self {
-            Strategy::Rwasm { .. } => TypedStore::Rwasm(RwasmStore::new(
-                config,
-                import_linker,
-                context,
-                syscall_handler,
-            )),
+            Strategy::Rwasm { .. } => {
+                TypedStore::Rwasm(RwasmStore::new(import_linker, context, syscall_handler))
+            }
             #[cfg(feature = "wasmtime")]
             Strategy::Wasmtime { module, .. } => TypedStore::Wasmtime(WasmtimeStore::new(
                 module.clone(),
                 import_linker,
                 context,
                 syscall_handler,
-                config.fuel_limit,
             )),
             Strategy::Wasmi { module } => TypedStore::Wasmi(WasmiStore::new(
                 module,
                 import_linker,
                 context,
                 syscall_handler,
-                config.fuel_limit,
             )),
         }
     }
@@ -292,6 +285,7 @@ impl Strategy {
         func_name: &'static str,
         params: &[Value],
         result: &mut [Value],
+        fuel: Option<u64>,
     ) -> Result<(), TrapCode> {
         match self {
             Strategy::Rwasm { module, engine } => {
@@ -300,7 +294,9 @@ impl Strategy {
                     #[allow(unreachable_patterns)]
                     _ => unreachable!(),
                 };
-                engine.borrow_mut().execute(store, &module, params, result)
+                engine
+                    .borrow_mut()
+                    .execute(store, &module, params, result, fuel)
             }
             #[cfg(feature = "wasmtime")]
             Strategy::Wasmtime { .. } => {
@@ -308,14 +304,14 @@ impl Strategy {
                     TypedStore::Wasmtime(store) => store,
                     _ => unreachable!(),
                 };
-                store.execute(func_name, params, result)
+                store.execute(func_name, params, result, fuel)
             }
             Strategy::Wasmi { module, .. } => {
                 let store = match store {
                     TypedStore::Wasmi(store) => store,
                     _ => unreachable!(),
                 };
-                store.execute(func_name, params, result)
+                store.execute(func_name, params, result, fuel)
             }
         }
     }

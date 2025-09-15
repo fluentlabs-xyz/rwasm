@@ -43,11 +43,11 @@ impl<'a, T: 'static + Send + Sync> Store<T> for WasmiCaller<'a, T> {
             .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
-    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
         func(&mut self.caller.borrow_mut().data_mut().inner)
     }
 
-    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
         func(&self.caller.borrow_mut().data().inner)
     }
 
@@ -216,7 +216,6 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
         import_linker: Rc<ImportLinker>,
         data: T,
         syscall_handler: SyscallHandler<T>,
-        fuel_limit: Option<u64>,
     ) -> Self {
         let mut store = wasmi::Store::new(
             module.engine(),
@@ -225,13 +224,7 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
                 syscall_handler,
             },
         );
-        if let Some(fuel_limit) = fuel_limit {
-            store
-                .set_fuel(fuel_limit)
-                .unwrap_or_else(|_| unreachable!("trying to set fuel with disabled wasmi fuel"));
-        }
         let linker = wasmi_import_linker(module.engine(), import_linker);
-
         let instance = linker
             .instantiate(store.as_context_mut(), &module)
             .unwrap()
@@ -249,7 +242,13 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
         func_name: &'static str,
         params: &[Value],
         result: &mut [Value],
+        fuel: Option<u64>,
     ) -> Result<(), TrapCode> {
+        if let Some(fuel_limit) = fuel {
+            self.store
+                .set_fuel(fuel_limit)
+                .unwrap_or_else(|_| unreachable!("trying to set fuel with disabled wasmi fuel"));
+        }
         let func = self
             .instance
             .get_func(self.store.as_context_mut(), func_name)
@@ -424,11 +423,11 @@ impl<T: 'static + Send + Sync> Store<T> for WasmiStore<T> {
             .map_err(Into::into)
     }
 
-    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
         func(&mut self.store.data_mut().inner)
     }
 
-    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
         func(&self.store.data().inner)
     }
 

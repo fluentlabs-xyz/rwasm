@@ -39,11 +39,11 @@ impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
         Ok(())
     }
 
-    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
         func(&mut self.store.context.borrow_mut())
     }
 
-    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
         func(&self.store.context.borrow())
     }
 

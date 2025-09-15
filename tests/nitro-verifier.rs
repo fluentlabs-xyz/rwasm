@@ -1,8 +1,8 @@
 use hex_literal::hex;
 use rwasm::{
-    compile_wasmtime_module, for_each_strategy, CompilationConfig, ExecutionEngine, ExecutorConfig,
-    ImportLinker, ImportName, InstructionSet, RwasmModule, RwasmStore, Store, Strategy, TrapCode,
-    TypedCaller, Value,
+    compile_wasmtime_module, for_each_strategy, CompilationConfig, ExecutionEngine, ImportLinker,
+    ImportName, InstructionSet, RwasmModule, RwasmStore, Store, Strategy, TrapCode, TypedCaller,
+    Value,
 };
 use std::rc::Rc;
 use wasmparser::ValType;
@@ -114,14 +114,9 @@ fn test_nitro_verifier_rwasm() {
         .with_import_linker(import_linker.clone());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     let mut engine = ExecutionEngine::new();
-    let mut store = RwasmStore::<()>::new(
-        ExecutorConfig::default(),
-        import_linker.clone(),
-        (),
-        fluentbase_syscall_handler,
-    );
+    let mut store = RwasmStore::<()>::new(import_linker.clone(), (), fluentbase_syscall_handler);
     engine
-        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .execute(&mut store, &rwasm_module, &[], &mut [], None)
         .unwrap();
 }
 
@@ -134,15 +129,19 @@ fn test_nitro_verifier_wasmtime() {
     let config = CompilationConfig::default()
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true)
-        .with_import_linker(import_linker.clone());
+        .with_import_linker(import_linker.clone())
+        .with_consume_fuel(false);
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     // compile & run using wasmtime
     let module = Rc::new(
-        compile_wasmtime_module(CompilationConfig::default(), &rwasm_module.wasm_section).unwrap(),
+        compile_wasmtime_module(
+            CompilationConfig::default().with_consume_fuel(false),
+            &rwasm_module.wasm_section,
+        )
+        .unwrap(),
     );
-    let mut worker =
-        WasmtimeStore::new(module, import_linker, (), fluentbase_syscall_handler, None);
-    worker.execute("main", &[], &mut []).unwrap();
+    let mut worker = WasmtimeStore::new(module, import_linker, (), fluentbase_syscall_handler);
+    worker.execute("main", &[], &mut [], None).unwrap();
 }
 
 #[cfg(feature = "wasmtime")]
@@ -156,14 +155,10 @@ fn test_nitro_verifier_strategy() {
         .with_allow_malformed_entrypoint_func_type(true)
         .with_import_linker(import_linker.clone());
     let exec_strategy = |strategy: Strategy| {
-        let mut store = strategy.create_store(
-            ExecutorConfig::default().fuel_limit(1_000_000_000),
-            import_linker.clone(),
-            (),
-            fluentbase_syscall_handler,
-        );
+        let mut store =
+            strategy.create_store(import_linker.clone(), (), fluentbase_syscall_handler);
         strategy
-            .execute::<()>(&mut store, "main", &[], &mut [])
+            .execute::<()>(&mut store, "main", &[], &mut [], Some(1_000_000_000))
             .map_err(Into::into)
     };
     // run with rwasm strategy first

@@ -57,3 +57,8 @@ pub fn for_each_strategy<F: FnMut(Strategy) -> Result<(), StrategyError>>(
     }
     Ok(())
 }
+
+#[cfg(test)]
+use hex_literal as _;
+#[cfg(test)]
+use wat as _;

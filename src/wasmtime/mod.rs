@@ -1,6 +1,8 @@
+mod engine;
+
 use crate::{
-    Caller, CompilationConfig, ImportLinker, Store, SyscallHandler, TrapCode, TypedCaller,
-    UntypedValue, ValType, Value, F32, F64, N_MAX_STACK_SIZE,
+    wasmtime::engine::wasmtime_engine, Caller, CompilationConfig, ImportLinker, Store,
+    SyscallHandler, TrapCode, TypedCaller, UntypedValue, ValType, Value, F32, F64,
 };
 use alloc::rc::Rc;
 use futures::{channel::oneshot, future::Either, task::noop_waker};
@@ -78,10 +80,9 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         import_linker: Rc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
-        fuel: Option<u64>,
     ) -> Self {
         futures::executor::block_on(async move {
-            Self::new_async(module, import_linker, context, syscall_handler, fuel).await
+            Self::new_async(module, import_linker, context, syscall_handler).await
         })
     }
 
@@ -90,13 +91,12 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         import_linker: Rc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
-        fuel: Option<u64>,
     ) -> Self {
         let shared_control_state = Arc::new(RwLock::new(SharedControlState::new(context)));
         let context = WrappedContext {
             shared_control_state: shared_control_state.clone(),
             syscall_handler,
-            fuel,
+            fuel: None,
         };
         let mut store = wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context);
         let linker = wasmtime_import_linker(module.engine(), import_linker);
@@ -117,12 +117,20 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         func_name: &'static str,
         params: &[Value],
         result: &mut [Value],
+        fuel: Option<u64>,
     ) -> Result<(), TrapCode> {
         assert!(
             self.fut.is_none(),
             "wasmtime: there is an unfinished future"
         );
         let mut store = self.store.take().expect("wasmtime: store is not present");
+        if let Some(fuel) = fuel {
+            if let Ok(_) = store.get_fuel() {
+                store.set_fuel(fuel).expect("wasmtime: fuel is not enabled");
+            } else {
+                store.data_mut().fuel = Some(fuel);
+            }
+        }
         let entrypoint = self
             .instance
             .get_func(store.as_context_mut(), func_name)
@@ -280,12 +288,12 @@ impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
         })
     }
 
-    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
         let mut context = self.shared_control_state.write().unwrap();
         func(&mut context.inner)
     }
 
-    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
         let context = self.shared_control_state.read().unwrap();
         func(&context.inner)
     }
@@ -322,38 +330,13 @@ impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
     }
 }
 
-fn wasmtime_config() -> anyhow::Result<wasmtime::Config> {
-    let mut config = wasmtime::Config::new();
-    // TODO(dmitry123): "make sure config is correct"
-    config.strategy(wasmtime::Strategy::Cranelift);
-    config.collector(wasmtime::Collector::Null);
-    config.max_wasm_stack(N_MAX_STACK_SIZE * size_of::<u32>());
-    config.async_support(true);
-    // TODO(dmitry123): "adjust wasmtime config if needed"
-    // use caching for artifacts
-    #[cfg(feature = "cache-compiled-artifacts")]
-    {
-        use directories::ProjectDirs;
-        use std::path::{Path, PathBuf};
-        use wasmtime::{Cache, CacheConfig};
-        let project_dirs = ProjectDirs::from("com", "bytecodealliance", "wasmtime").unwrap();
-        let cache_dir = project_dirs.cache_dir();
-        std::fs::create_dir_all(cache_dir)?;
-        let mut cache_config = CacheConfig::default();
-        cache_config.with_directory(PathBuf::from(cache_dir));
-        config.cache(Some(Cache::new(cache_config)?));
-        // make sure the caching dir exists
-        std::fs::create_dir_all(Path::new(cache_dir))?;
-    }
-    Ok(config)
-}
-
 pub fn deserialize_wasmtime_module(
+    _compilation_config: CompilationConfig,
     wasmtime_binary: impl AsRef<[u8]>,
 ) -> anyhow::Result<WasmtimeModule> {
     print!("parsing wasmtime module... ");
     let start = Instant::now();
-    let engine = wasmtime::Engine::new(&wasmtime_config()?)?;
+    let engine = wasmtime_engine();
     let module = unsafe { wasmtime::Module::deserialize(&engine, wasmtime_binary) };
     println!("{:?}", start.elapsed());
     module
@@ -365,7 +348,7 @@ pub fn compile_wasmtime_module(
 ) -> anyhow::Result<WasmtimeModule> {
     print!("compiling wasmtime module... ");
     let start = Instant::now();
-    let engine = wasmtime::Engine::new(&wasmtime_config()?)?;
+    let engine = wasmtime_engine();
     let module = wasmtime::Module::new(&engine, wasm_binary);
     println!("{:?}", start.elapsed());
     module
@@ -607,12 +590,12 @@ impl<'a, T: 'static + Send + Sync> Store<T> for WasmtimeCaller<'a, T> {
             .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
-    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
         let mut context = self.caller.data_mut().shared_control_state.write().unwrap();
         func(&mut context.inner)
     }
 
-    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
         let context = self.caller.data().shared_control_state.read().unwrap();
         func(&context.inner)
     }

@@ -1,5 +1,5 @@
 use crate::{
-    split_i64_to_i32, AddressOffset, DataSegmentIdx, InstructionSet, TrapCode,
+    AddressOffset, DataSegmentIdx, I64ValueSplit, InstructionSet, TrapCode,
     MEMORY_BYTES_PER_FUEL_LOG2, N_BYTES_PER_MEMORY_PAGE,
 };
 
@@ -112,7 +112,7 @@ impl InstructionSet {
 
     /// Max stack height: 2
     pub fn op_i64_const(&mut self, value: i64) {
-        let (lo, hi) = split_i64_to_i32(value);
+        let (lo, hi) = value.split_into_i32_tuple();
         self.op_i32_const(lo); // [lo]
         self.op_i32_const(hi); // [hi, lo]
     }

@@ -1,9 +1,6 @@
 use crate::{
     types::{F32, F64},
-    ExternRef,
-    FuncRef,
-    TrapCode,
-    UntypedValue,
+    ExternRef, FuncRef, TrapCode, UntypedValue,
 };
 use core::{f32, i32, i64, u32, u64};
 use wasmparser::ValType;
@@ -1046,14 +1043,35 @@ impl From<FuncRef> for Value {
     }
 }
 
-pub fn split_i64_to_i32(value: i64) -> (i32, i32) {
-    let lower = (value & 0xFFFF_FFFF) as i32; // extract lower 32 bits
-    let upper = (value >> 32) as i32; // extract upper 32 bits
-    (lower, upper)
+pub trait I64ValueSplit {
+    fn split_into_i32_tuple(self) -> (i32, i32);
+    fn split_into_i32_array(self) -> [i32; 2];
 }
 
-pub fn split_i64_to_i32_arr(value: i64) -> [i32; 2] {
-    let lower = (value & 0xFFFF_FFFF) as i32; // extract lower 32 bits
-    let upper = (value >> 32) as i32; // extract upper 32 bits
-    [lower, upper]
+impl I64ValueSplit for i64 {
+    fn split_into_i32_tuple(self) -> (i32, i32) {
+        let lower = (self & 0xFFFF_FFFF) as i32; // extract lower 32 bits
+        let upper = (self >> 32) as i32; // extract upper 32 bits
+        (lower, upper)
+    }
+
+    fn split_into_i32_array(self) -> [i32; 2] {
+        let lower = (self & 0xFFFF_FFFF) as i32; // extract lower 32 bits
+        let upper = (self >> 32) as i32; // extract upper 32 bits
+        [lower, upper]
+    }
+}
+
+impl I64ValueSplit for u64 {
+    fn split_into_i32_tuple(self) -> (i32, i32) {
+        let lower = (self & 0xFFFF_FFFF) as i32; // extract lower 32 bits
+        let upper = (self >> 32) as i32; // extract upper 32 bits
+        (lower, upper)
+    }
+
+    fn split_into_i32_array(self) -> [i32; 2] {
+        let lower = (self & 0xFFFF_FFFF) as i32; // extract lower 32 bits
+        let upper = (self >> 32) as i32; // extract upper 32 bits
+        [lower, upper]
+    }
 }

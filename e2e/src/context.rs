@@ -1,39 +1,13 @@
 use super::{TestDescriptor, TestError, TestProfile, TestSpan};
 use crate::handler::{
-    testing_context_syscall_handler,
-    TestingContext,
-    FUNC_ENTRYPOINT,
-    FUNC_PRINT,
-    FUNC_PRINT_F32,
-    FUNC_PRINT_F64,
-    FUNC_PRINT_I32,
-    FUNC_PRINT_I32_F32,
-    FUNC_PRINT_I64,
-    FUNC_PRINT_I64_F64,
+    testing_context_syscall_handler, TestingContext, FUNC_ENTRYPOINT, FUNC_PRINT, FUNC_PRINT_F32,
+    FUNC_PRINT_F64, FUNC_PRINT_I32, FUNC_PRINT_I32_F32, FUNC_PRINT_I64, FUNC_PRINT_I64_F64,
 };
 use anyhow::Result;
 use rwasm::{
-    instruction_set,
-    split_i64_to_i32_arr,
-    CallStack,
-    CompilationConfig,
-    ExecutorConfig,
-    FuncType,
-    ImportLinker,
-    ImportLinkerEntity,
-    ImportName,
-    InstructionSet,
-    ModuleParser,
-    Opcode,
-    RwasmExecutor,
-    RwasmModule,
-    RwasmStore,
-    StateRouterConfig,
-    Store,
-    ValType,
-    Value,
-    ValueStack,
-    F64,
+    instruction_set, CallStack, CompilationConfig, FuncType, I64ValueSplit, ImportLinker,
+    ImportLinkerEntity, ImportName, InstructionSet, ModuleParser, Opcode, RwasmExecutor,
+    RwasmModule, RwasmStore, StateRouterConfig, Store, ValType, Value, ValueStack, F64,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use wast::token::{Id, Span};
@@ -241,7 +215,6 @@ impl TestContext<'_> {
         println!("{}", rwasm_module);
 
         let mut store = RwasmStore::<TestingContext>::new(
-            ExecutorConfig::default(),
             self.import_linker.clone(),
             TestingContext::default(),
             testing_context_syscall_handler,
@@ -361,11 +334,14 @@ impl TestContext<'_> {
             .iter()
             .cloned()
             .flat_map(|v| match v {
-                Value::I64(v) => split_i64_to_i32_arr(v)
+                Value::I64(v) => v
+                    .split_into_i32_array()
                     .into_iter()
                     .map(|v| Value::I32(v))
                     .collect(),
-                Value::F64(v) => split_i64_to_i32_arr(v.to_bits() as i64)
+                Value::F64(v) => v
+                    .to_bits()
+                    .split_into_i32_array()
                     .into_iter()
                     .map(|v| Value::I32(v))
                     .collect(),

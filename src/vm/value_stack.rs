@@ -1,7 +1,6 @@
 use crate::{
-    split_i64_to_i32,
     types::{TrapCode, UntypedValue},
-    ExternRef, FuncRef, Value, F32, F64, N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
+    ExternRef, FuncRef, I64ValueSplit, Value, F32, F64, N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
 };
 use alloc::vec::Vec;
 use core::fmt::Debug;
@@ -689,7 +688,7 @@ impl ValueStackPtr {
     }
 
     pub fn push_i64(&mut self, value: i64) {
-        let (lo, hi) = split_i64_to_i32(value);
+        let (lo, hi) = value.split_into_i32_tuple();
         self.push(lo.into());
         self.push(hi.into());
     }
