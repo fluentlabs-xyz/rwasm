@@ -1,9 +1,5 @@
 use crate::{
-    types::InstructionSet,
-    CompilationConfig,
-    CompilationError,
-    ConstructorParams,
-    ModuleParser,
+    CompilationConfig, CompilationError, ConstructorParams, HintType, InstructionSet, ModuleParser,
     Opcode,
 };
 use alloc::{vec, vec::Vec};
@@ -11,8 +7,7 @@ use bincode::{
     de::Decoder,
     enc::Encoder,
     error::{DecodeError, EncodeError},
-    Decode,
-    Encode,
+    Decode, Encode,
 };
 
 /// Represents a compiled rWasm module.
@@ -36,8 +31,11 @@ pub struct RwasmModule {
     /// Table initializers, function refs for the module's table section.
     pub elem_section: Vec<u32>,
 
-    /// An original Wasm bytecode used during compilation
-    pub wasm_section: Vec<u8>,
+    /// A hint section that stores original bytecode that used as a compiler input.
+    /// It can be Wasm, EVM bytecode or anything else.
+    /// Use this section signature bytes to determine the type of the file,
+    /// always fallback to EVM if it can't be extracted.
+    pub hint_section: Vec<u8>,
 }
 
 impl RwasmModule {
@@ -63,7 +61,7 @@ impl RwasmModule {
             code_section: InstructionSet::default(),
             data_section: vec![],
             elem_section: vec![],
-            wasm_section: vec![],
+            hint_section: vec![],
         }
     }
 
@@ -72,7 +70,7 @@ impl RwasmModule {
             code_section,
             data_section: vec![],
             elem_section: vec![],
-            wasm_section: vec![],
+            hint_section: vec![],
         }
     }
 
@@ -84,6 +82,10 @@ impl RwasmModule {
     pub fn serialize(&self) -> Vec<u8> {
         bincode::encode_to_vec(self, bincode::config::legacy())
             .unwrap_or_else(|_| unreachable!("rwasm: failed to serialize module"))
+    }
+
+    pub fn hint_type(&self) -> HintType {
+        HintType::from_ref(&self.hint_section)
     }
 }
 
@@ -102,7 +104,7 @@ impl Encode for RwasmModule {
         Encode::encode(&self.code_section, encoder)?;
         Encode::encode(&self.data_section, encoder)?;
         Encode::encode(&self.elem_section, encoder)?;
-        Encode::encode(&self.wasm_section, encoder)?;
+        Encode::encode(&self.hint_section, encoder)?;
         Ok(())
     }
 }
@@ -126,7 +128,7 @@ impl<Context> Decode<Context> for RwasmModule {
             code_section,
             data_section,
             elem_section,
-            wasm_section,
+            hint_section: wasm_section,
         })
     }
 }
@@ -155,7 +157,7 @@ impl core::fmt::Display for RwasmModule {
 
 #[cfg(test)]
 mod tests {
-    use crate::{instruction_set, types::RwasmModule};
+    use crate::{instruction_set, RwasmModule};
 
     #[test]
     fn test_module_encoding() {
@@ -170,7 +172,7 @@ mod tests {
             },
             data_section: Default::default(),
             elem_section: vec![5, 6, 7, 8, 9],
-            wasm_section: vec![],
+            hint_section: vec![],
         };
         let encoded_module = bincode::encode_to_vec(&module, bincode::config::legacy()).unwrap();
         let module2: RwasmModule;

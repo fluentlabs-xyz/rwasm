@@ -159,3 +159,8 @@ fn test_bulk_bench() {
         )
         .unwrap();
 }
+
+#[test]
+fn test_reduce_binary() {
+
+}

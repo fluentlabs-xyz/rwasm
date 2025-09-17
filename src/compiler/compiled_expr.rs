@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Data structures to represents Wasm constant expressions.
 //!
 //! This has built-in support for the `extended-const` Wasm proposal.

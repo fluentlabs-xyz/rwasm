@@ -8,9 +8,9 @@ mod system;
 mod table;
 
 use crate::{
-    types::{AddressOffset, RwasmModule, TableIdx, UntypedValue},
-    CallStack, InstructionPtr, Opcode, RwasmCaller, RwasmStore, SysFuncIdx, TrapCode, TypedCaller,
-    Value, ValueStack, ValueStackPtr,
+    types::{AddressOffset, TableIdx, UntypedValue},
+    CallStack, InstructionPtr, Opcode, RwasmCaller, RwasmModule, RwasmStore, SysFuncIdx, TrapCode,
+    TypedCaller, Value, ValueStack, ValueStackPtr,
 };
 use smallvec::SmallVec;
 

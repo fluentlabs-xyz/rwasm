@@ -1,4 +1,4 @@
-use crate::{types::ValueStackHeight, CompilationError, InstructionSet};
+use crate::{compiler::value_stack::ValueStackHeight, CompilationError, InstructionSet};
 use bincode::{Decode, Encode};
 use core::fmt;
 
@@ -55,47 +55,47 @@ impl DropKeep {
         // Now we can cast `drop` and `keep` to `u16` values safely.
         Ok(Self { drop, keep })
     }
-}
 
-pub fn translate_drop_keep(
-    instr_builder: &mut InstructionSet,
-    drop_keep: DropKeep,
-    height: &mut ValueStackHeight,
-) -> usize {
-    let (drop, keep) = (drop_keep.drop(), drop_keep.keep());
-    if drop == 0 {
-        return 0;
+    pub fn translate_drop_keep(
+        &self,
+        instr_builder: &mut InstructionSet,
+        height: &mut ValueStackHeight,
+    ) -> usize {
+        let (drop, keep) = (self.drop(), self.keep());
+        if drop == 0 {
+            return 0;
+        }
+        let mut opcode_count = 0;
+        if drop >= keep {
+            (0..keep).for_each(|_| {
+                instr_builder.op_local_set(drop as u32);
+                opcode_count += 1;
+            });
+            (0..(drop - keep)).for_each(|_| {
+                instr_builder.op_drop();
+                opcode_count += 1;
+            });
+        } else {
+            height.push1();
+            height.pop1();
+            (0..keep).for_each(|i| {
+                instr_builder.op_local_get(keep as u32 - i as u32);
+                instr_builder.op_local_set(keep as u32 + drop as u32 - i as u32);
+                opcode_count += 2;
+            });
+            (0..drop).for_each(|_| {
+                instr_builder.op_drop();
+                opcode_count += 1;
+            });
+        }
+        opcode_count
     }
-    let mut opcode_count = 0;
-    if drop >= keep {
-        (0..keep).for_each(|_| {
-            instr_builder.op_local_set(drop as u32);
-            opcode_count += 1;
-        });
-        (0..(drop - keep)).for_each(|_| {
-            instr_builder.op_drop();
-            opcode_count += 1;
-        });
-    } else {
-        height.push1();
-        height.pop1();
-        (0..keep).for_each(|i| {
-            instr_builder.op_local_get(keep as u32 - i as u32);
-            instr_builder.op_local_set(keep as u32 + drop as u32 - i as u32);
-            opcode_count += 2;
-        });
-        (0..drop).for_each(|_| {
-            instr_builder.op_drop();
-            opcode_count += 1;
-        });
-    }
-    opcode_count
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Opcode;
+    use crate::{compiler::value_stack::ValueStackHeight, Opcode};
 
     #[test]
     fn test_drop_keep_translation() {
@@ -118,7 +118,7 @@ mod tests {
         for (input, output, drop_keep) in tests.iter() {
             let mut instr_builder = InstructionSet::new();
             let mut stack_height = ValueStackHeight::default();
-            translate_drop_keep(&mut instr_builder, *drop_keep, &mut stack_height);
+            drop_keep.translate_drop_keep(&mut instr_builder, &mut stack_height);
             let mut stack = input.clone();
             for instr in instr_builder.iter() {
                 match instr {

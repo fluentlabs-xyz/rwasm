@@ -136,7 +136,7 @@ fn test_nitro_verifier_wasmtime() {
     let module = Rc::new(
         compile_wasmtime_module(
             CompilationConfig::default().with_consume_fuel(false),
-            &rwasm_module.wasm_section,
+            &rwasm_module.hint_section,
         )
         .unwrap(),
     );

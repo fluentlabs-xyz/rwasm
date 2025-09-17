@@ -1,40 +1,34 @@
 mod branch_offset;
-mod compiled_expr;
 mod constructor_params;
 mod error;
 mod func_ref;
 mod global_variable;
+mod hint_type;
 mod host_error;
 mod import_linker;
 mod import_name;
-mod instruction_set;
-mod module;
 mod nan_preserving_float;
 mod opcode;
 mod trap_code;
 mod units;
 mod untyped_value;
 mod value;
-mod value_stack;
 
 pub use branch_offset::*;
-pub use compiled_expr::*;
 pub use constructor_params::*;
 pub use error::*;
 pub use func_ref::*;
 pub use global_variable::*;
+pub use hint_type::*;
 pub use host_error::*;
 pub use import_linker::*;
 pub use import_name::*;
-pub use instruction_set::*;
-pub use module::*;
 pub use nan_preserving_float::*;
 pub use opcode::*;
 pub use trap_code::*;
 pub use units::*;
 pub use untyped_value::*;
 pub use value::*;
-pub use value_stack::*;
 
 /// A default stack size we use for stack allocation.
 ///

@@ -4,6 +4,9 @@
 #![recursion_limit = "750"]
 
 mod compiler;
+mod evm;
+mod instruction_set;
+mod module;
 mod strategy;
 mod types;
 mod vm;
@@ -15,7 +18,10 @@ extern crate alloc;
 extern crate core;
 
 pub use compiler::*;
+pub use evm::*;
+pub use instruction_set::*;
 use libm as _;
+pub use module::*;
 pub use strategy::*;
 pub use types::*;
 pub use vm::*;
