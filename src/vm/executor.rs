@@ -443,7 +443,9 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let params_len = params.len();
         let result_len = result.len();
         let max_in_out = params_len.max(result_len);
+        self.value_stack.sync_stack_ptr(self.sp);
         self.value_stack.reserve(max_in_out)?;
+        self.sp = self.value_stack.stack_ptr();
         let mut buffer = SmallVec::<[Value; 16]>::default();
         buffer.resize(params.len() + result.len(), Value::I32(0));
         for (i, x) in params.iter().enumerate() {
