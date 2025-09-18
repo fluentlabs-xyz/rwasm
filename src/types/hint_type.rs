@@ -1,4 +1,5 @@
 /// Type of the hint
+#[derive(PartialEq, Clone, Debug)]
 pub enum HintType {
     /// Hint contains input of Wasm bytecode
     WASM,
