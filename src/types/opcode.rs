@@ -467,7 +467,8 @@ impl Opcode {
             | Opcode::TableInit(_)
             | Opcode::TableGet(_)
             | Opcode::TableSize(_)
-            | Opcode::TableSet(_) => true,
+            | Opcode::TableSet(_)
+            | Opcode::TableGrow(_) => true,
             _ => false,
         }
     }

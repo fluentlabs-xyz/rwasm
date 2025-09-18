@@ -203,10 +203,12 @@ impl Tracer {
         if opcode.is_table_instruction() {
             if let Opcode::TableInit(_) = opcode {
                 let mut fat_op_event = TableInitEvent::default();
+                let mut local_memory_access = HashMap::new();
                 for idx in 0..3 {
                     let addr = sp + idx * UNIT;
                     println!("idx:{},addr:{}", idx, addr);
-                    let read_record = self.mr(addr);
+                    let read_record =
+                        self.mr_with_local_access(addr, Some(&mut local_memory_access));
 
                     match idx {
                         2 => {
@@ -229,6 +231,10 @@ impl Tracer {
                 fat_op_event.shard = self.state.shard;
                 fat_op_event.sp = sp;
                 fat_op_event.next_sp = sp + 3 * UNIT;
+                fat_op_event.local_mem_access =
+                    local_memory_access.iter().map(|(_, v)| (*v)).collect();
+                fat_op_event.local_mem_access_addr =
+                    local_memory_access.iter().map(|(k, v)| (*k)).collect();
                 opcode_state.fat_op = Some(FatOpEvent::TableInit(fat_op_event));
             }
         }
@@ -310,13 +316,15 @@ impl Tracer {
             _ => self.record_sw(opcode, new_sp, stack),
         }
         if opcode.is_fat_op() {
-            let main_op_evnet = self.logs.last().unwrap();
-            let sub_op_event = self.make_sub_op_event(main_op_evnet.clone());
+            let main_op_event = self.logs.last().unwrap();
+
+            let sub_op_event = self.make_sub_op_event(main_op_event.clone());
         }
         self.state.sp = new_sp;
 
         self.state.next_cycle();
         if opcode.is_fat_op() {
+            self.state.next_cycle();
             self.state.next_cycle();
         }
     }
@@ -387,7 +395,7 @@ impl Tracer {
     pub fn record_mr(&mut self, ins: Opcode, sp: u32) -> MemoryAccessRecord {
         let length = ins.opcode_stack_read();
         let mut memory_access = MemoryAccessRecord::default();
-        println!("length:{:?},sp:{},", length, sp);
+        println!("length:{:?},sp:{},op:{}", length, sp, ins);
 
         for idx in 0..length {
             let addr = sp + idx * UNIT;
@@ -467,7 +475,11 @@ impl Tracer {
         }
     }
 
-    pub fn mr(&mut self, addr: u32) -> MemoryReadRecord {
+    pub fn mr_with_local_access(
+        &mut self,
+        addr: u32,
+        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
+    ) -> MemoryReadRecord {
         let clk = self.state.clk;
         let shard = self.state.shard;
         let record = self.memory_records.entry(addr).or_insert(MemoryRecord {
@@ -479,7 +491,11 @@ impl Tracer {
         let prev_record = *record;
         record.shard = self.state.shard;
         record.timestamp = self.state.clk;
-        let local_memory_access = &mut self.local_memory_event;
+        let local_memory_access = if let Some(local_memory_access) = local_memory_access {
+            local_memory_access
+        } else {
+            &mut self.local_memory_event
+        };
         let entry = local_memory_access
             .entry(addr)
             .and_modify(|e| {
@@ -499,14 +515,28 @@ impl Tracer {
             prev_record.timestamp,
         )
     }
-    pub fn mw(&mut self, addr: u32, value: u32) -> MemoryWriteRecord {
-        let record = self.memory_records.entry(addr).or_default();
 
+    pub fn mr(&mut self, addr: u32) -> MemoryReadRecord {
+        self.mr_with_local_access(addr, None)
+    }
+
+    pub fn mw_with_local_access(
+        &mut self,
+        addr: u32,
+        value: u32,
+        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
+    ) -> MemoryWriteRecord {
+        let record = self.memory_records.entry(addr).or_default();
+        println!("addr: {}record:{:?}", addr, record);
         let prev_record = *record;
         record.shard = self.state.shard;
         record.timestamp = self.state.clk;
         record.value = value;
-        let local_memory_access = &mut self.local_memory_event;
+        let local_memory_access = if let Some(local_memory_access) = local_memory_access {
+            local_memory_access
+        } else {
+            &mut self.local_memory_event
+        };
         local_memory_access
             .entry(addr)
             .and_modify(|e| {
@@ -526,6 +556,9 @@ impl Tracer {
             prev_record.shard,
             prev_record.timestamp,
         )
+    }
+    pub fn mw(&mut self, addr: u32, value: u32) -> MemoryWriteRecord {
+        self.mw_with_local_access(addr, value, None)
     }
 }
 

@@ -80,4 +80,5 @@ pub struct TableInitEvent {
     pub memory_write_acess: Vec<MemoryWriteRecord>,
     //If a memory addr is nenver touched by cpu it will ended up here.
     pub local_mem_access: Vec<MemoryLocalEvent>,
+    pub local_mem_access_addr: Vec<u32>,
 }
