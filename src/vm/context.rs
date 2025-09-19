@@ -3,13 +3,13 @@ use crate::{
     Caller, RwasmStore, Store, ValueStackPtr,
 };
 
-pub struct RwasmCaller<'a, T: Send + Sync + 'static> {
+pub struct RwasmCaller<'a, T: 'static + Send + Sync> {
     store: &'a mut RwasmStore<T>,
     program_counter: u32,
     sp: ValueStackPtr,
 }
 
-impl<'a, T: Send + Sync> RwasmCaller<'a, T> {
+impl<'a, T: 'static + Send + Sync> RwasmCaller<'a, T> {
     pub fn new(store: &'a mut RwasmStore<T>, program_counter: u32, sp: ValueStackPtr) -> Self {
         Self {
             store,
@@ -23,8 +23,8 @@ impl<'a, T: Send + Sync> RwasmCaller<'a, T> {
     }
 }
 
-impl<'a, T: Send + Sync> Store<T> for RwasmCaller<'a, T> {
-    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
+    fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.store.global_memory.read(offset, buffer)?;
         Ok(())
     }
@@ -39,11 +39,11 @@ impl<'a, T: Send + Sync> Store<T> for RwasmCaller<'a, T> {
         Ok(())
     }
 
-    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
         func(&mut self.store.context.borrow_mut())
     }
 
-    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
         func(&self.store.context.borrow())
     }
 
@@ -56,7 +56,7 @@ impl<'a, T: Send + Sync> Store<T> for RwasmCaller<'a, T> {
     }
 }
 
-impl<'a, T: Send + Sync> Caller<T> for RwasmCaller<'a, T> {
+impl<'a, T: 'static + Send + Sync> Caller<T> for RwasmCaller<'a, T> {
     fn program_counter(&self) -> u32 {
         self.program_counter
     }

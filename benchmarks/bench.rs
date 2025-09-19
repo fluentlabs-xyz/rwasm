@@ -1,17 +1,9 @@
 extern crate test;
 
 use rwasm::{
-    always_failing_syscall_handler,
-    compile_wasmi_module,
-    compile_wasmtime_module,
-    CompilationConfig,
-    ExecutionEngine,
-    ExecutorConfig,
-    ImportLinker,
-    RwasmModule,
-    RwasmStore,
-    Strategy,
-    Value,
+    always_failing_syscall_handler, compile_wasmi_module, compile_wasmtime_module,
+    CompilationConfig, ExecutionEngine, ExecutorConfig, ImportLinker, RwasmModule, RwasmStore,
+    Strategy, Value,
 };
 use std::rc::Rc;
 use test::Bencher;
@@ -143,19 +135,6 @@ fn bench_strategy_wasmtime(b: &mut Bencher) {
         module: Rc::new(
             compile_wasmtime_module(CompilationConfig::default(), wasm_binary).unwrap(),
         ),
-        resumable: false,
-    };
-    bench_strategy(b, strategy)
-}
-
-#[bench]
-fn bench_strategy_wasmtime_resumable(b: &mut Bencher) {
-    let wasm_binary = include_bytes!("./lib.wasm");
-    let strategy = Strategy::Wasmtime {
-        module: Rc::new(
-            compile_wasmtime_module(CompilationConfig::default(), wasm_binary).unwrap(),
-        ),
-        resumable: true,
     };
     bench_strategy(b, strategy)
 }

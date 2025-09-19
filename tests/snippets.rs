@@ -1245,6 +1245,7 @@ fn run_i64_binary_op(op: &str, a: i64, b: i64, expected: i64) {
         &rwasm_module,
         &[Value::I64(a), Value::I64(b)],
         &mut result,
+        None,
     );
     if !execution_result.is_ok() {
         println!("{:?}", execution_result);
@@ -1296,6 +1297,7 @@ fn run_i64_comparation_op(op: &str, a: i64, b: i64, expected: bool) {
         &rwasm_module,
         &[Value::I64(a), Value::I64(b)],
         &mut result,
+        None,
     );
     if !execution_result.is_ok() {
         println!("{:?}", execution_result);

@@ -1,6 +1,5 @@
-use rwasm::intrinsic::Intrinsic;
 use rwasm::{
-    always_failing_syscall_handler, CompilationConfig, ExecutionEngine, ExecutorConfig,
+    always_failing_syscall_handler, intrinsic::Intrinsic, CompilationConfig, ExecutionEngine,
     ImportLinker, ImportName, Opcode, RwasmModule, RwasmStore,
 };
 use std::rc::Rc;
@@ -40,16 +39,13 @@ fn test_intrinsic_replace() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::new(
-        ExecutorConfig::default()
-            .fuel_enabled(true)
-            .fuel_limit(1000),
         Rc::new(ImportLinker::default()),
         (),
         always_failing_syscall_handler,
     );
     let mut engine = ExecutionEngine::new();
     engine
-        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .execute(&mut store, &rwasm_module, &[], &mut [], None)
         .unwrap();
     // 35 by consume_fuel and 4 by other opcodes
     assert_eq!(store.fuel_consumed(), 35 + 4);
@@ -89,15 +85,12 @@ fn test_intrinsic_remove() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::new(
-        ExecutorConfig::default()
-            .fuel_enabled(true)
-            .fuel_limit(1000),
         Rc::new(ImportLinker::default()),
         (),
         always_failing_syscall_handler,
     );
     let mut engine = ExecutionEngine::new();
     engine
-        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .execute(&mut store, &rwasm_module, &[], &mut [], None)
         .unwrap();
 }

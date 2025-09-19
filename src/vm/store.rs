@@ -1,18 +1,18 @@
 use crate::{
-    always_failing_syscall_handler, ExecutorConfig, GlobalIdx, GlobalMemory, ImportLinker, Pages,
-    SignatureIdx, Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue,
-    N_MAX_DATA_SEGMENTS, N_MAX_DATA_SEGMENTS_BITS, N_MAX_ELEM_SEGMENTS, N_MAX_ELEM_SEGMENTS_BITS,
+    always_failing_syscall_handler, GlobalIdx, GlobalMemory, ImportLinker, Pages, SignatureIdx,
+    Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, N_MAX_DATA_SEGMENTS,
+    N_MAX_DATA_SEGMENTS_BITS, N_MAX_ELEM_SEGMENTS, N_MAX_ELEM_SEGMENTS_BITS,
 };
 use alloc::rc::Rc;
 use bitvec::{array::BitArray, bitarr};
 use core::cell::RefCell;
 use hashbrown::HashMap;
 
-pub struct RwasmStore<T: Send + Sync + 'static> {
+pub struct RwasmStore<T: 'static + Send + Sync> {
     pub(crate) consumed_fuel: u64,
     pub(crate) global_memory: GlobalMemory,
     pub(crate) context: RefCell<T>,
-    pub(crate) config: ExecutorConfig,
+    pub(crate) fuel_limit: Option<u64>,
     // the last used signature (needed for indirect calls type checks)
     pub(crate) last_signature: Option<SignatureIdx>,
     // rwasm modified segments
@@ -28,10 +28,9 @@ pub struct RwasmStore<T: Send + Sync + 'static> {
     pub tracer: crate::Tracer,
 }
 
-impl<T: Default + Send + Sync> Default for RwasmStore<T> {
+impl<T: 'static + Send + Sync + Default> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
-            ExecutorConfig::default(),
             Rc::new(ImportLinker::default()),
             T::default(),
             always_failing_syscall_handler,
@@ -39,8 +38,8 @@ impl<T: Default + Send + Sync> Default for RwasmStore<T> {
     }
 }
 
-impl<T: Send + Sync> Store<T> for RwasmStore<T> {
-    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
+    fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.global_memory.read(offset, buffer)?;
         Ok(())
     }
@@ -53,17 +52,17 @@ impl<T: Send + Sync> Store<T> for RwasmStore<T> {
         Ok(())
     }
 
-    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
         func(&mut self.context.borrow_mut())
     }
 
-    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
         func(&self.context.borrow())
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
         let consumed_fuel = self.consumed_fuel.checked_add(delta).unwrap_or(u64::MAX);
-        if let Some(fuel_limit) = self.config.fuel_limit {
+        if let Some(fuel_limit) = self.fuel_limit {
             if consumed_fuel > fuel_limit {
                 return Err(TrapCode::OutOfFuel);
             }
@@ -73,13 +72,12 @@ impl<T: Send + Sync> Store<T> for RwasmStore<T> {
     }
 
     fn remaining_fuel(&mut self) -> Option<u64> {
-        Some(self.config.fuel_limit? - self.consumed_fuel)
+        Some(self.fuel_limit? - self.consumed_fuel)
     }
 }
 
-impl<T: Send + Sync> RwasmStore<T> {
+impl<T: 'static + Send + Sync> RwasmStore<T> {
     pub fn new(
-        config: ExecutorConfig,
         import_linker: Rc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
@@ -94,6 +92,7 @@ impl<T: Send + Sync> RwasmStore<T> {
             consumed_fuel: 0,
             global_memory,
             context: RefCell::new(context),
+            fuel_limit: None,
             #[cfg(feature = "tracing")]
             tracer: crate::Tracer::default(),
             global_variables: Default::default(),
@@ -102,7 +101,6 @@ impl<T: Send + Sync> RwasmStore<T> {
             syscall_handler,
             empty_elem_segments,
             empty_data_segments,
-            config,
             import_linker,
         }
     }
@@ -138,7 +136,7 @@ impl<T: Send + Sync> RwasmStore<T> {
             self.empty_data_segments.fill(false);
             self.empty_elem_segments.fill(false);
         }
-        // in case of a trap we might have this flag remains active
+        // in case of a trap, we might have this flag remains active
         self.last_signature = None;
     }
 

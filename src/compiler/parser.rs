@@ -1,12 +1,13 @@
-use crate::compiler::snippets::Snippet;
 use crate::{
     compiler::{
+        compiled_expr::CompiledExpr,
         func_builder::FuncBuilder,
+        snippets::Snippet,
         translator::{InstructionTranslator, ReusableAllocations},
     },
-    CompilationConfig, CompilationError, CompiledExpr, ConstructorParams, DataSegmentIdx,
-    ElementSegmentIdx, FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName, Opcode,
-    RwasmModule, TableIdx, DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
+    CompilationConfig, CompilationError, ConstructorParams, DataSegmentIdx, ElementSegmentIdx,
+    FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName, Opcode, RwasmModule, TableIdx,
+    DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::{
@@ -164,7 +165,7 @@ impl ModuleParser {
                 .segment_builder
                 .global_memory_section,
             elem_section: element_section,
-            wasm_section: wasm_binary.to_vec(),
+            hint_section: wasm_binary.to_vec(),
         };
         let constructor_params = self.allocations.translation.constructor_params;
 

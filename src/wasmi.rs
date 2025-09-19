@@ -12,12 +12,12 @@ use wasmparser::ValType;
 
 pub type WasmiModule = wasmi::Module;
 
-pub struct WasmiCaller<'a, T: Send + Sync + 'static> {
+pub struct WasmiCaller<'a, T: 'static + Send + Sync> {
     caller: RefCell<wasmi::Caller<'a, WasmiContextWrapper<T>>>,
 }
 
-impl<'a, T: Send + Sync> Store<T> for WasmiCaller<'a, T> {
-    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+impl<'a, T: 'static + Send + Sync> Store<T> for WasmiCaller<'a, T> {
+    fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let global_memory = self
             .caller
             .borrow_mut()
@@ -43,11 +43,11 @@ impl<'a, T: Send + Sync> Store<T> for WasmiCaller<'a, T> {
             .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
-    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
         func(&mut self.caller.borrow_mut().data_mut().inner)
     }
 
-    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
         func(&self.caller.borrow_mut().data().inner)
     }
 
@@ -74,7 +74,7 @@ impl<'a, T: Send + Sync> Store<T> for WasmiCaller<'a, T> {
     }
 }
 
-impl<'a, T: Send + Sync> Caller<T> for WasmiCaller<'a, T> {
+impl<'a, T: 'static + Send + Sync> Caller<T> for WasmiCaller<'a, T> {
     fn program_counter(&self) -> u32 {
         unimplemented!("not allowed im wasmtime mode")
     }
@@ -84,7 +84,7 @@ impl<'a, T: Send + Sync> Caller<T> for WasmiCaller<'a, T> {
     }
 }
 
-pub struct WasmiStore<T: Send + Sync + 'static> {
+pub struct WasmiStore<T: 'static + Send + Sync> {
     store: wasmi::Store<WasmiContextWrapper<T>>,
     instance: wasmi::Instance,
     resumable_context: Option<wasmi::ResumableCallHostTrap>,
@@ -99,12 +99,12 @@ impl Into<TrapCode> for wasmi::core::MemoryError {
     }
 }
 
-struct WasmiContextWrapper<T: Send + Sync + 'static> {
+struct WasmiContextWrapper<T: 'static + Send + Sync> {
     inner: T,
     syscall_handler: SyscallHandler<T>,
 }
 
-fn wasmi_syscall_handler<'a, T: Send + Sync>(
+fn wasmi_syscall_handler<'a, T: 'static + Send + Sync>(
     sys_func_idx: SysFuncIdx,
     caller: wasmi::Caller<'a, WasmiContextWrapper<T>>,
     params: &[wasmi::Val],
@@ -177,7 +177,7 @@ fn map_val_type(val_type: ValType) -> wasmi::core::ValType {
     }
 }
 
-fn wasmi_import_linker<T: Send + Sync>(
+fn wasmi_import_linker<T: 'static + Send + Sync>(
     engine: &wasmi::Engine,
     import_linker: Rc<ImportLinker>,
 ) -> wasmi::Linker<WasmiContextWrapper<T>> {
@@ -210,13 +210,12 @@ fn wasmi_import_linker<T: Send + Sync>(
     linker
 }
 
-impl<T: Send + Sync> WasmiStore<T> {
+impl<T: 'static + Send + Sync> WasmiStore<T> {
     pub fn new(
         module: &WasmiModule,
         import_linker: Rc<ImportLinker>,
         data: T,
         syscall_handler: SyscallHandler<T>,
-        fuel_limit: Option<u64>,
     ) -> Self {
         let mut store = wasmi::Store::new(
             module.engine(),
@@ -225,13 +224,7 @@ impl<T: Send + Sync> WasmiStore<T> {
                 syscall_handler,
             },
         );
-        if let Some(fuel_limit) = fuel_limit {
-            store
-                .set_fuel(fuel_limit)
-                .unwrap_or_else(|_| unreachable!("trying to set fuel with disabled wasmi fuel"));
-        }
         let linker = wasmi_import_linker(module.engine(), import_linker);
-
         let instance = linker
             .instantiate(store.as_context_mut(), &module)
             .unwrap()
@@ -249,7 +242,13 @@ impl<T: Send + Sync> WasmiStore<T> {
         func_name: &'static str,
         params: &[Value],
         result: &mut [Value],
+        fuel: Option<u64>,
     ) -> Result<(), TrapCode> {
+        if let Some(fuel_limit) = fuel {
+            self.store
+                .set_fuel(fuel_limit)
+                .unwrap_or_else(|_| unreachable!("trying to set fuel with disabled wasmi fuel"));
+        }
         let func = self
             .instance
             .get_func(self.store.as_context_mut(), func_name)
@@ -399,8 +398,8 @@ fn map_wasmi_error(err: wasmi::Error) -> TrapCode {
     }
 }
 
-impl<T: Send + Sync> Store<T> for WasmiStore<T> {
-    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+impl<T: 'static + Send + Sync> Store<T> for WasmiStore<T> {
+    fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let memory = self
             .instance
             .get_export(self.store.as_context(), "memory")
@@ -424,11 +423,11 @@ impl<T: Send + Sync> Store<T> for WasmiStore<T> {
             .map_err(Into::into)
     }
 
-    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
+    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
         func(&mut self.store.data_mut().inner)
     }
 
-    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
+    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
         func(&self.store.data().inner)
     }
 

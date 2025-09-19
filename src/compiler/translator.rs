@@ -1,23 +1,24 @@
-use crate::compiler::intrinsic::{Intrinsic, IntrinsicHandler};
-use crate::compiler::snippets::{Snippet, SnippetCall};
 use crate::{
     compiler::{
         control_flow::{
             BlockControlFrame, ControlFlowStack, ControlFrame, ControlFrameKind, IfControlFrame,
             LoopControlFrame, UnreachableControlFrame,
         },
-        drop_keep::{translate_drop_keep, DropKeep},
+        drop_keep::DropKeep,
         error::CompilationError,
         fuel_costs::FuelCosts,
+        intrinsic::{Intrinsic, IntrinsicHandler},
         labels::LabelRegistry,
         locals_registry::LocalsRegistry,
         segment_builder::SegmentBuilder,
+        snippets::{Snippet, SnippetCall},
         utils::RelativeDepth,
+        value_stack::ValueStackHeight,
     },
     AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
     ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
-    Opcode, SignatureIdx, TableIdx, ValueStackHeight, BASE_FUEL_COST, DEFAULT_MEMORY_INDEX,
-    N_MAX_MEMORY_PAGES, N_MAX_TABLE_SIZE, SNIPPET_FUNC_IDX_UNRESOLVED,
+    Opcode, SignatureIdx, TableIdx, BASE_FUEL_COST, DEFAULT_MEMORY_INDEX, N_MAX_MEMORY_PAGES,
+    N_MAX_TABLE_SIZE, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec, vec::Vec};
 use bitvec::macros::internal::funty::Fundamental;
@@ -915,9 +916,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
                     builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
-                    translate_drop_keep(
+                    drop_keep.translate_drop_keep(
                         &mut builder.alloc.instruction_set,
-                        drop_keep,
                         &mut builder.stack_height,
                     );
                     let offset = builder.branch_offset(end_label)?;
@@ -950,9 +950,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                             .alloc
                             .instruction_set
                             .op_br_if_eqz(BranchOffset::uninit());
-                        let drop_keep_length = translate_drop_keep(
+                        let drop_keep_length = drop_keep.translate_drop_keep(
                             &mut builder.alloc.instruction_set,
-                            drop_keep,
                             &mut builder.stack_height,
                         );
                         builder
@@ -970,9 +969,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                         .alloc
                         .instruction_set
                         .op_br_if_eqz(BranchOffset::uninit());
-                    let drop_keep_length = translate_drop_keep(
+                    let drop_keep_length = drop_keep.translate_drop_keep(
                         &mut builder.alloc.instruction_set,
-                        drop_keep,
                         &mut builder.stack_height,
                     );
                     builder
@@ -1049,11 +1047,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                                     + trampoline_ixs.len()) as i32,
                             );
                             builder.alloc.br_table_branches.op_return();
-                            translate_drop_keep(
-                                trampoline_ixs,
-                                drop_keep,
-                                &mut builder.stack_height,
-                            );
+                            drop_keep
+                                .translate_drop_keep(trampoline_ixs, &mut builder.stack_height);
                             trampoline_ixs.op_return();
                         }
                     }
@@ -1078,11 +1073,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                                 .op_br(BranchOffset::from(br_offset));
                             builder.alloc.br_table_branches.op_return();
 
-                            translate_drop_keep(
-                                trampoline_ixs,
-                                drop_keep,
-                                &mut builder.stack_height,
-                            );
+                            drop_keep
+                                .translate_drop_keep(trampoline_ixs, &mut builder.stack_height);
                             trampoline_ixs.op_return();
 
                             let instr = offset_instr(base, final_len + trampoline_ixs.len());
@@ -1153,9 +1145,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let drop_keep = builder.drop_keep_return()?;
             builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
-            translate_drop_keep(
+            drop_keep.translate_drop_keep(
                 &mut builder.alloc.instruction_set,
-                drop_keep,
                 &mut builder.stack_height,
             );
             builder.alloc.instruction_set.op_return();
@@ -1204,9 +1195,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let drop_keep = builder.drop_keep_return_call(&func_type)?;
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
             builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
-            translate_drop_keep(
+            drop_keep.translate_drop_keep(
                 &mut builder.alloc.instruction_set,
-                drop_keep,
                 &mut builder.stack_height,
             );
             builder
@@ -1231,9 +1221,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             drop_keep.keep += 1;
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
             builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
-            translate_drop_keep(
+            drop_keep.translate_drop_keep(
                 &mut builder.alloc.instruction_set,
-                drop_keep,
                 &mut builder.stack_height,
             );
             let signature_idx = builder.alloc.resolve_func_type_signature(func_type_index);

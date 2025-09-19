@@ -75,9 +75,12 @@ impl ExecutionEngine {
         module: &RwasmModule,
         params: &[Value],
         result: &mut [Value],
+        fuel: Option<u64>,
     ) -> Result<(), TrapCode> {
         self.value_stack.push(ValueStack::default());
         self.call_stack.push(CallStack::default());
+        store.fuel_limit = fuel;
+        store.consumed_fuel = 0;
         let mut executor = RwasmExecutor::entrypoint(
             &module,
             self.value_stack.last_mut().unwrap(),

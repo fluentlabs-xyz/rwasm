@@ -1,10 +1,9 @@
 use hex_literal::hex;
 use rwasm::{
-    CompilationConfig, ExecutionEngine, ExecutorConfig, ImportLinker, ImportName, Opcode,
-    RwasmModule, RwasmStore, StateRouterConfig, Store, TrapCode, TypedCaller, Value,
+    CompilationConfig, ExecutionEngine, ImportLinker, ImportName, Opcode, RwasmModule, RwasmStore,
+    StateRouterConfig, Store, TrapCode, TypedCaller, Value,
 };
-use std::rc::Rc;
-use std::str::from_utf8;
+use std::{rc::Rc, str::from_utf8};
 use wasmparser::ValType;
 
 const STATE_MAIN: u32 = 1;
@@ -105,13 +104,12 @@ fn run_fluentbase_binary(wasm_binary: &[u8], host_state: HostState) -> HostState
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     let mut engine = ExecutionEngine::default();
     let mut store = RwasmStore::new(
-        ExecutorConfig::default(),
         import_linker.clone(),
         host_state,
         fluentbase_syscall_handler,
     );
     engine
-        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .execute(&mut store, &rwasm_module, &[], &mut [], None)
         .unwrap();
     store.context(Clone::clone)
 }

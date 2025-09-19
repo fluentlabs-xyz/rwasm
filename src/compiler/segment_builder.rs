@@ -1,6 +1,6 @@
 use crate::{
-    instruction_set, split_i64_to_i32, CompilationError, DataSegmentIdx, ElementSegmentIdx,
-    GlobalIdx, GlobalVariable, InstructionSet, TableIdx, DEFAULT_MEMORY_INDEX, NULL_FUNC_IDX,
+    instruction_set, CompilationError, DataSegmentIdx, ElementSegmentIdx, GlobalIdx,
+    GlobalVariable, I64ValueSplit, InstructionSet, TableIdx, DEFAULT_MEMORY_INDEX, NULL_FUNC_IDX,
     N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES,
 };
 use alloc::{vec, vec::Vec};
@@ -52,7 +52,7 @@ impl SegmentBuilder {
                 .entrypoint_bytecode
                 .op_i32_const(global_variable.default_value),
             ValType::I64 | ValType::F64 => {
-                let (lower, upper) = split_i64_to_i32(global_variable.default_value);
+                let (lower, upper) = global_variable.default_value.split_into_i32_tuple();
                 self.entrypoint_bytecode.op_i32_const(lower);
                 self.entrypoint_bytecode.op_i32_const(upper)
             }

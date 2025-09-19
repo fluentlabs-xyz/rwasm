@@ -1,3 +1,4 @@
+mod compiled_expr;
 mod config;
 mod control_flow;
 mod drop_keep;
@@ -12,6 +13,7 @@ mod segment_builder;
 mod snippets;
 mod translator;
 mod utils;
+mod value_stack;
 
 pub use self::{
     config::{CompilationConfig, StateRouterConfig},

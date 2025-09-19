@@ -1,6 +1,6 @@
 imports_granularity = "Crate"
 group_imports = "One"
-imports_layout = "HorizontalVertical"
+#imports_layout = "HorizontalVertical"
 edition = "2021"
 
 comment_width = 100
@@ -8,5 +8,5 @@ max_width = 100
 newline_style = "Unix"
 #normalize_comments = true
 reorder_imports = true
-wrap_comments = true
+wrap_comments = false
 unstable_features = true
