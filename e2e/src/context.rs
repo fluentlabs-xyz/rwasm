@@ -77,6 +77,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: InstructionSet::default(),
                     params: &[],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -86,6 +87,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -95,6 +97,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::I32],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -104,6 +107,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::I64],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -113,6 +117,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::F32],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -122,6 +127,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::F64],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -131,6 +137,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::I32, ValType::F32],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -140,6 +147,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::I64, ValType::F64],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
         ])

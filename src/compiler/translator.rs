@@ -7,6 +7,7 @@ use crate::{
         drop_keep::DropKeep,
         error::CompilationError,
         fuel_costs::FuelCosts,
+        intrinsic::{Intrinsic, IntrinsicHandler},
         labels::LabelRegistry,
         locals_registry::LocalsRegistry,
         segment_builder::SegmentBuilder,
@@ -20,6 +21,7 @@ use crate::{
     N_MAX_TABLE_SIZE, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec, vec::Vec};
+use bitvec::macros::internal::funty::Fundamental;
 use hashbrown::HashMap;
 use wasmparser::{
     BlockType, BrTable, FuncType, FuncValidatorAllocations, GlobalType, Ieee32, Ieee64, MemArg,
@@ -66,6 +68,7 @@ pub struct FuncTranslatorAllocations {
     pub(crate) func_offsets: Vec<u32>,
     pub(crate) constructor_params: ConstructorParams,
     pub(crate) snippet_calls: Vec<SnippetCall>,
+    pub(crate) intrinsic_handler: IntrinsicHandler,
 }
 
 impl Default for FuncTranslatorAllocations {
@@ -88,6 +91,7 @@ impl Default for FuncTranslatorAllocations {
             func_offsets: vec![],
             constructor_params: Default::default(),
             snippet_calls: Default::default(),
+            intrinsic_handler: Default::default(),
         }
     }
 }
@@ -158,12 +162,37 @@ impl FuncTranslatorAllocations {
         is_entrypoint: bool,
         is_return_call: bool,
     ) {
+        let func_type_idx = self.resolve_func_type_index(function_index);
+        let func_type = &self.func_types[func_type_idx as usize];
+
         let is = if is_entrypoint {
             &mut self.segment_builder.entrypoint_bytecode
         } else {
             &mut self.instruction_set
         };
-        if is_return_call {
+
+        if let Some((_, intrinsic)) = self
+            .intrinsic_handler
+            .intrinsics
+            .iter()
+            .find(|(index, _)| index.as_i32() == function_index as i32)
+        {
+            match &intrinsic {
+                Intrinsic::Replace(ref opcodes) => {
+                    for opcode in opcodes {
+                        is.push(*opcode);
+                    }
+                }
+                Intrinsic::Remove => {
+                    if func_type.results().len() != 0 {
+                        unreachable!("remove intrinsic with result not supported")
+                    }
+                    for _ in 0..func_type.params().len() {
+                        is.op_drop();
+                    }
+                }
+            }
+        } else if is_return_call {
             is.op_return_call_internal(function_index + 1);
         } else {
             let func_loc = is.loc();
