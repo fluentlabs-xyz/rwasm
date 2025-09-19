@@ -1,21 +1,7 @@
 use crate::{
-    always_failing_syscall_handler,
-    ExecutorConfig,
-    GlobalIdx,
-    GlobalMemory,
-    ImportLinker,
-    Pages,
-    SignatureIdx,
-    Store,
-    SyscallHandler,
-    TableEntity,
-    TableIdx,
-    TrapCode,
-    UntypedValue,
-    N_MAX_DATA_SEGMENTS,
-    N_MAX_DATA_SEGMENTS_BITS,
-    N_MAX_ELEM_SEGMENTS,
-    N_MAX_ELEM_SEGMENTS_BITS,
+    always_failing_syscall_handler, ExecutorConfig, GlobalIdx, GlobalMemory, ImportLinker, Pages,
+    SignatureIdx, Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue,
+    N_MAX_DATA_SEGMENTS, N_MAX_DATA_SEGMENTS_BITS, N_MAX_ELEM_SEGMENTS, N_MAX_ELEM_SEGMENTS_BITS,
 };
 use alloc::rc::Rc;
 use bitvec::{array::BitArray, bitarr};

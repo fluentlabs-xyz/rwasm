@@ -1,38 +1,13 @@
 use super::{TestDescriptor, TestError, TestProfile, TestSpan};
 use crate::handler::{
-    testing_context_syscall_handler,
-    TestingContext,
-    FUNC_ENTRYPOINT,
-    FUNC_PRINT,
-    FUNC_PRINT_F32,
-    FUNC_PRINT_F64,
-    FUNC_PRINT_I32,
-    FUNC_PRINT_I32_F32,
-    FUNC_PRINT_I64,
-    FUNC_PRINT_I64_F64,
+    testing_context_syscall_handler, TestingContext, FUNC_ENTRYPOINT, FUNC_PRINT, FUNC_PRINT_F32,
+    FUNC_PRINT_F64, FUNC_PRINT_I32, FUNC_PRINT_I32_F32, FUNC_PRINT_I64, FUNC_PRINT_I64_F64,
 };
 use anyhow::Result;
 use rwasm::{
-    instruction_set,
-    split_i64_to_i32_arr,
-    CallStack,
-    CompilationConfig,
-    ExecutorConfig,
-    FuncType,
-    ImportLinker,
-    ImportLinkerEntity,
-    ImportName,
-    InstructionSet,
-    ModuleParser,
-    Opcode,
-    RwasmExecutor,
-    RwasmModule,
-    RwasmStore,
-    StateRouterConfig,
-    Store,
-    ValType,
-    Value,
-    ValueStack,
+    instruction_set, split_i64_to_i32_arr, CallStack, CompilationConfig, ExecutorConfig, FuncType,
+    ImportLinker, ImportLinkerEntity, ImportName, InstructionSet, ModuleParser, Opcode,
+    RwasmExecutor, RwasmModule, RwasmStore, StateRouterConfig, Store, ValType, Value, ValueStack,
     F64,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
@@ -103,6 +78,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: InstructionSet::default(),
                     params: &[],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -112,6 +88,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -121,6 +98,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::I32],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -130,6 +108,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::I64],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -139,6 +118,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::F32],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -148,6 +128,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::F64],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -157,6 +138,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::I32, ValType::F32],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -166,6 +148,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::I64, ValType::F64],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
         ])
