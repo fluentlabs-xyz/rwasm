@@ -2,8 +2,7 @@ extern crate test;
 
 use rwasm::{
     always_failing_syscall_handler, compile_wasmi_module, compile_wasmtime_module,
-    CompilationConfig, ExecutionEngine, ExecutorConfig, ImportLinker, RwasmModule, RwasmStore,
-    Strategy, Value,
+    CompilationConfig, ExecutionEngine, ImportLinker, RwasmModule, RwasmStore, Strategy, Value,
 };
 use std::rc::Rc;
 use test::Bencher;
@@ -77,6 +76,7 @@ fn bench_rwasm_no_cache(b: &mut Bencher) {
                 &rwasm_module,
                 &[Value::I32(FIB_VALUE)],
                 &mut result,
+                None,
             )
             .unwrap();
         core::hint::black_box(result);
@@ -105,6 +105,7 @@ fn bench_rwasm(b: &mut Bencher) {
                 &rwasm_module,
                 &[Value::I32(FIB_VALUE)],
                 &mut result,
+                None,
             )
             .unwrap();
         core::hint::black_box(result);
@@ -114,7 +115,6 @@ fn bench_rwasm(b: &mut Bencher) {
 
 fn bench_strategy(b: &mut Bencher, strategy: Strategy) {
     let mut store = strategy.create_store(
-        ExecutorConfig::default().fuel_limit(1_000_000_000_000),
         Rc::new(ImportLinker::default()),
         (),
         always_failing_syscall_handler,
@@ -122,7 +122,13 @@ fn bench_strategy(b: &mut Bencher, strategy: Strategy) {
     b.iter(|| {
         let mut result = [Value::I32(0)];
         strategy
-            .execute(&mut store, "main", &[Value::I32(FIB_VALUE)], &mut result)
+            .execute(
+                &mut store,
+                "main",
+                &[Value::I32(FIB_VALUE)],
+                &mut result,
+                Some(1_000_000),
+            )
             .unwrap();
         core::hint::black_box(result);
     });
