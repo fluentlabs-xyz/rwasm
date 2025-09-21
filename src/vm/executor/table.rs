@@ -152,9 +152,9 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[inline(always)]
     pub(crate) fn visit_element_drop(&mut self, element_segment_idx: ElementSegmentIdx) {
-        self.store
-            .empty_elem_segments
-            .set(element_segment_idx as usize, true);
+        let empty_elem_segments = &mut self.store.empty_elem_segments;
+        empty_elem_segments.resize(element_segment_idx as usize + 1, false);
+        empty_elem_segments.set(element_segment_idx as usize, true);
         self.ip.add(1);
     }
 }

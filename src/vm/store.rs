@@ -1,10 +1,9 @@
 use crate::{
     always_failing_syscall_handler, GlobalIdx, GlobalMemory, ImportLinker, Pages, SignatureIdx,
-    Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, N_MAX_DATA_SEGMENTS,
-    N_MAX_DATA_SEGMENTS_BITS, N_MAX_ELEM_SEGMENTS, N_MAX_ELEM_SEGMENTS_BITS,
+    Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue,
 };
 use alloc::rc::Rc;
-use bitvec::{array::BitArray, bitarr};
+use bitvec::{order::Lsb0, vec::BitVec};
 use core::cell::RefCell;
 use hashbrown::HashMap;
 
@@ -19,8 +18,8 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     pub(crate) tables: HashMap<TableIdx, TableEntity>,
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
     // elem/data emptiness flags
-    pub(crate) empty_data_segments: BitArray<[usize; N_MAX_DATA_SEGMENTS_BITS]>,
-    pub(crate) empty_elem_segments: BitArray<[usize; N_MAX_ELEM_SEGMENTS_BITS]>,
+    pub(crate) empty_data_segments: BitVec,
+    pub(crate) empty_elem_segments: BitVec,
     // list of nested calls return pointers
     pub(crate) syscall_handler: SyscallHandler<T>,
     pub(crate) import_linker: Rc<ImportLinker>,
@@ -82,12 +81,7 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         context: T,
         syscall_handler: SyscallHandler<T>,
     ) -> Self {
-        // create global memory
         let global_memory = GlobalMemory::new(Pages::default());
-
-        let empty_data_segments = bitarr![0; N_MAX_DATA_SEGMENTS];
-        let empty_elem_segments = bitarr![0; N_MAX_ELEM_SEGMENTS];
-
         Self {
             consumed_fuel: 0,
             global_memory,
@@ -99,42 +93,32 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
             tables: Default::default(),
             last_signature: None,
             syscall_handler,
-            empty_elem_segments,
-            empty_data_segments,
+            empty_data_segments: BitVec::EMPTY,
+            empty_elem_segments: BitVec::EMPTY,
             import_linker,
         }
     }
 
     /// Resets the state of the current execution context.
-    ///
-    /// # Parameters
-    /// - `pc`: An optional program counter (`usize`) specifying the instruction pointer position to
-    ///   reset to. If not provided, defaults to `0` (the entrypoint).
-    /// - `keep_flags`: A boolean indicating whether to preserve the data and element segment flags
-    ///   (`true` to keep the flags, `false` to reset them).
-    ///
-    /// # Behavior
-    /// - Resets the instruction pointer (`ip`) to the specified `pc` or the default value of `0`.
-    /// - Clears the consumed fuel counters by setting them to `0`.
-    /// - Resets the value stack by clearing its contents and updating the stack pointer (`sp`).
-    /// - Empties the call stack by setting its length to `0`.
-    /// - Resets the data and element segment flags to `false` if `keep_flags` is `false`.
-    /// - Clears the `last_signature` field, which can remain active after a trap.
-    ///
-    /// # Notes
-    /// - The `value_stack` is completely cleared, and the stack pointer (`sp`) is re-initialized to
-    ///   reflect the reset state.
-    /// - The call stack is reset to zero directly through an unsafe operation for performance
-    ///   optimization, avoiding a full drain.
-    /// - Preserving the data and element flags with `keep_flags` is particularly useful for
-    ///   end-to-end test cases that depend on unchanged segments.
     pub fn reset(&mut self, keep_flags: bool) {
         // reset consumed fuel to 0
         self.consumed_fuel = 0;
         // we might want to keep data/elem flags between calls, it's required for e2e tests
         if !keep_flags {
-            self.empty_data_segments.fill(false);
-            self.empty_elem_segments.fill(false);
+            // we don't do any assumptions regarding how data segments are used,
+            // maybe there is a way to optimize reuse of bitset.
+            if self.empty_data_segments.len() == size_of::<usize>() {
+                self.empty_data_segments.fill(false);
+            } else {
+                self.empty_data_segments = BitVec::<usize, Lsb0>::EMPTY;
+            }
+            // we don't do any assumptions regarding how tables are used inside the applications,
+            // so keep it always empty, probably there is an optimization here.
+            if self.empty_elem_segments.len() == size_of::<usize>() {
+                self.empty_elem_segments.fill(false);
+            } else {
+                self.empty_elem_segments = BitVec::<usize, Lsb0>::EMPTY;
+            }
         }
         // in case of a trap, we might have this flag remains active
         self.last_signature = None;

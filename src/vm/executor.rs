@@ -17,44 +17,6 @@ use smallvec::SmallVec;
 /// The `RwasmExecutor` struct is a foundational component for executing WebAssembly modules
 /// in the `rwasm` runtime environment. It acts as the primary execution object, coordinating
 /// the state and execution flow of a WebAssembly module.
-///
-/// # Type Parameters
-/// - `'a`: A lifetime tied to borrowed references within the executor, ensuring the validity of
-///   borrowed objects during execution.
-/// - `T`: A generic parameter that must implement the `Send` and `Sync` traits. This allows
-///   multithreaded access and mutable operations on the WASM store.
-///
-/// # Fields
-/// - `module` (`&'a RwasmModule`): A reference to the rWasm module being executed. This contains
-///   the compiled function definitions, memory, and other runtime components for execution.
-///
-/// - `value_stack` (`&'a mut ValueStack`): A mutable reference to the value stack, which is used
-///   during execution to store intermediate values, operand results, and function return values.
-///
-/// - `sp` (`ValueStackPtr`): A pointer to the current position in the value stack. This tracks the
-///   stack pointer (SP) for operand and value management during execution.
-///
-/// - `call_stack` (`&'a mut CallStack`): A mutable reference to the call stack, which is
-///   responsible for managing the function call/return frames to track execution flow across nested
-///   function calls.
-///
-/// - `ip` (`InstructionPtr`): The instruction pointer representing the location of the current
-///   instruction in the execution sequence of the WebAssembly module.
-///
-/// - `store` (`&'a mut RwasmStore<T>`): A mutable reference to the runtime store which maintains
-///   memory, global variables, and another runtime state for the execution context. The store also
-///   allows external data of the type `T` to be integrated with the WebAssembly instance.
-///
-/// # Usage
-/// The `RwasmExecutor` is typically constructed internally by the runtime and should be
-/// used to step through execution of instructions within a WebAssembly module.
-/// It provides internal access to the runtime's data structures for fine-grained
-/// control over WebAssembly execution.
-///
-/// # Thread Safety
-/// The `Send` and `Sync` constraints on `T` ensure that the executor's associated runtime
-/// store is safe for concurrent mutation and multithreaded execution scenarios, as
-/// required by the WebAssembly specification's concurrency guarantees.
 pub struct RwasmExecutor<'a, T: Send + Sync + 'static> {
     pub(crate) module: &'a RwasmModule,
     pub(crate) value_stack: &'a mut ValueStack,
