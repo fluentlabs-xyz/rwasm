@@ -45,7 +45,7 @@ fn test_intrinsic_replace() {
     );
     let mut engine = ExecutionEngine::new();
     engine
-        .execute(&mut store, &rwasm_module, &[], &mut [], None)
+        .execute(&mut store, &rwasm_module, &[], &mut [], Some(100))
         .unwrap();
     // 35 by consume_fuel and 4 by other opcodes
     assert_eq!(store.fuel_consumed(), 35 + 4);
