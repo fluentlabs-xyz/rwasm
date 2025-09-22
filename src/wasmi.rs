@@ -1,12 +1,10 @@
-use crate::{
-    Caller, CompilationConfig, FuelConfig, ImportLinker, Store, SysFuncIdx, SyscallHandler,
-    TrapCode, TypedCaller, UntypedValue, Value, F32, F64, N_DEFAULT_STACK_SIZE,
-    N_MAX_RECURSION_DEPTH, N_MAX_STACK_SIZE,
-};
+use crate::{Caller, CompilationConfig, FuelConfig, FuncRef, ImportLinker, Store, SysFuncIdx, SyscallHandler, TrapCode, TypedCaller, UntypedValue, Value, F32, F64, N_DEFAULT_STACK_SIZE, N_MAX_RECURSION_DEPTH, N_MAX_STACK_SIZE};
 use alloc::{sync::Arc, vec::Vec};
 use num_traits::FromPrimitive;
 use smallvec::SmallVec;
-use wasmi::{AsContext, AsContextMut, StackLimits};
+use wasmi::core::{TableError, UntypedVal};
+use wasmi::errors::{ErrorKind, InstantiationError};
+use wasmi::{AsContext, AsContextMut, Extern, ExternRef, Global, Mutability, StackLimits, Val};
 use wasmparser::ValType;
 
 pub type WasmiModule = wasmi::Module;
@@ -202,6 +200,7 @@ fn wasmi_import_linker<T: 'static + Send + Sync>(
             )
             .unwrap_or_else(|_| panic!("function import collision: {}", import_name));
     }
+
     linker
 }
 
@@ -223,22 +222,45 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
                 .set_fuel(fuel_limit)
                 .unwrap_or_else(|_| unreachable!("trying to set fuel with disabled wasmi fuel"));
         }
-        let linker = wasmi_import_linker(module.engine(), import_linker);
+        let mut linker = wasmi_import_linker(module.engine(), import_linker);
+        linker
+            .define(
+                "spectest",
+                "global_i32",
+                Global::new(&mut store, Val::I32(666), Mutability::Const),
+            )
+            .unwrap();
+
+        linker
+            .define(
+                "spectest",
+                "global_i64",
+                Global::new(&mut store, Val::I64(666), Mutability::Const),
+            )
+            .unwrap();
+
         let instance = linker
             .instantiate(store.as_context_mut(), &module)
-            .unwrap()
+            .map_err(map_wasmi_error)?;
+        if let Some(fuel_limit) = fuel {
+            store
+                .set_fuel(fuel_limit)
+                .unwrap_or_else(|_| unreachable!("trying to set fuel with disabled wasmi fuel"));
+        }
+        let instance = instance_pre
             .start(store.as_context_mut())
-            .unwrap();
-        Self {
+            .map_err(map_wasmi_error)?;
+
+        Ok(Self {
             store,
             instance,
             resumable_context: None,
-        }
+        })
     }
 
     pub(crate) fn execute(
         &mut self,
-        func_name: &'static str,
+        func_name: &str,
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
@@ -253,6 +275,12 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
                 Value::I64(value) => wasmi::Val::I64(*value),
                 Value::F32(value) => wasmi::Val::F32(wasmi::core::F32::from_bits(value.to_bits())),
                 Value::F64(value) => wasmi::Val::F64(wasmi::core::F64::from_bits(value.to_bits())),
+                Value::FuncRef(value) => {
+                    wasmi::Val::FuncRef(wasmi::FuncRef::from(UntypedVal::from(value.0)))
+                }
+                Value::ExternRef(value) => {
+                    wasmi::Val::ExternRef(wasmi::ExternRef::from(UntypedVal::from(value.0)))
+                }
                 // this should never happen because rWasm rejects such binaries during compilation
                 _ => unreachable!("not supported type: {:?}", value),
             };
@@ -299,6 +327,12 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
                 wasmi::Val::I64(value) => Value::I64(*value),
                 wasmi::Val::F32(value) => Value::F32(F32::from_bits(value.to_bits())),
                 wasmi::Val::F64(value) => Value::F64(F64::from_bits(value.to_bits())),
+                wasmi::Val::ExternRef(value) => Value::ExternRef(FuncRef::new(
+                    wasmi::core::UntypedVal::from(*value).to_bits64() as u32,
+                )),
+                wasmi::Val::FuncRef(value) => Value::FuncRef(FuncRef::new(
+                    wasmi::core::UntypedVal::from(*value).to_bits64() as u32,
+                )),
                 _ => unreachable!("not supported type: {:?}", x),
             };
         }
@@ -384,6 +418,18 @@ fn map_wasmi_error(err: wasmi::Error) -> TrapCode {
         // we have nothing to do with an exit code; the exit code should always be zero
         TrapCode::from_i32(exit_code)
             .unwrap_or_else(|| unreachable!("an impossible wasmi error happened: {:?}", err))
+    } else if let ErrorKind::Table(table_err) = err.kind() {
+        match table_err {
+            TableError::CopyOutOfBounds => TrapCode::CopyOutOfBounds,
+            err => unreachable!("an impossible wasmi error happened: {:?}", err),
+        }
+    } else if let ErrorKind::Instantiation(instantiation_err) = err.kind() {
+        match instantiation_err {
+            InstantiationError::ElementSegmentDoesNotFit { .. } => {
+                TrapCode::ElementSegmentDoesNotFit
+            }
+            err => unreachable!("an impossible wasmi error happened: {:?}", err),
+        }
     } else {
         // this should never happen since such cases must be handled by syscall handler or
         // other wrappers
