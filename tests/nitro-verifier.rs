@@ -113,7 +113,7 @@ fn test_nitro_verifier_rwasm() {
         .with_allow_malformed_entrypoint_func_type(true)
         .with_import_linker(import_linker.clone());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-    let engine = ExecutionEngine::new();
+    let mut engine = ExecutionEngine::new();
     let mut store = RwasmStore::<()>::new(
         import_linker.clone(),
         (),
@@ -169,7 +169,7 @@ fn test_nitro_verifier_strategy() {
             (),
             fluentbase_syscall_handler,
             FuelConfig::default().with_fuel_limit(1_000_000_000),
-        );
+        ).unwrap();;
         strategy
             .execute::<()>(&mut store, "main", &[], &mut [])
             .map_err(Into::into)

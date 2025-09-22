@@ -111,7 +111,8 @@ fn test_interrupted_call_wasmtime() {
         (),
         interrupting_syscall_handler,
         FuelConfig::default(),
-    );
+    )
+    .unwrap();
     let mut result = [Value::I32(0); 1];
     let err = wasmtime_worker
         .execute("main", &[], &mut result)
@@ -178,7 +179,8 @@ fn test_memory_write_during_interruption() {
                 Err(TrapCode::InterruptionCalled)
             },
             FuelConfig::default(),
-        );
+        )
+            .unwrap();
         let mut result = [Value::I32(0); 1];
         let err = strategy
             .execute(&mut store, "main", &[], &mut result)
