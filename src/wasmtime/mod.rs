@@ -14,7 +14,8 @@ use std::{
     task::{Context, Poll},
     time::Instant,
 };
-use wasmtime::{AsContext, AsContextMut, StoreLimits, StoreLimitsBuilder};
+use wasmi::{Mutability, StoreLimitsBuilder, Val};
+use wasmtime::{AsContext, AsContextMut, Extern, Func, Global, GlobalType, Rooted, WasmParams};
 
 pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<T>;
@@ -104,7 +105,31 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
                 store.data_mut().fuel = Some(fuel);
             }
         }
-        let linker = wasmtime_import_linker(module.engine(), import_linker);
+        let mut linker = wasmtime_import_linker(module.engine(), import_linker);
+        let global = Extern::Global(
+            Global::new(
+                store.as_context_mut(),
+                GlobalType::new(wasmtime::ValType::I32, wasmtime::Mutability::Const),
+                wasmtime::Val::I32(666),
+            )
+                .unwrap(),
+        );
+        linker
+            .define(store.as_context_mut(), "spectest", "global_i32", global)
+            .unwrap();
+
+        let global = Extern::Global(
+            Global::new(
+                store.as_context_mut(),
+                GlobalType::new(wasmtime::ValType::I64, wasmtime::Mutability::Const),
+                wasmtime::Val::I64(666),
+            )
+                .unwrap(),
+        );
+        linker
+            .define(store.as_context_mut(), "spectest", "global_i64", global)
+            .unwrap();
+
         let instance_pre = linker
             .instantiate_pre(&module)
             .unwrap_or_else(|err| panic!("wasmtime: can't pre-instantiate module: {}", err));
@@ -119,7 +144,7 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
 
     pub fn execute(
         &mut self,
-        func_name: &'static str,
+        func_name: &str,
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
@@ -396,6 +421,16 @@ async fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
         wasmtime::Val::I64(value) => Value::I64(*value),
         wasmtime::Val::F32(value) => Value::F32(F32::from_bits(*value)),
         wasmtime::Val::F64(value) => Value::F64(F64::from_bits(*value)),
+        // wasmtime::Val::FuncRef(value) => Value::FuncRef(FuncRef::new(
+        //     value
+        //         .map(|r| r.vmgcref_pointing_to_object_count())
+        //         .unwrap_or_default(),
+        // )),
+        // wasmtime::Val::ExternRef(value) => Value::ExternRef(ExternRef::new(
+        //     value
+        //         .map(|r| unsafe { r.to_raw(&mut store).unwrap_or_default() })
+        //         .unwrap_or_default(),
+        // )),
         _ => unreachable!("wasmtime: not supported type: {:?}", x),
     }));
     buffer.extend(std::iter::repeat(Value::I32(0)).take(result.len()));
@@ -558,7 +593,7 @@ pub fn map_anyhow_error(err: anyhow::Error) -> TrapCode {
             Trap::CastFailure => TrapCode::BadConversionToInteger,
             Trap::CannotEnterComponent => unreachable!("component-model is not supported"),
             Trap::NoAsyncResult => unreachable!("async mode must be disabled"),
-            _ => unreachable!("unknown trap wasmtime code"),
+            trap => unreachable!("unknown trap wasmtime code {:?}", trap),
         }
     } else if let Some(trap) = err.downcast_ref::<TrapCode>() {
         // if our trap code is initiated, then just return the trap code
