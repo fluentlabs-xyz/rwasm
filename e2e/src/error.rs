@@ -5,6 +5,8 @@ use std::{error::Error, fmt, fmt::Display};
 #[derive(Debug)]
 pub enum TestError {
     Rwasm(RwasmError),
+    Wasmi(wasmi::Error),
+    WasmTime(wasmtime::Error),
     InstanceNotRegistered { name: String },
     NoModuleInstancesFound,
 }
@@ -21,6 +23,8 @@ impl Display for TestError {
                 write!(f, "found no module instances registered so far")
             }
             Self::Rwasm(rwasm_error) => Display::fmt(rwasm_error, f),
+            TestError::Wasmi(wasmi_error) => Display::fmt(wasmi_error, f),
+            TestError::WasmTime(wasmtime_error) => Display::fmt(wasmtime_error, f),
         }
     }
 }

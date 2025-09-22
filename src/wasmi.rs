@@ -4,7 +4,7 @@ use num_traits::FromPrimitive;
 use smallvec::SmallVec;
 use wasmi::core::{TableError, UntypedVal};
 use wasmi::errors::{ErrorKind, InstantiationError};
-use wasmi::{AsContext, AsContextMut, Extern, ExternRef, Global, Mutability, StackLimits, Val};
+use wasmi::{AsContext, AsContextMut, Global, Mutability, StackLimits, Val};
 use wasmparser::ValType;
 
 pub type WasmiModule = wasmi::Module;
