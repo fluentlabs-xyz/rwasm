@@ -9,7 +9,7 @@ use rwasm::{
     ImportLinkerEntity, ImportName, InstructionSet, ModuleParser, Opcode, RwasmExecutor,
     RwasmModule, RwasmStore, StateRouterConfig, Store, ValType, Value, ValueStack, F64,
 };
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use wast::token::{Id, Span};
 
 pub struct InstanceInner {
@@ -44,7 +44,7 @@ pub struct TestContext<'a> {
     last_instance: Option<Instance>,
     /// Profiling during the Wasm spec test run.
     profile: TestProfile,
-    import_linker: Rc<ImportLinker>,
+    import_linker: Arc<ImportLinker>,
     /// The descriptor of the test.
     ///
     /// Useful for printing better debug messages in case of failure.
@@ -60,12 +60,12 @@ impl<'a> TestContext<'a> {
             extern_state: Default::default(),
             last_instance: None,
             profile: TestProfile::default(),
-            import_linker: Rc::new(Self::import_linker()),
+            import_linker: Self::create_import_linker(),
             descriptor,
         }
     }
 
-    pub fn import_linker() -> ImportLinker {
+    pub fn create_import_linker() -> Arc<ImportLinker> {
         let block_fuel = instruction_set! {
             .op_i32_const(0)
         };
@@ -151,6 +151,7 @@ impl<'a> TestContext<'a> {
                 },
             ),
         ])
+        .into()
     }
 }
 

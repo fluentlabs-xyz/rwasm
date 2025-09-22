@@ -4,7 +4,6 @@ use crate::{
     wasmtime::engine::wasmtime_engine, Caller, CompilationConfig, ImportLinker, Store,
     SyscallHandler, TrapCode, TypedCaller, UntypedValue, ValType, Value, F32, F64,
 };
-use alloc::rc::Rc;
 use futures::{channel::oneshot, future::Either, task::noop_waker};
 use ouroboros::self_referencing;
 use smallvec::SmallVec;
@@ -76,8 +75,8 @@ pub struct WasmtimeStore<T: 'static + Send + Sync> {
 
 impl<T: 'static + Send + Sync> WasmtimeStore<T> {
     pub fn new(
-        module: Rc<wasmtime::Module>,
-        import_linker: Rc<ImportLinker>,
+        module: wasmtime::Module,
+        import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
     ) -> Self {
@@ -87,8 +86,8 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
     }
 
     async fn new_async(
-        module: Rc<wasmtime::Module>,
-        import_linker: Rc<ImportLinker>,
+        module: wasmtime::Module,
+        import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
     ) -> Self {
@@ -463,7 +462,7 @@ async fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
 
 fn wasmtime_import_linker<T: Send + Sync + 'static>(
     engine: &wasmtime::Engine,
-    import_linker: Rc<ImportLinker>,
+    import_linker: Arc<ImportLinker>,
 ) -> wasmtime::Linker<WrappedContext<T>> {
     let mut linker = wasmtime::Linker::<WrappedContext<T>>::new(engine);
     for (import_name, import_entity) in import_linker.iter() {

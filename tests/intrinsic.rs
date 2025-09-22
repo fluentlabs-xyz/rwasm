@@ -2,7 +2,7 @@ use rwasm::{
     always_failing_syscall_handler, intrinsic::Intrinsic, CompilationConfig, ExecutionEngine,
     ImportLinker, ImportName, Opcode, RwasmModule, RwasmStore,
 };
-use std::rc::Rc;
+use std::sync::Arc;
 use wasmparser::ValType;
 
 #[test]
@@ -28,7 +28,7 @@ fn test_intrinsic_replace() {
         &[ValType::I32],
         &[],
     );
-    let import_linker = Rc::new(import_linker);
+    let import_linker = Arc::new(import_linker);
 
     let config = CompilationConfig::default()
         .with_entrypoint_name("call_gas".into())
@@ -39,11 +39,11 @@ fn test_intrinsic_replace() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::new(
-        Rc::new(ImportLinker::default()),
+        Arc::new(ImportLinker::default()),
         (),
         always_failing_syscall_handler,
     );
-    let mut engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::new();
     engine
         .execute(&mut store, &rwasm_module, &[], &mut [], Some(100))
         .unwrap();
@@ -74,7 +74,7 @@ fn test_intrinsic_remove() {
         &[ValType::I32],
         &[],
     );
-    let import_linker = Rc::new(import_linker);
+    let import_linker = Arc::new(import_linker);
 
     let config = CompilationConfig::default()
         .with_entrypoint_name("call_gas".into())
@@ -85,11 +85,11 @@ fn test_intrinsic_remove() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::new(
-        Rc::new(ImportLinker::default()),
+        Arc::new(ImportLinker::default()),
         (),
         always_failing_syscall_handler,
     );
-    let mut engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::new();
     engine
         .execute(&mut store, &rwasm_module, &[], &mut [], None)
         .unwrap();

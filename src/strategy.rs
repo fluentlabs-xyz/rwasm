@@ -5,8 +5,7 @@ use crate::{
 };
 #[cfg(feature = "wasmtime")]
 use crate::{WasmtimeCaller, WasmtimeModule, WasmtimeStore};
-use alloc::rc::Rc;
-use core::cell::RefCell;
+use alloc::sync::Arc;
 
 pub trait Store<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode>;
@@ -169,15 +168,15 @@ impl<'a, T: Send + Sync> Caller<T> for TypedCaller<'a, T> {
 
 pub enum Strategy {
     Rwasm {
-        module: Rc<RwasmModule>,
-        engine: Rc<RefCell<ExecutionEngine>>,
+        module: RwasmModule,
+        engine: ExecutionEngine,
     },
     #[cfg(feature = "wasmtime")]
     Wasmtime {
-        module: Rc<WasmtimeModule>,
+        module: WasmtimeModule,
     },
     Wasmi {
-        module: Rc<WasmiModule>,
+        module: WasmiModule,
     },
 }
 
@@ -247,7 +246,7 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
 impl Strategy {
     pub fn empty_store(&self) -> TypedStore<()> {
         self.create_store::<()>(
-            Rc::new(ImportLinker::default()),
+            Arc::new(ImportLinker::default()),
             (),
             always_failing_syscall_handler,
         )
@@ -255,7 +254,7 @@ impl Strategy {
 
     pub fn create_store<T: Send + Sync>(
         &self,
-        import_linker: Rc<ImportLinker>,
+        import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
     ) -> TypedStore<T> {
@@ -294,9 +293,7 @@ impl Strategy {
                     #[allow(unreachable_patterns)]
                     _ => unreachable!(),
                 };
-                engine
-                    .borrow_mut()
-                    .execute(store, &module, params, result, fuel)
+                engine.execute(store, &module, params, result, fuel)
             }
             #[cfg(feature = "wasmtime")]
             Strategy::Wasmtime { .. } => {
@@ -329,9 +326,7 @@ impl Strategy {
                     #[allow(unreachable_patterns)]
                     _ => unreachable!(),
                 };
-                engine
-                    .borrow_mut()
-                    .resume(store, &module, interruption_result, result)
+                engine.resume(store, &module, interruption_result, result)
             }
             #[cfg(feature = "wasmtime")]
             Strategy::Wasmtime { .. } => {

@@ -2,15 +2,14 @@ use crate::{
     always_failing_syscall_handler, GlobalIdx, GlobalMemory, ImportLinker, Pages, SignatureIdx,
     Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue,
 };
-use alloc::rc::Rc;
+use alloc::sync::Arc;
 use bitvec::{order::Lsb0, vec::BitVec};
-use core::cell::RefCell;
 use hashbrown::HashMap;
 
 pub struct RwasmStore<T: 'static + Send + Sync> {
     pub(crate) consumed_fuel: u64,
     pub(crate) global_memory: GlobalMemory,
-    pub(crate) context: RefCell<T>,
+    pub(crate) context: T,
     pub(crate) fuel_limit: Option<u64>,
     // the last used signature (needed for indirect calls type checks)
     pub(crate) last_signature: Option<SignatureIdx>,
@@ -22,7 +21,7 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     pub(crate) empty_elem_segments: BitVec,
     // list of nested calls return pointers
     pub(crate) syscall_handler: SyscallHandler<T>,
-    pub(crate) import_linker: Rc<ImportLinker>,
+    pub(crate) import_linker: Arc<ImportLinker>,
     #[cfg(feature = "tracing")]
     pub tracer: crate::Tracer,
 }
@@ -30,7 +29,7 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
 impl<T: 'static + Send + Sync + Default> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
-            Rc::new(ImportLinker::default()),
+            Arc::new(ImportLinker::default()),
             T::default(),
             always_failing_syscall_handler,
         )
@@ -52,11 +51,11 @@ impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
     }
 
     fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
-        func(&mut self.context.borrow_mut())
+        func(&mut self.context)
     }
 
     fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
-        func(&self.context.borrow())
+        func(&self.context)
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
@@ -77,7 +76,7 @@ impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
 
 impl<T: 'static + Send + Sync> RwasmStore<T> {
     pub fn new(
-        import_linker: Rc<ImportLinker>,
+        import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
     ) -> Self {
@@ -85,7 +84,7 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         Self {
             consumed_fuel: 0,
             global_memory,
-            context: RefCell::new(context),
+            context,
             fuel_limit: None,
             #[cfg(feature = "tracing")]
             tracer: crate::Tracer::default(),
@@ -107,14 +106,14 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         if !keep_flags {
             // we don't do any assumptions regarding how data segments are used,
             // maybe there is a way to optimize reuse of bitset.
-            if self.empty_data_segments.len() == size_of::<usize>() {
+            if self.empty_data_segments.len() <= size_of::<usize>() {
                 self.empty_data_segments.fill(false);
             } else {
                 self.empty_data_segments = BitVec::<usize, Lsb0>::EMPTY;
             }
             // we don't do any assumptions regarding how tables are used inside the applications,
             // so keep it always empty, probably there is an optimization here.
-            if self.empty_elem_segments.len() == size_of::<usize>() {
+            if self.empty_elem_segments.len() <= size_of::<usize>() {
                 self.empty_elem_segments.fill(false);
             } else {
                 self.empty_elem_segments = BitVec::<usize, Lsb0>::EMPTY;

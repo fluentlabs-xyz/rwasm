@@ -23,6 +23,7 @@ bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
 libm = "0.2.1"
 smallvec = "1.15.0"
 num-derive = "0.4.2"
+spin = "0.10.0"
 
 # tracing
 serde = { version = "1.0.219", features = ["derive"], optional = true }
