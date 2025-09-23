@@ -259,9 +259,12 @@ impl Strategy {
         syscall_handler: SyscallHandler<T>,
     ) -> TypedStore<T> {
         match self {
-            Strategy::Rwasm { .. } => {
-                TypedStore::Rwasm(RwasmStore::new(import_linker, context, syscall_handler))
-            }
+            Strategy::Rwasm { engine, .. } => TypedStore::Rwasm(RwasmStore::new(
+                engine.clone(),
+                import_linker,
+                context,
+                syscall_handler,
+            )),
             #[cfg(feature = "wasmtime")]
             Strategy::Wasmtime { module, .. } => TypedStore::Wasmtime(WasmtimeStore::new(
                 module.clone(),

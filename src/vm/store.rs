@@ -1,6 +1,6 @@
 use crate::{
-    always_failing_syscall_handler, GlobalIdx, GlobalMemory, ImportLinker, Pages, SignatureIdx,
-    Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue,
+    ExecutionEngine, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, SignatureIdx,
+    Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStackPtr,
 };
 use alloc::sync::Arc;
 use bitvec::{order::Lsb0, vec::BitVec};
@@ -22,16 +22,19 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     // list of nested calls return pointers
     pub(crate) syscall_handler: SyscallHandler<T>,
     pub(crate) import_linker: Arc<ImportLinker>,
+    pub(crate) resumable_context: Option<(InstructionPtr, ValueStackPtr)>,
     #[cfg(feature = "tracing")]
     pub tracer: crate::Tracer,
 }
 
+#[cfg(feature = "std")]
 impl<T: 'static + Send + Sync + Default> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
+            ExecutionEngine::acquire_shared(),
             Arc::new(ImportLinker::default()),
             T::default(),
-            always_failing_syscall_handler,
+            crate::always_failing_syscall_handler,
         )
     }
 }
@@ -76,6 +79,7 @@ impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
 
 impl<T: 'static + Send + Sync> RwasmStore<T> {
     pub fn new(
+        engine: ExecutionEngine,
         import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
@@ -95,6 +99,7 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
             empty_data_segments: BitVec::EMPTY,
             empty_elem_segments: BitVec::EMPTY,
             import_linker,
+            resumable_context: None,
         }
     }
 

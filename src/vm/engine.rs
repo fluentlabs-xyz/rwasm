@@ -1,8 +1,6 @@
-use crate::{
-    CallStack, InstructionPtr, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value, ValueStack,
-    ValueStackPtr,
-};
+use crate::{CallStack, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value, ValueStack};
 use alloc::sync::Arc;
+use core::mem::take;
 use smallvec::SmallVec;
 use spin::Mutex;
 
@@ -47,7 +45,6 @@ impl ExecutionEngine {
 struct ExecutionEngineInner {
     value_stack: SmallVec<[ValueStack; 8]>,
     call_stack: SmallVec<[CallStack; 8]>,
-    resume_stack: SmallVec<[(InstructionPtr, ValueStackPtr); 8]>,
 }
 
 impl ExecutionEngineInner {
@@ -72,7 +69,7 @@ impl ExecutionEngineInner {
         );
         match executor.run(params, result) {
             Err(TrapCode::InterruptionCalled) => {
-                self.resume_stack.push((executor.ip, executor.sp));
+                store.resumable_context = Some((executor.ip, executor.sp));
                 Err(TrapCode::InterruptionCalled)
             }
             res => {
@@ -95,16 +92,17 @@ impl ExecutionEngineInner {
             self.value_stack.last_mut().unwrap(),
             self.call_stack.last_mut().unwrap(),
         );
-        let (ip, sp) = self.resume_stack.pop().unwrap_or_else(|| {
+        let (ip, sp) = take(&mut store.resumable_context).unwrap_or_else(|| {
             unreachable!("resume calling without a remaining call stack");
         });
         let mut executor = RwasmExecutor::new(&module, value_stack, sp, call_stack, ip, store);
         match executor.run(params, result) {
             Err(TrapCode::InterruptionCalled) => {
-                self.resume_stack.push((executor.ip, executor.sp));
+                store.resumable_context = Some((executor.ip, executor.sp));
                 Err(TrapCode::InterruptionCalled)
             }
             res => {
+                // TODO: Recycle stack
                 self.value_stack.pop().unwrap();
                 self.call_stack.pop().unwrap();
                 res
@@ -114,12 +112,13 @@ impl ExecutionEngineInner {
 }
 
 #[cfg(feature = "std")]
-static ENGINE: std::sync::OnceLock<ExecutionEngine> = std::sync::OnceLock::new();
+thread_local! {
+    static ENGINE: ExecutionEngine = ExecutionEngine::new();
+}
 
 #[cfg(feature = "std")]
 impl ExecutionEngine {
     pub fn acquire_shared() -> ExecutionEngine {
-        let engine = ENGINE.get_or_init(ExecutionEngine::new);
-        engine.clone()
+        ENGINE.with(Clone::clone)
     }
 }

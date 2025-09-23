@@ -39,6 +39,7 @@ fn test_intrinsic_replace() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::new(
+        ExecutionEngine::acquire_shared(),
         Arc::new(ImportLinker::default()),
         (),
         always_failing_syscall_handler,
@@ -85,6 +86,7 @@ fn test_intrinsic_remove() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::new(
+        ExecutionEngine::acquire_shared(),
         Arc::new(ImportLinker::default()),
         (),
         always_failing_syscall_handler,
