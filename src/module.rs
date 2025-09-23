@@ -2,13 +2,14 @@ use crate::{
     CompilationConfig, CompilationError, ConstructorParams, HintType, InstructionSet, ModuleParser,
     Opcode,
 };
-use alloc::{vec, vec::Vec};
+use alloc::{sync::Arc, vec, vec::Vec};
 use bincode::{
     de::Decoder,
     enc::Encoder,
     error::{DecodeError, EncodeError},
     Decode, Encode,
 };
+use core::ops::Deref;
 
 /// Represents a compiled rWasm module.
 ///
@@ -19,23 +20,12 @@ use bincode::{
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct RwasmModule {
-    /// The main instruction set (bytecode) for this module that includes an entrypoint
-    /// and all required functions.
-    ///
-    /// The source program counter offset is always 0.
-    pub code_section: InstructionSet,
+    inner: Arc<RwasmModuleInner>,
+}
 
-    /// Linear read-only memory data initialized when the module is instantiated.
-    pub data_section: Vec<u8>,
-
-    /// Table initializers, function refs for the module's table section.
-    pub elem_section: Vec<u32>,
-
-    /// A hint section that stores original bytecode that used as a compiler input.
-    /// It can be Wasm, EVM bytecode or anything else.
-    /// Use this section signature bytes to determine the type of the file,
-    /// always fallback to EVM if it can't be extracted.
-    pub hint_section: Vec<u8>,
+fn _check() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<RwasmModule>();
 }
 
 impl RwasmModule {
@@ -57,36 +47,78 @@ impl RwasmModule {
     }
 
     pub fn empty() -> Self {
-        Self {
+        RwasmModuleInner {
             code_section: InstructionSet::default(),
             data_section: vec![],
             elem_section: vec![],
             hint_section: vec![],
         }
+        .into()
     }
 
     pub fn with_one_function(code_section: InstructionSet) -> Self {
-        RwasmModule {
+        RwasmModuleInner {
             code_section,
             data_section: vec![],
             elem_section: vec![],
             hint_section: vec![],
         }
+        .into()
     }
 
     pub fn new(sink: &[u8]) -> (Self, usize) {
-        bincode::decode_from_slice(sink, bincode::config::legacy())
-            .unwrap_or_else(|_| unreachable!("rwasm: malformed rwasm binary"))
+        let (inner, bytes_read): (RwasmModuleInner, usize) =
+            bincode::decode_from_slice(sink, bincode::config::legacy())
+                .unwrap_or_else(|_| unreachable!("rwasm: malformed rwasm binary"));
+        (inner.into(), bytes_read)
     }
 
     pub fn serialize(&self) -> Vec<u8> {
-        bincode::encode_to_vec(self, bincode::config::legacy())
+        bincode::encode_to_vec(&*self.inner, bincode::config::legacy())
             .unwrap_or_else(|_| unreachable!("rwasm: failed to serialize module"))
     }
 
     pub fn hint_type(&self) -> HintType {
         HintType::from_ref(&self.hint_section)
     }
+}
+
+impl From<RwasmModuleInner> for RwasmModule {
+    fn from(value: RwasmModuleInner) -> Self {
+        Self {
+            inner: Arc::new(value),
+        }
+    }
+}
+
+impl Deref for RwasmModule {
+    type Target = RwasmModuleInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Default, Clone, Debug, PartialEq)]
+pub struct RwasmModuleInner {
+    /// The main instruction set (bytecode) for this module that includes an entrypoint
+    /// and all required functions.
+    ///
+    /// The source program counter offset is always 0.
+    pub code_section: InstructionSet,
+
+    /// Linear read-only memory data initialized when the module is instantiated.
+    pub data_section: Vec<u8>,
+
+    /// Table initializers, function refs for the module's table section.
+    pub elem_section: Vec<u32>,
+
+    /// A hint section that stores original bytecode that used as a compiler input.
+    /// It can be Wasm, EVM bytecode or anything else.
+    /// Use this section signature bytes to determine the type of the file,
+    /// always fallback to EVM if it can't be extracted.
+    pub hint_section: Vec<u8>,
 }
 
 /// Rwasm magic bytes 0xef52 (0x52 stands for 'R' in ASCII)
@@ -96,7 +128,7 @@ const RWASM_MAGIC_BYTE_1: u8 = 0x52;
 /// Rwasm binary version
 const RWASM_VERSION_V1: u8 = 0x01;
 
-impl Encode for RwasmModule {
+impl Encode for RwasmModuleInner {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
         Encode::encode(&RWASM_MAGIC_BYTE_0, encoder)?;
         Encode::encode(&RWASM_MAGIC_BYTE_1, encoder)?;
@@ -109,7 +141,7 @@ impl Encode for RwasmModule {
     }
 }
 
-impl<Context> Decode<Context> for RwasmModule {
+impl<Context> Decode<Context> for RwasmModuleInner {
     fn decode<D: Decoder<Context = Context>>(decoder: &mut D) -> Result<Self, DecodeError> {
         let sig0: u8 = Decode::decode(decoder)?;
         let sig1: u8 = Decode::decode(decoder)?;
@@ -157,11 +189,11 @@ impl core::fmt::Display for RwasmModule {
 
 #[cfg(test)]
 mod tests {
-    use crate::{instruction_set, RwasmModule};
+    use crate::{instruction_set, RwasmModuleInner};
 
     #[test]
     fn test_module_encoding() {
-        let module = RwasmModule {
+        let module = RwasmModuleInner {
             code_section: instruction_set! {
                 I32Const(100)
                 I32Const(20)
@@ -175,7 +207,7 @@ mod tests {
             hint_section: vec![],
         };
         let encoded_module = bincode::encode_to_vec(&module, bincode::config::legacy()).unwrap();
-        let module2: RwasmModule;
+        let module2: RwasmModuleInner;
         (module2, _) =
             bincode::decode_from_slice(&encoded_module, bincode::config::legacy()).unwrap();
         assert_eq!(module, module2);

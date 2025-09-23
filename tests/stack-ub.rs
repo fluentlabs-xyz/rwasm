@@ -3,7 +3,7 @@ use rwasm::{
     CompilationConfig, ExecutionEngine, ImportLinker, ImportName, Opcode, RwasmModule, RwasmStore,
     StateRouterConfig, Store, TrapCode, TypedCaller, Value,
 };
-use std::{rc::Rc, str::from_utf8};
+use std::{str::from_utf8, sync::Arc};
 use wasmparser::ValType;
 
 const STATE_MAIN: u32 = 1;
@@ -16,7 +16,7 @@ struct HostState {
     state: u32,
 }
 
-fn fluentbase_import_linker() -> Rc<ImportLinker> {
+fn fluentbase_import_linker() -> Arc<ImportLinker> {
     let mut import_linker = ImportLinker::default();
     import_linker.insert_function(
         ImportName::new("fluentbase_v1preview", "_write"),
@@ -53,7 +53,7 @@ fn fluentbase_import_linker() -> Rc<ImportLinker> {
         &[ValType::I64; 2],
         &[ValType::I64; 1],
     );
-    Rc::new(import_linker)
+    Arc::new(import_linker)
 }
 
 fn fluentbase_syscall_handler(
@@ -102,7 +102,7 @@ fn run_fluentbase_binary(wasm_binary: &[u8], host_state: HostState) -> HostState
         })
         .with_import_linker(import_linker.clone());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-    let mut engine = ExecutionEngine::default();
+    let engine = ExecutionEngine::default();
     let mut store = RwasmStore::new(
         import_linker.clone(),
         host_state,

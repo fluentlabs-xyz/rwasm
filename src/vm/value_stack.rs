@@ -334,6 +334,9 @@ pub struct ValueStackPtr {
     ptr: *mut UntypedValue,
 }
 
+unsafe impl Send for ValueStackPtr {}
+unsafe impl Sync for ValueStackPtr {}
+
 impl From<*mut UntypedValue> for ValueStackPtr {
     #[inline]
     fn from(ptr: *mut UntypedValue) -> Self {

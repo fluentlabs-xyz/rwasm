@@ -36,30 +36,24 @@ pub fn for_each_strategy<F: FnMut(Strategy) -> Result<(), StrategyError>>(
     compilation_config: CompilationConfig,
     wasm_binary: &[u8],
 ) -> Result<(), StrategyError> {
-    use std::rc::Rc;
     // rwasm case
     {
-        let (rwasm_module, _) = RwasmModule::compile(compilation_config.clone(), wasm_binary)?;
+        let (module, _) = RwasmModule::compile(compilation_config.clone(), wasm_binary)?;
         f(Strategy::Rwasm {
-            module: Rc::new(rwasm_module),
+            module,
             engine: ExecutionEngine::acquire_shared(),
         })?;
     }
     // wasmtime case
     #[cfg(feature = "wasmtime")]
     {
-        let wasmtime_module =
-            compile_wasmtime_module(compilation_config.clone(), wasm_binary).unwrap();
-        f(Strategy::Wasmtime {
-            module: Rc::new(wasmtime_module),
-        })?;
+        let module = compile_wasmtime_module(compilation_config.clone(), wasm_binary).unwrap();
+        f(Strategy::Wasmtime { module })?;
     }
     // wasmi case
     {
-        let wasmi_module = compile_wasmi_module(compilation_config.clone(), wasm_binary).unwrap();
-        f(Strategy::Wasmi {
-            module: Rc::new(wasmi_module),
-        })?;
+        let module = compile_wasmi_module(compilation_config.clone(), wasm_binary).unwrap();
+        f(Strategy::Wasmi { module })?;
     }
     Ok(())
 }

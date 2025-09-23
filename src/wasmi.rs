@@ -3,7 +3,7 @@ use crate::{
     TypedCaller, UntypedValue, Value, F32, F64, N_DEFAULT_STACK_SIZE, N_MAX_RECURSION_DEPTH,
     N_MAX_STACK_SIZE,
 };
-use alloc::{rc::Rc, vec::Vec};
+use alloc::{sync::Arc, vec::Vec};
 use core::cell::RefCell;
 use num_traits::FromPrimitive;
 use smallvec::SmallVec;
@@ -179,7 +179,7 @@ fn map_val_type(val_type: ValType) -> wasmi::core::ValType {
 
 fn wasmi_import_linker<T: 'static + Send + Sync>(
     engine: &wasmi::Engine,
-    import_linker: Rc<ImportLinker>,
+    import_linker: Arc<ImportLinker>,
 ) -> wasmi::Linker<WasmiContextWrapper<T>> {
     let mut linker = wasmi::Linker::<WasmiContextWrapper<T>>::new(engine);
     for (import_name, import_entity) in import_linker.iter() {
@@ -213,7 +213,7 @@ fn wasmi_import_linker<T: 'static + Send + Sync>(
 impl<T: 'static + Send + Sync> WasmiStore<T> {
     pub fn new(
         module: &WasmiModule,
-        import_linker: Rc<ImportLinker>,
+        import_linker: Arc<ImportLinker>,
         data: T,
         syscall_handler: SyscallHandler<T>,
     ) -> Self {
@@ -292,7 +292,7 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
                     return Ok(());
                 }
                 // same resumable context in case of interruption, otherwise just
-                // teminate an execution
+                // terminate an execution
                 if trap_code == TrapCode::InterruptionCalled {
                     self.resumable_context = Some(resumable_context);
                 }

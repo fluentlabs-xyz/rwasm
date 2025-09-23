@@ -6,8 +6,8 @@ use crate::{
         translator::{InstructionTranslator, ReusableAllocations},
     },
     CompilationConfig, CompilationError, ConstructorParams, DataSegmentIdx, ElementSegmentIdx,
-    FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName, Opcode, RwasmModule, TableIdx,
-    DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
+    FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName, Opcode, RwasmModule, RwasmModuleInner,
+    TableIdx, DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::{
@@ -157,7 +157,7 @@ impl ModuleParser {
             }
         }
 
-        let module = RwasmModule {
+        let module = RwasmModuleInner {
             code_section,
             data_section: self
                 .allocations
@@ -169,7 +169,7 @@ impl ModuleParser {
         };
         let constructor_params = self.allocations.translation.constructor_params;
 
-        Ok((module, constructor_params))
+        Ok((RwasmModule::from(module), constructor_params))
     }
 
     pub fn emit_state_router(&mut self) -> Result<(), CompilationError> {

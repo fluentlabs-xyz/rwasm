@@ -1,5 +1,5 @@
 use crate::{ImportLinker, Opcode};
-use alloc::{boxed::Box, rc::Rc};
+use alloc::{boxed::Box, sync::Arc};
 use wasmparser::WasmFeatures;
 
 #[derive(Debug, Clone)]
@@ -23,7 +23,7 @@ pub struct CompilationConfig {
     /// Import linker that stores mapping from function to special identifiers that is used
     /// to remember unique external calls ids. We need this to simplify a proving process to
     /// forward external calls to corresponding circuits.
-    pub import_linker: Option<Rc<ImportLinker>>,
+    pub import_linker: Option<Arc<ImportLinker>>,
     /// An option to disable malformed entrypoint func type check. We need this check for e2e tests
     /// where we manage stack manually.
     ///
@@ -84,7 +84,7 @@ impl CompilationConfig {
         self
     }
 
-    pub fn with_import_linker(mut self, import_linker: Rc<ImportLinker>) -> Self {
+    pub fn with_import_linker(mut self, import_linker: Arc<ImportLinker>) -> Self {
         self.import_linker = Some(import_linker);
         self
     }
