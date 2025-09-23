@@ -351,7 +351,9 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let memory_size: u32 = self.store.global_memory.current_pages().into();
         let consumed_fuel = self.store.fuel_consumed();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
-        self.store.tracer.state.next_cycle();
+        if !instr.is_fat_op() {
+            self.store.tracer.state.next_cycle();
+        }
     }
 
     #[cfg(feature = "tracing")]

@@ -28,9 +28,9 @@ impl Opcode {
                 return 1;
             }
         } else if self.is_table_instruction() {
-            if let Opcode::TableGrow(_) = self {
-                return 2;
-            }
+            // if let Opcode::TableGrow(_) = self {
+            //     return 2;
+            // }
         }
         0
     }
@@ -50,8 +50,8 @@ impl Opcode {
             }
         } else if let Opcode::LocalGet(_) = self {
             true
-        } else if let Opcode::TableGrow(_) = self {
-            true
+        // } else if let Opcode::TableGrow(_) = self {
+        //     true
         } else {
             false
         }
