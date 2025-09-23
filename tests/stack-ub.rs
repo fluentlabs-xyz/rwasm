@@ -104,6 +104,7 @@ fn run_fluentbase_binary(wasm_binary: &[u8], host_state: HostState) -> HostState
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     let engine = ExecutionEngine::default();
     let mut store = RwasmStore::new(
+        ExecutionEngine::acquire_shared(),
         import_linker.clone(),
         host_state,
         fluentbase_syscall_handler,

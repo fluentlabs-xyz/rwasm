@@ -182,8 +182,15 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     }
 
     pub fn program_counter(&self) -> u32 {
-        let diff = self.ip.ptr as u32 - self.module.code_section.as_ptr() as u32;
-        diff / size_of::<Opcode>() as u32
+        let diff = self.ip.ptr as i32 - self.module.code_section.as_ptr() as i32;
+        if diff < 0 {
+            unreachable!(
+                "program counter negative: diff={diff}, ip={:?}, base={:?}",
+                self.ip,
+                self.module.code_section.as_ptr()
+            );
+        }
+        (diff as u32) / size_of::<Opcode>() as u32
     }
 
     pub fn run(&mut self, params: &[Value], result: &mut [Value]) -> Result<(), TrapCode> {
@@ -327,7 +334,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         use std::io::Write;
         std::io::stdout().flush().unwrap();
         println!(
-            "stack={:?}, sp={:?}",
+            "stack={:?}",
             self.value_stack
                 .dump_stack()
                 .iter()
@@ -335,7 +342,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 .take(10)
                 .map(|v| v.as_usize())
                 .collect::<Vec<_>>(),
-            self.sp,
         );
     }
 
