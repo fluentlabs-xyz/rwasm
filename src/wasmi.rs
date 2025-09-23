@@ -292,7 +292,7 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
                     return Ok(());
                 }
                 // same resumable context in case of interruption, otherwise just
-                // teminate an execution
+                // terminate an execution
                 if trap_code == TrapCode::InterruptionCalled {
                     self.resumable_context = Some(resumable_context);
                 }

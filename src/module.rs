@@ -99,12 +99,6 @@ impl Deref for RwasmModule {
     }
 }
 
-/// Represents a compiled rWasm module.
-///
-/// An `RwasmModule` encapsulates the executable code, static data, and element (function/table
-/// reference) information needed for execution within the rWasm virtual machine.
-///
-/// It's compiled from Wasm
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct RwasmModuleInner {

@@ -8,11 +8,18 @@ use futures::{channel::oneshot, future::Either, task::noop_waker};
 use ouroboros::self_referencing;
 use smallvec::SmallVec;
 use std::{
+    any::Any,
+    cell::RefCell,
+    collections::HashMap,
     future::Future,
     panic,
     pin::Pin,
-    sync::{Arc, RwLock},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, RwLock,
+    },
     task::{Context, Poll},
+    thread_local,
     time::Instant,
 };
 use wasmtime::{AsContext, AsContextMut};
@@ -66,10 +73,15 @@ pub struct FutureContextHolder<T: 'static + Send + Sync> {
     dependent: StoreFuture<'this>,
 }
 
+thread_local! {
+    static WASMTIME_FUTURES: RefCell<HashMap<usize, Box<dyn Any>>> = RefCell::new(HashMap::new());
+}
+static NEXT_WASMTIME_STORE_ID: AtomicUsize = AtomicUsize::new(1);
+
 pub struct WasmtimeStore<T: 'static + Send + Sync> {
     store: Option<wasmtime::Store<WrappedContext<T>>>,
     instance: wasmtime::Instance,
-    fut: Option<FutureContextHolder<T>>,
+    fut_id: usize,
     shared_control_state: Arc<RwLock<SharedControlState<T>>>,
 }
 
@@ -106,7 +118,7 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         Self {
             store: Some(store),
             instance,
-            fut: None,
+            fut_id: NEXT_WASMTIME_STORE_ID.fetch_add(1, Ordering::Relaxed),
             shared_control_state,
         }
     }
@@ -118,10 +130,13 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         result: &mut [Value],
         fuel: Option<u64>,
     ) -> Result<(), TrapCode> {
-        assert!(
-            self.fut.is_none(),
-            "wasmtime: there is an unfinished future"
-        );
+        WASMTIME_FUTURES.with(|tls| {
+            let m = tls.borrow();
+            assert!(
+                !m.contains_key(&self.fut_id),
+                "wasmtime: there is an unfinished future"
+            );
+        });
         let mut store = self.store.take().expect("wasmtime: store is not present");
         if let Some(fuel) = fuel {
             if let Ok(_) = store.get_fuel() {
@@ -176,7 +191,9 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
                 },
         }
         .build();
-        self.fut = Some(fut);
+        WASMTIME_FUTURES.with(|tls| {
+            tls.borrow_mut().insert(self.fut_id, Box::new(fut));
+        });
         self.poll_step(result)
     }
 
@@ -202,36 +219,57 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
     }
 
     fn poll_step(&mut self, result: &mut [Value]) -> Result<(), TrapCode> {
-        let Some(exec) = &mut self.fut else {
-            panic!("wasmtime: no in-flight exec");
-        };
-        let w = noop_waker();
-        let mut cx = Context::from_waker(&w);
-        exec.with_mut(|user| {});
-        let polled = exec.with_dependent_mut(|fut| fut.as_mut().poll(&mut cx));
-        let res = match polled {
-            Poll::Pending => return Err(TrapCode::InterruptionCalled),
-            Poll::Ready(res) => res,
-        };
-        let heads = self.fut.take().unwrap().into_heads();
-        self.store = Some(heads.store);
-        for (i, x) in heads.buffer[heads.params_len..].iter().enumerate() {
-            result[i] = match x {
-                wasmtime::Val::I32(value) => Value::I32(*value),
-                wasmtime::Val::I64(value) => Value::I64(*value),
-                wasmtime::Val::F32(value) => Value::F32(F32::from_bits(*value)),
-                wasmtime::Val::F64(value) => Value::F64(F64::from_bits(*value)),
-                _ => unreachable!("wasmtime: not supported type: {:?}", x),
-            };
+        // Poll the in-flight future from thread-local storage
+        let mut polled_result: Option<Poll<Result<(), TrapCode>>> = None;
+        WASMTIME_FUTURES.with(|tls| {
+            let mut map = tls.borrow_mut();
+            let fut_any = map
+                .get_mut(&self.fut_id)
+                .unwrap_or_else(|| panic!("wasmtime: no in-flight exec"));
+            let exec = fut_any
+                .downcast_mut::<FutureContextHolder<T>>()
+                .expect("wasmtime: future type mismatch");
+            let w = noop_waker();
+            let mut cx = Context::from_waker(&w);
+            exec.with_mut(|_| {});
+            let p = exec.with_dependent_mut(|fut| fut.as_mut().poll(&mut cx));
+            polled_result = Some(p);
+        });
+        match polled_result.expect("wasmtime: poll missing") {
+            Poll::Pending => Err(TrapCode::InterruptionCalled),
+            Poll::Ready(res) => {
+                // Take ownership of the holder and extract heads
+                let fut_box = WASMTIME_FUTURES.with(|tls| {
+                    tls.borrow_mut()
+                        .remove(&self.fut_id)
+                        .expect("wasmtime: missing finished future")
+                });
+                let exec_box = fut_box
+                    .downcast::<FutureContextHolder<T>>()
+                    .map_err(|_| panic!("wasmtime: future type mismatch"))
+                    .unwrap();
+                let heads = exec_box.into_heads();
+                self.store = Some(heads.store);
+                for (i, x) in heads.buffer[heads.params_len..].iter().enumerate() {
+                    result[i] = match *x {
+                        wasmtime::Val::I32(value) => Value::I32(value),
+                        wasmtime::Val::I64(value) => Value::I64(value),
+                        wasmtime::Val::F32(value) => Value::F32(F32::from_bits(value)),
+                        wasmtime::Val::F64(value) => Value::F64(F64::from_bits(value)),
+                        _ => unreachable!("wasmtime: not supported type: {:?}", x),
+                    };
+                }
+                res
+            }
         }
-        res
     }
 
     fn with_store_mut<R, F: FnOnce(&mut wasmtime::Store<WrappedContext<T>>) -> R>(
         &mut self,
         f: F,
     ) -> R {
-        if let Some(fut) = self.fut.as_ref() {
+        let locked = WASMTIME_FUTURES.with(|tls| tls.borrow().contains_key(&self.fut_id));
+        if locked {
             unimplemented!("wasmtime: you can't access store with locked future state")
         } else {
             f(self.store.as_mut().unwrap())
@@ -259,7 +297,7 @@ impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        if self.fut.is_some() {
+        if WASMTIME_FUTURES.with(|tls| tls.borrow().contains_key(&self.fut_id)) {
             self.shared_control_state
                 .write()
                 .unwrap()
@@ -314,7 +352,7 @@ impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
     }
 
     fn remaining_fuel(&mut self) -> Option<u64> {
-        if self.fut.is_some() {
+        if WASMTIME_FUTURES.with(|tls| tls.borrow().contains_key(&self.fut_id)) {
             return self.shared_control_state.read().unwrap().fuel_remaining;
         }
         self.with_store_mut(|store| {
