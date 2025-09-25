@@ -7,7 +7,7 @@ test-specific-cases:
 	# run tests
 	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml
 	cargo test --color=always --no-fail-fast --manifest-path e2e/Cargo.toml
-	cargo +nightly test --color=always --no-fail-fast --manifest-path snippets/Cargo.toml
+	cargo +nightly-2025-09-20 test --color=always --no-fail-fast --manifest-path snippets/Cargo.toml
 	# run nitro test (with release flag)
 	cargo test --release --package rwasm --test nitro-verifier test_nitro_verifier -- --ignored
 
@@ -18,7 +18,7 @@ coverage:
 	cd wasm && make
 	cd snippets && make
 	# run tests
-	cargo +nightly llvm-cov --lcov --manifest-path=./snippets/Cargo.toml > lcov1.info
+	cargo +nightly-2025-09-20 llvm-cov --lcov --manifest-path=./snippets/Cargo.toml > lcov1.info
 	cargo llvm-cov --lcov --manifest-path=./Cargo.toml > lcov2.info
 	cargo llvm-cov --lcov --manifest-path=./e2e/Cargo.toml > lcov3.info
 	# merge all lcov files together
