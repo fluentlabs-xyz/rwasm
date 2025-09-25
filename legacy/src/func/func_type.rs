@@ -40,15 +40,11 @@ impl fmt::Debug for FuncType {
 
 impl FuncType {
     /// Creates a new [`FuncType`].
-    pub fn new<P, R, const I32: bool>(params: P, results: R) -> Self
+    pub fn new<P, R>(params: P, results: R) -> Self
     where
         P: IntoIterator<Item = ValueType> + Clone,
         R: IntoIterator<Item = ValueType> + Clone,
     {
-        if I32 {
-            return Self::new_i32(params, results);
-        }
-
         let mut params_results = params.into_iter().collect::<Vec<_>>();
         let len_params = params_results.len();
         params_results.extend(results);
@@ -278,7 +274,7 @@ mod tests {
 
     #[test]
     fn new_empty_works() {
-        let ft = FuncType::new::<_, _, false>([], []);
+        let ft = FuncType::new::<_, _>([], []);
         assert!(ft.params().is_empty());
         assert!(ft.results().is_empty());
         assert_eq!(ft.params(), ft.params_results().0);

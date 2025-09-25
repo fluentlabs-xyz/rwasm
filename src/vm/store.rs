@@ -1,61 +1,46 @@
 use crate::{
-    always_failing_syscall_handler,
-    ExecutorConfig,
-    GlobalIdx,
-    GlobalMemory,
-    ImportLinker,
-    Pages,
-    SignatureIdx,
-    Store,
-    SyscallHandler,
-    TableEntity,
-    TableIdx,
-    TrapCode,
-    UntypedValue,
-    N_MAX_DATA_SEGMENTS,
-    N_MAX_DATA_SEGMENTS_BITS,
-    N_MAX_ELEM_SEGMENTS,
-    N_MAX_ELEM_SEGMENTS_BITS,
+    ExecutionEngine, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, SignatureIdx,
+    Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStackPtr,
 };
-use alloc::rc::Rc;
-use bitvec::{array::BitArray, bitarr};
-use core::cell::RefCell;
+use alloc::sync::Arc;
+use bitvec::{order::Lsb0, vec::BitVec};
 use hashbrown::HashMap;
-use std::sync::Arc;
 
-pub struct RwasmStore<T: Send + Sync + 'static> {
+pub struct RwasmStore<T: 'static + Send + Sync> {
     pub(crate) consumed_fuel: u64,
     pub(crate) global_memory: GlobalMemory,
-    pub(crate) context: RefCell<T>,
-    pub(crate) config: ExecutorConfig,
+    pub(crate) context: T,
+    pub(crate) fuel_limit: Option<u64>,
     // the last used signature (needed for indirect calls type checks)
     pub(crate) last_signature: Option<SignatureIdx>,
     // rwasm modified segments
     pub tables: HashMap<TableIdx, TableEntity>,
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
     // elem/data emptiness flags
-    pub(crate) empty_data_segments: BitArray<[usize; N_MAX_DATA_SEGMENTS_BITS]>,
-    pub(crate) empty_elem_segments: BitArray<[usize; N_MAX_ELEM_SEGMENTS_BITS]>,
+    pub(crate) empty_data_segments: BitVec,
+    pub(crate) empty_elem_segments: BitVec,
     // list of nested calls return pointers
     pub(crate) syscall_handler: SyscallHandler<T>,
     pub(crate) import_linker: Arc<ImportLinker>,
+    pub(crate) resumable_context: Option<(InstructionPtr, ValueStackPtr)>,
     #[cfg(feature = "tracing")]
     pub tracer: crate::Tracer,
 }
 
-impl<T: Default + Send + Sync> Default for RwasmStore<T> {
+#[cfg(feature = "std")]
+impl<T: 'static + Send + Sync + Default> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
-            ExecutorConfig::default(),
+            ExecutionEngine::acquire_shared(),
             Arc::new(ImportLinker::default()),
             T::default(),
-            always_failing_syscall_handler,
+            crate::always_failing_syscall_handler,
         )
     }
 }
 
-impl<T: Send + Sync> Store<T> for RwasmStore<T> {
-    fn memory_read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
+    fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.global_memory.read(offset, buffer)?;
         Ok(())
     }
@@ -68,17 +53,17 @@ impl<T: Send + Sync> Store<T> for RwasmStore<T> {
         Ok(())
     }
 
-    fn context_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut func: F) -> R {
-        func(&mut self.context.borrow_mut())
+    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
+        func(&mut self.context)
     }
 
-    fn context<R, F: Fn(&T) -> R>(&self, func: F) -> R {
-        func(&self.context.borrow())
+    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
+        func(&self.context)
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
         let consumed_fuel = self.consumed_fuel.checked_add(delta).unwrap_or(u64::MAX);
-        if let Some(fuel_limit) = self.config.fuel_limit {
+        if let Some(fuel_limit) = self.fuel_limit {
             if consumed_fuel > fuel_limit {
                 return Err(TrapCode::OutOfFuel);
             }
@@ -88,72 +73,58 @@ impl<T: Send + Sync> Store<T> for RwasmStore<T> {
     }
 
     fn remaining_fuel(&mut self) -> Option<u64> {
-        Some(self.config.fuel_limit? - self.consumed_fuel)
+        Some(self.fuel_limit? - self.consumed_fuel)
     }
 }
 
-impl<T: Send + Sync> RwasmStore<T> {
+impl<T: 'static + Send + Sync> RwasmStore<T> {
     pub fn new(
-        config: ExecutorConfig,
+        engine: ExecutionEngine,
         import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
     ) -> Self {
-        // create global memory
         let global_memory = GlobalMemory::new(Pages::default());
-
-        let empty_data_segments = bitarr![0; N_MAX_DATA_SEGMENTS];
-        let empty_elem_segments = bitarr![0; N_MAX_ELEM_SEGMENTS];
-
         Self {
             consumed_fuel: 0,
             global_memory,
-            context: RefCell::new(context),
+            context,
+            fuel_limit: None,
             #[cfg(feature = "tracing")]
             tracer: crate::Tracer::default(),
             global_variables: Default::default(),
             tables: Default::default(),
             last_signature: None,
             syscall_handler,
-            empty_elem_segments,
-            empty_data_segments,
-            config,
+            empty_data_segments: BitVec::EMPTY,
+            empty_elem_segments: BitVec::EMPTY,
             import_linker,
+            resumable_context: None,
         }
     }
 
     /// Resets the state of the current execution context.
-    ///
-    /// # Parameters
-    /// - `pc`: An optional program counter (`usize`) specifying the instruction pointer position to
-    ///   reset to. If not provided, defaults to `0` (the entrypoint).
-    /// - `keep_flags`: A boolean indicating whether to preserve the data and element segment flags
-    ///   (`true` to keep the flags, `false` to reset them).
-    ///
-    /// # Behavior
-    /// - Resets the instruction pointer (`ip`) to the specified `pc` or the default value of `0`.
-    /// - Clears the consumed fuel counters by setting them to `0`.
-    /// - Resets the value stack by clearing its contents and updating the stack pointer (`sp`).
-    /// - Empties the call stack by setting its length to `0`.
-    /// - Resets the data and element segment flags to `false` if `keep_flags` is `false`.
-    /// - Clears the `last_signature` field, which can remain active after a trap.
-    ///
-    /// # Notes
-    /// - The `value_stack` is completely cleared, and the stack pointer (`sp`) is re-initialized to
-    ///   reflect the reset state.
-    /// - The call stack is reset to zero directly through an unsafe operation for performance
-    ///   optimization, avoiding a full drain.
-    /// - Preserving the data and element flags with `keep_flags` is particularly useful for
-    ///   end-to-end test cases that depend on unchanged segments.
     pub fn reset(&mut self, keep_flags: bool) {
         // reset consumed fuel to 0
         self.consumed_fuel = 0;
         // we might want to keep data/elem flags between calls, it's required for e2e tests
         if !keep_flags {
-            self.empty_data_segments.fill(false);
-            self.empty_elem_segments.fill(false);
+            // we don't do any assumptions regarding how data segments are used,
+            // maybe there is a way to optimize reuse of bitset.
+            if self.empty_data_segments.len() <= size_of::<usize>() {
+                self.empty_data_segments.fill(false);
+            } else {
+                self.empty_data_segments = BitVec::<usize, Lsb0>::EMPTY;
+            }
+            // we don't do any assumptions regarding how tables are used inside the applications,
+            // so keep it always empty, probably there is an optimization here.
+            if self.empty_elem_segments.len() <= size_of::<usize>() {
+                self.empty_elem_segments.fill(false);
+            } else {
+                self.empty_elem_segments = BitVec::<usize, Lsb0>::EMPTY;
+            }
         }
-        // in case of a trap we might have this flag remains active
+        // in case of a trap, we might have this flag remains active
         self.last_signature = None;
     }
 

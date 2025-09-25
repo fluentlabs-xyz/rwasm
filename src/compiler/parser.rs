@@ -1,53 +1,25 @@
 use crate::{
     compiler::{
+        compiled_expr::CompiledExpr,
         func_builder::FuncBuilder,
+        snippets::Snippet,
         translator::{InstructionTranslator, ReusableAllocations},
     },
-    CompilationConfig,
-    CompilationError,
-    CompiledExpr,
-    ConstructorParams,
-    DataSegmentIdx,
-    ElementSegmentIdx,
-    FuncIdx,
-    FuncRef,
-    GlobalIdx,
-    GlobalVariable,
-    ImportName,
-    Opcode,
-    RwasmModule,
-    TableIdx,
-    DEFAULT_MEMORY_INDEX,
+    CompilationConfig, CompilationError, ConstructorParams, DataSegmentIdx, ElementSegmentIdx,
+    FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName, Opcode, RwasmModule, RwasmModuleInner,
+    TableIdx, DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::{
     mem::{replace, take},
     ops::Range,
 };
+use hashbrown::HashMap;
 use wasmparser::{
-    CustomSectionReader,
-    DataKind,
-    DataSectionReader,
-    ElementItems,
-    ElementKind,
-    ElementSectionReader,
-    Encoding,
-    ExportSectionReader,
-    ExternalKind,
-    FuncType,
-    FunctionBody,
-    FunctionSectionReader,
-    GlobalSectionReader,
-    ImportSectionReader,
-    MemorySectionReader,
-    Parser,
-    Payload,
-    TableSectionReader,
-    Type,
-    TypeRef,
-    TypeSectionReader,
-    ValType,
-    Validator,
+    CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind,
+    ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType, FunctionBody,
+    FunctionSectionReader, GlobalSectionReader, ImportSectionReader, MemorySectionReader, Parser,
+    Payload, TableSectionReader, Type, TypeRef, TypeSectionReader, ValType, Validator,
 };
 
 pub struct ModuleParser {
@@ -138,6 +110,7 @@ impl ModuleParser {
             // we need to compile it?
             return Err(CompilationError::MissingEntrypoint);
         }
+        self.emit_snippets();
         // we can emit state router only at the end of a translation process
         self.emit_state_router()?;
         // the entrypoint always ends with an empty return
@@ -184,7 +157,7 @@ impl ModuleParser {
             }
         }
 
-        let module = RwasmModule {
+        let module = RwasmModuleInner {
             code_section,
             data_section: self
                 .allocations
@@ -192,11 +165,11 @@ impl ModuleParser {
                 .segment_builder
                 .global_memory_section,
             elem_section: element_section,
-            wasm_section: wasm_binary.to_vec(),
+            hint_section: wasm_binary.to_vec(),
         };
         let constructor_params = self.allocations.translation.constructor_params;
 
-        Ok((module, constructor_params))
+        Ok((RwasmModule::from(module), constructor_params))
     }
 
     pub fn emit_state_router(&mut self) -> Result<(), CompilationError> {
@@ -261,6 +234,43 @@ impl ModuleParser {
             .entrypoint_bytecode
             .op_drop();
         Ok(())
+    }
+
+    pub fn emit_snippets(&mut self) {
+        let mut emitted_snippets: HashMap<Snippet, FuncIdx> = HashMap::new();
+
+        let snippet_calls = self.allocations.translation.snippet_calls.clone();
+        for snippet_call in snippet_calls {
+            let snippet = snippet_call.snippet;
+
+            let snippet_func_idx = *emitted_snippets.entry(snippet).or_insert_with(|| {
+                let new_func_idx = self.next_func();
+                let alloc = &mut self.allocations.translation;
+                let func_offset = alloc.instruction_set.len() as u32;
+                alloc.func_offsets.push(func_offset);
+                alloc
+                    .instruction_set
+                    .op_stack_check(snippet.max_stack_height());
+                snippet.emit(&mut alloc.instruction_set);
+                alloc.instruction_set.op_return();
+                new_func_idx
+            });
+
+            let loc = snippet_call.loc;
+            let alloc = &mut self.allocations.translation;
+            let opcode = alloc.instruction_set.get_nth_mut(loc as usize)
+                .unwrap_or_else(|| panic!("expected snippet call at index {loc}, but instruction set length is smaller"));
+
+            match opcode {
+                Opcode::CallInternal(func_idx) => {
+                    assert_eq!(*func_idx, SNIPPET_FUNC_IDX_UNRESOLVED);
+                    *func_idx = snippet_func_idx + 1;
+                }
+                other => {
+                    panic!("expected Opcode::CallInternal at index {loc}, but found {other:?}")
+                }
+            }
+        }
     }
 
     /// Processes the `wasmparser` payload.
@@ -462,6 +472,15 @@ impl ModuleParser {
                 .translation
                 .compiled_funcs
                 .push(func_type_index);
+
+            if let Some(intrinsic) = import_linker_entity.intrinsic {
+                self.allocations
+                    .translation
+                    .intrinsic_handler
+                    .intrinsics
+                    .push((func_idx, intrinsic));
+            }
+
             let allocations = take(&mut self.allocations);
             let mut translator =
                 InstructionTranslator::new(allocations.translation, self.config.consume_fuel);
@@ -469,13 +488,9 @@ impl ModuleParser {
             let signature_index = translator
                 .alloc
                 .resolve_func_type_signature(func_type_index);
-            translator
-                .alloc
-                .instruction_set
-                .op_signature_check(signature_index);
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
             if self.config.builtins_consume_fuel {
-                for instr in import_linker_entity.block_fuel.instr.iter() {
+                for instr in import_linker_entity.block_fuel.iter() {
                     translator.alloc.instruction_set.push(instr.clone());
                 }
             }
@@ -861,14 +876,14 @@ impl ModuleParser {
         let allocations = take(&mut self.allocations);
         let validator = self.validator.code_section_entry(&func_body)?;
         let func_validator = validator.into_validator(allocations.validation);
-        let func_builder = FuncBuilder::new(
+        let allocations = FuncBuilder::new(
             func_body,
             func_validator,
             func_idx,
             allocations.translation,
             self.config.consume_fuel,
-        );
-        let allocations = func_builder.translate()?;
+        )
+        .translate()?;
         let _ = replace(&mut self.allocations, allocations);
         Ok(())
     }

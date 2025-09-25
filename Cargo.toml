@@ -21,16 +21,28 @@ bincode = { version = "2.0.1", default-features = false, features = ["alloc", "d
 num-traits = { version = "0.2", default-features = false }
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
 libm = "0.2.1"
+smallvec = "1.15.0"
+num-derive = "0.4.2"
+spin = "0.10.0"
+
+# tracing
+serde = { version = "1.0.219", features = ["derive"], optional = true }
+
+# wasmtime
 wasmtime = { git = "https://github.com/fluentlabs-xyz/wasmtime", branch = "devel", optional = true, features = ["disable-fpu", "cache"] }
 #wasmtime = { path = "../wasmtime/crates/wasmtime", optional = true, features = ["disable-fpu"] }
-serde = { version = "1.0.219", features = ["derive"], optional = true }
-smallvec = "1.15.0"
 anyhow = { version = "1.0.98", default-features = false, optional = true }
 directories = { version = "6.0.0", optional = true }
+futures = { version = "0.3.31", optional = true }
+ouroboros = { version = "0.18.5", optional = true }
+
+# wasmi
+wasmi = { version = "0.47.0", default-features = false }
 
 [dev-dependencies]
 rand = "0.9.1"
 wat = "1.230.0"
+hex-literal = "1.0.0"
 
 [features]
 default = ["std", "wasmtime"]
@@ -43,9 +55,9 @@ std = [
 ]
 more-max-pages = []
 tracing = [
-    "dep:serde", "serde/derive"
+    "dep:serde", "serde/derive","serde/rc"
 ]
 debug-print = []
 fpu = []
-wasmtime = ["dep:wasmtime", "dep:anyhow"]
-cache-compiled-artifacts = ["dep:directories"]
+wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:futures", "dep:ouroboros"]
+cache-compiled-artifacts = ["wasmtime", "dep:directories"]

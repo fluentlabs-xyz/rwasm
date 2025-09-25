@@ -1,41 +1,16 @@
 use super::{TestDescriptor, TestError, TestProfile, TestSpan};
 use crate::handler::{
-    testing_context_syscall_handler,
-    TestingContext,
-    FUNC_ENTRYPOINT,
-    FUNC_PRINT,
-    FUNC_PRINT_F32,
-    FUNC_PRINT_F64,
-    FUNC_PRINT_I32,
-    FUNC_PRINT_I32_F32,
-    FUNC_PRINT_I64,
-    FUNC_PRINT_I64_F64,
+    testing_context_syscall_handler, TestingContext, FUNC_ENTRYPOINT, FUNC_PRINT, FUNC_PRINT_F32,
+    FUNC_PRINT_F64, FUNC_PRINT_I32, FUNC_PRINT_I32_F32, FUNC_PRINT_I64, FUNC_PRINT_I64_F64,
 };
 use anyhow::Result;
 use rwasm::{
-    instruction_set,
-    split_i64_to_i32_arr,
-    CallStack,
-    CompilationConfig,
-    ExecutorConfig,
-    FuncType,
-    ImportLinker,
-    ImportLinkerEntity,
-    ImportName,
-    InstructionSet,
-    ModuleParser,
-    Opcode,
-    RwasmExecutor,
-    RwasmModule,
-    RwasmStore,
-    StateRouterConfig,
-    Store,
-    ValType,
-    Value,
-    ValueStack,
+    instruction_set, CallStack, CompilationConfig, ExecutionEngine, FuncType, I64ValueSplit,
+    ImportLinker, ImportLinkerEntity, ImportName, InstructionSet, ModuleParser, Opcode,
+    RwasmExecutor, RwasmModule, RwasmStore, StateRouterConfig, Store, ValType, Value, ValueStack,
     F64,
 };
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use wast::token::{Id, Span};
 
 pub struct InstanceInner {
@@ -70,7 +45,7 @@ pub struct TestContext<'a> {
     last_instance: Option<Instance>,
     /// Profiling during the Wasm spec test run.
     profile: TestProfile,
-    import_linker: Rc<ImportLinker>,
+    import_linker: Arc<ImportLinker>,
     /// The descriptor of the test.
     ///
     /// Useful for printing better debug messages in case of failure.
@@ -86,12 +61,12 @@ impl<'a> TestContext<'a> {
             extern_state: Default::default(),
             last_instance: None,
             profile: TestProfile::default(),
-            import_linker: Rc::new(Self::import_linker()),
+            import_linker: Self::create_import_linker(),
             descriptor,
         }
     }
 
-    pub fn import_linker() -> ImportLinker {
+    pub fn create_import_linker() -> Arc<ImportLinker> {
         let block_fuel = instruction_set! {
             .op_i32_const(0)
         };
@@ -103,6 +78,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: InstructionSet::default(),
                     params: &[],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -112,6 +88,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -121,6 +98,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::I32],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -130,6 +108,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::I64],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -139,6 +118,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::F32],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -148,6 +128,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::F64],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -157,6 +138,7 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::I32, ValType::F32],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
             (
@@ -166,9 +148,11 @@ impl<'a> TestContext<'a> {
                     block_fuel: block_fuel.clone(),
                     params: &[ValType::I64, ValType::F64],
                     result: &[],
+                    intrinsic: None,
                 },
             ),
         ])
+        .into()
     }
 }
 
@@ -241,7 +225,7 @@ impl TestContext<'_> {
         println!("{}", rwasm_module);
 
         let mut store = RwasmStore::<TestingContext>::new(
-            ExecutorConfig::default(),
+            ExecutionEngine::acquire_shared(),
             self.import_linker.clone(),
             TestingContext::default(),
             testing_context_syscall_handler,
@@ -361,11 +345,14 @@ impl TestContext<'_> {
             .iter()
             .cloned()
             .flat_map(|v| match v {
-                Value::I64(v) => split_i64_to_i32_arr(v)
+                Value::I64(v) => v
+                    .split_into_i32_array()
                     .into_iter()
                     .map(|v| Value::I32(v))
                     .collect(),
-                Value::F64(v) => split_i64_to_i32_arr(v.to_bits() as i64)
+                Value::F64(v) => v
+                    .to_bits()
+                    .split_into_i32_array()
                     .into_iter()
                     .map(|v| Value::I32(v))
                     .collect(),

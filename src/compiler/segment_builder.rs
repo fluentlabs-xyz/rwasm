@@ -1,22 +1,13 @@
 use crate::{
-    split_i64_to_i32,
-    CompilationError,
-    DataSegmentIdx,
-    ElementSegmentIdx,
-    GlobalIdx,
-    GlobalVariable,
-    InstructionSet,
-    TableIdx,
-    DEFAULT_MEMORY_INDEX,
-    NULL_FUNC_IDX,
-    N_BYTES_PER_MEMORY_PAGE,
-    N_MAX_MEMORY_PAGES,
+    instruction_set, CompilationError, DataSegmentIdx, ElementSegmentIdx, GlobalIdx,
+    GlobalVariable, I64ValueSplit, InstructionSet, TableIdx, DEFAULT_MEMORY_INDEX, NULL_FUNC_IDX,
+    N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES,
 };
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use hashbrown::HashMap;
 use wasmparser::{TableType, ValType};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SegmentBuilder {
     pub(crate) global_memory_section: Vec<u8>,
     pub(crate) memory_sections: HashMap<DataSegmentIdx, (u32, u32)>,
@@ -24,6 +15,29 @@ pub struct SegmentBuilder {
     pub(crate) element_sections: HashMap<ElementSegmentIdx, (u32, u32)>,
     pub(crate) total_allocated_pages: u32,
     pub(crate) entrypoint_bytecode: InstructionSet,
+}
+
+impl Default for SegmentBuilder {
+    fn default() -> Self {
+        let entrypoint_bytecode = instruction_set! {
+            // entrypoint consumes max 3 stack elements during execution, but we should use 5,
+            // because e2e testing suite passes param and state (2)
+            // TODO(dmitry123): "ideally we need to fix the way we calc this"
+            // during the calculation of this stack height we assume that input params have max 1 element
+            // on the stack that is true for e2e testing suite and for fluentbase use cases, but theoretically
+            // the use case with variadic number of params can exist, then we need to take max number
+            // of params per each state config or start function and calc potential max stack height
+            StackCheck(5)
+        };
+        Self {
+            global_memory_section: vec![],
+            memory_sections: Default::default(),
+            global_element_section: vec![],
+            element_sections: Default::default(),
+            total_allocated_pages: 0,
+            entrypoint_bytecode,
+        }
+    }
 }
 
 impl SegmentBuilder {
@@ -38,7 +52,7 @@ impl SegmentBuilder {
                 .entrypoint_bytecode
                 .op_i32_const(global_variable.default_value),
             ValType::I64 | ValType::F64 => {
-                let (lower, upper) = split_i64_to_i32(global_variable.default_value);
+                let (lower, upper) = global_variable.default_value.split_into_i32_tuple();
                 self.entrypoint_bytecode.op_i32_const(lower);
                 self.entrypoint_bytecode.op_i32_const(upper)
             }

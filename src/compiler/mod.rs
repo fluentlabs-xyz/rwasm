@@ -1,13 +1,16 @@
+mod compiled_expr;
 mod config;
 mod control_flow;
 mod drop_keep;
 mod error;
 mod fuel_costs;
 mod func_builder;
+pub mod intrinsic;
 mod labels;
 mod locals_registry;
 mod parser;
 mod segment_builder;
+mod snippets;
 mod translator;
 mod utils;
 mod value_stack;

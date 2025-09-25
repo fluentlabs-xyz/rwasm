@@ -3,10 +3,8 @@ use crate::{
     engine::{
         bytecode,
         bytecode::Instruction,
-        func_builder::{FuncTranslator, FuncTranslatorI32, FuncTranslators},
-        CompiledFunc,
-        DropKeep,
-        FuncTranslatorAllocations,
+        func_builder::{FuncTranslator, FuncTranslators},
+        CompiledFunc, DropKeep, FuncTranslatorAllocations,
     },
     errors::ModuleError,
     module::{ConstExpr, DataSegmentKind, ElementSegmentKind, FuncIdx, ModuleResources},
@@ -29,18 +27,9 @@ impl<'parser> RwasmTranslator<'parser> {
         compiled_func: CompiledFunc,
         res: ModuleResources<'parser>,
         allocations: FuncTranslatorAllocations,
-        i32_translator: bool,
     ) -> Self {
-        let translator = if i32_translator {
-            FuncTranslators::TranslatorI32(FuncTranslatorI32::new(
-                func,
-                compiled_func,
-                res,
-                allocations,
-            ))
-        } else {
-            FuncTranslators::Translator(FuncTranslator::new(func, compiled_func, res, allocations))
-        };
+        let translator =
+            FuncTranslators::Translator(FuncTranslator::new(func, compiled_func, res, allocations));
         Self { translator, res }
     }
 
@@ -63,7 +52,6 @@ impl<'parser> RwasmTranslator<'parser> {
         Ok((
             match self.translator {
                 FuncTranslators::Translator(t) => t.alloc,
-                FuncTranslators::TranslatorI32(t) => t.alloc,
             },
             sys_index,
         ))

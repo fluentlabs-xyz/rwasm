@@ -2,22 +2,8 @@ use crate::{
     core::Trap,
     func::{FuncEntity, HostFuncEntity, HostFuncTrampolineEntity},
     module::{ImportName, ImportType},
-    AsContext,
-    AsContextMut,
-    Caller,
-    Engine,
-    Error,
-    Extern,
-    ExternType,
-    Func,
-    FuncType,
-    GlobalType,
-    InstancePre,
-    IntoFunc,
-    MemoryType,
-    Module,
-    TableType,
-    Value,
+    AsContext, AsContextMut, Caller, Engine, Error, Extern, ExternType, Func, FuncType, GlobalType,
+    InstancePre, IntoFunc, MemoryType, Module, TableType, Value,
 };
 use alloc::{
     collections::{btree_map::Entry, BTreeMap},
@@ -542,11 +528,11 @@ impl<T> Linker<T> {
     /// If there already is a definition under the same name for this [`Linker`].
     ///
     /// [`Store`]: crate::Store
-    pub fn func_wrap<Params, Args, const I32: bool>(
+    pub fn func_wrap<Params, Args>(
         &mut self,
         module: &str,
         name: &str,
-        func: impl IntoFunc<T, Params, Args, I32>,
+        func: impl IntoFunc<T, Params, Args>,
     ) -> Result<&mut Self, LinkerError> {
         let func = HostFuncTrampolineEntity::wrap(&self.engine, func);
         let key = self.import_key(module, name);
@@ -764,7 +750,7 @@ mod tests {
             .func_new(
                 "host",
                 "get_a",
-                FuncType::new::<_, _, false>([], [ValueType::I32]),
+                FuncType::new::<_, _>([], [ValueType::I32]),
                 |ctx: Caller<HostState>, _params: &[Value], results: &mut [Value]| {
                     results[0] = Value::from(ctx.data().a);
                     Ok(())
@@ -775,7 +761,7 @@ mod tests {
             .func_new(
                 "host",
                 "set_a",
-                FuncType::new::<_, _, false>([ValueType::I32], []),
+                FuncType::new::<_, _>([ValueType::I32], []),
                 |mut ctx: Caller<HostState>, params: &[Value], _results: &mut [Value]| {
                     ctx.data_mut().a = params[0].i32().unwrap();
                     Ok(())
@@ -783,10 +769,10 @@ mod tests {
             )
             .unwrap();
         linker
-            .func_wrap::<_, _, false>("host", "get_b", |ctx: Caller<HostState>| ctx.data().b)
+            .func_wrap::<_, _>("host", "get_b", |ctx: Caller<HostState>| ctx.data().b)
             .unwrap();
         linker
-            .func_wrap::<_, _, false>("host", "set_b", |mut ctx: Caller<HostState>, value: i64| {
+            .func_wrap::<_, _>("host", "set_b", |mut ctx: Caller<HostState>, value: i64| {
                 ctx.data_mut().b = value
             })
             .unwrap();

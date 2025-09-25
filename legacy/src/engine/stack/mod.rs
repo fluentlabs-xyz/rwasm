@@ -9,9 +9,7 @@ use crate::{
     core::{Trap, TrapCode},
     engine::{code_map::CodeMap, func_types::FuncTypeRegistry, FuncParams},
     func::{HostFuncEntity, WasmFuncEntity},
-    AsContext,
-    Instance,
-    StoreContextMut,
+    AsContext, Instance, StoreContextMut,
 };
 use core::fmt::{self, Display};
 
@@ -198,8 +196,6 @@ impl Stack {
             self.values.peek_as_slice_mut(max_inout),
             len_inputs,
             len_outputs,
-            func_type.origin_params().to_vec(),
-            func_type.origin_results().to_vec(),
         );
         // Now we are ready to perform the host function call.
         // Note: We need to clone the host function due to some borrowing issues.

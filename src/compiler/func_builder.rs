@@ -1,17 +1,9 @@
 use crate::{
     compiler::translator::{FuncTranslatorAllocations, InstructionTranslator, ReusableAllocations},
-    CompilationError,
-    FuelCosts,
-    FuncIdx,
+    CompilationError, FuelCosts, FuncIdx,
 };
-use core::mem::take;
 use wasmparser::{
-    BinaryReaderError,
-    FuncValidator,
-    FunctionBody,
-    ValType,
-    ValidatorResources,
-    VisitOperator,
+    BinaryReaderError, FuncValidator, FunctionBody, ValType, ValidatorResources, VisitOperator,
 };
 
 pub struct FuncBuilder<'a> {
@@ -42,14 +34,13 @@ impl<'a> FuncBuilder<'a> {
     pub fn translate(mut self) -> Result<ReusableAllocations, CompilationError> {
         self.translator.prepare(self.func_idx)?;
         // emit special opcodes before the beginning of the function
-        self.translate_signature_check();
         self.translate_stack_alloc();
         self.translate_locals()?;
         let offset = self.translate_operators()?;
         self.validator.finish(offset)?;
         self.translator.finish()?;
         Ok(ReusableAllocations {
-            translation: take(&mut self.translator.alloc),
+            translation: self.translator.alloc,
             validation: self.validator.into_allocations(),
         })
     }
@@ -92,18 +83,6 @@ impl<'a> FuncBuilder<'a> {
         self.translator
             .bump_fuel_consumption(|| FuelCosts::fuel_for_locals(validated_locals))?;
         Ok(())
-    }
-
-    fn translate_signature_check(&mut self) {
-        let func_type_idx = self.translator.alloc.resolve_func_type_index(self.func_idx);
-        let signature_index = self
-            .translator
-            .alloc
-            .resolve_func_type_signature(func_type_idx);
-        self.translator
-            .alloc
-            .instruction_set
-            .op_signature_check(signature_index);
     }
 
     fn translate_stack_alloc(&mut self) {

@@ -8,63 +8,16 @@ mod system;
 mod table;
 
 use crate::{
-    mem_index::UNIT,
-    types::{AddressOffset, RwasmModule, TableIdx, UntypedValue},
-    CallStack,
-    InstructionPtr,
-    Opcode,
-    RwasmCaller,
-    RwasmStore,
-    SysFuncIdx,
-    TrapCode,
-    TypedCaller,
-    Value,
-    ValueStack,
-    ValueStackPtr,
+  
+    types::{AddressOffset, TableIdx, UntypedValue},
+    CallStack, InstructionPtr, Opcode, RwasmCaller, RwasmModule, RwasmStore, SysFuncIdx, TrapCode,
+    TypedCaller, Value, ValueStack, ValueStackPtr,
 };
 use smallvec::SmallVec;
 
 /// The `RwasmExecutor` struct is a foundational component for executing WebAssembly modules
 /// in the `rwasm` runtime environment. It acts as the primary execution object, coordinating
 /// the state and execution flow of a WebAssembly module.
-///
-/// # Type Parameters
-/// - `'a`: A lifetime tied to borrowed references within the executor, ensuring the validity of
-///   borrowed objects during execution.
-/// - `T`: A generic parameter that must implement the `Send` and `Sync` traits. This allows
-///   multithreaded access and mutable operations on the WASM store.
-///
-/// # Fields
-/// - `module` (`&'a RwasmModule`): A reference to the rWasm module being executed. This contains
-///   the compiled function definitions, memory, and other runtime components for execution.
-///
-/// - `value_stack` (`&'a mut ValueStack`): A mutable reference to the value stack, which is used
-///   during execution to store intermediate values, operand results, and function return values.
-///
-/// - `sp` (`ValueStackPtr`): A pointer to the current position in the value stack. This tracks the
-///   stack pointer (SP) for operand and value management during execution.
-///
-/// - `call_stack` (`&'a mut CallStack`): A mutable reference to the call stack, which is
-///   responsible for managing the function call/return frames to track execution flow across nested
-///   function calls.
-///
-/// - `ip` (`InstructionPtr`): The instruction pointer representing the location of the current
-///   instruction in the execution sequence of the WebAssembly module.
-///
-/// - `store` (`&'a mut RwasmStore<T>`): A mutable reference to the runtime store which maintains
-///   memory, global variables, and another runtime state for the execution context. The store also
-///   allows external data of the type `T` to be integrated with the WebAssembly instance.
-///
-/// # Usage
-/// The `RwasmExecutor` is typically constructed internally by the runtime and should be
-/// used to step through execution of instructions within a WebAssembly module.
-/// It provides internal access to the runtime's data structures for fine-grained
-/// control over WebAssembly execution.
-///
-/// # Thread Safety
-/// The `Send` and `Sync` constraints on `T` ensure that the executor's associated runtime
-/// store is safe for concurrent mutation and multithreaded execution scenarios, as
-/// required by the WebAssembly specification's concurrency guarantees.
 pub struct RwasmExecutor<'a, T: Send + Sync + 'static> {
     pub(crate) module: &'a RwasmModule,
     pub(crate) value_stack: &'a mut ValueStack,
@@ -151,6 +104,8 @@ macro_rules! exec_opcode {
         I32WrapI64 => $self.visit_i32_wrap_i64(),
         I32Extend8S => $self.visit_i32_extend8_s(),
         I32Extend16S => $self.visit_i32_extend16_s(),
+        I32Mul64 => $self.visit_i32_mul64(),
+        I32Add64 => $self.visit_i32_add64(),
 
         // memory
         MemorySize => $self.visit_memory_size(),
@@ -192,7 +147,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         store: &'a mut RwasmStore<T>,
     ) -> Self {
         let sp = value_stack.stack_ptr();
-        let ip = InstructionPtr::new(module.code_section.instr.as_ptr());
+        let ip = InstructionPtr::new(module.code_section.as_ptr());
         Self::new(module, value_stack, sp, call_stack, ip, store)
     }
 
@@ -228,8 +183,15 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     }
 
     pub fn program_counter(&self) -> u32 {
-        let diff = self.ip.ptr as u32 - self.module.code_section.instr.as_ptr() as u32;
-        diff / size_of::<Opcode>() as u32
+        let diff = self.ip.ptr as i32 - self.module.code_section.as_ptr() as i32;
+        if diff < 0 {
+            unreachable!(
+                "program counter negative: diff={diff}, ip={:?}, base={:?}",
+                self.ip,
+                self.module.code_section.as_ptr()
+            );
+        }
+        (diff as u32) / size_of::<Opcode>() as u32
     }
 
     pub fn run(&mut self, params: &[Value], result: &mut [Value]) -> Result<(), TrapCode> {
@@ -238,7 +200,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             self.sp.push_value(x);
         }
         // run the loop
-        let status = self.run_the_loop(params, result);
+        let status = self.run_the_loop();
         // trap halts the execution, we need to clear the stack
         if let Some(trap_code) = status.err() {
             // clear stack only for non-interrupted calls
@@ -266,7 +228,39 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         Ok(())
     }
 
-    fn run_the_loop(&mut self, params: &[Value], result: &mut [Value]) -> Result<(), TrapCode> {
+    pub fn run_with_stack_check(&mut self) -> Result<(), TrapCode> {
+        // run the loop
+        let status = loop {
+            let instr = self.ip.get();
+            #[cfg(feature = "debug-print")]
+            self.debug_print(&instr);
+            exec_opcode!(self, instr, break Ok(()));
+            self.value_stack.check_max_stack_height(self.sp);
+        };
+        // trap halts the execution, we need to clear the stack
+        if let Some(trap_code) = status.err() {
+            // clear stack only for non-interrupted calls
+            if trap_code != TrapCode::InterruptionCalled {
+                // TODO(dmitry123): "do we also need to reset store flags?"
+                self.call_stack.reset();
+            }
+            // forward the error
+            return Err(trap_code);
+        }
+        self.value_stack.sync_stack_ptr(self.sp);
+        // execution is over, clear stacks
+        // TODO(dmitry123): "enable this check after refactoring tests"
+        // debug_assert_eq!(
+        //     self.value_stack.stack_len(self.sp),
+        //     0,
+        //     "after execution the value stack must be empty"
+        // );
+        // we must reset the call stack in case of traps inside nested calls
+        self.call_stack.reset();
+        Ok(())
+    }
+
+    fn run_the_loop(&mut self) -> Result<(), TrapCode> {
         loop {
             let instr = self.ip.get();
             #[cfg(feature = "debug-print")]
@@ -297,7 +291,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         }
         if !self
             .ip
-            .is_valid((self.module.code_section.instr.last().unwrap()) as *const Opcode as u64)
+            .is_valid((*self.module.code_section).last().unwrap() as *const Opcode as u64)
         {
             return (Err(TrapCode::UnreachableCodeReached), self.ip, self.sp);
         };
@@ -360,7 +354,8 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     fn trace_instr_post(&mut self, instr: &Opcode, trap_code: Option<TrapCode>) {
         let sp = self.sp.to_relative_address();
         let pc = self.program_counter();
-        let stack = self.value_stack.dump_stack(self.sp);
+        self.value_stack.sync_stack_ptr(self.sp);
+        let stack = self.value_stack.dump_stack();
         let op_state = self.store.tracer.logs.last_mut().unwrap();
         op_state.next_pc = pc;
         op_state.next_sp = sp;
@@ -373,23 +368,30 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "tracing")]
     pub fn relative_ip(self) -> isize {
-        self.ip.to_offset(self.module.code_section.instr.as_ptr())
+        self.ip.to_offset(self.module.code_section.as_ptr())
     }
 
     #[cfg(feature = "debug-print")]
     fn debug_print(&mut self, instr: &Opcode) {
-        let stack = self.value_stack.dump_stack(self.sp);
-        println!(
-            "{:04}:\t {} \tstack({}):{:?}",
+        self.value_stack.sync_stack_ptr(self.sp);
+        print!(
+            "{:04}:\t {} \tstack_len={}, stack_cap={}, ",
             self.program_counter(),
             instr,
-            stack.len(),
-            stack
+            self.value_stack.len(),
+            self.value_stack.capacity(),
+        );
+        use std::io::Write;
+        std::io::stdout().flush().unwrap();
+        println!(
+            "stack={:?}",
+            self.value_stack
+                .dump_stack()
                 .iter()
                 .rev()
                 .take(10)
                 .map(|v| v.as_usize())
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
         );
     }
 
@@ -441,7 +443,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         }
         #[cfg(feature = "tracing")]
         {
-            use crate::{align, is_multi_align, mem::MemoryRecordEnum, mem_index::AddressType};
+            use crate::{align, is_multi_align, mem::MemoryRecordEnum, mem_index::{AddressType, UNIT}};
             let (address, value) = self.sp.pop2();
             println!("base_addrss:{},value:{}", address, value);
             let memory = self.store.global_memory.data_mut();
@@ -513,7 +515,9 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let params_len = params.len();
         let result_len = result.len();
         let max_in_out = params_len.max(result_len);
+        self.value_stack.sync_stack_ptr(self.sp);
         self.value_stack.reserve(max_in_out)?;
+        self.sp = self.value_stack.stack_ptr();
         let mut buffer = SmallVec::<[Value; 16]>::default();
         buffer.resize(params.len() + result.len(), Value::I32(0));
         for (i, x) in params.iter().enumerate() {

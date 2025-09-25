@@ -16,11 +16,7 @@ pub use self::{
 };
 use super::{
     engine::{CompiledFunc, DedupFuncType, FuncFinished, FuncParams},
-    AsContext,
-    AsContextMut,
-    Instance,
-    StoreContext,
-    Stored,
+    AsContext, AsContextMut, Instance, StoreContext, Stored,
 };
 use crate::{arena::ArenaIndex, core::Trap, engine::ResumableCall, Engine, Error, Value};
 use alloc::{boxed::Box, sync::Arc};
@@ -225,10 +221,7 @@ impl<T> HostFuncTrampolineEntity<T> {
     }
 
     /// Creates a new host function trampoline from the given statically typed closure.
-    pub fn wrap<Params, Results, const I32: bool>(
-        engine: &Engine,
-        func: impl IntoFunc<T, Params, Results, I32>,
-    ) -> Self {
+    pub fn wrap<Params, Results>(engine: &Engine, func: impl IntoFunc<T, Params, Results>) -> Self {
         let (signature, trampoline) = func.into_func();
         let ty = engine.alloc_func_type(signature);
         Self { ty, trampoline }
@@ -347,9 +340,9 @@ impl Func {
     }
 
     /// Creates a new host function from the given closure.
-    pub fn wrap<T, Params, Results, const I32: bool>(
+    pub fn wrap<T, Params, Results>(
         mut ctx: impl AsContextMut<UserState = T>,
-        func: impl IntoFunc<T, Params, Results, I32>,
+        func: impl IntoFunc<T, Params, Results>,
     ) -> Self {
         let engine = ctx.as_context().store.engine();
         let host_func = HostFuncTrampolineEntity::wrap(engine, func);

@@ -1,3 +1,4 @@
+use rand::Rng;
 /// |-----------------------|---------|
 /// | Opcode                | Covered |
 /// |-----------------------|---------|
@@ -51,60 +52,90 @@
 /// | op_i64_rem_u          |         |
 /// |-----------------------|---------|
 use rwasm::{
-    CallStack,
-    InstructionSet,
-    RwasmExecutor,
-    RwasmModule,
-    RwasmStore,
-    TrapCode,
-    ValueStack,
+    CallStack, CompilationConfig, ExecutionEngine, InstructionSet, RwasmExecutor, RwasmModule,
+    RwasmStore, TrapCode, Value, ValueStack,
 };
-use std::ops::{BitAnd, BitOr, BitXor, Shl, Shr};
+use std::{
+    fmt::Debug,
+    ops::{BitAnd, BitOr, BitXor, Shl, Shr},
+};
 
-fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Result<Vec<u32>, TrapCode> {
+fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Result<(Vec<u32>, u32), TrapCode> {
     is.op_return();
     let rwasm_module = RwasmModule::with_one_function(is);
     let mut value_stack = ValueStack::default();
+    assert_eq!(value_stack.max_stack_height(), 0);
+    value_stack.reserve(10)?;
     let mut call_stack = CallStack::default();
     let mut store = RwasmStore::<()>::default();
+    let inputs_len = inputs.len();
     for i in inputs {
         value_stack.push(i.into());
     }
     let mut executor =
         RwasmExecutor::entrypoint(&rwasm_module, &mut value_stack, &mut call_stack, &mut store);
-    executor.run(&[], &mut [])?;
+    executor.run_with_stack_check()?;
     let output = value_stack
         .as_slice()
         .iter()
         .map(|v| v.as_u32())
         .collect::<Vec<_>>();
-    Ok(output)
+    let msh = value_stack.max_stack_height() - inputs_len;
+    Ok((output, msh as u32))
 }
 
-fn run_binary_test_case(is: &InstructionSet, a: u64, b: u64, c: u64) -> Result<(), TrapCode> {
-    let output = run_vm_instr(
+fn run_binary_test_case(
+    is: &InstructionSet,
+    a: u64,
+    b: u64,
+    c: u64,
+    msh_allowed: u32,
+) -> Result<(), TrapCode> {
+    let (output, max_stack_height) = run_vm_instr(
         is.clone(),
         vec![a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32],
     )?;
     assert_eq!(output.len(), 2);
     let r = (output[1] as u64) << 32 | output[0] as u64;
-    assert_eq!(c, r);
+    assert_eq!(c, r, "f({a}, {b})={r}, but expected {c}");
+    assert!(
+        max_stack_height <= msh_allowed,
+        "MSH: {max_stack_height} <= {msh_allowed}"
+    );
     Ok(())
 }
 
-fn run_unary_test_case(is: &InstructionSet, a: u64, c: u64) -> Result<(), TrapCode> {
-    let output = run_vm_instr(is.clone(), vec![a as u32, (a >> 32) as u32])?;
+fn run_unary_test_case(
+    is: &InstructionSet,
+    a: u64,
+    c: u64,
+    msh_allowed: u32,
+) -> Result<(), TrapCode> {
+    let (output, max_stack_height) = run_vm_instr(is.clone(), vec![a as u32, (a >> 32) as u32])?;
     assert_eq!(output.len(), 2);
     let r = (output[1] as u64) << 32 | output[0] as u64;
     assert_eq!(c, r);
+    assert!(
+        max_stack_height <= msh_allowed,
+        "MSH: {max_stack_height} <= {msh_allowed}"
+    );
     Ok(())
 }
 
-fn run_cmp_test_case(is: &InstructionSet, a: u64, c: u32) -> Result<(), TrapCode> {
-    let output = run_vm_instr(is.clone(), vec![a as u32, (a >> 32) as u32])?;
+fn run_cmp_test_case(
+    is: &InstructionSet,
+    a: u64,
+    c: u32,
+    msh_allowed: u32,
+) -> Result<(), TrapCode> {
+    let (output, max_stack_height) = run_vm_instr(is.clone(), vec![a as u32, (a >> 32) as u32])?;
     assert_eq!(output.len(), 1);
     let r = output[0];
     assert_eq!(c, r);
+    assert!(
+        max_stack_height <= msh_allowed,
+        "MSH: {max_stack_height} <= {msh_allowed}"
+    );
     Ok(())
 }
 
@@ -113,10 +144,11 @@ fn test_i64_const() {
     let test_case_u64 = |a: i64| {
         let mut is = InstructionSet::new();
         is.op_i64_const(a);
-        let output = run_vm_instr(is.clone(), vec![]).unwrap();
+        let (output, max_stack_height) = run_vm_instr(is.clone(), vec![]).unwrap();
         assert_eq!(output.len(), 2);
         let r = (output[1] as u64) << 32 | output[0] as u64;
         assert_eq!(a, r as i64);
+        assert!(max_stack_height <= InstructionSet::MSH_I64_CONST);
     };
 
     test_case_u64(0); // zero
@@ -141,15 +173,23 @@ fn test_i64_mul() {
 
     let test_case_u64 = |a: u64, b: u64| {
         let c = a.wrapping_mul(b);
-        run_binary_test_case(&is, a, b, c).unwrap();
+        run_binary_test_case(&is, a, b, c, InstructionSet::MSH_I64_MUL).unwrap();
     };
 
     let test_case_i64 = |a: i64, b: i64| {
         let c = a.wrapping_mul(b);
-        run_binary_test_case(&is, a as u64, b as u64, c as u64).unwrap();
+        run_binary_test_case(
+            &is,
+            a as u64,
+            b as u64,
+            c as u64,
+            InstructionSet::MSH_I64_MUL,
+        )
+        .unwrap();
     };
 
     // u64 test cases
+    test_case_u64(15, 71);
     test_case_u64(0x0000_0000_0000_0000, 0x0000_0000_0000_0000); // 0 × 0
     test_case_u64(0x0000_0000_0000_0000, 0x0000_0000_075B_CD15); // 0 × n
     test_case_u64(0x0000_0000_0000_0001, 0xFFFF_FFFF_FFFF_FFFF); // 1 × max
@@ -172,6 +212,12 @@ fn test_i64_mul() {
     test_case_i64(-81_985_529_216_486_895, 538_030_035_483_195_255); // mixed signs, dense
     test_case_i64(-81_985_529_216_486_895, -538_030_035_483_195_255); // neg × neg → pos
     test_case_i64(81_985_529_216_486_895, -81_985_529_216_486_895); // pos × neg
+
+    pairwise_fuzzing_test(test_case_u64, generate_random_numbers(30));
+    pairwise_fuzzing_test(
+        test_case_i64,
+        generate_random_numbers(30).iter().map(|v| *v as i64),
+    );
 }
 
 #[test]
@@ -181,7 +227,7 @@ fn test_i64_eqz() {
 
     let test_case_u64 = |a: u64| {
         let c = (a == 0) as u32;
-        run_cmp_test_case(&is, a, c).unwrap();
+        run_cmp_test_case(&is, a, c, InstructionSet::MSH_I64_EQZ).unwrap();
     };
 
     test_case_u64(0x0000_0000_0000_0000); // zero
@@ -213,7 +259,7 @@ fn test_i64_sub() {
 
     let test_case_u64 = |a: u64, b: u64| {
         let c = a.wrapping_sub(b);
-        run_binary_test_case(&is, a, b, c).unwrap();
+        run_binary_test_case(&is, a, b, c, InstructionSet::MSH_I64_SUB).unwrap();
     };
 
     test_case_u64(0, 0); // 0 - 0 = 0
@@ -239,7 +285,7 @@ fn test_i64_le_u() {
 
     let test_case_u64 = |a: u64, b: u64| {
         let c = (a <= b) as u64;
-        let output = run_vm_instr(
+        let (output, msh) = run_vm_instr(
             is.clone(),
             vec![a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32],
         )
@@ -247,6 +293,7 @@ fn test_i64_le_u() {
         assert_eq!(output.len(), 1);
         let r = output[0] as u64;
         assert_eq!(c, r);
+        assert!(msh <= InstructionSet::MSH_I64_LE_U);
     };
 
     // test_case_u64(0, 0); // 0 - 0 = 0
@@ -272,7 +319,7 @@ fn test_i64_add() {
 
     let test_case_u64 = |a: u64, b: u64| {
         let c = a.wrapping_add(b);
-        run_binary_test_case(&is, a, b, c).unwrap();
+        run_binary_test_case(&is, a, b, c, InstructionSet::MSH_I64_ADD).unwrap();
     };
 
     test_case_u64(0, 0); // 0 - 0 = 0
@@ -289,6 +336,8 @@ fn test_i64_add() {
     test_case_u64(0x1234_5678_9ABC_DEF0, 0x1111_1111_1111_1111);
     test_case_u64(0, u64::MAX); // 0 - max = 1 (wrap)
     test_case_u64(0xDEAD_BEEF_DEAD_BEEF, 0xCAFEBABE_CAFEBABE);
+
+    pairwise_fuzzing_test(test_case_u64, generate_random_numbers(30));
 }
 
 #[test]
@@ -298,11 +347,25 @@ fn test_i64_div_s() {
 
     let test_case_i64 = |a: i64, b: i64| {
         let c = a.wrapping_div(b);
-        run_binary_test_case(&is, a as u64, b as u64, c as u64).unwrap();
+        run_binary_test_case(
+            &is,
+            a as u64,
+            b as u64,
+            c as u64,
+            InstructionSet::MSH_I64_DIV_S,
+        )
+        .unwrap();
     };
     let test_case_i64_trap = |a: i64, b: i64, trap_code: TrapCode| {
         assert_eq!(
-            run_binary_test_case(&is, a as u64, b as u64, u64::MAX).unwrap_err(),
+            run_binary_test_case(
+                &is,
+                a as u64,
+                b as u64,
+                u64::MAX,
+                InstructionSet::MSH_I64_DIV_S,
+            )
+            .unwrap_err(),
             trap_code
         );
     };
@@ -350,11 +413,11 @@ fn test_i64_div_u() {
 
     let test_case_i64 = |a: u64, b: u64| {
         let c = a.wrapping_div(b);
-        run_binary_test_case(&is, a, b, c).unwrap();
+        run_binary_test_case(&is, a, b, c, InstructionSet::MSH_I64_DIV_U).unwrap();
     };
     let test_case_i64_trap = |a: u64, b: u64, trap_code: TrapCode| {
         assert_eq!(
-            run_binary_test_case(&is, a, b, u64::MAX).unwrap_err(),
+            run_binary_test_case(&is, a, b, u64::MAX, InstructionSet::MSH_I64_DIV_U).unwrap_err(),
             trap_code
         );
     };
@@ -387,11 +450,25 @@ fn test_i64_rem_s() {
 
     let test_case_i64 = |a: i64, b: i64| {
         let c = a.wrapping_rem(b);
-        run_binary_test_case(&is, a as u64, b as u64, c as u64).unwrap();
+        run_binary_test_case(
+            &is,
+            a as u64,
+            b as u64,
+            c as u64,
+            InstructionSet::MSH_I64_REM_S,
+        )
+        .unwrap();
     };
     let test_case_i64_trap = |a: i64, b: i64, trap_code: TrapCode| {
         assert_eq!(
-            run_binary_test_case(&is, a as u64, b as u64, u64::MAX).unwrap_err(),
+            run_binary_test_case(
+                &is,
+                a as u64,
+                b as u64,
+                u64::MAX,
+                InstructionSet::MSH_I64_REM_S
+            )
+            .unwrap_err(),
             trap_code
         );
     };
@@ -421,11 +498,11 @@ fn test_i64_rem_u() {
 
     let test_case_i64 = |a: u64, b: u64| {
         let c = a.wrapping_rem(b);
-        run_binary_test_case(&is, a, b, c).unwrap();
+        run_binary_test_case(&is, a, b, c, InstructionSet::MSH_I64_REM_U).unwrap();
     };
     let test_case_i64_trap = |a: u64, b: u64, trap_code: TrapCode| {
         assert_eq!(
-            run_binary_test_case(&is, a, b, u64::MAX).unwrap_err(),
+            run_binary_test_case(&is, a, b, u64::MAX, InstructionSet::MSH_I64_REM_U).unwrap_err(),
             trap_code
         );
     };
@@ -456,7 +533,7 @@ fn test_i64_shr_u() {
 
     let test_case_u64 = |a: u64, b: u64| {
         let c = a.shr(b & 0x3F);
-        run_binary_test_case(&is, a, b, c).unwrap();
+        run_binary_test_case(&is, a, b, c, InstructionSet::MSH_I64_SHR_U).unwrap();
     };
 
     // 0 shifted by any amount
@@ -489,7 +566,14 @@ fn test_i64_shr_s() {
 
     let test_case_i64 = |a: i64, b: i64| {
         let c = a.shr(b & 0x3F);
-        run_binary_test_case(&is, a as u64, b as u64, c as u64).unwrap();
+        run_binary_test_case(
+            &is,
+            a as u64,
+            b as u64,
+            c as u64,
+            InstructionSet::MSH_I64_SHR_S,
+        )
+        .unwrap();
     };
 
     // no shift, value unchanged
@@ -543,7 +627,7 @@ fn test_i64_shl() {
 
     let test_case_u64 = |a: u64, b: u64| {
         let c = a.shl(b & 0x3F);
-        run_binary_test_case(&is, a, b, c).unwrap();
+        run_binary_test_case(&is, a, b, c, InstructionSet::MSH_I64_SHL).unwrap();
     };
 
     // no shift: identity
@@ -594,7 +678,7 @@ fn test_i64_clz() {
 
     let test_case_u64 = |a: u64| {
         let c = a.leading_zeros() as u64;
-        run_unary_test_case(&is, a, c).unwrap();
+        run_unary_test_case(&is, a, c, InstructionSet::MSH_I64_CLZ).unwrap();
     };
 
     test_case_u64(0x00000000_00000000);
@@ -617,7 +701,7 @@ fn test_i64_ctz() {
 
     let test_case_u64 = |a: u64| {
         let c = a.trailing_zeros() as u64;
-        run_unary_test_case(&is, a, c).unwrap();
+        run_unary_test_case(&is, a, c, InstructionSet::MSH_I64_CTZ).unwrap();
     };
 
     test_case_u64(0x00000000_00000000);
@@ -640,7 +724,7 @@ fn test_i64_popcnt() {
 
     let test_case_u64 = |a: u64| {
         let c = a.count_ones() as u64;
-        run_unary_test_case(&is, a, c).unwrap();
+        run_unary_test_case(&is, a, c, InstructionSet::MSH_I64_POPCNT).unwrap();
     };
 
     test_case_u64(0x12345678_9ABCDEF0);
@@ -668,7 +752,7 @@ fn test_i64_and() {
 
     let test_case_u64 = |a: u64, b: u64| {
         let c = a.bitand(b);
-        run_binary_test_case(&is, a, b, c).unwrap();
+        run_binary_test_case(&is, a, b, c, InstructionSet::MSH_I64_AND).unwrap();
     };
 
     // zero and anything are zero
@@ -714,7 +798,7 @@ fn test_i64_or() {
 
     let test_case_u64 = |a: u64, b: u64| {
         let c = a.bitor(b);
-        run_binary_test_case(&is, a, b, c).unwrap();
+        run_binary_test_case(&is, a, b, c, InstructionSet::MSH_I64_OR).unwrap();
     };
 
     // zero and anything are zero
@@ -760,7 +844,7 @@ fn test_i64_xor() {
 
     let test_case_u64 = |a: u64, b: u64| {
         let c = a.bitxor(b);
-        run_binary_test_case(&is, a, b, c).unwrap();
+        run_binary_test_case(&is, a, b, c, InstructionSet::MSH_I64_XOR).unwrap();
     };
 
     // zero and anything are zero
@@ -806,7 +890,7 @@ fn test_i64_rotl() {
 
     let test_case_u64 = |a: u64, b: u64| {
         let c = a.rotate_left(u32::try_from(b).unwrap());
-        run_binary_test_case(&is, a, b, c).unwrap();
+        run_binary_test_case(&is, a, b, c, InstructionSet::MSH_I64_ROTL).unwrap();
     };
 
     // No rotation: value unchanged
@@ -850,7 +934,7 @@ fn test_i64_rotr() {
 
     let test_case_u64 = |a: u64, b: u64| {
         let c = a.rotate_right(u32::try_from(b).unwrap());
-        run_binary_test_case(&is, a, b, c).unwrap();
+        run_binary_test_case(&is, a, b, c, InstructionSet::MSH_I64_ROTR).unwrap();
     };
 
     // No rotation: value unchanged
@@ -892,10 +976,15 @@ fn test_i64_extend_i32_s() {
     let mut is = InstructionSet::new();
     is.op_i64_extend_i32_s();
     let test_case = |a: i32, c_lo: i32, c_hi: i32| {
-        let output = run_vm_instr(is.clone(), vec![a as u32]).unwrap();
+        let (output, msh) = run_vm_instr(is.clone(), vec![a as u32]).unwrap();
         assert_eq!(output.len(), 2);
         assert_eq!(output[0], c_lo as u32);
         assert_eq!(output[1], c_hi as u32);
+        assert!(
+            msh <= InstructionSet::MSH_I64_EXTEND_I32_S,
+            "MSH: {msh} <= {}",
+            InstructionSet::MSH_I64_EXTEND_I32_S
+        )
     };
     // simple cases
     test_case(0, 0, 0);
@@ -918,10 +1007,11 @@ fn test_i64_extend8_s() {
     let mut is = InstructionSet::new();
     is.op_i64_extend8_s();
     let test_case = |a: i32, c_lo: i32, c_hi: i32| {
-        let output = run_vm_instr(is.clone(), vec![a as u32 & 0xff, 0]).unwrap();
+        let (output, msh) = run_vm_instr(is.clone(), vec![a as u32 & 0xff, 0]).unwrap();
         assert_eq!(output.len(), 2);
         assert_eq!(output[0], c_lo as u32);
         assert_eq!(output[1], c_hi as u32);
+        assert!(msh <= InstructionSet::MSH_I64_EXTEND8_S)
     };
     test_case(0x00, 0x00, 0); // 0 → [0, 0]
     test_case(0x01, 0x01, 0); // 1 → [1, 0]
@@ -939,10 +1029,11 @@ fn test_i64_extend16_s() {
     let mut is = InstructionSet::new();
     is.op_i64_extend16_s();
     let test_case = |a: i32, c_lo: i32, c_hi: i32| {
-        let output = run_vm_instr(is.clone(), vec![a as u32 & 0xffff, 0]).unwrap();
+        let (output, msh) = run_vm_instr(is.clone(), vec![a as u32 & 0xffff, 0]).unwrap();
         assert_eq!(output.len(), 2);
         assert_eq!(output[0], c_lo as u32);
         assert_eq!(output[1], c_hi as u32);
+        assert!(msh <= InstructionSet::MSH_I64_EXTEND16_S)
     };
     test_case(0x0000, 0x0000, 0); // 0 → [0, 0]
     test_case(0x0001, 0x0001, 0); // 1 → [1, 0]
@@ -961,10 +1052,11 @@ fn test_i64_extend32_s() {
     is.op_i64_extend32_s();
     let test_case = |a: i64, c_lo: i64, c_hi: i64| {
         let a = a as i32;
-        let output = run_vm_instr(is.clone(), vec![a as u32, 0]).unwrap();
+        let (output, msh) = run_vm_instr(is.clone(), vec![a as u32, 0]).unwrap();
         assert_eq!(output.len(), 2);
         assert_eq!(output[0], c_lo as i32 as u32);
         assert_eq!(output[1], c_hi as i32 as u32);
+        assert!(msh <= InstructionSet::MSH_I64_EXTEND32_S)
     };
     test_case(0x00000000, 0x00000000, 0); // 0 → [0, 0]
     test_case(0x00000001, 0x00000001, 0); // 1 → [1, 0]
@@ -980,8 +1072,295 @@ fn test_i64_extend32_s() {
 fn test_swap() {
     let mut is = InstructionSet::new();
     is.op_swap();
-    let output = run_vm_instr(is.clone(), vec![100, 200]).unwrap();
+    let (output, _) = run_vm_instr(is.clone(), vec![100, 200]).unwrap();
     assert_eq!(output.len(), 2);
     assert_eq!(output[0], 200);
     assert_eq!(output[1], 100);
+}
+
+/// Generates a set of random numbers near points of interest,
+/// such as [0, 1, -1, i32::MIN, i32::MAX, u64::MAX, ...]
+fn generate_random_numbers(n: usize) -> Vec<u64> {
+    let mut rng = rand::rng();
+    const I32_MAX_I64: i64 = i32::MAX as i64;
+    const I32_MIN_I64: i64 = i32::MIN as i64;
+    const U32_MAX_U64: u64 = u32::MAX as u64;
+
+    let mut v = Vec::new();
+
+    // 1. Very small values
+    for k in 0..=5 {
+        v.push(k);
+        if k != 0 {
+            v.push(k * -1);
+        }
+    }
+
+    // 2. Small values
+    for _ in 0..n {
+        v.push(rng.random_range(0..1000));
+        v.push(rng.random_range(0..1000) * -1);
+    }
+
+    // 3. Big random values
+    for _ in 0..n {
+        v.push(rng.random());
+    }
+
+    // 4. Near i32::MAX
+    {
+        // just below
+        let low = I32_MAX_I64 - 1_000;
+        let high = I32_MAX_I64 - 2;
+        for _ in 0..n / 2 {
+            v.push(rng.random_range(low..=high));
+        }
+        // the “‑1, exact, +1” trio
+        v.push(I32_MAX_I64 - 1);
+        v.push(I32_MAX_I64);
+        v.push(I32_MAX_I64 + 1);
+        // just above
+        let low = I32_MAX_I64 + 1;
+        let high = I32_MAX_I64 + 1_000;
+        for _ in 0..n / 2 {
+            v.push(rng.random_range(low..=high));
+        }
+    }
+
+    // 5. Near  i32::MIN
+    {
+        // just below
+        let low = I32_MIN_I64 - 1_000;
+        let high = I32_MIN_I64;
+        for _ in 0..n / 2 {
+            v.push(rng.random_range(low..=high));
+        }
+        // the “‑1, exact, +1” trio
+        v.push(I32_MIN_I64 - 1);
+        v.push(I32_MIN_I64);
+        v.push(I32_MIN_I64 + 1);
+        // just above
+        let low = I32_MIN_I64;
+        let high = I32_MIN_I64 + 1_000;
+        for _ in 0..n / 2 {
+            v.push(rng.random_range(low..=high));
+        }
+    }
+
+    // 6. Near i64::MAX
+    {
+        let low = i64::MAX - 1_000;
+        let high = i64::MAX - 2;
+        for _ in 0..n {
+            v.push(rng.random_range(low..=high));
+        }
+        v.push(i64::MAX - 1);
+        v.push(i64::MAX); // exact top
+        v.push(i64::MAX - 1_000 / 2); // one more mid‑window value
+    }
+
+    // 7. Near i64::MIN
+    {
+        v.push(i64::MIN); // exact bottom
+        v.push(i64::MIN + 1); // just above
+        let low = i64::MIN + 2;
+        let high = i64::MIN + 1_000;
+        for _ in 0..n {
+            v.push(rng.random_range(low..=high));
+        }
+    }
+
+    v.push(i64::MAX);
+    v.push(i64::MAX - 1);
+    v.push(i64::MIN);
+    v.push(i64::MIN + 1);
+
+    let mut v: Vec<u64> = v.iter().map(|val| *val as u64).collect();
+
+    // 8. Near u32::MAX
+    for _ in 0..n {
+        let low: u64 = U32_MAX_U64 - 1_000;
+        let high: u64 = U32_MAX_U64;
+        v.push(rng.random_range(low..=high));
+    }
+    v.push(U32_MAX_U64 - 1);
+    v.push(U32_MAX_U64);
+    v.push(U32_MAX_U64 + 1);
+    for _ in 0..n {
+        let low = U32_MAX_U64;
+        let high: u64 = U32_MAX_U64 + 1_000;
+        v.push(rng.random_range(low..=high));
+    }
+
+    // 9. Near u64::MAX
+    for _ in 0..n {
+        let low = u64::MAX - 1_000;
+        let high = u64::MAX;
+        v.push(rng.random_range(low..=high));
+    }
+
+    v.sort_unstable();
+    v.dedup(); // remove duplicates
+
+    v
+}
+
+fn pairwise_fuzzing_test<T: Clone + Debug, F: Fn(T, T)>(f: F, values: impl IntoIterator<Item = T>) {
+    let values: Vec<T> = values.into_iter().collect();
+    for a in &values {
+        for b in &values {
+            f(a.clone(), b.clone());
+        }
+    }
+}
+
+fn run_i64_binary_op(op: &str, a: i64, b: i64, expected: i64) {
+    let wat_source = format!(
+        r#"
+(module
+  (func (export "main") (param i64 i64) (result i64)
+    local.get 0
+    local.get 1
+    {op}
+  )
+)
+"#,
+        op = op
+    );
+
+    let wasm_binary = wat::parse_str(&wat_source).unwrap();
+
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("main".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+
+    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+
+    let mut store = RwasmStore::<()>::default();
+    let engine = ExecutionEngine::new();
+    let mut result = [Value::I64(0); 1];
+
+    let execution_result = engine.execute(
+        &mut store,
+        &rwasm_module,
+        &[Value::I64(a), Value::I64(b)],
+        &mut result,
+        None,
+    );
+    if !execution_result.is_ok() {
+        println!("{:?}", execution_result);
+    }
+
+    assert!(
+        matches!(execution_result, Ok(_)),
+        "Execution failed for {}",
+        op
+    );
+    assert_eq!(
+        result[0].i64().unwrap(),
+        expected,
+        "Mismatch for operation {} with inputs ({}, {})",
+        op,
+        a,
+        b
+    );
+}
+
+fn run_i64_comparation_op(op: &str, a: i64, b: i64, expected: bool) {
+    let wat_source = format!(
+        r#"
+(module
+  (func (export "main") (param i64 i64) (result i32)
+    local.get 0
+    local.get 1
+    {op}
+  )
+)
+"#,
+        op = op
+    );
+
+    let wasm_binary = wat::parse_str(&wat_source).unwrap();
+
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("main".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+
+    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+
+    let mut store = RwasmStore::<()>::default();
+    let engine = ExecutionEngine::new();
+    let mut result = [Value::I32(0); 1];
+
+    let execution_result = engine.execute(
+        &mut store,
+        &rwasm_module,
+        &[Value::I64(a), Value::I64(b)],
+        &mut result,
+        None,
+    );
+    if !execution_result.is_ok() {
+        println!("{:?}", execution_result);
+    }
+
+    assert!(
+        matches!(execution_result, Ok(_)),
+        "Execution failed for {}",
+        op
+    );
+    let expected = if expected { 1 } else { 0 };
+    assert_eq!(
+        result[0].i32().unwrap(),
+        expected,
+        "Mismatch for operation {} with inputs ({}, {})",
+        op,
+        a,
+        b
+    );
+}
+
+#[test]
+fn test_i64_ops_in_rwasm_interpreter() {
+    // Arithmetic
+    run_i64_binary_op("i64.add", 10, 732, 10 + 732);
+    run_i64_binary_op("i64.sub", 732, 10, 732 - 10);
+    run_i64_binary_op("i64.mul", 10, 732, 10 * 732);
+    run_i64_binary_op("i64.div_s", 732, 33, 732 / 33);
+    run_i64_binary_op("i64.div_u", 732, 33, (732u64 / 33u64) as i64);
+    run_i64_binary_op("i64.rem_s", 732, 33, 732 % 33);
+    run_i64_binary_op("i64.rem_u", 732, 33, (732u64 % 33u64) as i64);
+
+    // Bitwise
+    run_i64_binary_op("i64.and", 0b1101, 0b1011, 0b1001);
+    run_i64_binary_op("i64.or", 0b1101, 0b1011, 0b1111);
+    run_i64_binary_op("i64.xor", 0b1101, 0b1011, 0b0110);
+
+    // Shifts and rotations
+    run_i64_binary_op("i64.shl", 1, 3, 1 << 3);
+    run_i64_binary_op("i64.shr_s", -16, 2, -16 >> 2);
+    run_i64_binary_op("i64.shr_u", -16, 2, ((-16i64 as u64) >> 2) as i64);
+    run_i64_binary_op("i64.rotl", 0x12, 8, 0x12i64.rotate_left(8));
+    run_i64_binary_op("i64.rotr", 0x1200, 8, 0x1200i64.rotate_right(8));
+
+    // Comparisons (true = 1, false = 0)
+    run_i64_comparation_op("i64.eq", 42, 42, true);
+    run_i64_comparation_op("i64.eq", 42, 24, false);
+    run_i64_comparation_op("i64.ne", 42, 24, true);
+    run_i64_comparation_op("i64.ne", 42, 42, false);
+    run_i64_comparation_op("i64.lt_s", -5, 10, true);
+    run_i64_comparation_op("i64.lt_s", 10, -5, false);
+    run_i64_comparation_op("i64.lt_u", 5, 10, true);
+    run_i64_comparation_op("i64.lt_u", 10, 5, false);
+    run_i64_comparation_op("i64.gt_s", 10, -5, true);
+    run_i64_comparation_op("i64.gt_s", -5, 10, false);
+    run_i64_comparation_op("i64.gt_u", 10, 5, true);
+    run_i64_comparation_op("i64.gt_u", 5, 10, false);
+    run_i64_comparation_op("i64.le_s", -5, -5, true);
+    run_i64_comparation_op("i64.le_s", 5, 2, false);
+    run_i64_comparation_op("i64.le_u", 5, 5, true);
+    run_i64_comparation_op("i64.le_u", 10, 5, false);
+    run_i64_comparation_op("i64.ge_s", 5, 5, true);
+    run_i64_comparation_op("i64.ge_s", -1, 1, false);
+    run_i64_comparation_op("i64.ge_u", 5, 5, true);
+    run_i64_comparation_op("i64.ge_u", 5, 10, false);
 }

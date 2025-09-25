@@ -1,59 +1,31 @@
 use crate::{
     compiler::{
         control_flow::{
-            BlockControlFrame,
-            ControlFlowStack,
-            ControlFrame,
-            ControlFrameKind,
-            IfControlFrame,
-            LoopControlFrame,
-            UnreachableControlFrame,
+            BlockControlFrame, ControlFlowStack, ControlFrame, ControlFrameKind, IfControlFrame,
+            LoopControlFrame, UnreachableControlFrame,
         },
-        drop_keep::{translate_drop_keep, DropKeep},
+        drop_keep::DropKeep,
         error::CompilationError,
         fuel_costs::FuelCosts,
+        intrinsic::{Intrinsic, IntrinsicHandler},
         labels::LabelRegistry,
         locals_registry::LocalsRegistry,
         segment_builder::SegmentBuilder,
+        snippets::{Snippet, SnippetCall},
         utils::RelativeDepth,
         value_stack::ValueStackHeight,
     },
-    AddressOffset,
-    BranchOffset,
-    BranchTableTargets,
-    ConstructorParams,
-    DataSegmentIdx,
-    ElementSegmentIdx,
-    FuncIdx,
-    FuncTypeIdx,
-    GlobalVariable,
-    InstrLoc,
-    InstructionSet,
-    LabelRef,
-    Opcode,
-    SignatureIdx,
-    TableIdx,
-    BASE_FUEL_COST,
-    DEFAULT_MEMORY_INDEX,
-    N_MAX_MEMORY_PAGES,
-    N_MAX_TABLE_SIZE,
+    AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
+    ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
+    Opcode, SignatureIdx, TableIdx, BASE_FUEL_COST, DEFAULT_MEMORY_INDEX, N_MAX_MEMORY_PAGES,
+    N_MAX_TABLE_SIZE, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec, vec::Vec};
+use bitvec::macros::internal::funty::Fundamental;
 use hashbrown::HashMap;
 use wasmparser::{
-    BlockType,
-    BrTable,
-    FuncType,
-    FuncValidatorAllocations,
-    GlobalType,
-    Ieee32,
-    Ieee64,
-    MemArg,
-    MemoryType,
-    TableType,
-    ValType,
-    VisitOperator,
-    V128,
+    BlockType, BrTable, FuncType, FuncValidatorAllocations, GlobalType, Ieee32, Ieee64, MemArg,
+    MemoryType, TableType, ValType, VisitOperator, V128,
 };
 
 /// Reusable allocations of a [`FuncTranslator`].
@@ -95,6 +67,8 @@ pub struct FuncTranslatorAllocations {
     pub(crate) start_func: Option<FuncIdx>,
     pub(crate) func_offsets: Vec<u32>,
     pub(crate) constructor_params: ConstructorParams,
+    pub(crate) snippet_calls: Vec<SnippetCall>,
+    pub(crate) intrinsic_handler: IntrinsicHandler,
 }
 
 impl Default for FuncTranslatorAllocations {
@@ -116,6 +90,8 @@ impl Default for FuncTranslatorAllocations {
             start_func: None,
             func_offsets: vec![],
             constructor_params: Default::default(),
+            snippet_calls: Default::default(),
+            intrinsic_handler: Default::default(),
         }
     }
 }
@@ -186,12 +162,37 @@ impl FuncTranslatorAllocations {
         is_entrypoint: bool,
         is_return_call: bool,
     ) {
+        let func_type_idx = self.resolve_func_type_index(function_index);
+        let func_type = &self.func_types[func_type_idx as usize];
+
         let is = if is_entrypoint {
             &mut self.segment_builder.entrypoint_bytecode
         } else {
             &mut self.instruction_set
         };
-        if is_return_call {
+
+        if let Some((_, intrinsic)) = self
+            .intrinsic_handler
+            .intrinsics
+            .iter()
+            .find(|(index, _)| index.as_i32() == function_index as i32)
+        {
+            match &intrinsic {
+                Intrinsic::Replace(ref opcodes) => {
+                    for opcode in opcodes {
+                        is.push(*opcode);
+                    }
+                }
+                Intrinsic::Remove => {
+                    if func_type.results().len() != 0 {
+                        unreachable!("remove intrinsic with result not supported")
+                    }
+                    for _ in 0..func_type.params().len() {
+                        is.op_drop();
+                    }
+                }
+            }
+        } else if is_return_call {
             is.op_return_call_internal(function_index + 1);
         } else {
             let func_loc = is.loc();
@@ -256,6 +257,13 @@ impl InstructionTranslator {
         let func_type_idx = self.alloc.resolve_func_type_index(func_idx);
         let block_type = BlockType::FuncType(func_type_idx);
         let end_label = self.alloc.labels.new_label();
+        {
+            let func_type_idx = self.alloc.resolve_func_type_index(func_idx);
+            let signature_index = self.alloc.resolve_func_type_signature(func_type_idx);
+            self.alloc
+                .instruction_set
+                .op_signature_check(signature_index);
+        }
         let consume_fuel = self
             .is_fuel_metering_enabled()
             .then(|| self.push_consume_fuel_base());
@@ -268,6 +276,8 @@ impl InstructionTranslator {
             .unwrap();
         self.alloc.stack_types.extend(original_func_types.params());
         let func_type = self.alloc.func_types.get(func_type_idx as usize).unwrap();
+        debug_assert_eq!(self.stack_height.height(), 0);
+        debug_assert_eq!(self.stack_height.max_stack_height(), 0);
         let func_params_len = func_type.params().len();
         self.locals.register_locals(func_params_len as u32);
     }
@@ -404,7 +414,7 @@ impl InstructionTranslator {
     pub fn finish(&mut self) -> Result<(), CompilationError> {
         // update branch offsets in `Branch` opcodes
         for (user, offset) in self.alloc.labels.resolved_users() {
-            self.alloc.instruction_set.instr[user as usize].update_branch_offset(offset?);
+            self.alloc.instruction_set[user as usize].update_branch_offset(offset?);
         }
         let last_func_offset = self.alloc.func_offsets.last().copied().unwrap() as usize;
         // update max stack height in `StackAlloc` opcode
@@ -412,7 +422,6 @@ impl InstructionTranslator {
         let mut iter = self
             .alloc
             .instruction_set
-            .instr
             .iter_mut()
             .skip(last_func_offset)
             .take(how_deep_stack_check);
@@ -907,9 +916,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
                     builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
-                    translate_drop_keep(
+                    drop_keep.translate_drop_keep(
                         &mut builder.alloc.instruction_set,
-                        drop_keep,
                         &mut builder.stack_height,
                     );
                     let offset = builder.branch_offset(end_label)?;
@@ -942,9 +950,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                             .alloc
                             .instruction_set
                             .op_br_if_eqz(BranchOffset::uninit());
-                        let drop_keep_length = translate_drop_keep(
+                        let drop_keep_length = drop_keep.translate_drop_keep(
                             &mut builder.alloc.instruction_set,
-                            drop_keep,
                             &mut builder.stack_height,
                         );
                         builder
@@ -962,9 +969,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                         .alloc
                         .instruction_set
                         .op_br_if_eqz(BranchOffset::uninit());
-                    let drop_keep_length = translate_drop_keep(
+                    let drop_keep_length = drop_keep.translate_drop_keep(
                         &mut builder.alloc.instruction_set,
-                        drop_keep,
                         &mut builder.stack_height,
                     );
                     builder
@@ -1041,11 +1047,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                                     + trampoline_ixs.len()) as i32,
                             );
                             builder.alloc.br_table_branches.op_return();
-                            translate_drop_keep(
-                                trampoline_ixs,
-                                drop_keep,
-                                &mut builder.stack_height,
-                            );
+                            drop_keep
+                                .translate_drop_keep(trampoline_ixs, &mut builder.stack_height);
                             trampoline_ixs.op_return();
                         }
                     }
@@ -1070,11 +1073,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                                 .op_br(BranchOffset::from(br_offset));
                             builder.alloc.br_table_branches.op_return();
 
-                            translate_drop_keep(
-                                trampoline_ixs,
-                                drop_keep,
-                                &mut builder.stack_height,
-                            );
+                            drop_keep
+                                .translate_drop_keep(trampoline_ixs, &mut builder.stack_height);
                             trampoline_ixs.op_return();
 
                             let instr = offset_instr(base, final_len + trampoline_ixs.len());
@@ -1145,9 +1145,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let drop_keep = builder.drop_keep_return()?;
             builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
-            translate_drop_keep(
+            drop_keep.translate_drop_keep(
                 &mut builder.alloc.instruction_set,
-                drop_keep,
                 &mut builder.stack_height,
             );
             builder.alloc.instruction_set.op_return();
@@ -1196,9 +1195,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let drop_keep = builder.drop_keep_return_call(&func_type)?;
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
             builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
-            translate_drop_keep(
+            drop_keep.translate_drop_keep(
                 &mut builder.alloc.instruction_set,
-                drop_keep,
                 &mut builder.stack_height,
             );
             builder
@@ -1223,9 +1221,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             drop_keep.keep += 1;
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
             builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
-            translate_drop_keep(
+            drop_keep.translate_drop_keep(
                 &mut builder.alloc.instruction_set,
-                drop_keep,
                 &mut builder.stack_height,
             );
             let signature_idx = builder.alloc.resolve_func_type_signature(func_type_index);
@@ -1400,7 +1397,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_load(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load, 2)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load,
+            InstructionSet::MSH_I64_LOAD,
+        )
     }
 
     fn visit_f32_load(&mut self, memarg: MemArg) -> Self::Output {
@@ -1428,27 +1430,57 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_load8_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load8_s, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load8_s,
+            InstructionSet::MSH_I64_LOAD8_S,
+        )
     }
 
     fn visit_i64_load8_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load8_u, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load8_u,
+            InstructionSet::MSH_I64_LOAD8_U,
+        )
     }
 
     fn visit_i64_load16_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load16_s, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load16_s,
+            InstructionSet::MSH_I64_LOAD16_S,
+        )
     }
 
     fn visit_i64_load16_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load16_u, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load16_u,
+            InstructionSet::MSH_I64_LOAD16_U,
+        )
     }
 
     fn visit_i64_load32_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load32_s, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load32_s,
+            InstructionSet::MSH_I64_LOAD32_S,
+        )
     }
 
     fn visit_i64_load32_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_load(memarg, ValType::I64, InstructionSet::op_i64_load32_u, 1)
+        self.translate_load(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_load32_u,
+            InstructionSet::MSH_I64_LOAD32_U,
+        )
     }
 
     fn visit_i32_store(&mut self, memarg: MemArg) -> Self::Output {
@@ -1456,7 +1488,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_store(&mut self, memarg: MemArg) -> Self::Output {
-        self.translate_store(memarg, ValType::I64, InstructionSet::op_i64_store, 2)
+        self.translate_store(
+            memarg,
+            ValType::I64,
+            InstructionSet::op_i64_store,
+            InstructionSet::MSH_I64_STORE,
+        )
     }
 
     fn visit_f32_store(&mut self, memarg: MemArg) -> Self::Output {
@@ -1520,9 +1557,9 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             debug_assert_eq!(popped_type, ValType::I32);
             builder.alloc.stack_types.push(popped_type);
             // calc stack height
-            builder.stack_height.pop_type(ValType::I32);
             builder.stack_height.push2();
             builder.stack_height.pop2();
+            builder.stack_height.pop_type(ValType::I32);
             builder.stack_height.push_type(ValType::I32);
             Ok(())
         })
@@ -1644,47 +1681,47 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_eqz(&mut self) -> Self::Output {
-        self.translate_unary_compare(InstructionSet::op_i64_eqz, 0)
+        self.translate_unary_compare(InstructionSet::op_i64_eqz, InstructionSet::MSH_I64_EQZ)
     }
 
     fn visit_i64_eq(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_eq, 1)
+        self.translate_to_snippet_call(Snippet::I64Eq)
     }
 
     fn visit_i64_ne(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_ne, 1)
+        self.translate_to_snippet_call(Snippet::I64Ne)
     }
 
     fn visit_i64_lt_s(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_lt_s, 2)
+        self.translate_to_snippet_call(Snippet::I64LtS)
     }
 
     fn visit_i64_lt_u(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_lt_u, 2)
+        self.translate_to_snippet_call(Snippet::I64LtU)
     }
 
     fn visit_i64_gt_s(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_gt_s, 2)
+        self.translate_to_snippet_call(Snippet::I64GtS)
     }
 
     fn visit_i64_gt_u(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_gt_u, 2)
+        self.translate_to_snippet_call(Snippet::I64GtU)
     }
 
     fn visit_i64_le_s(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_le_s, 2)
+        self.translate_to_snippet_call(Snippet::I64LeS)
     }
 
     fn visit_i64_le_u(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_le_u, 2)
+        self.translate_to_snippet_call(Snippet::I64LeU)
     }
 
     fn visit_i64_ge_s(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_ge_s, 2)
+        self.translate_to_snippet_call(Snippet::I64GeS)
     }
 
     fn visit_i64_ge_u(&mut self) -> Self::Output {
-        self.translate_binary_compare(InstructionSet::op_i64_ge_u, 2)
+        self.translate_to_snippet_call(Snippet::I64GeU)
     }
 
     fn visit_f32_eq(&mut self) -> Self::Output {
@@ -1808,75 +1845,78 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_clz(&mut self) -> Self::Output {
-        self.translate_unary(InstructionSet::op_i64_clz, 2)
+        self.translate_unary(InstructionSet::op_i64_clz, InstructionSet::MSH_I64_CLZ)
     }
 
     fn visit_i64_ctz(&mut self) -> Self::Output {
-        self.translate_unary(InstructionSet::op_i64_ctz, 3)
+        self.translate_unary(InstructionSet::op_i64_ctz, InstructionSet::MSH_I64_CTZ)
     }
 
     fn visit_i64_popcnt(&mut self) -> Self::Output {
-        self.translate_unary(InstructionSet::op_i64_popcnt, 1)
+        self.translate_unary(
+            InstructionSet::op_i64_popcnt,
+            InstructionSet::MSH_I64_POPCNT,
+        )
     }
 
     fn visit_i64_add(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_add, 8)
+        self.translate_to_snippet_call(Snippet::I64Add)
     }
 
     fn visit_i64_sub(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_sub, 8)
+        self.translate_to_snippet_call(Snippet::I64Sub)
     }
 
     fn visit_i64_mul(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_mul, 8)
+        self.translate_to_snippet_call(Snippet::I64Mul)
     }
 
     fn visit_i64_div_s(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_div_s, 17)
+        self.translate_to_snippet_call(Snippet::I64DivS)
     }
 
     fn visit_i64_div_u(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_div_u, 15)
+        self.translate_to_snippet_call(Snippet::I64DivU)
     }
 
     fn visit_i64_rem_s(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rem_s, 12)
+        self.translate_to_snippet_call(Snippet::I64RemS)
     }
 
     fn visit_i64_rem_u(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rem_u, 14)
+        self.translate_to_snippet_call(Snippet::I64RemU)
     }
 
     fn visit_i64_and(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_and, 1)
+        self.translate_binary(InstructionSet::op_i64_and, InstructionSet::MSH_I64_AND)
     }
 
     fn visit_i64_or(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_or, 1)
+        self.translate_binary(InstructionSet::op_i64_or, InstructionSet::MSH_I64_OR)
     }
 
     fn visit_i64_xor(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_xor, 1)
+        self.translate_binary(InstructionSet::op_i64_xor, InstructionSet::MSH_I64_XOR)
     }
 
     fn visit_i64_shl(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shl, 4)
+        self.translate_to_snippet_call(Snippet::I64Shl)
     }
 
     fn visit_i64_shr_s(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shr_s, 6)
+        self.translate_to_snippet_call(Snippet::I64ShrS)
     }
 
     fn visit_i64_shr_u(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_shr_u, 6)
+        self.translate_to_snippet_call(Snippet::I64ShrU)
     }
 
     fn visit_i64_rotl(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rotl, 6)
+        self.translate_to_snippet_call(Snippet::I64RotL)
     }
 
     fn visit_i64_rotr(&mut self) -> Self::Output {
-        self.translate_binary(InstructionSet::op_i64_rotr, 6)
+        self.translate_to_snippet_call(Snippet::I64RotR)
     }
 
     fn visit_f32_abs(&mut self) -> Self::Output {
@@ -2044,7 +2084,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             ValType::I32,
             ValType::I64,
             InstructionSet::op_i64_extend_i32_s,
-            1,
+            InstructionSet::MSH_I64_EXTEND_I32_S,
         )
     }
 
@@ -2053,7 +2093,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             ValType::I32,
             ValType::I64,
             InstructionSet::op_i64_extend_i32_u,
-            1,
+            InstructionSet::MSH_I64_EXTEND_I32_U,
         )
     }
 
@@ -2208,15 +2248,24 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     }
 
     fn visit_i64_extend8_s(&mut self) -> Self::Output {
-        self.translate_unary(InstructionSet::op_i64_extend8_s, 2)
+        self.translate_unary(
+            InstructionSet::op_i64_extend8_s,
+            InstructionSet::MSH_I64_EXTEND8_S,
+        )
     }
 
     fn visit_i64_extend16_s(&mut self) -> Self::Output {
-        self.translate_unary(InstructionSet::op_i64_extend16_s, 2)
+        self.translate_unary(
+            InstructionSet::op_i64_extend16_s,
+            InstructionSet::MSH_I64_EXTEND16_S,
+        )
     }
 
     fn visit_i64_extend32_s(&mut self) -> Self::Output {
-        self.translate_unary(InstructionSet::op_i64_extend32_s, 2)
+        self.translate_unary(
+            InstructionSet::op_i64_extend32_s,
+            InstructionSet::MSH_I64_EXTEND32_S,
+        )
     }
 
     fn visit_i32_trunc_sat_f32_s(&mut self) -> Self::Output {
@@ -2394,12 +2443,17 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 offset,
                 is_fuel_metering_enabled,
             );
-            builder.stack_height.push2();
-            builder.stack_height.pop2();
+            builder
+                .stack_height
+                .push_n(InstructionSet::MSH_TABLE_INIT_CHECKED);
+            builder
+                .stack_height
+                .pop_n(InstructionSet::MSH_TABLE_INIT_CHECKED);
             builder.stack_height.pop3();
             Ok(())
         })
     }
+
     fn visit_elem_drop(&mut self, segment_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
@@ -2415,8 +2469,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
-            builder.stack_height.push2();
-            builder.stack_height.pop2();
+            builder
+                .stack_height
+                .push_n(InstructionSet::MSH_TABLE_COPY_CHECKED);
+            builder
+                .stack_height
+                .pop_n(InstructionSet::MSH_TABLE_COPY_CHECKED);
             builder.stack_height.pop3();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
@@ -2434,8 +2492,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
-            builder.stack_height.push2();
-            builder.stack_height.pop2();
+            builder
+                .stack_height
+                .push_n(InstructionSet::MSH_TABLE_FILL_CHECKED);
+            builder
+                .stack_height
+                .pop_n(InstructionSet::MSH_TABLE_FILL_CHECKED);
             builder.stack_height.pop3();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
@@ -2491,8 +2553,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 Some(max_table_elements),
                 is_fuel_metering_enabled,
             );
-            builder.stack_height.push2();
-            builder.stack_height.pop2();
+            builder
+                .stack_height
+                .push_n(InstructionSet::MSH_TABLE_GROW_CHECKED);
+            builder
+                .stack_height
+                .pop_n(InstructionSet::MSH_TABLE_GROW_CHECKED);
             builder.stack_height.pop2();
             builder.stack_height.push1();
             Ok(())
@@ -3823,9 +3889,9 @@ impl InstructionTranslator {
             builder.bump_fuel_consumption(|| FuelCosts::LOAD)?;
             let addr_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(addr_type, ValType::I32);
+            builder.stack_height.push_n(max_stack_height);
             builder.stack_height.pop_type(addr_type);
             builder.stack_height.push_type(loaded_type);
-            builder.stack_height.push_n(max_stack_height);
             builder.stack_height.pop_n(max_stack_height);
             builder.alloc.stack_types.push(loaded_type);
             let offset = AddressOffset::from(memarg.offset as u32);
@@ -3844,13 +3910,13 @@ impl InstructionTranslator {
         self.translate_if_reachable(|builder| {
             debug_assert_eq!(memarg.memory, DEFAULT_MEMORY_INDEX);
             builder.bump_fuel_consumption(|| FuelCosts::STORE)?;
+            builder.stack_height.push_n(max_stack_height);
             let value_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(value_type, stored_value);
             builder.stack_height.pop_type(value_type);
             let addr_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(addr_type, ValType::I32);
             builder.stack_height.pop_type(addr_type);
-            builder.stack_height.push_n(max_stack_height);
             builder.stack_height.pop_n(max_stack_height);
             let offset = AddressOffset::from(memarg.offset as u32);
             emitter(&mut builder.alloc.instruction_set, offset);
@@ -3867,13 +3933,17 @@ impl InstructionTranslator {
     ) -> Result<(), CompilationError> {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+            if max_stack_height > 0 {
+                builder.stack_height.push_n(max_stack_height);
+            }
             let lhs_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(lhs_type, input_type);
             builder.alloc.stack_types.push(output_type);
             builder.stack_height.pop_type(input_type);
-            builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
             builder.stack_height.push_type(output_type);
+            if max_stack_height > 0 {
+                builder.stack_height.pop_n(max_stack_height);
+            }
             emitter(&mut builder.alloc.instruction_set);
             Ok(())
         })
@@ -3909,13 +3979,46 @@ impl InstructionTranslator {
             debug_assert_eq!(lhs_type, rhs_type);
             builder.alloc.stack_types.push(lhs_type);
             // calculate max stack height
+            if max_stack_height > 0 {
+                builder.stack_height.push_n(max_stack_height);
+            }
             builder.stack_height.pop_type(lhs_type);
             builder.stack_height.pop_type(lhs_type);
-            builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
             builder.stack_height.push_type(lhs_type);
+            if max_stack_height > 0 {
+                builder.stack_height.pop_n(max_stack_height);
+            }
             // emit an instruction
             emitter(&mut builder.alloc.instruction_set);
+            Ok(())
+        })
+    }
+
+    fn translate_to_snippet_call(&mut self, snippet: Snippet) -> Result<(), CompilationError> {
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+            builder
+                .stack_height
+                .pop_n(snippet.func_type().params().len() as u32);
+            builder
+                .stack_height
+                .push_n(snippet.func_type().results().len() as u32);
+            for func_type in snippet.orig_func_type().params().iter().rev() {
+                let popped_type = builder.alloc.stack_types.pop().unwrap();
+                assert_eq!(*func_type, popped_type)
+            }
+            for result in snippet.orig_func_type().results() {
+                builder.alloc.stack_types.push(*result);
+            }
+            let loc = builder.alloc.instruction_set.loc();
+            builder
+                .alloc
+                .instruction_set
+                .op_call_internal(SNIPPET_FUNC_IDX_UNRESOLVED);
+            builder
+                .alloc
+                .snippet_calls
+                .push(SnippetCall { loc, snippet });
             Ok(())
         })
     }
@@ -3932,11 +4035,15 @@ impl InstructionTranslator {
             debug_assert_eq!(lhs_type, rhs_type);
             builder.alloc.stack_types.push(ValType::I32);
             // do stack height check
+            if max_stack_height > 0 {
+                builder.stack_height.push_n(max_stack_height);
+            }
             builder.stack_height.pop_type(lhs_type);
             builder.stack_height.pop_type(rhs_type);
-            builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
             builder.stack_height.push_type(ValType::I32);
+            if max_stack_height > 0 {
+                builder.stack_height.pop_n(max_stack_height);
+            }
             // emit an opcode
             emitter(&mut builder.alloc.instruction_set);
             Ok(())
@@ -3954,10 +4061,10 @@ impl InstructionTranslator {
             let lhs_type = builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.push(lhs_type);
             // calc stack height
-            builder.stack_height.pop_type(lhs_type);
             builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
+            builder.stack_height.pop_type(lhs_type);
             builder.stack_height.push_type(lhs_type);
+            builder.stack_height.pop_n(max_stack_height);
             // emit instruction
             emitter(&mut builder.alloc.instruction_set);
             Ok(())
@@ -3975,10 +4082,10 @@ impl InstructionTranslator {
             let lsh_type = builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.push(ValType::I32);
             // calc stack height
-            builder.stack_height.pop_type(lsh_type);
             builder.stack_height.push_n(max_stack_height);
-            builder.stack_height.pop_n(max_stack_height);
+            builder.stack_height.pop_type(lsh_type);
             builder.stack_height.push_type(ValType::I32);
+            builder.stack_height.pop_n(max_stack_height);
             // emit opcode
             emitter(&mut builder.alloc.instruction_set);
             Ok(())

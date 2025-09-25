@@ -1,6 +1,5 @@
 use crate::{ImportLinker, Opcode};
-use alloc::{boxed::Box, rc::Rc};
-use std::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
 use wasmparser::WasmFeatures;
 
 #[derive(Debug, Clone)]

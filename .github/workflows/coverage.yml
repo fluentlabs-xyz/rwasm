@@ -20,9 +20,9 @@ env:
 jobs:
   coverage:
     name: Coverage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-amd64-8core
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: "recursive"
       - name: Install Rust toolchain
@@ -33,7 +33,9 @@ jobs:
       - name: Setup cache
         uses: Swatinem/rust-cache@v2
       - name: Install wasm32 target
-        run: rustup target add wasm32-unknown-unknown
+        run: |
+          rustup target add wasm32-unknown-unknown
+          rustup +nightly target add wasm32-unknown-unknown
       - name: Run cargo check
         run: cargo check
       - name: Generate code coverage
@@ -41,7 +43,7 @@ jobs:
           cargo install cargo-llvm-cov grcov
           make coverage
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v5.4.3
+        uses: codecov/codecov-action@v5.5.1
         with:
           files: ./lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
