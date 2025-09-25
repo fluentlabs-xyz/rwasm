@@ -1,7 +1,7 @@
 use crate::{
-    Caller, CompilationConfig, ImportLinker, Store, SysFuncIdx, SyscallHandler, TrapCode,
-    TypedCaller, UntypedValue, Value, F32, F64, N_DEFAULT_STACK_SIZE, N_MAX_RECURSION_DEPTH,
-    N_MAX_STACK_SIZE,
+    Caller, CompilationConfig, FuelConfig, ImportLinker, Store, SysFuncIdx, SyscallHandler,
+    TrapCode, TypedCaller, UntypedValue, Value, F32, F64, N_DEFAULT_STACK_SIZE,
+    N_MAX_RECURSION_DEPTH, N_MAX_STACK_SIZE,
 };
 use alloc::{sync::Arc, vec::Vec};
 use core::cell::RefCell;
@@ -216,14 +216,18 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
         import_linker: Arc<ImportLinker>,
         data: T,
         syscall_handler: SyscallHandler<T>,
+        fuel_config: FuelConfig,
     ) -> Self {
-        let mut store = wasmi::Store::new(
-            module.engine(),
-            WasmiContextWrapper {
-                inner: data,
-                syscall_handler,
-            },
-        );
+        let data = WasmiContextWrapper {
+            inner: data,
+            syscall_handler,
+        };
+        let mut store = wasmi::Store::new(module.engine(), data);
+        if let Some(fuel_limit) = fuel_config.fuel_limit {
+            store
+                .set_fuel(fuel_limit)
+                .unwrap_or_else(|_| unreachable!("trying to set fuel with disabled wasmi fuel"));
+        }
         let linker = wasmi_import_linker(module.engine(), import_linker);
         let instance = linker
             .instantiate(store.as_context_mut(), &module)
@@ -242,13 +246,7 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
         func_name: &'static str,
         params: &[Value],
         result: &mut [Value],
-        fuel: Option<u64>,
     ) -> Result<(), TrapCode> {
-        if let Some(fuel_limit) = fuel {
-            self.store
-                .set_fuel(fuel_limit)
-                .unwrap_or_else(|_| unreachable!("trying to set fuel with disabled wasmi fuel"));
-        }
         let func = self
             .instance
             .get_func(self.store.as_context_mut(), func_name)

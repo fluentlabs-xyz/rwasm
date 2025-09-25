@@ -82,7 +82,7 @@ impl SegmentBuilder {
         if initial_pages > 0 {
             // TODO(dmitry123): "add stack height check?"
             self.entrypoint_bytecode.op_i32_const(initial_pages);
-            self.entrypoint_bytecode.op_memory_grow_checked(None, true);
+            self.entrypoint_bytecode.op_memory_grow_checked(None, false);
             // there is no need to verify for a potential trap because it can't overflow,
             // we have this check upper during the compilation time
             self.entrypoint_bytecode.op_drop();
@@ -97,7 +97,7 @@ impl SegmentBuilder {
         table_index: TableIdx,
         table_type: &TableType,
     ) -> Result<(), CompilationError> {
-        // Wasm validation guarantees that number of table segments can't exceed 100 items,
+        // Wasm validation guarantees that the number of table segments can't exceed 100 items,
         // that is why there is no need to check for potential overflow
         self.entrypoint_bytecode.op_ref_func(NULL_FUNC_IDX);
         self.entrypoint_bytecode.op_i32_const(table_type.initial);

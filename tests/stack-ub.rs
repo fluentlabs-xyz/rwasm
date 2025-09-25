@@ -1,7 +1,7 @@
 use hex_literal::hex;
 use rwasm::{
-    CompilationConfig, ExecutionEngine, ImportLinker, ImportName, Opcode, RwasmModule, RwasmStore,
-    StateRouterConfig, Store, TrapCode, TypedCaller, Value,
+    CompilationConfig, ExecutionEngine, FuelConfig, ImportLinker, ImportName, Opcode, RwasmModule,
+    RwasmStore, StateRouterConfig, Store, TrapCode, TypedCaller, Value,
 };
 use std::{str::from_utf8, sync::Arc};
 use wasmparser::ValType;
@@ -108,9 +108,10 @@ fn run_fluentbase_binary(wasm_binary: &[u8], host_state: HostState) -> HostState
         import_linker.clone(),
         host_state,
         fluentbase_syscall_handler,
+        FuelConfig::default(),
     );
     engine
-        .execute(&mut store, &rwasm_module, &[], &mut [], None)
+        .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap();
     store.context(Clone::clone)
 }
