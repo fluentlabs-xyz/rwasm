@@ -22,6 +22,9 @@ use wasmparser::{
     Payload, TableSectionReader, Type, TypeRef, TypeSectionReader, ValType, Validator,
 };
 
+/// Single-pass Wasm front-end that validates, translates, and assembles rwasm bytecode.
+/// It streams the Wasm module with wasmparser, builds the instruction set and sections,
+/// and applies configuration (entry routing, snippets) before finalizing the module.
 pub struct ModuleParser {
     /// The Wasm validator used throughout stream parsing.
     validator: Validator,

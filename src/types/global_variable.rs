@@ -2,8 +2,12 @@ use crate::{ExternRef, FuncRef, Value, F32, F64};
 use wasmparser::{GlobalType, ValType};
 
 #[derive(Debug)]
+/// Describes a module's global (type and initial value) as seen at compile time.
+/// The value can be materialized into a runtime `Value` when the type permits.
 pub struct GlobalVariable {
+    /// Wasm global type (content type and mutability).
     pub global_type: GlobalType,
+    /// Default value encoded as i64; interpreted according to `global_type`.
     pub default_value: i64,
 }
 

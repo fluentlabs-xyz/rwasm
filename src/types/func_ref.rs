@@ -1,6 +1,8 @@
 use crate::{UntypedValue, NULL_FUNC_IDX};
 
 #[derive(Clone, Debug)]
+/// Opaque reference to a function within the module's function index space.
+/// A zero value is reserved for the null reference, mirroring Wasm's funcref null semantics.
 pub struct FuncRef(pub u32);
 
 impl FuncRef {
