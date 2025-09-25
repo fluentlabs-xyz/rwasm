@@ -1,6 +1,6 @@
 use rwasm::{
-    always_failing_syscall_handler, compile_wasmtime_module, CompilationConfig, ImportLinker,
-    Strategy, Value,
+    always_failing_syscall_handler, compile_wasmtime_module, CompilationConfig, FuelConfig,
+    ImportLinker, Strategy, Value,
 };
 use std::sync::Arc;
 
@@ -26,14 +26,10 @@ fn test_10001_instances_in_a_row() {
     };
     for _ in 0..10_000 {
         let mut store = strategy.empty_store();
-        strategy
-            .execute(&mut store, "main", &[], &mut [], None)
-            .unwrap();
+        strategy.execute(&mut store, "main", &[], &mut []).unwrap();
     }
     let mut store = strategy.empty_store();
-    strategy
-        .execute(&mut store, "main", &[], &mut [], None)
-        .unwrap();
+    strategy.execute(&mut store, "main", &[], &mut []).unwrap();
 }
 
 #[test]
@@ -48,16 +44,11 @@ fn test_fib_bench() {
             Arc::new(ImportLinker::default()),
             (),
             always_failing_syscall_handler,
+            FuelConfig::default().with_fuel_limit(1_000_000),
         );
         let mut result = [Value::I32(0)];
         strategy
-            .execute(
-                &mut store,
-                "main",
-                &[Value::I32(43)],
-                &mut result,
-                Some(1_000_000),
-            )
+            .execute(&mut store, "main", &[Value::I32(43)], &mut result)
             .unwrap();
         core::hint::black_box(result);
     }

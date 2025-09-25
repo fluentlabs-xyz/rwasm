@@ -243,12 +243,25 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct FuelConfig {
+    pub fuel_limit: Option<u64>,
+}
+
+impl FuelConfig {
+    pub fn with_fuel_limit(mut self, fuel_limit: u64) -> Self {
+        self.fuel_limit = Some(fuel_limit);
+        self
+    }
+}
+
 impl Strategy {
     pub fn empty_store(&self) -> TypedStore<()> {
         self.create_store::<()>(
             Arc::new(ImportLinker::default()),
             (),
             always_failing_syscall_handler,
+            FuelConfig::default(),
         )
     }
 
@@ -257,6 +270,7 @@ impl Strategy {
         import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
+        fuel_config: FuelConfig,
     ) -> TypedStore<T> {
         match self {
             Strategy::Rwasm { engine, .. } => TypedStore::Rwasm(RwasmStore::new(
@@ -264,6 +278,7 @@ impl Strategy {
                 import_linker,
                 context,
                 syscall_handler,
+                fuel_config,
             )),
             #[cfg(feature = "wasmtime")]
             Strategy::Wasmtime { module, .. } => TypedStore::Wasmtime(WasmtimeStore::new(
@@ -271,12 +286,14 @@ impl Strategy {
                 import_linker,
                 context,
                 syscall_handler,
+                fuel_config,
             )),
             Strategy::Wasmi { module } => TypedStore::Wasmi(WasmiStore::new(
                 module,
                 import_linker,
                 context,
                 syscall_handler,
+                fuel_config,
             )),
         }
     }
@@ -287,7 +304,6 @@ impl Strategy {
         func_name: &'static str,
         params: &[Value],
         result: &mut [Value],
-        fuel: Option<u64>,
     ) -> Result<(), TrapCode> {
         match self {
             Strategy::Rwasm { module, engine } => {
@@ -296,7 +312,7 @@ impl Strategy {
                     #[allow(unreachable_patterns)]
                     _ => unreachable!(),
                 };
-                engine.execute(store, &module, params, result, fuel)
+                engine.execute(store, &module, params, result)
             }
             #[cfg(feature = "wasmtime")]
             Strategy::Wasmtime { .. } => {
@@ -304,14 +320,14 @@ impl Strategy {
                     TypedStore::Wasmtime(store) => store,
                     _ => unreachable!(),
                 };
-                store.execute(func_name, params, result, fuel)
+                store.execute(func_name, params, result)
             }
             Strategy::Wasmi { module, .. } => {
                 let store = match store {
                     TypedStore::Wasmi(store) => store,
                     _ => unreachable!(),
                 };
-                store.execute(func_name, params, result, fuel)
+                store.execute(func_name, params, result)
             }
         }
     }

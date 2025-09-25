@@ -1,7 +1,7 @@
 mod engine;
 
 use crate::{
-    wasmtime::engine::wasmtime_engine, Caller, CompilationConfig, ImportLinker, Store,
+    wasmtime::engine::wasmtime_engine, Caller, CompilationConfig, FuelConfig, ImportLinker, Store,
     SyscallHandler, TrapCode, TypedCaller, UntypedValue, ValType, Value, F32, F64,
 };
 use futures::{channel::oneshot, future::Either, task::noop_waker};
@@ -81,6 +81,7 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
+        fuel_config: FuelConfig,
     ) -> Self {
         let shared_control_state = Arc::new(RwLock::new(SharedControlState::new(context)));
         let context = WrappedContext {
@@ -95,6 +96,13 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         };
         let mut store = wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context);
         store.limiter(|ctx| &mut ctx.resource_limiter);
+        if let Some(fuel) = fuel_config.fuel_limit {
+            if let Ok(_) = store.get_fuel() {
+                store.set_fuel(fuel).expect("wasmtime: fuel is not enabled");
+            } else {
+                store.data_mut().fuel = Some(fuel);
+            }
+        }
         let linker = wasmtime_import_linker(module.engine(), import_linker);
         let instance_pre = linker
             .instantiate_pre(&module)
@@ -113,21 +121,12 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         func_name: &'static str,
         params: &[Value],
         result: &mut [Value],
-        fuel: Option<u64>,
     ) -> Result<(), TrapCode> {
         assert!(
             self.fut.is_none(),
             "wasmtime: there is an unfinished future"
         );
         let mut store = self.store.take().expect("wasmtime: store is not present");
-        if let Some(fuel) = fuel {
-            if let Ok(_) = store.get_fuel() {
-                store.set_fuel(fuel).expect("wasmtime: fuel is not enabled");
-            } else {
-                store.data_mut().fuel = Some(fuel);
-            }
-        }
-
         let mut shared_control_state = self
             .shared_control_state
             .write()
