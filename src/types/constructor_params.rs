@@ -9,6 +9,8 @@ const CONSTRUCTOR_CUSTOM_SECTION_NAME: &'static str = "input";
 
 #[derive(Default, Debug)]
 #[repr(transparent)]
+/// Optional binary blob passed to the module constructor via a custom section.
+/// When present, it is extracted from the "input" custom section and delivered to the host.
 pub struct ConstructorParams(Option<Vec<u8>>);
 
 impl core::ops::Deref for ConstructorParams {

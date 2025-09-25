@@ -3,6 +3,8 @@ use alloc::{boxed::Box, sync::Arc};
 use wasmparser::WasmFeatures;
 
 #[derive(Debug, Clone)]
+/// Configuration for dispatching to different entry functions based on a runtime state value.
+/// The router maps state tags to function indices and optionally provides an opcode to compute the tag.
 pub struct StateRouterConfig {
     /// List of states to be router based on the state.
     pub states: Box<[(Box<str>, u32)]>,
@@ -13,6 +15,8 @@ pub struct StateRouterConfig {
 }
 
 #[derive(Clone, Debug)]
+/// Controls how a Wasm module is lowered into rwasm bytecode.
+/// Options affect entry routing, import linking, fuel metering, and validation relaxations for tests.
 pub struct CompilationConfig {
     /// State router is used to choose one of the function based on the index provided.
     /// P.S: this flag doesn't work if you have WASM's start entry point.

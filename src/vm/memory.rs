@@ -1,8 +1,13 @@
 use crate::types::{Pages, TrapCode, N_MAX_MEMORY_PAGES};
 use bytes::BytesMut;
 
+/// Shared linear memory backing store for a running module.
+/// Tracks current size in Wasm pages and provides bounds-checked read/write helpers.
+/// The buffer is pre-reserved and grown in page-sized steps.
 pub struct GlobalMemory {
+    /// Underlying byte buffer for the linear memory.
     pub shared_memory: BytesMut,
+    /// Current logical size of the linear memory in pages.
     pub current_pages: Pages,
 }
 
