@@ -5,43 +5,26 @@ use rwasm::{
 };
 use std::{sync::Arc, time::Duration};
 
-const FIB_VALUE: i32 = 47;
+const FIB_VALUE: i32 = 43;
 
 fn bench_comparisons(c: &mut Criterion) {
     let mut group = c.benchmark_group("Comparisons");
 
-    // bench_rwasm
     {
-        let wasm_binary = include_bytes!("../lib.wasm");
-
-        let config = CompilationConfig::default()
-            .with_entrypoint_name("main".into())
-            .with_allow_malformed_entrypoint_func_type(true);
-        let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-        let encoded_rwasm_module = rwasm_module.serialize();
-        let mut store = RwasmStore::<()>::default();
-        let mut engine = ExecutionEngine::new();
-        let (rwasm_module, _) = RwasmModule::new(&encoded_rwasm_module);
-
-        group.bench_function("bench_rwasm", |b| {
-            b.iter(|| {
-                let mut result = [Value::I32(0); 1];
-                engine
-                    .execute(
-                        &mut store,
-                        &rwasm_module,
-                        &[Value::I32(FIB_VALUE)],
-                        &mut result,
-                        None,
-                    )
-                    .unwrap();
-                core::hint::black_box(result);
-                store.reset(true);
-            });
+        group.bench_function("bench_strategy_rwasm", |b| {
+            let wasm_binary = include_bytes!("../lib.wasm");
+            let config = CompilationConfig::default()
+                .with_entrypoint_name("main".into())
+                .with_allow_malformed_entrypoint_func_type(true);
+            let (module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
+            let strategy = Strategy::Rwasm {
+                module,
+                engine: ExecutionEngine::acquire_shared(),
+            };
+            bench_strategy(b, strategy);
         });
     }
 
-    // bench_wasmi
     {
         use wasmi::{Engine, Linker, Module, Store};
         let engine = Engine::default();
@@ -73,9 +56,9 @@ fn bench_comparisons(c: &mut Criterion) {
                 pub fn main(n: i32) -> i32 {
                     let (mut a, mut b) = (0, 1);
                     for _ in 0..n {
-                        let temp = a;
+                        let t = a;
                         a = b;
-                        b = temp + b;
+                        b = t + b;
                     }
                     a
                 }
@@ -85,12 +68,12 @@ fn bench_comparisons(c: &mut Criterion) {
     };
 
     fn bench_strategy(b: &mut Bencher, strategy: Strategy) {
-        let mut store = strategy.create_store(
-            Arc::new(ImportLinker::default()),
-            (),
-            always_failing_syscall_handler,
-        );
         b.iter(|| {
+            let mut store = strategy.create_store(
+                Arc::new(ImportLinker::default()),
+                (),
+                always_failing_syscall_handler,
+            );
             let mut result = [Value::I32(0)];
             strategy
                 .execute(
@@ -121,7 +104,7 @@ fn bench_comparisons(c: &mut Criterion) {
             let strategy = Strategy::Wasmi {
                 module: compile_wasmi_module(CompilationConfig::default(), wasm_binary).unwrap(),
             };
-            bench_strategy(b, strategy)
+            bench_strategy(b, strategy);
         });
     }
 
