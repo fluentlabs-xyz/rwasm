@@ -1,7 +1,6 @@
 use crate::{
-    ExecutionEngine, FuelConfig, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages,
-    SignatureIdx, Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue,
-    ValueStackPtr,
+    FuelConfig, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, SignatureIdx, Store,
+    SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStackPtr,
 };
 use alloc::sync::Arc;
 use bitvec::{order::Lsb0, vec::BitVec};
@@ -43,7 +42,6 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
 impl<T: 'static + Send + Sync + Default> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
-            ExecutionEngine::acquire_shared(),
             Arc::new(ImportLinker::default()),
             T::default(),
             crate::always_failing_syscall_handler,
@@ -92,7 +90,6 @@ impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
 
 impl<T: 'static + Send + Sync> RwasmStore<T> {
     pub fn new(
-        engine: ExecutionEngine,
         import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,

@@ -115,7 +115,6 @@ fn test_nitro_verifier_rwasm() {
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     let engine = ExecutionEngine::new();
     let mut store = RwasmStore::<()>::new(
-        ExecutionEngine::acquire_shared(),
         import_linker.clone(),
         (),
         fluentbase_syscall_handler,

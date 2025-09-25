@@ -273,8 +273,7 @@ impl Strategy {
         fuel_config: FuelConfig,
     ) -> TypedStore<T> {
         match self {
-            Strategy::Rwasm { engine, .. } => TypedStore::Rwasm(RwasmStore::new(
-                engine.clone(),
+            Strategy::Rwasm { .. } => TypedStore::Rwasm(RwasmStore::new(
                 import_linker,
                 context,
                 syscall_handler,

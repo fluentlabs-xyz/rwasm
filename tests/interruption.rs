@@ -36,7 +36,6 @@ fn test_interrupted_call_rwasm() {
     });
     let import_linker = default_import_linker();
     let mut store = RwasmStore::<()>::new(
-        ExecutionEngine::acquire_shared(),
         import_linker,
         (),
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> {
@@ -84,7 +83,6 @@ fn test_interrupted_call_wasmtime() {
     .unwrap();
     // run with rwasm
     let mut store = RwasmStore::<()>::new(
-        ExecutionEngine::acquire_shared(),
         import_linker.clone(),
         (),
         always_failing_syscall_handler,
@@ -140,7 +138,6 @@ fn test_call_stack_empty_after_trap_in_nested_call() {
     });
     let import_linker = default_import_linker();
     let mut store = RwasmStore::<()>::new(
-        ExecutionEngine::acquire_shared(),
         import_linker,
         (),
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> {

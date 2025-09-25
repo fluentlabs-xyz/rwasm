@@ -5,10 +5,10 @@ use crate::handler::{
 };
 use anyhow::Result;
 use rwasm::{
-    instruction_set, CallStack, CompilationConfig, ExecutionEngine, FuelConfig, FuncType,
-    I64ValueSplit, ImportLinker, ImportLinkerEntity, ImportName, InstructionSet, ModuleParser,
-    Opcode, RwasmExecutor, RwasmModule, RwasmStore, StateRouterConfig, Store, ValType, Value,
-    ValueStack, F64,
+    instruction_set, CallStack, CompilationConfig, FuelConfig, FuncType, I64ValueSplit,
+    ImportLinker, ImportLinkerEntity, ImportName, InstructionSet, ModuleParser, Opcode,
+    RwasmExecutor, RwasmModule, RwasmStore, StateRouterConfig, Store, ValType, Value, ValueStack,
+    F64,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use wast::token::{Id, Span};
@@ -225,7 +225,6 @@ impl TestContext<'_> {
         println!("{}", rwasm_module);
 
         let mut store = RwasmStore::<TestingContext>::new(
-            ExecutionEngine::acquire_shared(),
             self.import_linker.clone(),
             TestingContext::default(),
             testing_context_syscall_handler,
