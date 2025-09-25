@@ -6,24 +6,36 @@ use alloc::sync::Arc;
 use bitvec::{order::Lsb0, vec::BitVec};
 use hashbrown::HashMap;
 
+/// Host-side store that holds memory, tables, globals and host context for an rwasm instance.
+/// It also tracks fuel for metering and provides access to imported functions and syscalls.
+/// The store is passed to host callbacks and persists across invocations of the same module.
 pub struct RwasmStore<T: 'static + Send + Sync> {
+    /// Total amount of fuel consumed by the currently running instance.
     pub(crate) consumed_fuel: u64,
+    /// The linear memory shared by the running module and the host.
     pub(crate) global_memory: GlobalMemory,
+    /// User-defined context available to host functions and syscalls.
     pub(crate) context: T,
+    /// Optional hard limit on fuel; traps with OutOfFuel when exceeded.
     pub(crate) fuel_limit: Option<u64>,
-    // the last used signature (needed for indirect calls type checks)
+    /// The last used signature index used for validating indirect calls.
     pub(crate) last_signature: Option<SignatureIdx>,
-    // rwasm modified segments
+    /// Runtime-managed tables (may differ from compile-time layout due to mutations).
     pub(crate) tables: HashMap<TableIdx, TableEntity>,
+    /// Runtime values of mutable and immutable globals.
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
-    // elem/data emptiness flags
+    /// Bitset tracking which data segments have been consumed/emptied.
     pub(crate) empty_data_segments: BitVec,
+    /// Bitset tracking which element segments have been consumed/emptied.
     pub(crate) empty_elem_segments: BitVec,
-    // list of nested calls return pointers
+    /// Dispatcher for system calls made by the guest.
     pub(crate) syscall_handler: SyscallHandler<T>,
+    /// Linker that resolves imports to host functions/globals.
     pub(crate) import_linker: Arc<ImportLinker>,
+    /// If set, contains the instruction/value-stack pointers to resume after a suspension.
     pub(crate) resumable_context: Option<(InstructionPtr, ValueStackPtr)>,
     #[cfg(feature = "tracing")]
+    /// Execution tracer used when the `tracing` feature is enabled.
     pub tracer: crate::Tracer,
 }
 
