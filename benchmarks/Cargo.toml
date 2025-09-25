@@ -18,7 +18,7 @@ rpath = false
 codegen-units = 1
 
 [dependencies]
-criterion = "0.7.0"
+criterion = { package = "codspeed-criterion-compat", version = "3.0.5" }
 
 [dev-dependencies]
 rwasm = { path = "..", features = ["std", "wasmtime"] }

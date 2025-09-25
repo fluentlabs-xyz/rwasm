@@ -50,21 +50,6 @@ fn bench_comparisons(c: &mut Criterion) {
     }
 
     {
-        group.bench_function("bench_strategy_rwasm", |b| {
-            let wasm_binary = include_bytes!("../lib.wasm");
-            let config = CompilationConfig::default()
-                .with_entrypoint_name("main".into())
-                .with_allow_malformed_entrypoint_func_type(true);
-            let (module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-            let strategy = Strategy::Rwasm {
-                module,
-                engine: ExecutionEngine::acquire_shared(),
-            };
-            bench_strategy(b, strategy);
-        });
-    }
-
-    {
         group.bench_function("bench_strategy_wasmtime", |b| {
             let wasm_binary = include_bytes!("../lib.wasm");
             let strategy = Strategy::Wasmtime {
@@ -79,6 +64,21 @@ fn bench_comparisons(c: &mut Criterion) {
             let wasm_binary = include_bytes!("../lib.wasm");
             let strategy = Strategy::Wasmi {
                 module: compile_wasmi_module(CompilationConfig::default(), wasm_binary).unwrap(),
+            };
+            bench_strategy(b, strategy);
+        });
+    }
+
+    {
+        group.bench_function("bench_strategy_rwasm", |b| {
+            let wasm_binary = include_bytes!("../lib.wasm");
+            let config = CompilationConfig::default()
+                .with_entrypoint_name("main".into())
+                .with_allow_malformed_entrypoint_func_type(true);
+            let (module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
+            let strategy = Strategy::Rwasm {
+                module,
+                engine: ExecutionEngine::acquire_shared(),
             };
             bench_strategy(b, strategy);
         });
