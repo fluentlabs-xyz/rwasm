@@ -51,7 +51,7 @@ impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
         self.store.try_consume_fuel(delta)
     }
 
-    fn remaining_fuel(&mut self) -> Option<u64> {
+    fn remaining_fuel(&self) -> Option<u64> {
         self.store.remaining_fuel()
     }
 }

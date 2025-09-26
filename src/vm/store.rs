@@ -83,7 +83,7 @@ impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
         Ok(())
     }
 
-    fn remaining_fuel(&mut self) -> Option<u64> {
+    fn remaining_fuel(&self) -> Option<u64> {
         Some(self.fuel_config.fuel_limit? - self.consumed_fuel)
     }
 }

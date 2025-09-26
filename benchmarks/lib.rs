@@ -1,5 +1,3 @@
-#![feature(test)]
-
 #[cfg(target_arch = "wasm32")]
 #[no_mangle]
 pub fn main(n: i32) -> i32 {

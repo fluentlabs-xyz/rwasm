@@ -18,7 +18,7 @@ pub trait Store<T> {
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode>;
 
-    fn remaining_fuel(&mut self) -> Option<u64>;
+    fn remaining_fuel(&self) -> Option<u64>;
 }
 
 pub trait Caller<T>: Store<T> {
@@ -136,7 +136,7 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
         }
     }
 
-    fn remaining_fuel(&mut self) -> Option<u64> {
+    fn remaining_fuel(&self) -> Option<u64> {
         match self {
             TypedCaller::Rwasm(store) => store.remaining_fuel(),
             #[cfg(feature = "wasmtime")]
@@ -233,7 +233,7 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
         }
     }
 
-    fn remaining_fuel(&mut self) -> Option<u64> {
+    fn remaining_fuel(&self) -> Option<u64> {
         match self {
             TypedStore::Rwasm(store) => store.remaining_fuel(),
             #[cfg(feature = "wasmtime")]
