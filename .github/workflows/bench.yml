@@ -1,4 +1,4 @@
-name: criterion
+name: Bench
 
 on:
   push:
@@ -76,7 +76,7 @@ jobs:
       - name: Post summary in PR
         run: |
           {
-            echo "### Criterion results (vs baseline \`devel\` if available)"
+            echo "### Criterion results (vs baseline)"
             echo
             echo '```'
             sed -n '1,200p' bench_output.txt

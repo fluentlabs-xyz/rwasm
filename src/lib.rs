@@ -28,7 +28,9 @@ pub use vm::*;
 pub use wasmi::*;
 pub use wasmparser::{FuncType, ValType};
 #[cfg(feature = "wasmtime")]
-pub use wasmtime::{WasmtimeCaller, WasmtimeLinker, WasmtimeModule, WasmtimeStore};
+pub use wasmtime::{
+    compile_wasmtime_module, WasmtimeCaller, WasmtimeLinker, WasmtimeModule, WasmtimeStore,
+};
 
 #[cfg(feature = "std")]
 pub fn for_each_strategy<F: FnMut(Strategy) -> Result<(), StrategyError>>(
