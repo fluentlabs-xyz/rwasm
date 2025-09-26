@@ -17,8 +17,8 @@ use core::ops::Deref;
 /// reference) information needed for execution within the rWasm virtual machine.
 ///
 /// It's compiled from Wasm
-#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Default, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Default, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct RwasmModule {
     inner: Arc<RwasmModuleInner>,
 }
@@ -67,10 +67,13 @@ impl RwasmModule {
     }
 
     pub fn new(sink: &[u8]) -> (Self, usize) {
+        Self::new_checked(sink).unwrap_or_else(|_| unreachable!("rwasm: malformed rwasm binary"))
+    }
+
+    pub fn new_checked(sink: &[u8]) -> Result<(Self, usize), DecodeError> {
         let (inner, bytes_read): (RwasmModuleInner, usize) =
-            bincode::decode_from_slice(sink, bincode::config::legacy())
-                .unwrap_or_else(|_| unreachable!("rwasm: malformed rwasm binary"));
-        (inner.into(), bytes_read)
+            bincode::decode_from_slice(sink, bincode::config::legacy())?;
+        Ok((inner.into(), bytes_read))
     }
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -99,8 +102,8 @@ impl Deref for RwasmModule {
     }
 }
 
-#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Default, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Default, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct RwasmModuleInner {
     /// The main instruction set (bytecode) for this module that includes an entrypoint
     /// and all required functions.

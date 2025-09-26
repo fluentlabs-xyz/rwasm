@@ -53,9 +53,10 @@ std = [
     "wasmtime?/std",
 ]
 more-max-pages = []
-tracing = [
+serde = [
     "dep:serde", "serde/derive"
 ]
+tracing = ["serde"]
 debug-print = []
 fpu = []
 wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:futures"]
