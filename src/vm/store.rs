@@ -32,9 +32,10 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     pub(crate) import_linker: Arc<ImportLinker>,
     /// If set, contains the instruction/value-stack pointers to resume after a suspension.
     pub(crate) resumable_context: Option<(InstructionPtr, ValueStackPtr)>,
+    /// A fuel config.
     pub(crate) fuel_config: FuelConfig,
-    #[cfg(feature = "tracing")]
     /// Execution tracer used when the `tracing` feature is enabled.
+    #[cfg(feature = "tracing")]
     pub tracer: crate::Tracer,
 }
 
