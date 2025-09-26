@@ -21,7 +21,7 @@ jobs:
           CRITERION_WARM_UP_TIME: "3"
           CRITERION_MEASUREMENT_TIME: "5"
           CRITERION_SAMPLE_SIZE: "50"
-        run: cargo bench --manifest-path=./benchmarks/Cargo.toml -- --save-baseline devel
+        run: cd benchmarks && make && cargo bench -- --save-baseline devel
       - name: Upload baseline artifact
         uses: actions/upload-artifact@v4
         with:
@@ -64,7 +64,7 @@ jobs:
           if [ -d "target/criterion" ]; then
             BASEFLAG="--baseline devel"
           fi
-          cargo bench --manifest-path=./benchmarks/Cargo.toml -- $BASEFLAG | tee bench_output.txt
+          cd benchmarks && make && cargo bench -- $BASEFLAG | tee bench_output.txt
 
       - name: Upload full report
         uses: actions/upload-artifact@v4
