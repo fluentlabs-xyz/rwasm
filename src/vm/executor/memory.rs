@@ -123,8 +123,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .store
             .empty_data_segments
             .get(data_segment_idx as usize)
-            .as_deref()
-            .copied()
             .unwrap_or(false);
         let (d, s, n) = self.sp.pop3();
         let n = i32::from(n) as usize;

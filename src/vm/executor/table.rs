@@ -131,8 +131,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .store
             .empty_elem_segments
             .get(element_segment_idx as usize)
-            .as_deref()
-            .copied()
             .unwrap_or(false);
 
         let mut module_elements_section = &self.module.elem_section[..];

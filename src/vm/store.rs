@@ -1,9 +1,9 @@
+use crate::bitvec_inlined::BitVecInlined;
 use crate::{
     ExecutionEngine, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, SignatureIdx,
     Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStackPtr,
 };
 use alloc::sync::Arc;
-use bitvec::{order::Lsb0, vec::BitVec};
 use hashbrown::HashMap;
 
 /// Host-side store that holds memory, tables, globals and host context for an rwasm instance.
@@ -25,9 +25,9 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     /// Runtime values of mutable and immutable globals.
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
     /// Bitset tracking which data segments have been consumed/emptied.
-    pub(crate) empty_data_segments: BitVec,
+    pub(crate) empty_data_segments: BitVecInlined<2>,
     /// Bitset tracking which element segments have been consumed/emptied.
-    pub(crate) empty_elem_segments: BitVec,
+    pub(crate) empty_elem_segments: BitVecInlined<2>,
     /// Dispatcher for system calls made by the guest.
     pub(crate) syscall_handler: SyscallHandler<T>,
     /// Linker that resolves imports to host functions/globals.
@@ -108,8 +108,8 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
             tables: Default::default(),
             last_signature: None,
             syscall_handler,
-            empty_data_segments: BitVec::EMPTY,
-            empty_elem_segments: BitVec::EMPTY,
+            empty_data_segments: BitVecInlined::EMPTY,
+            empty_elem_segments: BitVecInlined::EMPTY,
             import_linker,
             resumable_context: None,
         }
@@ -126,14 +126,14 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
             if self.empty_data_segments.len() <= size_of::<usize>() {
                 self.empty_data_segments.fill(false);
             } else {
-                self.empty_data_segments = BitVec::<usize, Lsb0>::EMPTY;
+                self.empty_data_segments = BitVecInlined::EMPTY;
             }
             // we don't do any assumptions regarding how tables are used inside the applications,
             // so keep it always empty, probably there is an optimization here.
             if self.empty_elem_segments.len() <= size_of::<usize>() {
                 self.empty_elem_segments.fill(false);
             } else {
-                self.empty_elem_segments = BitVec::<usize, Lsb0>::EMPTY;
+                self.empty_elem_segments = BitVecInlined::EMPTY;
             }
         }
         // in case of a trap, we might have this flag remains active
