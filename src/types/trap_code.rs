@@ -5,7 +5,7 @@ use num_derive::FromPrimitive;
 #[derive(
     Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode, FromPrimitive,
 )]
-#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum TrapCode {
     UnreachableCodeReached = 0x00,

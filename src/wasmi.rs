@@ -1,10 +1,9 @@
 use crate::{
-    Caller, CompilationConfig, ImportLinker, Store, SysFuncIdx, SyscallHandler, TrapCode,
-    TypedCaller, UntypedValue, Value, F32, F64, N_DEFAULT_STACK_SIZE, N_MAX_RECURSION_DEPTH,
-    N_MAX_STACK_SIZE,
+    Caller, CompilationConfig, FuelConfig, ImportLinker, Store, SysFuncIdx, SyscallHandler,
+    TrapCode, TypedCaller, UntypedValue, Value, F32, F64, N_DEFAULT_STACK_SIZE,
+    N_MAX_RECURSION_DEPTH, N_MAX_STACK_SIZE,
 };
 use alloc::{sync::Arc, vec::Vec};
-use core::cell::RefCell;
 use num_traits::FromPrimitive;
 use smallvec::SmallVec;
 use wasmi::{AsContext, AsContextMut, StackLimits};
@@ -13,46 +12,44 @@ use wasmparser::ValType;
 pub type WasmiModule = wasmi::Module;
 
 pub struct WasmiCaller<'a, T: 'static + Send + Sync> {
-    caller: RefCell<wasmi::Caller<'a, WasmiContextWrapper<T>>>,
+    caller: wasmi::Caller<'a, WasmiContextWrapper<T>>,
 }
 
 impl<'a, T: 'static + Send + Sync> Store<T> for WasmiCaller<'a, T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let global_memory = self
             .caller
-            .borrow_mut()
             .get_export("memory")
             .unwrap_or_else(|| unreachable!("missing memory export, it's not possible"))
             .into_memory()
             .unwrap_or_else(|| unreachable!("missing memory export, it's not possible"));
         global_memory
-            .read(self.caller.borrow().as_context(), offset, buffer)
+            .read(self.caller.as_context(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
         let global_memory = self
             .caller
-            .borrow_mut()
             .get_export("memory")
             .unwrap_or_else(|| unreachable!("missing memory export, it's not possible"))
             .into_memory()
             .unwrap_or_else(|| unreachable!("missing memory export, it's not possible"));
         global_memory
-            .write(self.caller.borrow_mut().as_context_mut(), offset, buffer)
+            .write(self.caller.as_context_mut(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
     fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
-        func(&mut self.caller.borrow_mut().data_mut().inner)
+        func(&mut self.caller.data_mut().inner)
     }
 
     fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
-        func(&self.caller.borrow_mut().data().inner)
+        func(&self.caller.data().inner)
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
-        let mut ctx = self.caller.borrow_mut();
+        let ctx = &mut self.caller;
         if let Ok(remaining_fuel) = ctx.get_fuel() {
             let new_fuel = remaining_fuel
                 .checked_sub(delta)
@@ -63,8 +60,8 @@ impl<'a, T: 'static + Send + Sync> Store<T> for WasmiCaller<'a, T> {
         Ok(())
     }
 
-    fn remaining_fuel(&mut self) -> Option<u64> {
-        let ctx = self.caller.borrow();
+    fn remaining_fuel(&self) -> Option<u64> {
+        let ctx = &self.caller;
         // TODO(dmitry123): "do we want to deal with wasmi's fuel?"
         if let Ok(fuel) = ctx.get_fuel() {
             Some(fuel)
@@ -122,9 +119,7 @@ fn wasmi_syscall_handler<'a, T: 'static + Send + Sync>(
     buffer.extend(core::iter::repeat(Value::I32(0)).take(result.len()));
     // caller adapter is required to provide operations for accessing memory and context
     let syscall_handler = caller.data().syscall_handler;
-    let mut caller_adapter = TypedCaller::Wasmi(WasmiCaller::<'a, T> {
-        caller: RefCell::new(caller),
-    });
+    let mut caller_adapter = TypedCaller::Wasmi(WasmiCaller::<'a, T> { caller });
     let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
     let syscall_result = syscall_handler(
         &mut caller_adapter,
@@ -216,14 +211,18 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
         import_linker: Arc<ImportLinker>,
         data: T,
         syscall_handler: SyscallHandler<T>,
+        fuel_config: FuelConfig,
     ) -> Self {
-        let mut store = wasmi::Store::new(
-            module.engine(),
-            WasmiContextWrapper {
-                inner: data,
-                syscall_handler,
-            },
-        );
+        let data = WasmiContextWrapper {
+            inner: data,
+            syscall_handler,
+        };
+        let mut store = wasmi::Store::new(module.engine(), data);
+        if let Some(fuel_limit) = fuel_config.fuel_limit {
+            store
+                .set_fuel(fuel_limit)
+                .unwrap_or_else(|_| unreachable!("trying to set fuel with disabled wasmi fuel"));
+        }
         let linker = wasmi_import_linker(module.engine(), import_linker);
         let instance = linker
             .instantiate(store.as_context_mut(), &module)
@@ -242,13 +241,7 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
         func_name: &'static str,
         params: &[Value],
         result: &mut [Value],
-        fuel: Option<u64>,
     ) -> Result<(), TrapCode> {
-        if let Some(fuel_limit) = fuel {
-            self.store
-                .set_fuel(fuel_limit)
-                .unwrap_or_else(|_| unreachable!("trying to set fuel with disabled wasmi fuel"));
-        }
         let func = self
             .instance
             .get_func(self.store.as_context_mut(), func_name)
@@ -439,7 +432,7 @@ impl<T: 'static + Send + Sync> Store<T> for WasmiStore<T> {
         Ok(())
     }
 
-    fn remaining_fuel(&mut self) -> Option<u64> {
+    fn remaining_fuel(&self) -> Option<u64> {
         self.store.get_fuel().ok()
     }
 }
