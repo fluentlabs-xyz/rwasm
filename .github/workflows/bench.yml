@@ -21,7 +21,7 @@ jobs:
           CRITERION_WARM_UP_TIME: "3"
           CRITERION_MEASUREMENT_TIME: "5"
           CRITERION_SAMPLE_SIZE: "50"
-        run: cargo bench --features=wasmtime -- --save-baseline devel
+        run: cargo bench --manifest-path=./benchmarks/Cargo.toml --features=wasmtime -- --save-baseline devel
       - name: Upload baseline artifact
         uses: actions/upload-artifact@v4
         with:
@@ -64,7 +64,7 @@ jobs:
           if [ -d "target/criterion" ]; then
             BASEFLAG="--baseline devel"
           fi
-          cargo bench --features=wasmtime -- $BASEFLAG | tee bench_output.txt
+          cargo bench --manifest-path=./benchmarks/Cargo.toml --features=wasmtime -- $BASEFLAG | tee bench_output.txt
 
       - name: Upload full report
         uses: actions/upload-artifact@v4
