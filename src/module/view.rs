@@ -1,4 +1,4 @@
-use crate::{Opcode, RWASM_MAGIC_BYTE_0, RWASM_MAGIC_BYTE_1, RWASM_VERSION_V1};
+use crate::{Opcode, RwasmModule, RWASM_MAGIC_BYTE_0, RWASM_MAGIC_BYTE_1, RWASM_VERSION_V1};
 use bincode::error::DecodeError;
 use core::mem::size_of;
 
@@ -102,6 +102,12 @@ impl<'a> RwasmModuleView<'a> {
             hint_payload_end,
         };
         Ok((view, pos))
+    }
+
+    /// Parse rWasm module (make it execution ready).
+    pub fn to_module(&self) -> RwasmModule {
+        let (module, _) = RwasmModule::new(self.sink);
+        module
     }
 
     /// Like `new_checked` but panics on malformed module.
