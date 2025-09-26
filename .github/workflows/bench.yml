@@ -29,7 +29,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: criterion-baseline-devel
-          path: target/criterion
+          path: benchmarks/target/criterion
           if-no-files-found: error
           compression-level: 6
 
@@ -54,7 +54,7 @@ jobs:
           workflow_conclusion: success
           name: criterion-baseline-devel
           branch: devel
-          path: target/criterion
+          path: benchmarks/target/criterion
 
       - name: Run Criterion (compare if baseline exists)
         env:
@@ -64,7 +64,7 @@ jobs:
           CRITERION_SAMPLE_SIZE: "20"
         run: |
           BASEFLAG=""
-          if [ -d "target/criterion" ]; then
+          if [ -d "benchmarks/target/criterion" ]; then
             BASEFLAG="--baseline devel"
           fi
           rustup target add wasm32-unknown-unknown
@@ -75,7 +75,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: criterion-report-${{ github.sha }}
-          path: target/criterion
+          path: benchmarks/target/criterion
           compression-level: 6
 
       - name: Post summary in PR
