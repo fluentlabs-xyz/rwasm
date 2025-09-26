@@ -10,7 +10,7 @@ on:
 jobs:
   baseline-on-push:
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-amd64-8core
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -35,7 +35,7 @@ jobs:
 
   compare-on-pr:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-amd64-8core
     permissions:
       contents: read
       pull-requests: write  # needed to comment on PRs (won’t work for forks; see note below)
