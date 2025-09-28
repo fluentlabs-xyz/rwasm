@@ -39,7 +39,7 @@ fn factory_wasmtime_engine() -> Engine {
     // Make initial memory image cheap (copy-on-write for data segments)
     cfg.memory_init_cow(true);
     cfg.cranelift_opt_level(OptLevel::SpeedAndSize);
-    cfg.parallel_compilation(true);
+    cfg.parallel_compilation(false);
     cfg.consume_fuel(false);
     // Enable debug info and backtrace for debug mode
     #[cfg(debug_assertions)]
