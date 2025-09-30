@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "perf1"
-path = "perf1.rs"
+name = "fibonacci_perf"
+path = "fibonacci_perf.rs"
 
 [profile.release]
 panic = "abort"
