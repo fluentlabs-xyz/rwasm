@@ -7,15 +7,6 @@ use rwasm::{
 use std::sync::Arc;
 
 #[no_mangle]
-pub fn sum() -> i32 {
-    let mut sum = 0;
-    for _i in 0..100000 {
-        sum += std::hint::black_box(1);
-    }
-    sum
-}
-
-#[no_mangle]
 pub fn main() {
     const FIB_VALUE: i32 = 43;
     fn bench_strategy(strategy: &Strategy) {

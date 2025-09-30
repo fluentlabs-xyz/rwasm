@@ -8,12 +8,15 @@ build_wasm:
 build_debug:
 	cargo build --profile dev
 
-.PHONY: fibonacci_perf_flame_debug
-fibonacci_perf_flame_debug:
+.PHONY: fibonacci_perf_flame
+fibonacci_perf_flame:
 	perf.sh target/debug/fibonacci_perf main
-	mv flame.svg fibonacci_perf_flame_debug.svg
-	#perf.sh target/release/fibonacci_perf main
-	#mv flame.svg flame_release.svg
+	mv flame.svg fibonacci_perf_flame.svg
+
+.PHONY: load_perf_flame
+load_perf_flame:
+	perf.sh target/debug/load_perf main
+	mv flame.svg load_perf_flame.svg
 
 .PHONY: all_seq
 all_seq:
