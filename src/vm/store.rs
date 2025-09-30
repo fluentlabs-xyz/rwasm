@@ -1,9 +1,13 @@
-use crate::bitvec_inlined::BitVecInlined;
+#[cfg(feature = "bitvec-inlined")]
+use crate::bitvec_inlined::BitVecInlined as BV;
+use crate::bitvec_inlined::USIZE_BITS;
 use crate::{
     FuelConfig, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, SignatureIdx, Store,
     SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStackPtr,
 };
 use alloc::sync::Arc;
+#[cfg(not(feature = "bitvec-inlined"))]
+use bitvec::vec::BitVec as BV;
 use hashbrown::HashMap;
 
 /// Host-side store that holds memory, tables, globals and host context for an rwasm instance.
@@ -23,9 +27,15 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     /// Runtime values of mutable and immutable globals.
     pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
     /// Bitset tracking which data segments have been consumed/emptied.
-    pub(crate) empty_data_segments: BitVecInlined<2>,
+    #[cfg(not(feature = "bitvec-inlined"))]
+    pub(crate) empty_data_segments: BV,
+    #[cfg(feature = "bitvec-inlined")]
+    pub(crate) empty_data_segments: BV<2>,
     /// Bitset tracking which element segments have been consumed/emptied.
-    pub(crate) empty_elem_segments: BitVecInlined<2>,
+    #[cfg(not(feature = "bitvec-inlined"))]
+    pub(crate) empty_elem_segments: BV,
+    #[cfg(feature = "bitvec-inlined")]
+    pub(crate) empty_elem_segments: BV<2>,
     /// Dispatcher for system calls made by the guest.
     pub(crate) syscall_handler: SyscallHandler<T>,
     /// Linker that resolves imports to host functions/globals.
@@ -107,8 +117,8 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
             tables: Default::default(),
             last_signature: None,
             syscall_handler,
-            empty_data_segments: BitVecInlined::EMPTY,
-            empty_elem_segments: BitVecInlined::EMPTY,
+            empty_data_segments: BV::EMPTY,
+            empty_elem_segments: BV::EMPTY,
             import_linker,
             resumable_context: None,
             fuel_config,
@@ -121,20 +131,8 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         self.consumed_fuel = 0;
         // we might want to keep data/elem flags between calls, it's required for e2e tests
         if !keep_flags {
-            // we don't do any assumptions regarding how data segments are used,
-            // maybe there is a way to optimize reuse of bitset.
-            if self.empty_data_segments.len() <= size_of::<usize>() {
-                self.empty_data_segments.fill(false);
-            } else {
-                self.empty_data_segments = BitVecInlined::EMPTY;
-            }
-            // we don't do any assumptions regarding how tables are used inside the applications,
-            // so keep it always empty, probably there is an optimization here.
-            if self.empty_elem_segments.len() <= size_of::<usize>() {
-                self.empty_elem_segments.fill(false);
-            } else {
-                self.empty_elem_segments = BitVecInlined::EMPTY;
-            }
+            self.empty_data_segments = BV::EMPTY;
+            self.empty_elem_segments = BV::EMPTY;
         }
         // in case of a trap, we might have this flag remains active
         self.last_signature = None;

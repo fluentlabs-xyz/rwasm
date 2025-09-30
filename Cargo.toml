@@ -51,6 +51,7 @@ std = [
     "num-traits/std",
     "bitvec/std",
     "wasmtime?/std",
+    #    "bitvec-inlined",
 ]
 more-max-pages = []
 serde = [
@@ -62,3 +63,4 @@ fpu = []
 wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:futures"]
 cache-compiled-artifacts = ["wasmtime", "dep:directories"]
 pooling-allocator = []
+bitvec-inlined = []

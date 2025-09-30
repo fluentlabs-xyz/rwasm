@@ -119,10 +119,19 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         &mut self,
         data_segment_idx: DataSegmentIdx,
     ) -> Result<(), TrapCode> {
+        #[cfg(feature = "bitvec-inlined")]
         let is_empty_data_segment = self
             .store
             .empty_data_segments
             .get(data_segment_idx as usize)
+            .unwrap_or(false);
+        #[cfg(not(feature = "bitvec-inlined"))]
+        let is_empty_data_segment = self
+            .store
+            .empty_data_segments
+            .get(data_segment_idx as usize)
+            .as_deref()
+            .copied()
             .unwrap_or(false);
         let (d, s, n) = self.sp.pop3();
         let n = i32::from(n) as usize;

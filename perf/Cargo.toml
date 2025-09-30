@@ -1,0 +1,38 @@
+[package]
+name = "perf"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "perf1"
+path = "perf1.rs"
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = 0
+strip = false
+debug = true
+debug-assertions = true
+rpath = true
+codegen-units = 1
+
+[profile.dev]
+debug = true
+opt-level = 0
+debug-assertions = true
+strip = false
+codegen-units = 256
+rpath = true
+
+[dependencies]
+#criterion = { version = "0.7.0", default-features = false, features = [] }
+bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
+rwasm = { path = "..", features = [
+    "std",
+    "wasmtime",
+] }
+#rand = { version = "0.9.2" }
+#wat = "1.230.0"
+
+[dev-dependencies]
