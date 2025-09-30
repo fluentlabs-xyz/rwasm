@@ -85,7 +85,7 @@ pub const N_MAX_TABLES: u32 = 100;
 ///
 /// The original standard allows `100_000` element segments with an unlimited number of elements
 /// inside.
-pub const N_MAX_TABLE_SIZE: u32 = 1024;
+pub const N_MAX_TABLE_SIZE: u32 = 64;
 
 pub type InstrLoc = u32;
 pub type LabelRef = u32;
