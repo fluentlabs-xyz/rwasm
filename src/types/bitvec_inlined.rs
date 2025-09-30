@@ -3,7 +3,7 @@ use bitvec::order::Lsb0;
 use bitvec::store::BitStore;
 use bitvec::vec::BitVec;
 use core::cmp::min;
-use std::ops::Range;
+use core::ops::Range;
 
 pub const USIZE_BITS: usize = 0_usize.count_zeros() as usize;
 
