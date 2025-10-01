@@ -365,7 +365,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         ) -> Result<UntypedValue, TrapCode>,
     ) -> Result<(), TrapCode> {
         self.sp.try_eval_top(|address| {
-            let memory = self.store.global_memory.data();
+            let memory = self.store.get_global_memory().data();
             let value = load_extend(memory, address, offset)?;
             Ok(value)
         })?;
@@ -386,7 +386,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         #[allow(unused_variables)] len: u32,
     ) -> Result<(), TrapCode> {
         let (address, value) = self.sp.pop2();
-        let memory = self.store.global_memory.data_mut();
+        let memory = self.store.get_global_memory().data_mut();
         store_wrap(memory, address, offset, value)?;
         #[cfg(feature = "tracing")]
         {

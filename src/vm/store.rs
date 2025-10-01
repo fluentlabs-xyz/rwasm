@@ -1,6 +1,5 @@
 #[cfg(feature = "bitvec-inlined")]
 use crate::bitvec_inlined::BitVecInlined as BV;
-use crate::bitvec_inlined::USIZE_BITS;
 use crate::{
     FuelConfig, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, SignatureIdx, Store,
     SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStackPtr,
@@ -17,7 +16,8 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     /// Total amount of fuel consumed by the currently running instance.
     pub(crate) consumed_fuel: u64,
     /// The linear memory shared by the running module and the host.
-    pub(crate) global_memory: GlobalMemory,
+    // pub(crate) global_memory: GlobalMemory,
+    pub(crate) global_memory: Option<GlobalMemory>,
     /// User-defined context available to host functions and syscalls.
     pub(crate) context: T,
     /// The last used signature index used for validating indirect calls.
@@ -63,12 +63,12 @@ impl<T: 'static + Send + Sync + Default> Default for RwasmStore<T> {
 
 impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        self.global_memory.read(offset, buffer)?;
+        self.get_global_memory().read(offset, buffer)?;
         Ok(())
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        self.global_memory.write(offset, buffer)?;
+        self.get_global_memory().write(offset, buffer)?;
         #[cfg(feature = "tracing")]
         self.tracer
             .memory_change(offset as u32, buffer.len() as u32, buffer);
@@ -106,10 +106,11 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         syscall_handler: SyscallHandler<T>,
         fuel_config: FuelConfig,
     ) -> Self {
-        let global_memory = GlobalMemory::new(Pages::default());
+        // let global_memory = GlobalMemory::new(Pages::default());
         Self {
             consumed_fuel: 0,
-            global_memory,
+            global_memory: None,
+            // global_memory,
             context,
             #[cfg(feature = "tracing")]
             tracer: crate::Tracer::default(),
@@ -124,6 +125,17 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
             fuel_config,
         }
     }
+
+    pub fn get_global_memory(&mut self) -> &mut GlobalMemory {
+        if self.global_memory.is_none() {
+            self.global_memory = Some(GlobalMemory::new(Pages::default()))
+        }
+        self.global_memory.as_mut().unwrap()
+    }
+
+    // pub fn get_global_memory(&mut self) -> &mut GlobalMemory {
+    //     &mut self.global_memory
+    // }
 
     /// Resets the state of the current execution context.
     pub fn reset(&mut self, keep_flags: bool) {

@@ -3,6 +3,9 @@ name = "perf"
 version = "0.1.0"
 edition = "2021"
 
+[build]
+rustflags = ["-C", "force-frame-pointers=yes"]
+
 [[bin]]
 name = "fibonacci_perf"
 path = "fibonacci_perf.rs"
@@ -37,3 +40,5 @@ rwasm = { path = "..", features = [
 wat = "1.230.0"
 
 [dev-dependencies]
+
+
