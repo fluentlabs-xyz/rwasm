@@ -9,6 +9,7 @@ use std::sync::Arc;
 #[no_mangle]
 pub fn main() {
     const FIB_VALUE: i32 = 43;
+    #[inline(never)]
     fn bench_strategy(strategy: &Strategy) {
         let mut store = strategy.create_store(
             Arc::new(ImportLinker::default()),

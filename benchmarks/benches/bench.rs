@@ -117,7 +117,7 @@ fn bench_comparisons(c: &mut Criterion) {
     //         });
     //     });
     // };
-    //
+
     fn bench_strategy(b: &mut Bencher, strategy: Strategy) {
         b.iter(|| {
             let mut store = strategy.create_store(
@@ -145,18 +145,18 @@ fn bench_comparisons(c: &mut Criterion) {
     //         bench_strategy(b, strategy);
     //     });
     // }
-    //
-    // {
-    //     let wasm_binary = include_bytes!("../lib.wasm");
-    //     let config = CompilationConfig::default().with_consume_fuel(false);
-    //     let module = compile_wasmi_module(config, wasm_binary).unwrap();
-    //     group.bench_function("bench_strategy_wasmi", |b| {
-    //         let strategy = Strategy::Wasmi {
-    //             module: module.clone(),
-    //         };
-    //         bench_strategy(b, strategy);
-    //     });
-    // }
+
+    {
+        let wasm_binary = include_bytes!("../lib.wasm");
+        let config = CompilationConfig::default().with_consume_fuel(false);
+        let module = compile_wasmi_module(config, wasm_binary).unwrap();
+        group.bench_function("bench_strategy_wasmi", |b| {
+            let strategy = Strategy::Wasmi {
+                module: module.clone(),
+            };
+            bench_strategy(b, strategy);
+        });
+    }
 
     {
         let wasm_binary = include_bytes!("../lib.wasm");

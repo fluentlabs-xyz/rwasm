@@ -1,6 +1,6 @@
 use crate::{
     types::{TrapCode, UntypedValue},
-    N_MAX_STACK_SIZE, N_MAX_TABLE_SIZE,
+    N_MAX_STACK_SIZE,
 };
 use alloc::vec::Vec;
 
