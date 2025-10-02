@@ -1,14 +1,13 @@
 #[cfg(feature = "bitvec-inlined")]
 use crate::bitvec_inlined::BitVecInlined as BV;
 use crate::{
-    FuelConfig, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, SignatureIdx, Store,
-    SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStackPtr,
+    FuelConfig, GlobalMemory, ImportLinker, InstructionPtr, Pages, SignatureIdx, Store,
+    SyscallHandler, TableEntity, TrapCode, UntypedValue, ValueStackPtr,
 };
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 #[cfg(not(feature = "bitvec-inlined"))]
 use bitvec::vec::BitVec as BV;
-use hashbrown::HashMap;
 
 /// Host-side store that holds memory, tables, globals and host context for an rwasm instance.
 /// It also tracks fuel for metering and provides access to imported functions and syscalls.
