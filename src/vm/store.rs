@@ -5,6 +5,7 @@ use crate::{
     SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStackPtr,
 };
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 #[cfg(not(feature = "bitvec-inlined"))]
 use bitvec::vec::BitVec as BV;
 use hashbrown::HashMap;

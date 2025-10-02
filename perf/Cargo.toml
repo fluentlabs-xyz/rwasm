@@ -26,11 +26,11 @@ codegen-units = 1
 
 [profile.dev]
 debug = true
-opt-level = 3
+opt-level = 0
 debug-assertions = true
 strip = false
-codegen-units = 1
-rpath = false
+codegen-units = 256
+rpath = true
 
 [dependencies]
 rwasm = { path = "..", features = [
