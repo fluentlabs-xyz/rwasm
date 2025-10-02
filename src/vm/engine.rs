@@ -1,4 +1,10 @@
-use crate::{CallStack, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value, ValueStack};
+use crate::vm::reusable_pool;
+use crate::vm::reusable_pool::specific::{CallStackItemConfig, ValueStackItemConfig};
+use crate::vm::reusable_pool::ReusablePool;
+use crate::{
+    CallStack, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value, ValueStack,
+    N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
+};
 use alloc::sync::Arc;
 use core::mem::take;
 use smallvec::SmallVec;
@@ -40,10 +46,30 @@ impl ExecutionEngine {
     }
 }
 
-#[derive(Default)]
+const REUSABLE_POOL_KEEP_DEFAULT: usize = 10;
+
 struct ExecutionEngineInner {
     value_stack: SmallVec<[ValueStack; 8]>,
     call_stack: SmallVec<[CallStack; 8]>,
+    reusable_value_stacks: ReusablePool<ValueStack, ValueStackItemConfig>,
+    reusable_call_stacks: ReusablePool<CallStack, CallStackItemConfig>,
+}
+
+impl Default for ExecutionEngineInner {
+    fn default() -> Self {
+        Self {
+            value_stack: Default::default(),
+            call_stack: Default::default(),
+            reusable_value_stacks: ReusablePool::new(reusable_pool::Config::new(
+                REUSABLE_POOL_KEEP_DEFAULT,
+                ValueStackItemConfig::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE),
+            )),
+            reusable_call_stacks: ReusablePool::new(reusable_pool::Config::new(
+                REUSABLE_POOL_KEEP_DEFAULT,
+                CallStackItemConfig::new(),
+            )),
+        }
+    }
 }
 
 impl ExecutionEngineInner {
@@ -55,10 +81,10 @@ impl ExecutionEngineInner {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        let value_stack = store.reusable_value_stacks.reuse_or_new();
-        self.value_stack.push(value_stack);
-        let call_stack = store.reusable_call_stacks.reuse_or_new();
-        self.call_stack.push(call_stack);
+        self.value_stack
+            .push(self.reusable_value_stacks.reuse_or_new());
+        self.call_stack
+            .push(self.reusable_call_stacks.reuse_or_new());
         let mut executor = RwasmExecutor::entrypoint(
             &module,
             self.value_stack.last_mut().unwrap(),
@@ -72,9 +98,9 @@ impl ExecutionEngineInner {
             }
             res => {
                 let value_stack = self.value_stack.pop().unwrap();
-                store.reusable_value_stacks.recycle(value_stack);
+                self.reusable_value_stacks.recycle(value_stack);
                 let call_stack = self.call_stack.pop().unwrap();
-                store.reusable_call_stacks.recycle(call_stack);
+                self.reusable_call_stacks.recycle(call_stack);
                 res
             }
         }
@@ -102,9 +128,10 @@ impl ExecutionEngineInner {
                 Err(TrapCode::InterruptionCalled)
             }
             res => {
-                // TODO: Recycle stack
-                self.value_stack.pop().unwrap();
-                self.call_stack.pop().unwrap();
+                let value_stack = self.value_stack.pop().unwrap();
+                self.reusable_value_stacks.recycle(value_stack);
+                let call_stack = self.call_stack.pop().unwrap();
+                self.reusable_call_stacks.recycle(call_stack);
                 res
             }
         }
