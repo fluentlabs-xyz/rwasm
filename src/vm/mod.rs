@@ -5,6 +5,7 @@ mod executor;
 mod handler;
 mod instr_ptr;
 mod memory;
+mod reusable_pool;
 mod store;
 mod table_entity;
 #[cfg(feature = "tracing")]
