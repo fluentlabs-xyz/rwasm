@@ -42,15 +42,8 @@ impl<ITEM, CONFIG: ItemConfig<ITEM>> ReusablePool<ITEM, CONFIG> {
 
     pub fn reuse_or_new(&mut self) -> ITEM {
         match self.items.pop() {
-            Some(stack) => {
-                // println!("reused");
-                stack
-            }
-            None => {
-                // println!("created");
-                self.item_config.create_item()
-                // ValueStack::new(self.item_config.initial_len, self.item_config.maximum_len)
-            }
+            Some(stack) => stack,
+            None => self.item_config.create_item(),
         }
     }
 
