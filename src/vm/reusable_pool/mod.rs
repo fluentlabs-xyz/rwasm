@@ -1,4 +1,5 @@
-use std::marker::PhantomData;
+use alloc::vec::Vec;
+use core::marker::PhantomData;
 
 pub mod specific;
 
@@ -43,22 +44,14 @@ impl<ITEM, CONFIG: ItemConfig<ITEM>> ReusablePool<ITEM, CONFIG> {
     #[inline]
     pub fn reuse_or_new(&mut self) -> ITEM {
         match self.items.pop() {
-            Some(item) => {
-                // println!("reused");
-                item
-            }
-            None => {
-                let item = self.item_config.create_item();
-                // println!("created");
-                item
-            }
+            Some(item) => item,
+            None => self.item_config.create_item(),
         }
     }
 
     #[inline]
     pub fn recycle(&mut self, mut item: ITEM) {
         if self.items.len() < self.keep {
-            // println!("recycled");
             CONFIG::reset_for_reuse(&mut item);
             self.items.push(item);
         }
