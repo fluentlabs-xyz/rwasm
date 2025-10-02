@@ -240,7 +240,8 @@ impl ModuleParser {
     }
 
     pub fn emit_snippets(&mut self) {
-        let mut emitted_snippets: HashMap<Snippet, FuncIdx> = HashMap::new();
+        let mut emitted_snippets: HashMap<Snippet, FuncIdx, fnv::FnvBuildHasher> =
+            Default::default();
 
         let snippet_calls = self.allocations.translation.snippet_calls.clone();
         for snippet_call in snippet_calls {

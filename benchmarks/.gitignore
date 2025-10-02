@@ -2,5 +2,3 @@ target
 Cargo.lock
 lib.wat
 lib.wasm
-/*.svg
-/perf.data*

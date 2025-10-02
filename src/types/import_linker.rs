@@ -1,14 +1,14 @@
+use crate::intrinsic::Intrinsic;
 use crate::{ImportName, InstructionSet};
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use wasmparser::{FuncType, ValType};
-use crate::intrinsic::Intrinsic;
 
 #[derive(Debug, Default, Clone)]
 pub struct ImportLinker {
     entities: Vec<ImportLinkerEntity>,
-    name_to_entity: HashMap<ImportName, usize>,
-    idx_to_entity: HashMap<u32, usize>,
+    name_to_entity: HashMap<ImportName, usize, fnv::FnvBuildHasher>,
+    idx_to_entity: HashMap<u32, usize, fnv::FnvBuildHasher>,
 }
 
 #[derive(Debug, Clone)]

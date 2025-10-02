@@ -18,8 +18,8 @@ load_perf_flame:
 	perf.sh target/debug/load_perf main
 	mv flame.svg load_perf_flame.svg
 
-.PHONY: all_seq
-all_seq:
+.PHONY: all_sequentially
+all_sequentially:
 	$(MAKE) build_wasm
 	$(MAKE) build_debug
 	$(MAKE) fibonacci_perf_flame

@@ -23,9 +23,9 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     /// The last used signature index used for validating indirect calls.
     pub(crate) last_signature: Option<SignatureIdx>,
     /// Runtime-managed tables (may differ from compile-time layout due to mutations).
-    pub(crate) tables: HashMap<TableIdx, TableEntity>,
+    pub(crate) tables: HashMap<TableIdx, TableEntity, fnv::FnvBuildHasher>,
     /// Runtime values of mutable and immutable globals.
-    pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
+    pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue, fnv::FnvBuildHasher>,
     /// Bitset tracking which data segments have been consumed/emptied.
     #[cfg(not(feature = "bitvec-inlined"))]
     pub(crate) empty_data_segments: BV,

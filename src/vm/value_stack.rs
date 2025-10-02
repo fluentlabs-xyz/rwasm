@@ -408,7 +408,7 @@ impl ValueStackPtr {
     ///
     /// The amount of `delta` is in the number of bytes per [`UntypedValue`].
     #[must_use]
-    #[inline]
+    #[inline(always)]
     pub fn into_sub(mut self, delta: usize) -> Self {
         self.dec_by(delta);
         self
@@ -464,7 +464,7 @@ impl ValueStackPtr {
     }
 
     /// Decreases the [`ValueStackPtr`] of `self` by one.
-    #[inline]
+    #[inline(always)]
     fn dec_by(&mut self, delta: usize) {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
         //         Wasm validation and `rwasm` codegen to never run out
@@ -551,7 +551,7 @@ impl ValueStackPtr {
     /// the executed WebAssembly bytecode for correctness.
     ///
     /// [`ValueStack`]: super::ValueStack
-    #[inline]
+    #[inline(always)]
     pub fn pop(&mut self) -> UntypedValue {
         self.dec_by(1);
         self.get()
