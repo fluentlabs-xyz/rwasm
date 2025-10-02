@@ -48,7 +48,6 @@ impl<ITEM, CONFIG: ItemConfig<ITEM>> ReusablePool<ITEM, CONFIG> {
     }
 
     pub fn recycle(&mut self, mut item: ITEM) {
-        // TODO add check for capacity? stack.entries().capacity() > N_DEFAULT_STACK_SIZE
         if self.items.len() < self.keep {
             CONFIG::reset_for_reuse(&mut item);
             self.items.push(item);
