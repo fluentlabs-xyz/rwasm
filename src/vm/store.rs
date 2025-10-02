@@ -26,7 +26,7 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     /// Runtime-managed tables (may differ from compile-time layout due to mutations).
     pub(crate) tables: Vec<TableEntity>,
     /// Runtime values of mutable and immutable globals.
-    pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue, fnv::FnvBuildHasher>,
+    pub(crate) global_variables: Vec<UntypedValue>,
     /// Bitset tracking which data segments have been consumed/emptied.
     #[cfg(not(feature = "bitvec-inlined"))]
     pub(crate) empty_data_segments: BV,
