@@ -55,9 +55,10 @@ impl ExecutionEngineInner {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        let value_stack = store.reusable_call_stacks.reuse_or_new();
+        let value_stack = store.reusable_value_stacks.reuse_or_new();
         self.value_stack.push(value_stack);
-        self.call_stack.push(CallStack::default());
+        let call_stack = store.reusable_call_stacks.reuse_or_new();
+        self.call_stack.push(call_stack);
         let mut executor = RwasmExecutor::entrypoint(
             &module,
             self.value_stack.last_mut().unwrap(),
@@ -71,8 +72,9 @@ impl ExecutionEngineInner {
             }
             res => {
                 let value_stack = self.value_stack.pop().unwrap();
-                store.reusable_call_stacks.recycle(value_stack);
-                self.call_stack.pop().unwrap();
+                store.reusable_value_stacks.recycle(value_stack);
+                let call_stack = self.call_stack.pop().unwrap();
+                store.reusable_call_stacks.recycle(call_stack);
                 res
             }
         }

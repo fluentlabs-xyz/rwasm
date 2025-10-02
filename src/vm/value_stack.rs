@@ -66,11 +66,6 @@ impl Default for ValueStack {
 }
 
 impl ValueStack {
-    pub fn reset_for_reuse(&mut self) {
-        unsafe {
-            self.entries.set_len(0);
-        }
-    }
     pub fn entries(&self) -> &SmallVec<[UntypedValue; N_DEFAULT_STACK_SIZE]> {
         &self.entries
     }

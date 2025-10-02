@@ -1,11 +1,12 @@
 #[cfg(feature = "bitvec-inlined")]
 use crate::bitvec_inlined::BitVecInlined as BV;
 use crate::vm::reusable_pool;
+use crate::vm::reusable_pool::specific::{CallStackItemConfig, ValueStackItemConfig};
 use crate::vm::reusable_pool::ReusablePool;
 use crate::{
-    FuelConfig, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, SignatureIdx, Store,
-    SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStackPtr,
-    N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
+    CallStack, FuelConfig, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages,
+    SignatureIdx, Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStack,
+    ValueStackPtr, N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
 };
 use alloc::sync::Arc;
 #[cfg(not(feature = "bitvec-inlined"))]
@@ -50,7 +51,8 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     /// Execution tracer used when the `tracing` feature is enabled.
     #[cfg(feature = "tracing")]
     pub tracer: crate::Tracer,
-    pub reusable_call_stacks: ReusablePool,
+    pub reusable_value_stacks: ReusablePool<ValueStack, ValueStackItemConfig>,
+    pub reusable_call_stacks: ReusablePool<CallStack, CallStackItemConfig>,
 }
 
 #[cfg(feature = "std")]
@@ -127,13 +129,14 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
             import_linker,
             resumable_context: None,
             fuel_config,
-            reusable_call_stacks: ReusablePool::new(reusable_pool::Config {
-                keep: 100,
-                item_config: reusable_pool::ItemConfig {
-                    initial_len: N_DEFAULT_STACK_SIZE,
-                    maximum_len: N_MAX_STACK_SIZE,
-                },
-            }),
+            reusable_value_stacks: ReusablePool::new(reusable_pool::Config::new(
+                10,
+                ValueStackItemConfig::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE),
+            )),
+            reusable_call_stacks: ReusablePool::new(reusable_pool::Config::new(
+                10,
+                CallStackItemConfig::new(),
+            )),
         }
     }
 
