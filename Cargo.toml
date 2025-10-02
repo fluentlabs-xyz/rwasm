@@ -52,12 +52,14 @@ std = [
     "bitvec/std",
     "wasmtime?/std",
     #    "bitvec-inlined",
+    #    "debug-asserts",
 ]
 more-max-pages = []
 serde = [
     "dep:serde", "serde/derive"
 ]
 tracing = ["serde"]
+debug-asserts = []
 debug-print = []
 fpu = []
 wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:futures"]

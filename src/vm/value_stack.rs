@@ -333,9 +333,11 @@ impl ValueStack {
 ///
 /// [`ValueStack`]: super::ValueStack
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(not(feature = "debug-asserts"), repr(transparent))]
 pub struct ValueStackPtr {
-    src: *mut UntypedValue,
     ptr: *mut UntypedValue,
+    #[cfg(feature = "debug-asserts")]
+    src: *mut UntypedValue,
 }
 
 unsafe impl Send for ValueStackPtr {}
@@ -343,13 +345,21 @@ unsafe impl Send for ValueStackPtr {}
 impl From<*mut UntypedValue> for ValueStackPtr {
     #[inline]
     fn from(ptr: *mut UntypedValue) -> Self {
-        Self { src: ptr, ptr }
+        Self {
+            #[cfg(feature = "debug-asserts")]
+            src: ptr,
+            ptr,
+        }
     }
 }
 
 impl ValueStackPtr {
     pub fn new(ptr: *mut UntypedValue) -> ValueStackPtr {
-        Self { ptr, src: ptr }
+        Self {
+            ptr,
+            #[cfg(feature = "debug-asserts")]
+            src: ptr,
+        }
     }
 
     /// Calculates the distance between two [`ValueStackPtr] in units of [`UntypedValue`].
@@ -449,6 +459,7 @@ impl ValueStackPtr {
         //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
+        #[cfg(feature = "debug-asserts")]
         debug_assert!(self.ptr >= self.src, "stack underflow: {}", delta);
     }
 
@@ -459,6 +470,7 @@ impl ValueStackPtr {
         //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.sub(delta) };
+        #[cfg(feature = "debug-asserts")]
         debug_assert!(self.ptr >= self.src, "stack underflow");
     }
 
