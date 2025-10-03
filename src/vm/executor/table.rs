@@ -28,7 +28,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         } else {
             self.store.tables.extend(
                 core::iter::repeat_with(|| TableEntity::new())
-                    .take(table_idx as usize - self.store.tables.len() + 1),
+                    .take(expected_capacity - self.store.tables.len()),
             );
             self.store.tables.last_mut().unwrap()
         };
