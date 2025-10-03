@@ -133,7 +133,7 @@ fn bench_comparisons(c: &mut Criterion) {
     {
         group.bench_function("HashMap (fnv::FnvBuildHasher) with_capacity", |b| {
             b.iter(|| {
-                let mut hm = HashMap::<usize, usize, fnv::FnvBuildHasher>::with_capacity_and_hasher(
+                let hm = HashMap::<usize, usize, fnv::FnvBuildHasher>::with_capacity_and_hasher(
                     hash_key_max,
                     fnv::FnvBuildHasher::default(),
                 );
@@ -145,7 +145,7 @@ fn bench_comparisons(c: &mut Criterion) {
     {
         group.bench_function("Vec with_capacity", |b| {
             b.iter(|| {
-                let vec = Vec::<usize>::with_capacity(hash_key_min);
+                let vec = Vec::<usize>::with_capacity(hash_key_max);
                 core::hint::black_box(vec);
             });
         });
