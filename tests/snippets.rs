@@ -1265,7 +1265,7 @@ fn run_i64_binary_op(op: &str, a: i64, b: i64, expected: i64) {
     );
 }
 
-fn run_i64_comparison_op(op: &str, a: i64, b: i64, expected: bool) {
+fn run_i64_comparation_op(op: &str, a: i64, b: i64, expected: bool) {
     let wat_source = format!(
         r#"
 (module
@@ -1341,24 +1341,24 @@ fn test_i64_ops_in_rwasm_interpreter() {
     run_i64_binary_op("i64.rotr", 0x1200, 8, 0x1200i64.rotate_right(8));
 
     // Comparisons (true = 1, false = 0)
-    run_i64_comparison_op("i64.eq", 42, 42, true);
-    run_i64_comparison_op("i64.eq", 42, 24, false);
-    run_i64_comparison_op("i64.ne", 42, 24, true);
-    run_i64_comparison_op("i64.ne", 42, 42, false);
-    run_i64_comparison_op("i64.lt_s", -5, 10, true);
-    run_i64_comparison_op("i64.lt_s", 10, -5, false);
-    run_i64_comparison_op("i64.lt_u", 5, 10, true);
-    run_i64_comparison_op("i64.lt_u", 10, 5, false);
-    run_i64_comparison_op("i64.gt_s", 10, -5, true);
-    run_i64_comparison_op("i64.gt_s", -5, 10, false);
-    run_i64_comparison_op("i64.gt_u", 10, 5, true);
-    run_i64_comparison_op("i64.gt_u", 5, 10, false);
-    run_i64_comparison_op("i64.le_s", -5, -5, true);
-    run_i64_comparison_op("i64.le_s", 5, 2, false);
-    run_i64_comparison_op("i64.le_u", 5, 5, true);
-    run_i64_comparison_op("i64.le_u", 10, 5, false);
-    run_i64_comparison_op("i64.ge_s", 5, 5, true);
-    run_i64_comparison_op("i64.ge_s", -1, 1, false);
-    run_i64_comparison_op("i64.ge_u", 5, 5, true);
-    run_i64_comparison_op("i64.ge_u", 5, 10, false);
+    run_i64_comparation_op("i64.eq", 42, 42, true);
+    run_i64_comparation_op("i64.eq", 42, 24, false);
+    run_i64_comparation_op("i64.ne", 42, 24, true);
+    run_i64_comparation_op("i64.ne", 42, 42, false);
+    run_i64_comparation_op("i64.lt_s", -5, 10, true);
+    run_i64_comparation_op("i64.lt_s", 10, -5, false);
+    run_i64_comparation_op("i64.lt_u", 5, 10, true);
+    run_i64_comparation_op("i64.lt_u", 10, 5, false);
+    run_i64_comparation_op("i64.gt_s", 10, -5, true);
+    run_i64_comparation_op("i64.gt_s", -5, 10, false);
+    run_i64_comparation_op("i64.gt_u", 10, 5, true);
+    run_i64_comparation_op("i64.gt_u", 5, 10, false);
+    run_i64_comparation_op("i64.le_s", -5, -5, true);
+    run_i64_comparation_op("i64.le_s", 5, 2, false);
+    run_i64_comparation_op("i64.le_u", 5, 5, true);
+    run_i64_comparation_op("i64.le_u", 10, 5, false);
+    run_i64_comparation_op("i64.ge_s", 5, 5, true);
+    run_i64_comparation_op("i64.ge_s", -1, 1, false);
+    run_i64_comparation_op("i64.ge_u", 5, 5, true);
+    run_i64_comparation_op("i64.ge_u", 5, 10, false);
 }

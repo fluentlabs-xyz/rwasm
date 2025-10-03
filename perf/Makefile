@@ -1,11 +1,11 @@
-all: build_wasm build_debug
+all: all_sequentially
 
 .PHONY: build_wasm
 build_wasm:
 	cd ../benchmarks && $(MAKE)
 
-.PHONY: build_debug
-build_debug:
+.PHONY: build
+build:
 	cargo build --profile dev
 
 .PHONY: fibonacci_perf_flame
@@ -21,6 +21,12 @@ load_perf_flame:
 .PHONY: all_sequentially
 all_sequentially:
 	$(MAKE) build_wasm
-	$(MAKE) build_debug
+	$(MAKE) build
 	$(MAKE) fibonacci_perf_flame
 	#$(MAKE) load_perf_flame
+
+.PHONY: clean
+clean:
+	cargo clean
+	rm -rf out.*
+	rm -rf perf.data*

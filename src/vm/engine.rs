@@ -46,7 +46,7 @@ impl ExecutionEngine {
     }
 }
 
-const REUSABLE_POOL_KEEP_DEFAULT: usize = 10;
+const REUSABLE_POOL_KEEP_DEFAULT: usize = 100;
 
 struct ExecutionEngineInner {
     value_stack: SmallVec<[ValueStack; 8]>,

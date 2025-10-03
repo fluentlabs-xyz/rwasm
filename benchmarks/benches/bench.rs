@@ -21,186 +21,188 @@ fn bench_comparisons(c: &mut Criterion) {
     let hash_key_min = 0;
     let hash_key_max = 1000;
 
-    // // bitvec
-    // {
-    //     group.bench_function("bitvec", |b| {
-    //         b.iter(|| {
-    //             for _ in 0..random_sets_count {
-    //                 let mut bv = BitVec::<usize, Lsb0>::repeat(true, bitvec_bits);
-    //                 // let idx = rand::random_range(..bitvec_bits);
-    //                 let idx = 8;
-    //                 let value = rand::random();
-    //                 bv.set(idx, value);
-    //                 core::hint::black_box(bv);
-    //             }
-    //         });
-    //     });
-    // };
-    //
-    // // bitvec_inlined
-    // {
-    //     group.bench_function("bitvec_inlined", |b| {
-    //         b.iter(|| {
-    //             for _ in 0..random_sets_count {
-    //                 let mut bv =
-    //                     BitVecInlined::<{ BITVEC_INLINED_STORE_COUNT }>::repeat(true, bitvec_bits);
-    //                 // let idx = rand::random_range(..bitvec_bits);
-    //                 let idx = 8;
-    //                 let value = rand::random();
-    //                 bv.set(idx, value);
-    //                 core::hint::black_box(bv);
-    //             }
-    //         });
-    //     });
-    // };
-    //
-    // // bitvec_inlined (half store)
-    // {
-    //     let mut bv =
-    //         BitVecInlined::<{ BITVEC_INLINED_STORE_COUNT_HALF }>::repeat(true, bitvec_bits);
-    //     group.bench_function("bitvec_inlined (half of inline store)", |b| {
-    //         b.iter(|| {
-    //             for _ in 0..random_sets_count {
-    //                 let idx = rand::random_range(..bitvec_bits);
-    //                 let value = rand::random();
-    //                 bv.set(idx, value);
-    //             }
-    //         });
-    //     });
-    // };
+    // bitvec
+    {
+        group.bench_function("bitvec", |b| {
+            b.iter(|| {
+                for _ in 0..random_sets_count {
+                    let mut bv = BitVec::<usize, Lsb0>::repeat(true, bitvec_bits);
+                    // let idx = rand::random_range(..bitvec_bits);
+                    let idx = 8;
+                    let value = rand::random();
+                    bv.set(idx, value);
+                    core::hint::black_box(bv);
+                }
+            });
+        });
+    };
 
-    // let mut keys_values = Vec::<(usize, usize)>::with_capacity(random_sets_count);
-    // for _ in 0..random_sets_count {
-    //     let key = rand::random_range(hash_key_min..hash_key_max);
-    //     let value = rand::random::<u32>() as usize;
-    //     keys_values.push((key, value));
-    // }
-    //
-    // {
-    //     group.bench_function("HashMap", |b| {
-    //         let mut hm = HashMap::<usize, usize>::with_capacity(hash_key_max);
-    //         b.iter(|| {
-    //             for (key, value) in keys_values.iter().copied() {
-    //                 hm.insert(key, value);
-    //             }
-    //         });
-    //         core::hint::black_box(hm);
-    //     });
-    // };
-    //
-    // {
-    //     group.bench_function("HashMap (fnv::FnvBuildHasher)", |b| {
-    //         let mut hm = HashMap::<usize, usize, fnv::FnvBuildHasher>::with_capacity_and_hasher(
-    //             hash_key_max,
-    //             fnv::FnvBuildHasher::default(),
-    //         );
-    //         b.iter(|| {
-    //             for (key, value) in keys_values.iter().copied() {
-    //                 hm.insert(key, value);
-    //             }
-    //         });
-    //         core::hint::black_box(hm);
-    //     });
-    // };
-    //
-    // {
-    //     group.bench_function("Vec", |b| {
-    //         let mut vec = Vec::<usize>::with_capacity(hash_key_min);
-    //         b.iter(|| {
-    //             for (key, value) in keys_values.iter().copied() {
-    //                 let len_expected = key + 1;
-    //                 if vec.len() < len_expected {
-    //                     vec.extend(core::iter::repeat(0).take(key - vec.len()));
-    //                     vec.push(value);
-    //                 } else {
-    //                     vec[key] = value;
-    //                 }
-    //             }
-    //         });
-    //         core::hint::black_box(vec);
-    //     });
-    // };
-    //
-    // {
-    //     group.bench_function("HashMap with_capacity", |b| {
-    //         b.iter(|| {
-    //             let hm = HashMap::<usize, usize>::with_capacity(hash_key_max);
-    //             core::hint::black_box(hm);
-    //         });
-    //     });
-    // };
-    //
-    // {
-    //     group.bench_function("HashMap (fnv::FnvBuildHasher) with_capacity", |b| {
-    //         b.iter(|| {
-    //             let hm = HashMap::<usize, usize, fnv::FnvBuildHasher>::with_capacity_and_hasher(
-    //                 hash_key_max,
-    //                 fnv::FnvBuildHasher::default(),
-    //             );
-    //             core::hint::black_box(hm);
-    //         });
-    //     });
-    // };
-    //
-    // {
-    //     group.bench_function("Vec with_capacity", |b| {
-    //         b.iter(|| {
-    //             let vec = Vec::<usize>::with_capacity(hash_key_max);
-    //             core::hint::black_box(vec);
-    //         });
-    //     });
-    // };
+    // bitvec_inlined
+    {
+        group.bench_function("bitvec_inlined", |b| {
+            b.iter(|| {
+                for _ in 0..random_sets_count {
+                    let mut bv =
+                        BitVecInlined::<{ BITVEC_INLINED_STORE_COUNT }>::repeat(true, bitvec_bits);
+                    // let idx = rand::random_range(..bitvec_bits);
+                    let idx = 8;
+                    let value = rand::random();
+                    bv.set(idx, value);
+                    core::hint::black_box(bv);
+                }
+            });
+        });
+    };
 
-    // {
-    //     let wasm_binary = wat::parse_str(
-    //         r#"
-    //         (module
-    //           (memory 1)
-    //           (data (i32.const 0) "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzab")
-    //           (func (export "64_good1") (param $i i32) (result i64)
-    //             (i64.load offset=0 (local.get $i)) ;; 0x6867666564636261 'abcdefgh'
-    //           )
-    //         )
-    //         "#,
-    //     )
-    //     .unwrap();
-    //     let config = CompilationConfig::default()
-    //         .with_entrypoint_name("64_good1".into())
-    //         .with_allow_malformed_entrypoint_func_type(true);
-    //     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
-    //     println!("{}", rwasm_module);
-    //     let mut store = RwasmStore::<()>::default();
-    //     let engine = ExecutionEngine::new();
-    //     let mut result = [Value::I64(0); 1];
-    //     group.bench_function("bitvec_inlined (through ExecutionEngine)", |b| {
-    //         b.iter(|| {
-    //             for _ in 0..random_sets_count {
-    //                 engine
-    //                     .execute(&mut store, &rwasm_module, &[Value::I32(0)], &mut result)
-    //                     .unwrap();
-    //                 assert_eq!(result[0].i64().unwrap(), 0x6867666564636261);
-    //             }
-    //         });
-    //     });
-    // };
-    //
-    // // bench_native
-    // {
-    //     pub fn fib(n: i32) -> i32 {
-    //         let (mut a, mut b) = (0, 1);
-    //         for _ in 0..n {
-    //             let t = a;
-    //             a = b;
-    //             b = t + b;
-    //         }
-    //         a
-    //     }
-    //     group.bench_function("bench_native", |b| {
-    //         b.iter(|| {
-    //             core::hint::black_box(fib(core::hint::black_box(FIB_VALUE)));
-    //         });
-    //     });
-    // };
+    // bitvec_inlined (half store)
+    {
+        let mut bv =
+            BitVecInlined::<{ BITVEC_INLINED_STORE_COUNT_HALF }>::repeat(true, bitvec_bits);
+        group.bench_function("bitvec_inlined (half of inline store)", |b| {
+            b.iter(|| {
+                for _ in 0..random_sets_count {
+                    let idx = rand::random_range(..bitvec_bits);
+                    let value = rand::random();
+                    bv.set(idx, value);
+                }
+            });
+        });
+    };
+
+    // hashmap vs vec
+
+    let mut keys_values = Vec::<(usize, usize)>::with_capacity(random_sets_count);
+    for _ in 0..random_sets_count {
+        let key = rand::random_range(hash_key_min..hash_key_max);
+        let value = rand::random::<u32>() as usize;
+        keys_values.push((key, value));
+    }
+
+    {
+        group.bench_function("HashMap", |b| {
+            let mut hm = HashMap::<usize, usize>::with_capacity(hash_key_max);
+            b.iter(|| {
+                for (key, value) in keys_values.iter().copied() {
+                    hm.insert(key, value);
+                }
+            });
+            core::hint::black_box(hm);
+        });
+    };
+
+    {
+        group.bench_function("HashMap (fnv::FnvBuildHasher)", |b| {
+            let mut hm = HashMap::<usize, usize, fnv::FnvBuildHasher>::with_capacity_and_hasher(
+                hash_key_max,
+                fnv::FnvBuildHasher::default(),
+            );
+            b.iter(|| {
+                for (key, value) in keys_values.iter().copied() {
+                    hm.insert(key, value);
+                }
+            });
+            core::hint::black_box(hm);
+        });
+    };
+
+    {
+        group.bench_function("Vec", |b| {
+            let mut vec = Vec::<usize>::with_capacity(hash_key_min);
+            b.iter(|| {
+                for (key, value) in keys_values.iter().copied() {
+                    let len_expected = key + 1;
+                    if vec.len() < len_expected {
+                        vec.extend(core::iter::repeat(0).take(key - vec.len()));
+                        vec.push(value);
+                    } else {
+                        vec[key] = value;
+                    }
+                }
+            });
+            core::hint::black_box(vec);
+        });
+    };
+
+    {
+        group.bench_function("HashMap with_capacity", |b| {
+            b.iter(|| {
+                let hm = HashMap::<usize, usize>::with_capacity(hash_key_max);
+                core::hint::black_box(hm);
+            });
+        });
+    };
+
+    {
+        group.bench_function("HashMap (fnv::FnvBuildHasher) with_capacity", |b| {
+            b.iter(|| {
+                let hm = HashMap::<usize, usize, fnv::FnvBuildHasher>::with_capacity_and_hasher(
+                    hash_key_max,
+                    fnv::FnvBuildHasher::default(),
+                );
+                core::hint::black_box(hm);
+            });
+        });
+    };
+
+    {
+        group.bench_function("Vec with_capacity", |b| {
+            b.iter(|| {
+                let vec = Vec::<usize>::with_capacity(hash_key_max);
+                core::hint::black_box(vec);
+            });
+        });
+    };
+
+    {
+        let wasm_binary = wat::parse_str(
+            r#"
+            (module
+              (memory 1)
+              (data (i32.const 0) "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzab")
+              (func (export "64_good1") (param $i i32) (result i64)
+                (i64.load offset=0 (local.get $i)) ;; 0x6867666564636261 'abcdefgh'
+              )
+            )
+            "#,
+        )
+        .unwrap();
+        let config = CompilationConfig::default()
+            .with_entrypoint_name("64_good1".into())
+            .with_allow_malformed_entrypoint_func_type(true);
+        let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+        println!("{}", rwasm_module);
+        let mut store = RwasmStore::<()>::default();
+        let engine = ExecutionEngine::new();
+        let mut result = [Value::I64(0); 1];
+        group.bench_function("bitvec_inlined (through ExecutionEngine)", |b| {
+            b.iter(|| {
+                for _ in 0..random_sets_count {
+                    engine
+                        .execute(&mut store, &rwasm_module, &[Value::I32(0)], &mut result)
+                        .unwrap();
+                    assert_eq!(result[0].i64().unwrap(), 0x6867666564636261);
+                }
+            });
+        });
+    };
+
+    // bench_native
+    {
+        pub fn fib(n: i32) -> i32 {
+            let (mut a, mut b) = (0, 1);
+            for _ in 0..n {
+                let t = a;
+                a = b;
+                b = t + b;
+            }
+            a
+        }
+        group.bench_function("bench_native", |b| {
+            b.iter(|| {
+                core::hint::black_box(fib(core::hint::black_box(FIB_VALUE)));
+            });
+        });
+    };
 
     fn bench_strategy(b: &mut Bencher, strategy: Strategy) {
         b.iter(|| {
@@ -218,29 +220,29 @@ fn bench_comparisons(c: &mut Criterion) {
         });
     }
 
-    // {
-    //     let wasm_binary = include_bytes!("../lib.wasm");
-    //     let config = CompilationConfig::default().with_consume_fuel(false);
-    //     let module = compile_wasmtime_module(config, wasm_binary).unwrap();
-    //     group.bench_function("bench_strategy_wasmtime", |b| {
-    //         let strategy = Strategy::Wasmtime {
-    //             module: module.clone(),
-    //         };
-    //         bench_strategy(b, strategy);
-    //     });
-    // }
+    {
+        let wasm_binary = include_bytes!("../lib.wasm");
+        let config = CompilationConfig::default().with_consume_fuel(false);
+        let module = compile_wasmtime_module(config, wasm_binary).unwrap();
+        group.bench_function("bench_strategy_wasmtime", |b| {
+            let strategy = Strategy::Wasmtime {
+                module: module.clone(),
+            };
+            bench_strategy(b, strategy);
+        });
+    }
 
-    // {
-    //     let wasm_binary = include_bytes!("../lib.wasm");
-    //     let config = CompilationConfig::default().with_consume_fuel(false);
-    //     let module = compile_wasmi_module(config, wasm_binary).unwrap();
-    //     group.bench_function("bench_strategy_wasmi", |b| {
-    //         let strategy = Strategy::Wasmi {
-    //             module: module.clone(),
-    //         };
-    //         bench_strategy(b, strategy);
-    //     });
-    // }
+    {
+        let wasm_binary = include_bytes!("../lib.wasm");
+        let config = CompilationConfig::default().with_consume_fuel(false);
+        let module = compile_wasmi_module(config, wasm_binary).unwrap();
+        group.bench_function("bench_strategy_wasmi", |b| {
+            let strategy = Strategy::Wasmi {
+                module: module.clone(),
+            };
+            bench_strategy(b, strategy);
+        });
+    }
 
     {
         let wasm_binary = include_bytes!("../lib.wasm");
