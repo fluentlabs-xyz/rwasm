@@ -137,19 +137,10 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         // to perform an emptiness check.
         // Therefore, in `element_segment_idx`, we store the original index,
         // which is always > 0.
-        #[cfg(feature = "bitvec-inlined")]
         let is_empty_segment = self
             .store
             .empty_elem_segments
             .get(element_segment_idx as usize)
-            .unwrap_or(false);
-        #[cfg(not(feature = "bitvec-inlined"))]
-        let is_empty_segment = self
-            .store
-            .empty_elem_segments
-            .get(element_segment_idx as usize)
-            .as_deref()
-            .copied()
             .unwrap_or(false);
 
         let mut module_elements_section = &self.module.elem_section[..];
