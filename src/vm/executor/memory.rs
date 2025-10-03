@@ -119,6 +119,15 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         &mut self,
         data_segment_idx: DataSegmentIdx,
     ) -> Result<(), TrapCode> {
+        #[cfg(not(feature = "bitvec-inlined"))]
+        let is_empty_data_segment = self
+            .store
+            .empty_data_segments
+            .get(data_segment_idx as usize)
+            .as_deref()
+            .copied()
+            .unwrap_or(false);
+        #[cfg(feature = "bitvec-inlined")]
         let is_empty_data_segment = self
             .store
             .empty_data_segments
