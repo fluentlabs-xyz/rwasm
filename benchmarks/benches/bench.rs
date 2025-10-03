@@ -6,7 +6,7 @@ use rwasm::{
     compile_wasmi_module, compile_wasmtime_module, CompilationConfig, ExecutionEngine, FuelConfig,
     ImportLinker, RwasmModule, RwasmStore, Strategy, Value,
 };
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 const FIB_VALUE: i32 = 43;
 
@@ -17,7 +17,9 @@ fn bench_comparisons(c: &mut Criterion) {
     const BITVEC_INLINED_STORE_COUNT: usize = BITVEC_STORE_COUNT;
     const BITVEC_INLINED_STORE_COUNT_HALF: usize = BITVEC_STORE_COUNT / 2;
     let bitvec_bits = USIZE_BITS * BITVEC_STORE_COUNT;
-    let random_sets_count = 1;
+    let random_sets_count = 1000;
+    let hash_key_min = 0;
+    let hash_key_max = 1000;
 
     // // bitvec
     // {
@@ -66,7 +68,89 @@ fn bench_comparisons(c: &mut Criterion) {
     //         });
     //     });
     // };
-    //
+
+    let mut keys_values = Vec::<(usize, usize)>::with_capacity(random_sets_count);
+    for _ in 0..random_sets_count {
+        let key = rand::random_range(hash_key_min..hash_key_max);
+        let value = rand::random::<u32>() as usize;
+        keys_values.push((key, value));
+    }
+
+    {
+        group.bench_function("HashMap", |b| {
+            let mut hm = HashMap::<usize, usize>::with_capacity(hash_key_max);
+            b.iter(|| {
+                for (key, value) in keys_values.iter().copied() {
+                    hm.insert(key, value);
+                }
+            });
+            core::hint::black_box(hm);
+        });
+    };
+
+    {
+        group.bench_function("HashMap (fnv::FnvBuildHasher)", |b| {
+            let mut hm = HashMap::<usize, usize, fnv::FnvBuildHasher>::with_capacity_and_hasher(
+                hash_key_max,
+                fnv::FnvBuildHasher::default(),
+            );
+            b.iter(|| {
+                for (key, value) in keys_values.iter().copied() {
+                    hm.insert(key, value);
+                }
+            });
+            core::hint::black_box(hm);
+        });
+    };
+
+    {
+        group.bench_function("Vec", |b| {
+            let mut vec = Vec::<usize>::with_capacity(hash_key_min);
+            b.iter(|| {
+                for (key, value) in keys_values.iter().copied() {
+                    let len_expected = key + 1;
+                    if vec.len() < len_expected {
+                        vec.extend(core::iter::repeat(0).take(key - vec.len()));
+                        vec.push(value);
+                    } else {
+                        vec[key] = value;
+                    }
+                }
+            });
+            core::hint::black_box(vec);
+        });
+    };
+
+    {
+        group.bench_function("HashMap with_capacity", |b| {
+            b.iter(|| {
+                let hm = HashMap::<usize, usize>::with_capacity(hash_key_max);
+                core::hint::black_box(hm);
+            });
+        });
+    };
+
+    {
+        group.bench_function("HashMap (fnv::FnvBuildHasher) with_capacity", |b| {
+            b.iter(|| {
+                let mut hm = HashMap::<usize, usize, fnv::FnvBuildHasher>::with_capacity_and_hasher(
+                    hash_key_max,
+                    fnv::FnvBuildHasher::default(),
+                );
+                core::hint::black_box(hm);
+            });
+        });
+    };
+
+    {
+        group.bench_function("Vec with_capacity", |b| {
+            b.iter(|| {
+                let vec = Vec::<usize>::with_capacity(hash_key_min);
+                core::hint::black_box(vec);
+            });
+        });
+    };
+
     // {
     //     let wasm_binary = wat::parse_str(
     //         r#"
@@ -146,17 +230,17 @@ fn bench_comparisons(c: &mut Criterion) {
     //     });
     // }
 
-    {
-        let wasm_binary = include_bytes!("../lib.wasm");
-        let config = CompilationConfig::default().with_consume_fuel(false);
-        let module = compile_wasmi_module(config, wasm_binary).unwrap();
-        group.bench_function("bench_strategy_wasmi", |b| {
-            let strategy = Strategy::Wasmi {
-                module: module.clone(),
-            };
-            bench_strategy(b, strategy);
-        });
-    }
+    // {
+    //     let wasm_binary = include_bytes!("../lib.wasm");
+    //     let config = CompilationConfig::default().with_consume_fuel(false);
+    //     let module = compile_wasmi_module(config, wasm_binary).unwrap();
+    //     group.bench_function("bench_strategy_wasmi", |b| {
+    //         let strategy = Strategy::Wasmi {
+    //             module: module.clone(),
+    //         };
+    //         bench_strategy(b, strategy);
+    //     });
+    // }
 
     {
         let wasm_binary = include_bytes!("../lib.wasm");
@@ -165,7 +249,7 @@ fn bench_comparisons(c: &mut Criterion) {
             .with_allow_malformed_entrypoint_func_type(true)
             .with_consume_fuel(false);
         let (module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-        println!("module = {}", module);
+        // println!("module = {}", module);
         group.bench_function("bench_strategy_rwasm", |b| {
             let strategy = Strategy::Rwasm {
                 module: module.clone(),

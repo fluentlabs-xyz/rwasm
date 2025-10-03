@@ -65,9 +65,9 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let len = self.store.global_variables.len();
         if len < expected_len {
             self.store.global_variables.reserve(expected_len - len);
-            for _ in len..global_idx as usize {
-                self.store.global_variables.push(UntypedValue::default());
-            }
+            self.store.global_variables.extend(
+                core::iter::repeat(UntypedValue::default()).take(global_idx as usize - len),
+            );
             self.store.global_variables.push(new_value);
         } else {
             self.store
