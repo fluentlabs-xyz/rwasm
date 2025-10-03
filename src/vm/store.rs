@@ -96,11 +96,9 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         syscall_handler: SyscallHandler<T>,
         fuel_config: FuelConfig,
     ) -> Self {
-        // let global_memory = GlobalMemory::new(Pages::default());
         Self {
             consumed_fuel: 0,
             global_memory: None,
-            // global_memory,
             context,
             #[cfg(feature = "tracing")]
             tracer: crate::Tracer::default(),
@@ -122,10 +120,6 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         }
         self.global_memory.as_mut().unwrap()
     }
-
-    // pub fn get_global_memory(&mut self) -> &mut GlobalMemory {
-    //     &mut self.global_memory
-    // }
 
     /// Resets the state of the current execution context.
     pub fn reset(&mut self, keep_flags: bool) {
