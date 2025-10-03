@@ -1,4 +1,3 @@
-#[cfg(feature = "bitvec-inlined")]
 use crate::bitvec_inlined::BitVecInlined as BV;
 use crate::{
     FuelConfig, GlobalMemory, ImportLinker, InstructionPtr, Pages, SignatureIdx, Store,
@@ -6,8 +5,6 @@ use crate::{
 };
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-#[cfg(not(feature = "bitvec-inlined"))]
-use bitvec::vec::BitVec as BV;
 
 /// Host-side store that holds memory, tables, globals and host context for an rwasm instance.
 /// It also tracks fuel for metering and provides access to imported functions and syscalls.
@@ -16,7 +13,6 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     /// Total amount of fuel consumed by the currently running instance.
     pub(crate) consumed_fuel: u64,
     /// The linear memory shared by the running module and the host.
-    // pub(crate) global_memory: GlobalMemory,
     pub(crate) global_memory: Option<GlobalMemory>,
     /// User-defined context available to host functions and syscalls.
     pub(crate) context: T,
@@ -27,15 +23,9 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     /// Runtime values of mutable and immutable globals.
     pub(crate) global_variables: Vec<UntypedValue>,
     /// Bitset tracking which data segments have been consumed/emptied.
-    #[cfg(feature = "bitvec-inlined")]
     pub(crate) empty_data_segments: BV<2>,
-    #[cfg(not(feature = "bitvec-inlined"))]
-    pub(crate) empty_data_segments: BV,
     /// Bitset tracking which element segments have been consumed/emptied.
-    #[cfg(feature = "bitvec-inlined")]
     pub(crate) empty_elem_segments: BV<2>,
-    #[cfg(not(feature = "bitvec-inlined"))]
-    pub(crate) empty_elem_segments: BV,
     /// Dispatcher for system calls made by the guest.
     pub(crate) syscall_handler: SyscallHandler<T>,
     /// Linker that resolves imports to host functions/globals.

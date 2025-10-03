@@ -49,6 +49,17 @@ macro_rules! define_spec_tests {
     };
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::run;
+    use std::fmt;
+
+    #[test]
+    fn specific_test() {
+        run::run_wasm_spec_test(&fmt::format(format_args!("{}/{}", "testsuite", "global")));
+    }
+}
+
 define_spec_tests! {
     let runner = run::run_wasm_spec_test;
 
