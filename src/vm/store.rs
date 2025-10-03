@@ -24,7 +24,6 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     /// Runtime values of mutable and immutable globals.
     pub(crate) global_variables: Vec<UntypedValue>,
     /// Bitset tracking which data segments have been consumed/emptied.
-    #[cfg(not(feature = "bitvec-inlined"))]
     pub(crate) empty_data_segments: BV<2>,
     /// Bitset tracking which element segments have been consumed/emptied.
     pub(crate) empty_elem_segments: BV<2>,
