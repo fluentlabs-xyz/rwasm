@@ -6,7 +6,7 @@ use rwasm::{
     compile_wasmi_module, compile_wasmtime_module, CompilationConfig, ExecutionEngine, FuelConfig,
     ImportLinker, RwasmModule, RwasmStore, Strategy, Value,
 };
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 const FIB_VALUE: i32 = 43;
 
@@ -18,18 +18,18 @@ fn bench_comparisons(c: &mut Criterion) {
     const BITVEC_INLINED_STORE_COUNT_HALF: usize = BITVEC_STORE_COUNT / 2;
     let bitvec_bits = USIZE_BITS * BITVEC_STORE_COUNT;
     let random_sets_count = 1000;
-    let hash_key_min = 0;
-    let hash_key_max = 1000;
+    let random_idxs_values =
+        core::iter::repeat_with(|| (rand::random_range(..bitvec_bits), rand::random::<bool>()))
+            .take(random_sets_count)
+            .collect::<Vec<_>>();
 
     // bitvec
     {
         group.bench_function("bitvec", |b| {
             b.iter(|| {
-                for _ in 0..random_sets_count {
+                for i in 0..random_sets_count {
                     let mut bv = BitVec::<usize, Lsb0>::repeat(true, bitvec_bits);
-                    // let idx = rand::random_range(..bitvec_bits);
-                    let idx = 8;
-                    let value = rand::random();
+                    let (idx, value) = random_idxs_values[i];
                     bv.set(idx, value);
                     core::hint::black_box(bv);
                 }
@@ -41,12 +41,10 @@ fn bench_comparisons(c: &mut Criterion) {
     {
         group.bench_function("bitvec_inlined", |b| {
             b.iter(|| {
-                for _ in 0..random_sets_count {
+                for i in 0..random_sets_count {
                     let mut bv =
                         BitVecInlined::<{ BITVEC_INLINED_STORE_COUNT }>::repeat(true, bitvec_bits);
-                    // let idx = rand::random_range(..bitvec_bits);
-                    let idx = 8;
-                    let value = rand::random();
+                    let (idx, value) = random_idxs_values[i];
                     bv.set(idx, value);
                     core::hint::black_box(bv);
                 }
@@ -60,9 +58,8 @@ fn bench_comparisons(c: &mut Criterion) {
             BitVecInlined::<{ BITVEC_INLINED_STORE_COUNT_HALF }>::repeat(true, bitvec_bits);
         group.bench_function("bitvec_inlined (half of inline store)", |b| {
             b.iter(|| {
-                for _ in 0..random_sets_count {
-                    let idx = rand::random_range(..bitvec_bits);
-                    let value = rand::random();
+                for i in 0..random_sets_count {
+                    let (idx, value) = random_idxs_values[i];
                     bv.set(idx, value);
                 }
             });
@@ -167,7 +164,6 @@ fn bench_comparisons(c: &mut Criterion) {
             .with_allow_malformed_entrypoint_func_type(true)
             .with_consume_fuel(false);
         let (module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-        // println!("module = {}", module);
         group.bench_function("bench_strategy_rwasm", |b| {
             let strategy = Strategy::Rwasm {
                 module: module.clone(),
