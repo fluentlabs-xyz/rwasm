@@ -31,9 +31,6 @@ fn test_i64_load8_s() {
   (data (i32.const 0) "abcdefghijklmnopqrstuvwxyz")
 
   (func (export "8s_good1") (param $i i32) (result i64)
-    (i32.const 2)
-    (i64.const 42)
-    (i64.store offset=0)
     (i64.load8_s offset=0 (local.get $i))                   ;; 97 'a'
   )
 )
