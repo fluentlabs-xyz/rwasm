@@ -25,7 +25,7 @@ path = "evm_fibonacci_perf.rs"
 [profile.release]
 panic = "abort"
 lto = true
-opt-level = 0
+opt-level = 3
 strip = false
 debug = true
 debug-assertions = true

@@ -33,8 +33,7 @@ pub fn main() {
         module: module.clone(),
         engine: ExecutionEngine::acquire_shared(),
     };
-    for i in 0..1 {
-        println!("iteration {}", i);
+    for _ in 0..1000 {
         bench_strategy(&strategy);
     }
 }

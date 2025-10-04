@@ -13,7 +13,7 @@ use rwasm::{
 };
 use std::{sync::Arc, time::Duration};
 
-const FIB_VALUE: i64 = 90;
+const FIB_VALUE: i64 = 43;
 
 fn bench_comparisons(c: &mut Criterion) {
     let mut group = c.benchmark_group("Comparisons");

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 #[no_mangle]
 pub fn main() {
-    const FIB_VALUE: i32 = 43;
+    const FIB_VALUE: i64 = 90;
     #[inline(never)]
     fn bench_strategy(strategy: &Strategy) {
         let mut store = strategy.create_store(
@@ -17,9 +17,9 @@ pub fn main() {
             always_failing_syscall_handler,
             FuelConfig::default(),
         );
-        let mut result = [Value::I32(0)];
+        let mut result = [Value::I64(0)];
         strategy
-            .execute(&mut store, "fib64", &[Value::I32(FIB_VALUE)], &mut result)
+            .execute(&mut store, "fib64", &[Value::I64(FIB_VALUE)], &mut result)
             .unwrap();
         core::hint::black_box(result.clone());
     }
@@ -33,8 +33,7 @@ pub fn main() {
         module: module.clone(),
         engine: ExecutionEngine::acquire_shared(),
     };
-    for i in 0..1 {
-        println!("iteration {}", i);
+    for _ in 0..1000 {
         bench_strategy(&strategy);
     }
 }

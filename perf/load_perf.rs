@@ -1,30 +1,6 @@
 #![no_main]
 
-use rwasm::{
-    always_failing_syscall_handler, CompilationConfig, ExecutionEngine, FuelConfig, ImportLinker,
-    ImportName, InstructionSet, RwasmModule, RwasmStore, TrapCode, TypedCaller, Value,
-};
-use std::sync::Arc;
-
-fn interrupting_syscall_handler<T: Send + Sync>(
-    _caller: &mut TypedCaller<'_, T>,
-    _sys_func_idx: u32,
-    _params: &[Value],
-    _result: &mut [Value],
-) -> Result<(), TrapCode> {
-    Err(TrapCode::InterruptionCalled)
-}
-fn default_import_linker() -> Arc<ImportLinker> {
-    let mut import_linker = ImportLinker::default();
-    import_linker.insert_function(
-        ImportName::new("hello", "world"),
-        0xff,
-        InstructionSet::default(),
-        &[],
-        &[],
-    );
-    Arc::new(import_linker)
-}
+use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore, Value};
 
 #[no_mangle]
 pub fn main() {
