@@ -20,7 +20,7 @@ fn bench_comparisons(c: &mut Criterion) {
 
     // bench_native
     {
-        pub fn fib(n: u64) -> u64 {
+        pub fn fib(n: u32) -> u32 {
             let (mut a, mut b) = (0, 1);
             for _ in 0..n {
                 let t = a;
@@ -31,7 +31,7 @@ fn bench_comparisons(c: &mut Criterion) {
         }
         group.bench_function("bench_native", |b| {
             b.iter(|| {
-                core::hint::black_box(fib(core::hint::black_box(FIB_VALUE)));
+                core::hint::black_box(fib(core::hint::black_box(FIB_VALUE as u32)));
             });
         });
     };
