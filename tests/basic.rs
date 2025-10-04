@@ -6,13 +6,13 @@ use rwasm::{
 fn test_fib() {
     let wasm_binary = include_bytes!("../benchmarks/lib.wasm");
     let config = CompilationConfig::default()
-        .with_entrypoint_name("main".into())
+        .with_entrypoint_name("fib32".into())
         .with_consume_fuel(false);
     for_each_strategy(
         |strategy| {
             let mut store = strategy.empty_store();
             let mut result = [Value::I32(0); 1];
-            strategy.execute(&mut store, "main", &[Value::I32(43)], &mut result)?;
+            strategy.execute(&mut store, "fib32", &[Value::I32(43)], &mut result)?;
             assert_eq!(result[0].i32().unwrap(), 433494437);
             Ok(())
         },

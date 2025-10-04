@@ -2,9 +2,8 @@ use crate::{
     types::{TrapCode, UntypedValue},
     ExternRef, FuncRef, I64ValueSplit, Value, F32, F64, N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
 };
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use core::fmt::Debug;
-use smallvec::{smallvec, SmallVec};
 use wasmparser::ValType;
 
 /// The value stack used to execute Wasm bytecode.
@@ -16,7 +15,7 @@ use wasmparser::ValType;
 #[derive(Clone)]
 pub struct ValueStack {
     /// All currently live stack entries.
-    entries: SmallVec<[UntypedValue; N_DEFAULT_STACK_SIZE]>,
+    entries: Vec<UntypedValue>,
     /// Index of the first free place in the stack.
     stack_ptr: usize,
     /// The maximum value stack height.
@@ -27,6 +26,7 @@ pub struct ValueStack {
     /// will cause a stack overflow trap.
     maximum_len: usize,
     /// The maximum stack height
+    #[cfg(feature = "test-build")]
     max_stack_height: usize,
 }
 
@@ -66,10 +66,6 @@ impl Default for ValueStack {
 }
 
 impl ValueStack {
-    pub fn entries(&self) -> &SmallVec<[UntypedValue; N_DEFAULT_STACK_SIZE]> {
-        &self.entries
-    }
-
     /// Creates an empty [`ValueStack`] that does not allocate heap memor.
     ///
     /// # Note
@@ -78,13 +74,15 @@ impl ValueStack {
     /// proper stack with an inexpensive fake one.
     pub fn empty() -> Self {
         Self {
-            entries: SmallVec::new(),
+            entries: Vec::new(),
             stack_ptr: 0,
             maximum_len: 0,
+            #[cfg(feature = "test-build")]
             max_stack_height: 0,
         }
     }
 
+    #[cfg(feature = "test-build")]
     pub fn max_stack_height(&self) -> usize {
         self.max_stack_height
     }
@@ -138,11 +136,13 @@ impl ValueStack {
         let offset = new_sp.offset_from(self.base_ptr());
         debug_assert!(offset >= 0, "stack underflow: {}", offset);
         self.stack_ptr = offset as usize;
+        #[cfg(feature = "test-build")]
         if self.stack_ptr > self.max_stack_height {
             self.max_stack_height = self.stack_ptr;
         }
     }
 
+    #[cfg(feature = "test-build")]
     pub(crate) fn check_max_stack_height(&mut self, sp: ValueStackPtr) {
         let offset = sp.offset_from(self.base_ptr());
         debug_assert!(offset >= 0, "stack underflow: {}", offset);
@@ -171,11 +171,12 @@ impl ValueStack {
             initial_len <= maximum_len,
             "the initial value stack length is greater than the maximum value stack length",
         );
-        let entries = smallvec![UntypedValue::default(); initial_len];
+        let entries = vec![UntypedValue::default(); initial_len];
         Self {
             entries,
             stack_ptr: 0,
             maximum_len,
+            #[cfg(feature = "test-build")]
             max_stack_height: 0,
         }
     }
@@ -222,6 +223,7 @@ impl ValueStack {
     pub fn push(&mut self, entry: UntypedValue) {
         *self.get_release_unchecked_mut(self.stack_ptr) = entry;
         self.stack_ptr += 1;
+        #[cfg(feature = "test-build")]
         if self.stack_ptr > self.max_stack_height {
             self.max_stack_height = self.stack_ptr;
         }
@@ -286,6 +288,7 @@ impl ValueStack {
             .unwrap_or_else(|| panic!("did not reserve enough value stack space"));
         cells.fill(UntypedValue::default());
         self.stack_ptr += additional;
+        #[cfg(feature = "test-build")]
         if self.stack_ptr > self.max_stack_height {
             self.max_stack_height = self.stack_ptr;
         }
@@ -323,7 +326,10 @@ impl ValueStack {
     /// function execution happens.
     pub fn reset(&mut self) {
         self.stack_ptr = 0;
-        self.max_stack_height = 0;
+        #[cfg(feature = "test-build")]
+        {
+            self.max_stack_height = 0;
+        }
     }
 }
 
@@ -333,10 +339,10 @@ impl ValueStack {
 ///
 /// [`ValueStack`]: super::ValueStack
 #[derive(Debug, Copy, Clone)]
-#[cfg_attr(not(feature = "debug-asserts"), repr(transparent))]
+#[cfg_attr(not(feature = "test-build"), repr(transparent))]
 pub struct ValueStackPtr {
     ptr: *mut UntypedValue,
-    #[cfg(feature = "debug-asserts")]
+    #[cfg(feature = "test-build")]
     src: *mut UntypedValue,
 }
 
@@ -346,7 +352,7 @@ impl From<*mut UntypedValue> for ValueStackPtr {
     #[inline]
     fn from(ptr: *mut UntypedValue) -> Self {
         Self {
-            #[cfg(feature = "debug-asserts")]
+            #[cfg(feature = "test-build")]
             src: ptr,
             ptr,
         }
@@ -357,7 +363,7 @@ impl ValueStackPtr {
     pub fn new(ptr: *mut UntypedValue) -> ValueStackPtr {
         Self {
             ptr,
-            #[cfg(feature = "debug-asserts")]
+            #[cfg(feature = "test-build")]
             src: ptr,
         }
     }
@@ -459,7 +465,7 @@ impl ValueStackPtr {
         //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
-        #[cfg(feature = "debug-asserts")]
+        #[cfg(feature = "test-build")]
         debug_assert!(self.ptr >= self.src, "stack underflow: {}", delta);
     }
 
@@ -470,7 +476,7 @@ impl ValueStackPtr {
         //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.sub(delta) };
-        #[cfg(feature = "debug-asserts")]
+        #[cfg(feature = "test-build")]
         debug_assert!(self.ptr >= self.src, "stack underflow");
     }
 

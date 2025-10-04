@@ -52,16 +52,20 @@ std = [
     "num-traits/std",
     "bitvec/std",
     "wasmtime?/std",
-    #    "debug-asserts",
 ]
 more-max-pages = []
 serde = [
     "dep:serde", "serde/derive"
 ]
 tracing = ["serde"]
-debug-asserts = []
+test-build = []
 debug-print = []
 fpu = []
 wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:futures"]
 cache-compiled-artifacts = ["wasmtime", "dep:directories"]
 pooling-allocator = []
+
+[[test]]
+name = "integration"
+path = "tests/snippets.rs"
+required-features = ["test-build"]

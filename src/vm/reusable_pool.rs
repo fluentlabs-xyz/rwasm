@@ -1,21 +1,19 @@
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
-pub mod specific;
-
 pub trait ItemConfig<ITEM>: Clone + Sized {
     fn create_item(&self) -> ITEM;
     fn reset_for_reuse(item: &mut ITEM);
 }
 
 #[derive(Clone)]
-pub struct Config<ITEM, CONFIG: ItemConfig<ITEM>> {
+pub struct ReusablePoolConfig<ITEM, CONFIG: ItemConfig<ITEM>> {
     pub keep: usize,
     pub item_config: CONFIG,
     pub _phantom: PhantomData<ITEM>,
 }
 
-impl<ITEM, CONFIG: ItemConfig<ITEM>> Config<ITEM, CONFIG> {
+impl<ITEM, CONFIG: ItemConfig<ITEM>> ReusablePoolConfig<ITEM, CONFIG> {
     pub fn new(keep: usize, item_config: CONFIG) -> Self {
         Self {
             keep,
@@ -33,7 +31,7 @@ pub struct ReusablePool<ITEM, CONFIG: ItemConfig<ITEM>> {
 }
 
 impl<ITEM, CONFIG: ItemConfig<ITEM>> ReusablePool<ITEM, CONFIG> {
-    pub fn new(config: Config<ITEM, CONFIG>) -> Self {
+    pub fn new(config: ReusablePoolConfig<ITEM, CONFIG>) -> Self {
         Self {
             items: Vec::new(),
             item_config: config.item_config,

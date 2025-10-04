@@ -234,6 +234,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             #[cfg(feature = "debug-print")]
             self.debug_print(&instr);
             exec_opcode!(self, instr, break Ok(()));
+            #[cfg(feature = "test-build")]
             self.value_stack.check_max_stack_height(self.sp);
         };
         // trap halts the execution, we need to clear the stack

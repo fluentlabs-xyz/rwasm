@@ -48,7 +48,7 @@ fn test_fib_bench() {
         );
         let mut result = [Value::I32(0)];
         strategy
-            .execute(&mut store, "main", &[Value::I32(43)], &mut result)
+            .execute(&mut store, "fib32", &[Value::I32(43)], &mut result)
             .unwrap();
         core::hint::black_box(result);
     }
@@ -69,7 +69,7 @@ fn test_instance_reuse() {
     for _ in 0..32_165 {
         let mut store = Store::new(module.engine(), ());
         let instance = instance_pre.instantiate(store.as_context_mut()).unwrap();
-        let entrypoint = instance.get_func(store.as_context_mut(), "main").unwrap();
+        let entrypoint = instance.get_func(store.as_context_mut(), "fib32").unwrap();
         let mut result = [Val::I32(0)];
         entrypoint
             .call(store.as_context_mut(), &[Val::I32(43)], &mut result)
