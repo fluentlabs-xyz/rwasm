@@ -4,16 +4,16 @@ all: all_sequentially
 build_wasm:
 	cd ../benchmarks && $(MAKE)
 
-PROFILE=debug
+PROFILE=debug # release | debug
 
 .PHONY: build
 build:
-	cargo build --profile dev
-	@#if [ "$(PROFILE)" = "debug" ]; then\
-# 		cargo build --profile dev; \
-# 	else \
-# 	  cargo build --profile release; \
-# 	fi
+	#cargo build --profile dev
+	@if [ "$(PROFILE)" = "debug" ]; then\
+ 		cargo build --profile dev; \
+ 	else \
+ 	  cargo build --profile release; \
+ 	fi
 
 .PHONY: fibonacci_perf32_flame
 fibonacci_perf32_flame:
@@ -40,8 +40,8 @@ all_sequentially:
 	$(MAKE) build_wasm
 	$(MAKE) build
 	#$(MAKE) evm_fibonacci_perf_flame
-	$(MAKE) fibonacci_perf32_flame
-	#$(MAKE) fibonacci_perf64_flame
+	#$(MAKE) fibonacci_perf32_flame
+	$(MAKE) fibonacci_perf64_flame
 	#$(MAKE) load_perf_flame
 
 .PHONY: clean
