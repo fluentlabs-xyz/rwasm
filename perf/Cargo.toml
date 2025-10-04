@@ -14,6 +14,10 @@ path = "fibonacci_perf.rs"
 name = "load_perf"
 path = "load_perf.rs"
 
+[[bin]]
+name = "evm_fibonacci_perf"
+path = "evm_fibonacci_perf.rs"
+
 [profile.release]
 panic = "abort"
 lto = true
@@ -38,6 +42,9 @@ rwasm = { path = "..", features = [
     "wasmtime",
 ] }
 wat = "1.230.0"
+revm-interpreter = "25.0.3"
+revm-bytecode = "6.2.2"
+hex-literal = "1.0.0"
 
 [dev-dependencies]
 
