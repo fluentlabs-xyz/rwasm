@@ -13,6 +13,11 @@ fibonacci_perf_flame:
 	perf.sh target/debug/fibonacci_perf main
 	mv flame.svg fibonacci_perf_flame.svg
 
+.PHONY: evm_fibonacci_perf_flame
+evm_fibonacci_perf_flame:
+	perf.sh target/debug/evm_fibonacci_perf
+	mv flame.svg evm_fibonacci_perf_flame.svg
+
 .PHONY: load_perf_flame
 load_perf_flame:
 	perf.sh target/debug/load_perf main
@@ -22,7 +27,8 @@ load_perf_flame:
 all_sequentially:
 	$(MAKE) build_wasm
 	$(MAKE) build
-	$(MAKE) fibonacci_perf_flame
+	$(MAKE) evm_fibonacci_perf_flame
+	#$(MAKE) fibonacci_perf_flame
 	#$(MAKE) load_perf_flame
 
 .PHONY: clean

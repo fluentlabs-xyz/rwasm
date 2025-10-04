@@ -51,7 +51,7 @@ fn bench_comparisons(c: &mut Criterion) {
                         target_address: Default::default(),
                         bytecode_address: None,
                         caller_address: Default::default(),
-                        input: CallInput::Bytes(hex!("e78692bb000000000000000000000000000000000000000000000000000000000000002b").into()),
+                        input: CallInput::Bytes(hex!("f9b7c7e5000000000000000000000000000000000000000000000000000000000000002b").into()),
                         call_value: Default::default(),
                     },
                     true,
