@@ -16,7 +16,7 @@ use std::{sync::Arc, time::Duration};
 const FIB_VALUE: i64 = 43;
 
 fn bench_comparisons(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Comparisons");
+    let mut group = c.benchmark_group("Comparisons fib32");
 
     // bench_native
     {
