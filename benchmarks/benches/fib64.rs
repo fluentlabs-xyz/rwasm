@@ -136,7 +136,7 @@ fn bench_comparisons(c: &mut Criterion) {
 pub fn benches() {
     let mut criterion: Criterion<_> = Criterion::default()
         .configure_from_args()
-        .warm_up_time(Duration::from_millis(500))
+        .warm_up_time(Duration::from_millis(3_000))
         .measurement_time(Duration::from_secs(1))
         .sample_size(200);
     bench_comparisons(&mut criterion);

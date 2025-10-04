@@ -3,8 +3,7 @@ use crate::{
     FuelConfig, GlobalMemory, ImportLinker, InstructionPtr, Pages, SignatureIdx, Store,
     SyscallHandler, TableEntity, TrapCode, UntypedValue, ValueStackPtr,
 };
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
 
 /// Host-side store that holds memory, tables, globals and host context for an rwasm instance.
 /// It also tracks fuel for metering and provides access to imported functions and syscalls.
