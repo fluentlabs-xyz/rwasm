@@ -8,11 +8,12 @@ PROFILE=debug
 
 .PHONY: build
 build:
-	@if [ "$(PROFILE)" = "debug" ]; then\
- 		cargo build --profile dev; \
- 	else \
- 	  cargo build --profile release; \
- 	fi
+	cargo build --profile dev
+	@#if [ "$(PROFILE)" = "debug" ]; then\
+# 		cargo build --profile dev; \
+# 	else \
+# 	  cargo build --profile release; \
+# 	fi
 
 .PHONY: fibonacci_perf32_flame
 fibonacci_perf32_flame:
