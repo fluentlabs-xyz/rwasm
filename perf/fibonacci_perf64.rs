@@ -19,22 +19,22 @@ pub fn main() {
         );
         let mut result = [Value::I32(0)];
         strategy
-            .execute(&mut store, "main", &[Value::I32(FIB_VALUE)], &mut result)
+            .execute(&mut store, "fib64", &[Value::I32(FIB_VALUE)], &mut result)
             .unwrap();
         core::hint::black_box(result.clone());
     }
     let wasm_binary = include_bytes!("../benchmarks/lib.wasm");
     let config = CompilationConfig::default()
-        .with_entrypoint_name("main".into())
+        .with_entrypoint_name("fib64".into())
         .with_allow_malformed_entrypoint_func_type(true)
         .with_consume_fuel(false);
     let (module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-    println!("module = {}", module);
     let strategy = Strategy::Rwasm {
         module: module.clone(),
         engine: ExecutionEngine::acquire_shared(),
     };
-    for _ in 0..1000 {
+    for i in 0..1 {
+        println!("iteration {}", i);
         bench_strategy(&strategy);
     }
 }

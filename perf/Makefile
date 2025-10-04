@@ -8,10 +8,15 @@ build_wasm:
 build:
 	cargo build --profile dev
 
-.PHONY: fibonacci_perf_flame
-fibonacci_perf_flame:
-	perf.sh target/debug/fibonacci_perf main
-	mv flame.svg fibonacci_perf_flame.svg
+.PHONY: fibonacci_perf32_flame
+fibonacci_perf32_flame:
+	perf.sh target/debug/fibonacci_perf32 main
+	mv flame.svg fibonacci_perf32_flame.svg
+
+.PHONY: fibonacci_perf64_flame
+fibonacci_perf64_flame:
+	perf.sh target/debug/fibonacci_perf64 main
+	mv flame.svg fibonacci_perf64_flame.svg
 
 .PHONY: evm_fibonacci_perf_flame
 evm_fibonacci_perf_flame:
@@ -27,8 +32,9 @@ load_perf_flame:
 all_sequentially:
 	$(MAKE) build_wasm
 	$(MAKE) build
-	$(MAKE) evm_fibonacci_perf_flame
-	#$(MAKE) fibonacci_perf_flame
+	#$(MAKE) evm_fibonacci_perf_flame
+	#$(MAKE) fibonacci_perf32_flame
+	$(MAKE) fibonacci_perf64_flame
 	#$(MAKE) load_perf_flame
 
 .PHONY: clean

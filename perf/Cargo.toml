@@ -7,8 +7,12 @@ edition = "2021"
 rustflags = ["-C", "force-frame-pointers=yes"]
 
 [[bin]]
-name = "fibonacci_perf"
-path = "fibonacci_perf.rs"
+name = "fibonacci_perf32"
+path = "fibonacci_perf32.rs"
+
+[[bin]]
+name = "fibonacci_perf64"
+path = "fibonacci_perf64.rs"
 
 [[bin]]
 name = "load_perf"
