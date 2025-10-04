@@ -21,11 +21,12 @@ impl GlobalMemory {
         let maximum_len = MEMORY_MAX_PAGES
             .to_bytes()
             .expect("rwasm: not supported target pointer width");
-        if initial_len > maximum_len {
-            unreachable!("rwasm: initial memory size is greater than the maximum");
-        }
-        let mut shared_memory = BytesMut::with_capacity(maximum_len);
-        shared_memory.resize(initial_len, 0);
+        debug_assert!(
+            initial_len <= maximum_len,
+            "rwasm: initial memory size is greater than the maximum"
+        );
+        unsafe { core::hint::assert_unchecked(initial_len <= maximum_len) };
+        let shared_memory = BytesMut::zeroed(initial_len);
         Self {
             shared_memory,
             current_pages: initial_pages,

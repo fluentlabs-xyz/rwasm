@@ -82,9 +82,12 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         memory.fill(byte);
         #[cfg(feature = "tracing")]
-        self.store
-            .tracer
-            .memory_change(offset as u32, n as u32, memory);
+        {
+            let memory = memory.to_vec();
+            self.store
+                .tracer
+                .memory_change(offset as u32, n as u32, &memory);
+        }
         self.ip.add(1);
         Ok(())
     }
@@ -105,11 +108,14 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         data.copy_within(src_offset..src_offset.wrapping_add(n), dst_offset);
         #[cfg(feature = "tracing")]
-        self.store.tracer.memory_change(
-            dst_offset as u32,
-            n as u32,
-            &data[dst_offset..(dst_offset + n)],
-        );
+        {
+            let data = data.to_vec();
+            self.store.tracer.memory_change(
+                dst_offset as u32,
+                n as u32,
+                &data[dst_offset..(dst_offset + n)],
+            );
+        }
         self.ip.add(1);
         Ok(())
     }
@@ -145,9 +151,12 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         memory.copy_from_slice(data);
         #[cfg(feature = "tracing")]
-        self.store
-            .tracer
-            .global_memory(dst_offset as u32, n as u32, memory);
+        {
+            let memory = memory.to_vec();
+            self.store
+                .tracer
+                .global_memory(dst_offset as u32, n as u32, &memory);
+        }
         self.ip.add(1);
         Ok(())
     }

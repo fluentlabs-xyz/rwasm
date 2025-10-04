@@ -32,8 +32,7 @@ impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
         self.store.get_global_memory().write(offset, buffer)?;
         #[cfg(feature = "tracing")]
-        self.vm
-            .store
+        self.store
             .tracer
             .memory_change(offset as u32, buffer.len() as u32, buffer);
         Ok(())

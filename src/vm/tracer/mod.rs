@@ -131,7 +131,6 @@ impl Tracer {
             call_id: 0,
             memory_access,
         };
-        println!("opcode _state{:?},", opcode_state);
         self.logs.push(opcode_state);
     }
 
@@ -188,6 +187,7 @@ impl Tracer {
     pub fn record_mr(&mut self, ins: Opcode, sp: u32) -> MemoryAccessRecord {
         let length = opcode_stack_read(ins);
         let mut memory_access = MemoryAccessRecord::default();
+        #[cfg(feature = "std")]
         println!(
             "op:{},length:{},memory_record{:?}",
             ins, length, self.memory_records
@@ -195,6 +195,7 @@ impl Tracer {
 
         for idx in length..0 {
             let addr = sp - idx;
+            #[cfg(feature = "std")]
             println!("length in loop{},addr:{}", length, addr);
             let record = self.memory_records.entry(addr).or_insert(MemoryRecord {
                 value: 0,
@@ -269,6 +270,7 @@ impl Tracer {
         let op_state = self.logs.last_mut().unwrap();
 
         op_state.memory_access.c = Some(MemoryRecordEnum::Write(write_record));
+        #[cfg(feature = "std")]
         println!("op_state:memoeryaccess:{:?}", op_state.memory_access);
     }
 }

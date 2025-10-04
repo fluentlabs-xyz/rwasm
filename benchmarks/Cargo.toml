@@ -38,3 +38,10 @@ harness = false
 [[bench]]
 name = "fib64"
 harness = false
+
+[[bench]]
+name = "fib256"
+harness = false
+
+[dependencies]
+alloy-primitives = { version = "1.4.0", default-features = false }

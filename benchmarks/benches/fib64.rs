@@ -20,18 +20,18 @@ fn bench_comparisons(c: &mut Criterion) {
 
     // bench_native
     {
-        pub fn fib(n: u64) -> u64 {
+        pub fn fib64(n: u64) -> u64 {
             let (mut a, mut b) = (0, 1);
             for _ in 0..n {
-                let t = a;
+                let temp = a;
                 a = b;
-                b = t + b;
+                b = temp + b;
             }
             a
         }
         group.bench_function("bench_native", |b| {
             b.iter(|| {
-                core::hint::black_box(fib(core::hint::black_box(FIB_VALUE as u64)));
+                core::hint::black_box(fib64(core::hint::black_box(FIB_VALUE as u64)));
             });
         });
     };
@@ -94,7 +94,7 @@ fn bench_comparisons(c: &mut Criterion) {
         let wasm_binary = include_bytes!("../lib.wasm");
         let config = CompilationConfig::default().with_consume_fuel(false);
         let module = compile_wasmtime_module(config, wasm_binary).unwrap();
-        group.bench_function("bench_strategy_wasmtime", |b| {
+        group.bench_function("bench_wasmtime", |b| {
             let strategy = Strategy::Wasmtime {
                 module: module.clone(),
             };
@@ -106,7 +106,7 @@ fn bench_comparisons(c: &mut Criterion) {
         let wasm_binary = include_bytes!("../lib.wasm");
         let config = CompilationConfig::default().with_consume_fuel(false);
         let module = compile_wasmi_module(config, wasm_binary).unwrap();
-        group.bench_function("bench_strategy_wasmi", |b| {
+        group.bench_function("bench_wasmi", |b| {
             let strategy = Strategy::Wasmi {
                 module: module.clone(),
             };
@@ -121,7 +121,7 @@ fn bench_comparisons(c: &mut Criterion) {
             .with_allow_malformed_entrypoint_func_type(true)
             .with_consume_fuel(false);
         let (module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-        group.bench_function("bench_strategy_rwasm", |b| {
+        group.bench_function("bench_rwasm", |b| {
             let strategy = Strategy::Rwasm {
                 module: module.clone(),
                 engine: ExecutionEngine::acquire_shared(),

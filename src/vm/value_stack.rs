@@ -339,10 +339,10 @@ impl ValueStack {
 ///
 /// [`ValueStack`]: super::ValueStack
 #[derive(Debug, Copy, Clone)]
-#[cfg_attr(not(feature = "test-build"), repr(transparent))]
+#[cfg_attr(not(feature = "tracing"), repr(transparent))]
 pub struct ValueStackPtr {
     ptr: *mut UntypedValue,
-    #[cfg(feature = "test-build")]
+    #[cfg(feature = "tracing")]
     src: *mut UntypedValue,
 }
 
@@ -352,7 +352,7 @@ impl From<*mut UntypedValue> for ValueStackPtr {
     #[inline]
     fn from(ptr: *mut UntypedValue) -> Self {
         Self {
-            #[cfg(feature = "test-build")]
+            #[cfg(feature = "tracing")]
             src: ptr,
             ptr,
         }
@@ -363,7 +363,7 @@ impl ValueStackPtr {
     pub fn new(ptr: *mut UntypedValue) -> ValueStackPtr {
         Self {
             ptr,
-            #[cfg(feature = "test-build")]
+            #[cfg(feature = "tracing")]
             src: ptr,
         }
     }
@@ -465,7 +465,7 @@ impl ValueStackPtr {
         //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
-        #[cfg(feature = "test-build")]
+        #[cfg(feature = "tracing")]
         debug_assert!(self.ptr >= self.src, "stack underflow: {}", delta);
     }
 
@@ -476,7 +476,7 @@ impl ValueStackPtr {
         //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.sub(delta) };
-        #[cfg(feature = "test-build")]
+        #[cfg(feature = "tracing")]
         debug_assert!(self.ptr >= self.src, "stack underflow");
     }
 
