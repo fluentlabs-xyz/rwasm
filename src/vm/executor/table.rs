@@ -149,7 +149,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         {
             use crate::event::FatOpEvent;
 
-            let mut fat_op = self
+            let fat_op = self
                 .store
                 .tracer
                 .logs
@@ -162,9 +162,9 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             if let FatOpEvent::TableInit(mut table_init_event) = fat_op {
                 use crate::mem::MemoryLocalEvent;
                 use hashbrown::HashMap;
-                table_init_event.s=s.into();
-                table_init_event.d=d.into();
-                table_init_event.n=n.into();
+                table_init_event.s = s.into();
+                table_init_event.d = d.into();
+                table_init_event.n = n.into();
                 let mut local_memory_access: HashMap<u32, MemoryLocalEvent> = HashMap::new();
                 for idx in 0..table_init_event.local_mem_access.len() {
                     local_memory_access.insert(
@@ -182,31 +182,19 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                         Some(&mut local_memory_access),
                     );
                     let value = read_record.value;
-
-                    println!(
-                        "e addr: {:?},addr:{},rrecord:{:?}",
-                        src_addr,
-                        src_addr.to_virtual_addr(),
-                        read_record
-                    );
-
                     table_init_event.memory_read_access.push(read_record);
                 }
                 self.store.tracer.state.next_cycle();
                 for offset in 0..len {
-                    use crate::mem_index::AddressType;
+                    use crate::{mem_index::AddressType, N_MAX_TABLE_SIZE};
                     let value = table_init_event.memory_read_access[offset as usize].value;
-                    let dst_addr = AddressType::Table(table_idx as u32 * 1024 + offset);
+                    let dst_addr = AddressType::Table(
+                        table_idx as u32 * N_MAX_TABLE_SIZE + dst_index + offset,
+                    );
                     let write_record = self.store.tracer.mw_with_local_access(
                         dst_addr.to_virtual_addr(),
                         value,
                         Some(&mut local_memory_access),
-                    );
-                    println!(
-                        "t addr: {:?},addr:{},rrecord:{:?}",
-                        dst_addr,
-                        dst_addr.to_virtual_addr(),
-                        write_record
                     );
                     table_init_event.memory_write_acess.push(write_record);
                 }
