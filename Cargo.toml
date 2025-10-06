@@ -38,6 +38,8 @@ futures = { version = "0.3.31", optional = true }
 
 # wasmi
 wasmi = { version = "0.47.0", default-features = false }
+libc = { version = "0.2.172", default-features = false, features = ["align", "extra_traits", "const-extern-fn"] }
+setjmp = { version = "0.1.4", default-features = false, features = [], optional = true }
 
 [dev-dependencies]
 rand = "0.9.1"
@@ -52,6 +54,7 @@ std = [
     "num-traits/std",
     "bitvec/std",
     "wasmtime?/std",
+    #    "unix-memory-pool",
 ]
 more-max-pages = []
 serde = [
@@ -64,6 +67,9 @@ fpu = []
 wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:futures"]
 cache-compiled-artifacts = ["wasmtime", "dep:directories"]
 pooling-allocator = []
+unix-memory-pool = [
+    "dep:setjmp"
+]
 
 [[test]]
 name = "integration"

@@ -33,6 +33,7 @@ rpath = true
 codegen-units = 1
 
 [profile.dev]
+panic = "abort"
 debug = true
 opt-level = 0
 debug-assertions = true
