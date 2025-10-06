@@ -454,6 +454,17 @@ impl InstructionTranslator {
         self.alloc.tables.get(table_index as usize).unwrap()
     }
 
+    fn add_branch(&mut self, relative_depth: u32) {
+        match self.alloc.control_frames.nth_back_mut(relative_depth) {
+            ControlFrame::Block(frame) => frame.bump_branches(),
+            ControlFrame::Loop(frame) => frame.bump_branches(),
+            ControlFrame::If(frame) => frame.bump_branches(),
+            ControlFrame::Unreachable(frame) => {
+                panic!("tried to `bump_branches` on an unreachable control frame: {frame:?}")
+            }
+        }
+    }
+
     /// Returns the target at the given `depth` together with its [`DropKeep`].
     ///
     /// # Panics
@@ -856,8 +867,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .pin_label(frame.end_label(), self.current_pc())
                 .unwrap_or_else(|err| panic!("failed to pin label: {err}"));
         }
+        let is_branches = self.reachable && frame.is_branched_to();
+        self.reachable = self.reachable | frame.is_branched_to();
+
         // These bindings are required because of borrowing issues.
-        let frame_reachable = frame.is_reachable();
         let frame_stack_height = frame.stack_height();
         if self.alloc.control_frames.len() == 1 {
             // If the control flow frames stack is empty after this point,
@@ -868,6 +881,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // The following code is only reachable if the ended control flow
             // frame was reachable upon entering to begin with.
             self.reachable = frame_reachable;
+        } else if is_branches {
+            self.bump_fuel_consumption(|| FuelCosts::BASE)?;
         }
         if let Some(frame_stack_height) = frame_stack_height {
             let mut old_stack_height = self.stack_height.height();
@@ -913,6 +928,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_br(&mut self, relative_depth: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
+            builder.add_branch(relative_depth);
+
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
                     builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
@@ -920,6 +937,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                         &mut builder.alloc.instruction_set,
                         &mut builder.stack_height,
                     );
+                    if drop_keep.keep() > 0 {
+                        builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+                    }
+
                     let offset = builder.branch_offset(end_label)?;
                     builder.alloc.instruction_set.op_br(offset);
                 }
@@ -937,11 +958,15 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             builder.stack_height.pop1();
             builder.alloc.stack_types.pop().unwrap();
+            builder.add_branch(relative_depth);
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
                     builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
                     if drop_keep.is_noop() {
                         let offset = builder.branch_offset(end_label)?;
+                        if drop_keep.keep > 0 {
+                            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+                        }
                         builder.alloc.instruction_set.op_br_if_nez(offset);
                     } else {
                         builder
@@ -1016,11 +1041,19 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                     AcquiredTarget::Branch(label, drop_keep) => {
                         *max_drop_keep_fuel =
                             (*max_drop_keep_fuel).max(fuel_for_drop_keep(builder, drop_keep));
+
+                        if drop_keep.keep > 0 && *max_drop_keep_fuel == 0 {
+                            *max_drop_keep_fuel = 1;
+                        }
                         Ok(BrTableTarget::Label(label, drop_keep))
                     }
                     AcquiredTarget::Return(drop_keep) => {
                         *max_drop_keep_fuel =
                             (*max_drop_keep_fuel).max(fuel_for_drop_keep(builder, drop_keep));
+
+                        if drop_keep.keep > 0 && *max_drop_keep_fuel == 0 {
+                            *max_drop_keep_fuel = 1;
+                        }
                         Ok(BrTableTarget::Return(drop_keep))
                     }
                 }
@@ -1115,6 +1148,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let final_len = builder.alloc.instruction_set.len() + target_len;
             let mut trampoline_ixs = InstructionSet::new();
             for (n, depth) in targets.into_iter().enumerate() {
+                builder.add_branch(depth.into_u32());
                 let target = compute_instr(builder, n, depth, &mut max_drop_keep_fuel)?;
 
                 encode_br_table_target(builder, target, &mut trampoline_ixs, target_len)?;
@@ -1123,6 +1157,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // We include the default target in `len_branches`. Each branch takes up 2 instruction
             // words.
             let len_branches = builder.alloc.br_table_branches.len() / 2;
+            builder.add_branch(default.into_u32());
             let default_branch =
                 compute_instr(builder, len_branches, default, &mut max_drop_keep_fuel)?;
             let len_targets = BranchTableTargets::try_from(len_branches + 1)
