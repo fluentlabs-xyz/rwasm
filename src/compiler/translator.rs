@@ -312,6 +312,12 @@ impl InstructionTranslator {
         instr_loc as InstrLoc
     }
 
+    pub fn push_consume_fuel_empty(&mut self) -> InstrLoc {
+        let instr_loc = self.alloc.instruction_set.loc();
+        self.alloc.instruction_set.op_consume_fuel(0);
+        instr_loc as InstrLoc
+    }
+
     /// Returns the most recent [`ConsumeFuel`] instruction in the translation process.
     ///
     /// Returns `None` if gas metering is disabled.
@@ -739,7 +745,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.alloc.instruction_set.op_br_if_eqz(branch_offset);
             let consume_fuel = self
                 .is_fuel_metering_enabled()
-                .then(|| self.push_consume_fuel_base());
+                .then(|| self.push_consume_fuel_empty());
             self.alloc.control_frames.push_frame(IfControlFrame::new(
                 block_type,
                 end_label,
@@ -795,7 +801,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         // since the `ConsumeFuel` instruction for the `then` block is no longer
         // used from this point on.
         self.is_fuel_metering_enabled().then(|| {
-            let consume_fuel = self.push_consume_fuel_base();
+            let consume_fuel = self.push_consume_fuel_empty();
             if_frame.update_consume_fuel_instr(consume_fuel);
         });
         let mut old_stack_height = self.stack_height.height();
@@ -877,11 +883,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // we know that we are ending the function body `block`
             // frame, and therefore we have to return from the function.
             self.visit_return()?;
-        } else {
-            // The following code is only reachable if the ended control flow
-            // frame was reachable upon entering to begin with.
-            self.reachable = frame_reachable;
         } else if is_branches {
+            println!("Bump branch fuel");
             self.bump_fuel_consumption(|| FuelCosts::BASE)?;
         }
         if let Some(frame_stack_height) = frame_stack_height {
@@ -928,6 +931,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_br(&mut self, relative_depth: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
+            println!("Visit br depth: {}", relative_depth);
             builder.add_branch(relative_depth);
 
             match builder.acquire_target(relative_depth)? {
