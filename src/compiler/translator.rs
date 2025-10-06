@@ -672,7 +672,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_unreachable(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.instruction_set.op_unreachable();
             builder.reachable = false;
             Ok(())
@@ -1285,7 +1284,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_drop(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.stack_height.pop1();
             let item_type = builder.alloc.stack_types.pop().unwrap();
             builder.alloc.instruction_set.op_drop();
@@ -1299,7 +1297,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_select(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.stack_height.pop3();
             builder.stack_height.push1();
             builder.alloc.stack_types.pop().unwrap();
@@ -1327,7 +1324,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_local_get(&mut self, local_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             let local_depth = builder.relative_local_depth(local_index);
             let value =
                 builder.alloc.stack_types[builder.alloc.stack_types.len() - local_depth as usize];
@@ -1606,7 +1602,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_i32_const(&mut self, value: i32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(ValType::I32);
             builder.stack_height.push1();
             builder.alloc.instruction_set.op_i32_const(value);
@@ -1616,7 +1611,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_i64_const(&mut self, value: i64) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(ValType::I64);
             builder.stack_height.push2();
             builder.alloc.instruction_set.op_i64_const(value);
@@ -1626,7 +1620,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_f32_const(&mut self, value: Ieee32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(ValType::F32);
             builder.stack_height.push1();
             use crate::F32;
@@ -1638,7 +1631,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_f64_const(&mut self, value: Ieee64) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(ValType::F64);
             builder.stack_height.push2();
             let value = value.bits() as i64;
@@ -1663,7 +1655,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_ref_func(&mut self, function_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(ValType::FuncRef);
             builder.stack_height.push1();
             // We do +1 here because 0 offset is reserved for `null` value and an entrypoint
@@ -2072,7 +2063,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_i32_wrap_i64(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+            //TODO: maybe add for registry
+            // builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             let popped_value = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(popped_value, ValType::I64);
             builder.alloc.stack_types.push(ValType::I32);
