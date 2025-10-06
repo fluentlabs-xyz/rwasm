@@ -20,10 +20,32 @@ pub use view::*;
 /// reference) information needed for execution within the rWasm virtual machine.
 ///
 /// It's compiled from Wasm
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct RwasmModule {
     inner: Arc<RwasmModuleInner>,
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for RwasmModule {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.inner.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for RwasmModule {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let result = RwasmModuleInner::deserialize(deserializer)?;
+        Ok(Self {
+            inner: Arc::new(result),
+        })
+    }
 }
 
 fn _check() {
@@ -105,8 +127,8 @@ impl Deref for RwasmModule {
     }
 }
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RwasmModuleInner {
     /// The main instruction set (bytecode) for this module that includes an entrypoint
     /// and all required functions.

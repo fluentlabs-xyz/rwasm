@@ -1,4 +1,7 @@
 use crate::types::{Pages, TrapCode, N_MAX_MEMORY_PAGES};
+#[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+use crate::vm::memory_unix::rwmem::RwMemory;
+#[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
 use bytes::BytesMut;
 
 /// Shared linear memory backing store for a running module.
@@ -6,7 +9,11 @@ use bytes::BytesMut;
 /// The buffer is pre-reserved and grown in page-sized steps.
 pub struct GlobalMemory {
     /// Underlying byte buffer for the linear memory.
+    #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
     pub shared_memory: BytesMut,
+    ///
+    #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+    pub shared_memory_unix: RwMemory,
     /// Current logical size of the linear memory in pages.
     pub current_pages: Pages,
 }
@@ -15,20 +22,36 @@ const MEMORY_MAX_PAGES: Pages = Pages::new_unchecked(N_MAX_MEMORY_PAGES * 2);
 
 impl GlobalMemory {
     pub fn new(initial_pages: Pages) -> Self {
-        let initial_len = initial_pages
-            .to_bytes()
-            .expect("rwasm: not supported target pointer width");
-        let maximum_len = MEMORY_MAX_PAGES
-            .to_bytes()
-            .expect("rwasm: not supported target pointer width");
-        if initial_len > maximum_len {
-            unreachable!("rwasm: initial memory size is greater than the maximum");
+        #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
+        {
+            let initial_len = initial_pages
+                .to_bytes()
+                .expect("rwasm: not supported target pointer width");
+            let maximum_len = MEMORY_MAX_PAGES
+                .to_bytes()
+                .expect("rwasm: not supported target pointer width");
+            debug_assert!(
+                initial_len <= maximum_len,
+                "rwasm: initial memory size is greater than the maximum"
+            );
+            unsafe { core::hint::assert_unchecked(initial_len <= maximum_len) };
+            let shared_memory = BytesMut::zeroed(initial_len);
+            Self {
+                shared_memory,
+                current_pages: initial_pages,
+            }
         }
-        let mut shared_memory = BytesMut::with_capacity(maximum_len);
-        shared_memory.resize(initial_len, 0);
-        Self {
-            shared_memory,
-            current_pages: initial_pages,
+        #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+        {
+            let shared_memory_unix = crate::vm::memory_unix::rwmem::Memory::new(
+                initial_pages.into_inner(),
+                MEMORY_MAX_PAGES.into_inner(),
+            )
+            .unwrap();
+            Self {
+                shared_memory_unix,
+                current_pages: initial_pages,
+            }
         }
     }
 
@@ -59,20 +82,50 @@ impl GlobalMemory {
         let new_size = desired_pages
             .to_bytes()
             .expect("rwasm: not supported target pointer width");
-        assert!(new_size >= self.shared_memory.len());
-        self.shared_memory.resize(new_size, 0);
-        self.current_pages = desired_pages;
-        Some(current_pages)
+        #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
+        {
+            assert!(new_size >= self.shared_memory.len());
+            self.shared_memory.resize(new_size, 0);
+            self.current_pages = desired_pages;
+            Some(current_pages)
+        }
+        #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+        {
+            assert!(new_size >= self.shared_memory_unix.committed_len());
+            if self
+                .shared_memory_unix
+                .grow(additional.into_inner())
+                .is_err()
+            {
+                return None;
+            };
+            self.current_pages = desired_pages;
+            Some(current_pages)
+        }
     }
 
     /// Returns a shared slice to the bytes underlying to the byte buffer.
     pub fn data(&self) -> &[u8] {
-        self.shared_memory.as_ref()
+        #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
+        {
+            self.shared_memory.as_ref()
+        }
+        #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+        {
+            self.shared_memory_unix.as_slice()
+        }
     }
 
     /// Returns an exclusive slice to the bytes underlying to the byte buffer.
     pub fn data_mut(&mut self) -> &mut [u8] {
-        self.shared_memory.as_mut()
+        #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
+        {
+            self.shared_memory.as_mut()
+        }
+        #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+        {
+            self.shared_memory_unix.as_slice_mut()
+        }
     }
 
     /// Reads `n` bytes from `memory[offset..offset+n]` into `buffer`

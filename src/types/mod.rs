@@ -1,3 +1,4 @@
+pub mod bitvec_inlined;
 mod branch_offset;
 mod constructor_params;
 mod error;

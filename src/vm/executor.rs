@@ -234,6 +234,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             #[cfg(feature = "debug-print")]
             self.debug_print(&instr);
             exec_opcode!(self, instr, break Ok(()));
+            #[cfg(feature = "test-build")]
             self.value_stack.check_max_stack_height(self.sp);
         };
         // trap halts the execution, we need to clear the stack
@@ -284,12 +285,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "tracing")]
     pub fn step(&mut self) -> Result<bool, TrapCode> {
-        if !self
-            .ip
-            .is_valid((self.module.code_section.instr.last().unwrap()) as *const Opcode as u64)
-        {
-            return Err(TrapCode::UnreachableCodeReached);
-        };
         let instr = self.ip.get();
         self.trace_instr_pre(&instr);
         let mut wrapper = |instr: Opcode| -> Result<bool, TrapCode> {
@@ -305,7 +300,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     fn trace_instr_pre(&mut self, instr: &Opcode) {
         self.store.tracer.state.next_cycle();
         let pc = self.program_counter();
-        let memory_size: u32 = self.store.global_memory.current_pages().into();
+        let memory_size: u32 = self.store.get_global_memory().current_pages().into();
         let consumed_fuel = self.store.fuel_consumed();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
     }
@@ -313,11 +308,10 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[cfg(feature = "tracing")]
     fn trace_instr_post(&mut self, instr: &Opcode, trap_code: Option<TrapCode>) {
         // TODO(wangyao): "track trap codes"
-
         let sp = self.sp.to_relative_address();
-
         let pc = self.program_counter();
-        let stack = self.value_stack.dump_stack(self.sp);
+        self.value_stack.sync_stack_ptr(self.sp);
+        let stack = self.value_stack.dump_stack();
         self.store.tracer.post_opcode_state(pc, sp, stack);
     }
 
@@ -365,7 +359,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         ) -> Result<UntypedValue, TrapCode>,
     ) -> Result<(), TrapCode> {
         self.sp.try_eval_top(|address| {
-            let memory = self.store.global_memory.data();
+            let memory = self.store.get_global_memory().data();
             let value = load_extend(memory, address, offset)?;
             Ok(value)
         })?;
@@ -386,10 +380,11 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         #[allow(unused_variables)] len: u32,
     ) -> Result<(), TrapCode> {
         let (address, value) = self.sp.pop2();
-        let memory = self.store.global_memory.data_mut();
+        let memory = self.store.get_global_memory().data_mut();
         store_wrap(memory, address, offset, value)?;
         #[cfg(feature = "tracing")]
         {
+            let memory = memory.to_vec();
             let base_address = offset + u32::from(address);
             self.store.tracer.memory_change(
                 base_address,

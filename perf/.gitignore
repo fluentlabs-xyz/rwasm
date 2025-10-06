@@ -2,3 +2,6 @@ target
 Cargo.lock
 lib.wat
 lib.wasm
+/perf.data*
+/out.folded
+/out.perf
