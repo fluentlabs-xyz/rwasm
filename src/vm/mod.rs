@@ -6,7 +6,7 @@ mod handler;
 mod instr_ptr;
 mod memory;
 #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
-mod memory_pool_unix;
+mod memory_unix;
 mod reusable_pool;
 mod store;
 mod table_entity;

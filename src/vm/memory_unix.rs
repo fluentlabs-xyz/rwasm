@@ -266,7 +266,7 @@ pub mod rwmem {
 
 #[cfg(test)]
 mod tests {
-    use crate::vm::memory_pool_unix::rwmem::{RwMemory, WASM_PAGE};
+    use crate::vm::memory_unix::rwmem::{RwMemory, WASM_PAGE};
 
     #[test]
     fn test_rw_memory() {

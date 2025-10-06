@@ -1,6 +1,6 @@
 use crate::types::{Pages, TrapCode, N_MAX_MEMORY_PAGES};
 #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
-use crate::vm::memory_pool_unix::rwmem::RwMemory;
+use crate::vm::memory_unix::rwmem::RwMemory;
 #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
 use bytes::BytesMut;
 
@@ -43,7 +43,7 @@ impl GlobalMemory {
         }
         #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
         {
-            let shared_memory_unix = crate::vm::memory_pool_unix::rwmem::Memory::new(
+            let shared_memory_unix = crate::vm::memory_unix::rwmem::Memory::new(
                 initial_pages.into_inner(),
                 MEMORY_MAX_PAGES.into_inner(),
             )
