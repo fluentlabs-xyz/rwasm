@@ -1,4 +1,4 @@
-#[cfg(all(feature = "unix-memory-pool", unix))]
+#[cfg(all(feature = "unix-memory", unix))]
 pub mod rwmem {
     use core::ptr::NonNull;
     use core::{

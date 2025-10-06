@@ -67,7 +67,7 @@ fpu = []
 wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:futures"]
 cache-compiled-artifacts = ["wasmtime", "dep:directories"]
 pooling-allocator = []
-unix-memory-pool = [
+unix-memory = [
     "dep:setjmp"
 ]
 

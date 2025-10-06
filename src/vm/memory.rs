@@ -1,7 +1,7 @@
 use crate::types::{Pages, TrapCode, N_MAX_MEMORY_PAGES};
-#[cfg(all(feature = "unix-memory-pool", unix, not(target_arch = "wasm32")))]
+#[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
 use crate::vm::memory_pool_unix::rwmem::RwMemory;
-#[cfg(not(all(feature = "unix-memory-pool", unix, not(target_arch = "wasm32"))))]
+#[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
 use bytes::BytesMut;
 
 /// Shared linear memory backing store for a running module.
@@ -9,10 +9,10 @@ use bytes::BytesMut;
 /// The buffer is pre-reserved and grown in page-sized steps.
 pub struct GlobalMemory {
     /// Underlying byte buffer for the linear memory.
-    #[cfg(not(all(feature = "unix-memory-pool", unix, not(target_arch = "wasm32"))))]
+    #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
     pub shared_memory: BytesMut,
     ///
-    #[cfg(all(feature = "unix-memory-pool", unix, not(target_arch = "wasm32")))]
+    #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
     pub shared_memory_unix: RwMemory,
     /// Current logical size of the linear memory in pages.
     pub current_pages: Pages,
@@ -22,7 +22,7 @@ const MEMORY_MAX_PAGES: Pages = Pages::new_unchecked(N_MAX_MEMORY_PAGES * 2);
 
 impl GlobalMemory {
     pub fn new(initial_pages: Pages) -> Self {
-        #[cfg(not(all(feature = "unix-memory-pool", unix, not(target_arch = "wasm32"))))]
+        #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
         {
             let initial_len = initial_pages
                 .to_bytes()
@@ -41,15 +41,15 @@ impl GlobalMemory {
                 current_pages: initial_pages,
             }
         }
-        #[cfg(all(feature = "unix-memory-pool", unix, not(target_arch = "wasm32")))]
+        #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
         {
-            let unix_shared_memory = crate::vm::memory_pool_unix::rwmem::Memory::new(
+            let shared_memory_unix = crate::vm::memory_pool_unix::rwmem::Memory::new(
                 initial_pages.into_inner(),
                 MEMORY_MAX_PAGES.into_inner(),
             )
             .unwrap();
             Self {
-                shared_memory_unix: unix_shared_memory,
+                shared_memory_unix,
                 current_pages: initial_pages,
             }
         }
@@ -82,15 +82,15 @@ impl GlobalMemory {
         let new_size = desired_pages
             .to_bytes()
             .expect("rwasm: not supported target pointer width");
-        #[cfg(not(all(feature = "unix-memory-pool", unix, not(target_arch = "wasm32"))))]
+        #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
         {
             assert!(new_size >= self.shared_memory.len());
             self.shared_memory.resize(new_size, 0);
             self.current_pages = desired_pages;
             Some(current_pages)
         }
-        #[cfg(all(feature = "unix-memory-pool", unix, not(target_arch = "wasm32")))]
-        unsafe {
+        #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+        {
             assert!(new_size >= self.shared_memory_unix.committed_len());
             if self
                 .shared_memory_unix
@@ -106,11 +106,11 @@ impl GlobalMemory {
 
     /// Returns a shared slice to the bytes underlying to the byte buffer.
     pub fn data(&self) -> &[u8] {
-        #[cfg(not(all(feature = "unix-memory-pool", unix, not(target_arch = "wasm32"))))]
+        #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
         {
             self.shared_memory.as_ref()
         }
-        #[cfg(all(feature = "unix-memory-pool", unix, not(target_arch = "wasm32")))]
+        #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
         {
             self.shared_memory_unix.as_slice()
         }
@@ -118,11 +118,11 @@ impl GlobalMemory {
 
     /// Returns an exclusive slice to the bytes underlying to the byte buffer.
     pub fn data_mut(&mut self) -> &mut [u8] {
-        #[cfg(not(all(feature = "unix-memory-pool", unix, not(target_arch = "wasm32"))))]
+        #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
         {
             self.shared_memory.as_mut()
         }
-        #[cfg(all(feature = "unix-memory-pool", unix, not(target_arch = "wasm32")))]
+        #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
         {
             self.shared_memory_unix.as_slice_mut()
         }

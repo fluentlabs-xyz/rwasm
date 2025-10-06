@@ -4,7 +4,7 @@ all: all_sequentially
 build_wasm:
 	cd ../benchmarks && $(MAKE)
 
-PROFILE=debug # release | debug
+PROFILE=debug# release | debug
 
 .PHONY: build
 build:
@@ -40,8 +40,8 @@ all_sequentially:
 	$(MAKE) build_wasm
 	$(MAKE) build
 	#$(MAKE) evm_fibonacci_perf_flame
-	#$(MAKE) fibonacci_perf32_flame
-	$(MAKE) fibonacci_perf64_flame
+	$(MAKE) fibonacci_perf32_flame
+	#$(MAKE) fibonacci_perf64_flame
 	#$(MAKE) load_perf_flame
 
 .PHONY: clean

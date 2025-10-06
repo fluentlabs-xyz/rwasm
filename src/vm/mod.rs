@@ -5,7 +5,7 @@ mod executor;
 mod handler;
 mod instr_ptr;
 mod memory;
-#[cfg(all(feature = "unix-memory-pool", unix, not(target_arch = "wasm32")))]
+#[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
 mod memory_pool_unix;
 mod reusable_pool;
 mod store;
