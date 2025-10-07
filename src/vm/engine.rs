@@ -1,10 +1,24 @@
-use crate::{
-    vm::reusable_pool::{ItemConfig, ReusablePool, ReusablePoolConfig},
-    CallStack, GlobalMemory, Pages, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value,
-    ValueStack, N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
-};
+use crate::vm::memory::GlobalMemorySimple;
+use crate::vm::reusable_pool::ItemBehavior;
+use crate::vm::reusable_pool::ReusablePool;
+use crate::vm::reusable_pool::ReusablePoolConfig;
+use crate::CallStack;
+#[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+use crate::GlobalMemoryPreallocated;
+use crate::IGlobalMemory;
+use crate::Pages;
+use crate::RwasmExecutor;
+use crate::RwasmModule;
+use crate::RwasmStore;
+use crate::TrapCode;
+use crate::Value;
+use crate::ValueStack;
+use crate::N_DEFAULT_STACK_SIZE;
+use crate::N_MAX_STACK_SIZE;
 use alloc::{sync::Arc, vec::Vec};
 use core::mem::take;
+use core::ops::Deref;
+use core::ops::DerefMut;
 use spin::Mutex;
 
 #[derive(Clone)]
@@ -18,9 +32,65 @@ impl GlobalMemoryConfig {
     }
 }
 
-impl ItemConfig<GlobalMemory> for GlobalMemoryConfig {
+pub const GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY: usize = 0;
+pub const GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY: usize = 1;
+
+pub enum GlobalMemory {
+    #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+    Preallocated(GlobalMemoryPreallocated),
+    Simple(GlobalMemorySimple),
+}
+
+impl Deref for GlobalMemory {
+    type Target = dyn IGlobalMemory;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+            GlobalMemory::Preallocated(v) => v,
+            GlobalMemory::Simple(v) => v,
+        }
+    }
+}
+
+impl DerefMut for GlobalMemory {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+            GlobalMemory::Preallocated(v) => v,
+            GlobalMemory::Simple(v) => v,
+        }
+    }
+}
+
+#[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+impl From<GlobalMemoryPreallocated> for GlobalMemory {
+    fn from(value: GlobalMemoryPreallocated) -> Self {
+        GlobalMemory::Preallocated(value)
+    }
+}
+
+impl From<GlobalMemorySimple> for GlobalMemory {
+    fn from(value: GlobalMemorySimple) -> Self {
+        GlobalMemory::Simple(value)
+    }
+}
+
+impl ItemBehavior<GlobalMemory> for GlobalMemoryConfig {
+    fn create_item_with_strategy<const STRATEGY: usize>(&self) -> GlobalMemory {
+        match STRATEGY {
+            #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+            GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY => {
+                GlobalMemoryPreallocated::new(self.initial_pages).into()
+            }
+            GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY => {
+                GlobalMemorySimple::new(self.initial_pages).into()
+            }
+            _ => panic!("unsupported creation strategy"),
+        }
+    }
     fn create_item(&self) -> GlobalMemory {
-        GlobalMemory::new(self.initial_pages)
+        self.create_item_with_strategy::<GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY>()
     }
 
     fn reset_for_reuse(item: &mut GlobalMemory) {
@@ -82,7 +152,12 @@ impl ReusableStackConfig {
     }
 }
 
-impl ItemConfig<(ValueStack, CallStack)> for ReusableStackConfig {
+impl ItemBehavior<(ValueStack, CallStack)> for ReusableStackConfig {
+    #[inline]
+    fn create_item_with_strategy<const STRATEGY: usize>(&self) -> (ValueStack, CallStack) {
+        self.create_item()
+    }
+    #[inline(always)]
     fn create_item(&self) -> (ValueStack, CallStack) {
         (
             ValueStack::new(self.initial_len, self.maximum_len),
@@ -108,11 +183,11 @@ impl Default for ExecutionEngineInner {
             REUSABLE_POOL_KEEP,
             GlobalMemoryConfig::new(0.into()),
         ));
-        let mut reusable_stacks = ReusablePool::new(ReusablePoolConfig::new(
+        let reusable_stacks = ReusablePool::new(ReusablePoolConfig::new(
             REUSABLE_POOL_KEEP,
             ReusableStackConfig::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE),
         ));
-        global_memory_pool.warmup(None);
+        global_memory_pool.warmup::<GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY>(None);
         Self {
             acquired_stacks: Vec::with_capacity(ESTIMATED_CALL_DEPTH),
             reusable_stacks,
@@ -130,11 +205,19 @@ impl ExecutionEngineInner {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        let (value_stack, call_stack) = self.reusable_stacks.reuse_or_new_item();
+        let (value_stack, call_stack) = self.reusable_stacks.reuse_or_new_item::<0>();
         self.acquired_stacks.push((value_stack, call_stack));
         let (value_stack_ref, call_stack_ref) = self.acquired_stacks.last_mut().unwrap();
         if store.global_memory.is_none() {
-            store.global_memory = Some(self.global_memory_pool.reuse_or_new_item());
+            store.global_memory =
+                if let Some(global_memory) = self.global_memory_pool.try_reuse_item() {
+                    Some(global_memory)
+                } else {
+                    Some(
+                        self.global_memory_pool
+                            .new_item::<GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY>(),
+                    )
+                };
         }
         let mut executor =
             RwasmExecutor::entrypoint(&module, value_stack_ref, call_stack_ref, store);
@@ -168,7 +251,10 @@ impl ExecutionEngineInner {
             unreachable!("resume calling without a remaining call stack");
         });
         if store.global_memory.is_none() {
-            store.global_memory = Some(self.global_memory_pool.reuse_or_new_item());
+            store.global_memory = Some(
+                self.global_memory_pool
+                    .reuse_or_new_item::<GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY>(),
+            );
         }
         let mut executor =
             RwasmExecutor::new(&module, value_stack_ref, sp, call_stack_ref, ip, store);

@@ -53,7 +53,7 @@ std = [
     "num-traits/std",
     "bitvec/std",
     "wasmtime?/std",
-    "unix-memory",
+    #    "unix-memory",
 ]
 more-max-pages = []
 serde = [
