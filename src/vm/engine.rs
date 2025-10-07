@@ -108,13 +108,14 @@ impl Default for ExecutionEngineInner {
             REUSABLE_POOL_KEEP,
             GlobalMemoryConfig::new(0.into()),
         ));
+        let mut reusable_stacks = ReusablePool::new(ReusablePoolConfig::new(
+            REUSABLE_POOL_KEEP,
+            ReusableStackConfig::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE),
+        ));
         global_memory_pool.warmup(None);
         Self {
             acquired_stacks: Vec::with_capacity(ESTIMATED_CALL_DEPTH),
-            reusable_stacks: ReusablePool::new(ReusablePoolConfig::new(
-                REUSABLE_POOL_KEEP,
-                ReusableStackConfig::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE),
-            )),
+            reusable_stacks,
             global_memory_pool,
         }
     }
