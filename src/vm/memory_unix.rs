@@ -7,8 +7,8 @@ pub mod rwmem {
     };
     use libc::{
         c_void, madvise, mmap, mprotect, munmap, sigaction, sigaltstack, sigemptyset, siginfo_t,
-        stack_t, MADV_DONTNEED, MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_NONE, PROT_READ,
-        PROT_WRITE, SA_ONSTACK, SA_SIGINFO, SIGSEGV,
+        stack_t, MADV_DONTNEED, MAP_ANON, MAP_FAILED, MAP_POPULATE, MAP_PRIVATE, PROT_NONE,
+        PROT_READ, PROT_WRITE, SA_ONSTACK, SA_SIGINFO, SIGSEGV,
     };
 
     pub const WASM_PAGE: usize = 64 * 1024;

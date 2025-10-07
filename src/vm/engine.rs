@@ -104,16 +104,18 @@ struct ExecutionEngineInner {
 
 impl Default for ExecutionEngineInner {
     fn default() -> Self {
+        let mut global_memory_pool = ReusablePool::new(ReusablePoolConfig::new(
+            REUSABLE_POOL_KEEP,
+            GlobalMemoryConfig::new(0.into()),
+        ));
+        global_memory_pool.warmup(None);
         Self {
             acquired_stacks: Vec::with_capacity(ESTIMATED_CALL_DEPTH),
             reusable_stacks: ReusablePool::new(ReusablePoolConfig::new(
                 REUSABLE_POOL_KEEP,
                 ReusableStackConfig::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE),
             )),
-            global_memory_pool: ReusablePool::new(ReusablePoolConfig::new(
-                10,
-                GlobalMemoryConfig::new(0.into()),
-            )),
+            global_memory_pool,
         }
     }
 }
@@ -127,11 +129,11 @@ impl ExecutionEngineInner {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        let (value_stack, call_stack) = self.reusable_stacks.reuse_or_new();
+        let (value_stack, call_stack) = self.reusable_stacks.reuse_or_new_item();
         self.acquired_stacks.push((value_stack, call_stack));
         let (value_stack_ref, call_stack_ref) = self.acquired_stacks.last_mut().unwrap();
         if store.global_memory.is_none() {
-            store.global_memory = Some(self.global_memory_pool.reuse_or_new());
+            store.global_memory = Some(self.global_memory_pool.reuse_or_new_item());
         }
         let mut executor =
             RwasmExecutor::entrypoint(&module, value_stack_ref, call_stack_ref, store);
@@ -165,7 +167,7 @@ impl ExecutionEngineInner {
             unreachable!("resume calling without a remaining call stack");
         });
         if store.global_memory.is_none() {
-            store.global_memory = Some(self.global_memory_pool.reuse_or_new());
+            store.global_memory = Some(self.global_memory_pool.reuse_or_new_item());
         }
         let mut executor =
             RwasmExecutor::new(&module, value_stack_ref, sp, call_stack_ref, ip, store);
