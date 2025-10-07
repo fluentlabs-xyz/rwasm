@@ -14,6 +14,8 @@ pub struct GlobalMemory {
     ///
     #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
     pub shared_memory_unix: RwMemory,
+    /// Current logical size of the linear memory in pages given at creation.
+    pub initial_pages: Pages,
     /// Current logical size of the linear memory in pages.
     pub current_pages: Pages,
 }
@@ -37,6 +39,7 @@ impl GlobalMemory {
             unsafe { core::hint::assert_unchecked(initial_len <= maximum_len) };
             let shared_memory = BytesMut::zeroed(initial_len);
             Self {
+                initial_pages,
                 shared_memory,
                 current_pages: initial_pages,
             }
@@ -49,9 +52,24 @@ impl GlobalMemory {
             )
             .unwrap();
             Self {
+                initial_pages,
                 shared_memory_unix,
                 current_pages: initial_pages,
             }
+        }
+    }
+
+    /// Resets memory (can be useful for reuse)
+    pub fn reset(&mut self) {
+        self.current_pages = self.initial_pages;
+        #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+        {
+            unsafe { self.shared_memory_unix.heap.recycle() }
+        }
+        #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
+        {
+            self.shared_memory
+                .resize(self.current_pages.to_bytes().unwrap(), 0);
         }
     }
 

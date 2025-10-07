@@ -1,11 +1,32 @@
 use crate::{
     vm::reusable_pool::{ItemConfig, ReusablePool, ReusablePoolConfig},
-    CallStack, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value, ValueStack,
-    N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
+    CallStack, GlobalMemory, Pages, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value,
+    ValueStack, N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
 };
 use alloc::{sync::Arc, vec::Vec};
 use core::mem::take;
 use spin::Mutex;
+
+#[derive(Clone)]
+pub struct GlobalMemoryConfig {
+    initial_pages: Pages,
+}
+
+impl GlobalMemoryConfig {
+    pub fn new(initial_pages: Pages) -> Self {
+        Self { initial_pages }
+    }
+}
+
+impl ItemConfig<GlobalMemory> for GlobalMemoryConfig {
+    fn create_item(&self) -> GlobalMemory {
+        GlobalMemory::new(self.initial_pages)
+    }
+
+    fn reset_for_reuse(item: &mut GlobalMemory) {
+        item.reset()
+    }
+}
 
 /// Represents the core execution engine for managing the execution of a program,
 /// including the handling of values and function calls.
@@ -78,6 +99,7 @@ impl ItemConfig<(ValueStack, CallStack)> for ReusableStackConfig {
 struct ExecutionEngineInner {
     acquired_stacks: Vec<(ValueStack, CallStack)>,
     reusable_stacks: ReusablePool<(ValueStack, CallStack), ReusableStackConfig>,
+    global_memory_pool: ReusablePool<GlobalMemory, GlobalMemoryConfig>,
 }
 
 impl Default for ExecutionEngineInner {
@@ -87,6 +109,10 @@ impl Default for ExecutionEngineInner {
             reusable_stacks: ReusablePool::new(ReusablePoolConfig::new(
                 REUSABLE_POOL_KEEP,
                 ReusableStackConfig::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE),
+            )),
+            global_memory_pool: ReusablePool::new(ReusablePoolConfig::new(
+                10,
+                GlobalMemoryConfig::new(0.into()),
             )),
         }
     }
@@ -104,9 +130,12 @@ impl ExecutionEngineInner {
         let (value_stack, call_stack) = self.reusable_stacks.reuse_or_new();
         self.acquired_stacks.push((value_stack, call_stack));
         let (value_stack_ref, call_stack_ref) = self.acquired_stacks.last_mut().unwrap();
+        if store.global_memory.is_none() {
+            store.global_memory = Some(self.global_memory_pool.reuse_or_new());
+        }
         let mut executor =
             RwasmExecutor::entrypoint(&module, value_stack_ref, call_stack_ref, store);
-        match executor.run(params, result) {
+        let result = match executor.run(params, result) {
             Err(TrapCode::InterruptionCalled) => {
                 store.resumable_context = Some((executor.ip, executor.sp));
                 Err(TrapCode::InterruptionCalled)
@@ -116,7 +145,11 @@ impl ExecutionEngineInner {
                 self.reusable_stacks.recycle(stacks);
                 res
             }
+        };
+        if let Some(global_memory) = store.global_memory.take() {
+            self.global_memory_pool.recycle(global_memory);
         }
+        result
     }
 
     /// Resumes the execution of a WASM (WebAssembly) function that was previously interrupted.
@@ -133,7 +166,7 @@ impl ExecutionEngineInner {
         });
         let mut executor =
             RwasmExecutor::new(&module, value_stack_ref, sp, call_stack_ref, ip, store);
-        match executor.run(params, result) {
+        let result = match executor.run(params, result) {
             Err(TrapCode::InterruptionCalled) => {
                 store.resumable_context = Some((executor.ip, executor.sp));
                 Err(TrapCode::InterruptionCalled)
@@ -143,7 +176,11 @@ impl ExecutionEngineInner {
                 self.reusable_stacks.recycle(value_stack);
                 res
             }
+        };
+        if let Some(global_memory) = store.global_memory.take() {
+            self.global_memory_pool.recycle(global_memory);
         }
+        result
     }
 }
 

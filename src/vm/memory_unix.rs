@@ -39,7 +39,7 @@ pub mod rwmem {
             let addr = mmap(
                 ptr::null_mut(),
                 map_len,
-                PROT_NONE,
+                PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANON,
                 -1,
                 0,
