@@ -139,7 +139,7 @@ impl IGlobalMemory for GlobalMemorySimple {
 
 #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
 pub struct GlobalMemoryPreallocated {
-    pub shared_memory_unix: RwMemory,
+    pub shared_memory: RwMemory,
     pub initial_pages: Pages,
     pub current_pages: Pages,
 }
@@ -159,14 +159,14 @@ impl GlobalMemoryPreallocated {
         );
         unsafe { core::hint::assert_unchecked(initial_len <= maximum_len) };
         {
-            let shared_memory_unix = crate::vm::memory_unix::rwmem::Memory::new(
+            let shared_memory = crate::vm::memory_unix::rwmem::Memory::new(
                 initial_pages.into_inner(),
                 MEMORY_MAX_PAGES.into_inner(),
             )
             .unwrap();
             Self {
                 initial_pages,
-                shared_memory_unix,
+                shared_memory,
                 current_pages: initial_pages,
             }
         }
@@ -177,7 +177,7 @@ impl GlobalMemoryPreallocated {
 impl IGlobalMemory for GlobalMemoryPreallocated {
     fn reset(&mut self) {
         self.current_pages = self.initial_pages;
-        unsafe { self.shared_memory_unix.heap.recycle() }
+        unsafe { self.shared_memory.heap.recycle() }
     }
     fn current_pages(&self) -> Pages {
         self.current_pages
@@ -197,12 +197,8 @@ impl IGlobalMemory for GlobalMemoryPreallocated {
         let new_size = desired_pages
             .to_bytes()
             .expect("rwasm: not supported target pointer width");
-        assert!(new_size >= self.shared_memory_unix.committed_len());
-        if self
-            .shared_memory_unix
-            .grow(additional.into_inner())
-            .is_err()
-        {
+        assert!(new_size >= self.shared_memory.committed_len());
+        if self.shared_memory.grow(additional.into_inner()).is_err() {
             return None;
         };
         self.current_pages = desired_pages;
@@ -210,10 +206,10 @@ impl IGlobalMemory for GlobalMemoryPreallocated {
     }
 
     fn data(&self) -> &[u8] {
-        self.shared_memory_unix.as_slice()
+        self.shared_memory.as_slice()
     }
 
     fn data_mut(&mut self) -> &mut [u8] {
-        self.shared_memory_unix.as_slice_mut()
+        self.shared_memory.as_slice_mut()
     }
 }

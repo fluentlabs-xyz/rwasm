@@ -32,13 +32,13 @@ impl GlobalMemoryConfig {
     }
 }
 
-pub const GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY: usize = 0;
-pub const GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY: usize = 1;
+pub const GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY: usize = 0;
+pub const GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY: usize = 1;
 
 pub enum GlobalMemory {
+    Simple(GlobalMemorySimple),
     #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
     Preallocated(GlobalMemoryPreallocated),
-    Simple(GlobalMemorySimple),
 }
 
 impl Deref for GlobalMemory {
@@ -46,9 +46,9 @@ impl Deref for GlobalMemory {
 
     fn deref(&self) -> &Self::Target {
         match self {
+            GlobalMemory::Simple(v) => v,
             #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
             GlobalMemory::Preallocated(v) => v,
-            GlobalMemory::Simple(v) => v,
         }
     }
 }
@@ -56,9 +56,9 @@ impl Deref for GlobalMemory {
 impl DerefMut for GlobalMemory {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
+            GlobalMemory::Simple(v) => v,
             #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
             GlobalMemory::Preallocated(v) => v,
-            GlobalMemory::Simple(v) => v,
         }
     }
 }
@@ -79,18 +79,18 @@ impl From<GlobalMemorySimple> for GlobalMemory {
 impl ItemBehavior<GlobalMemory> for GlobalMemoryConfig {
     fn create_item_with_strategy<const STRATEGY: usize>(&self) -> GlobalMemory {
         match STRATEGY {
+            GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY => {
+                GlobalMemorySimple::new(self.initial_pages).into()
+            }
             #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
             GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY => {
                 GlobalMemoryPreallocated::new(self.initial_pages).into()
             }
-            GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY => {
-                GlobalMemorySimple::new(self.initial_pages).into()
-            }
-            _ => panic!("unsupported creation strategy"),
+            _ => GlobalMemorySimple::new(self.initial_pages).into(),
         }
     }
     fn create_item(&self) -> GlobalMemory {
-        self.create_item_with_strategy::<GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY>()
+        self.create_item_with_strategy::<GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY>()
     }
 
     fn reset_for_reuse(item: &mut GlobalMemory) {
