@@ -62,14 +62,13 @@ impl GlobalMemory {
     /// Resets memory (can be useful for reuse)
     pub fn reset(&mut self) {
         self.current_pages = self.initial_pages;
+        #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
+        {
+            self.shared_memory.resize(0, 0);
+        }
         #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
         {
             unsafe { self.shared_memory_unix.heap.recycle() }
-        }
-        #[cfg(not(all(feature = "unix-memory", unix, not(target_arch = "wasm32"))))]
-        {
-            self.shared_memory
-                .resize(self.current_pages.to_bytes().unwrap(), 0);
         }
     }
 

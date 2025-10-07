@@ -143,12 +143,12 @@ impl ExecutionEngineInner {
             res => {
                 let stacks = self.acquired_stacks.pop().unwrap();
                 self.reusable_stacks.recycle(stacks);
+                if let Some(global_memory) = store.global_memory.take() {
+                    self.global_memory_pool.recycle(global_memory);
+                }
                 res
             }
         };
-        if let Some(global_memory) = store.global_memory.take() {
-            self.global_memory_pool.recycle(global_memory);
-        }
         result
     }
 
@@ -164,6 +164,9 @@ impl ExecutionEngineInner {
         let (ip, sp) = take(&mut store.resumable_context).unwrap_or_else(|| {
             unreachable!("resume calling without a remaining call stack");
         });
+        if store.global_memory.is_none() {
+            store.global_memory = Some(self.global_memory_pool.reuse_or_new());
+        }
         let mut executor =
             RwasmExecutor::new(&module, value_stack_ref, sp, call_stack_ref, ip, store);
         let result = match executor.run(params, result) {
@@ -174,12 +177,12 @@ impl ExecutionEngineInner {
             res => {
                 let value_stack = self.acquired_stacks.pop().unwrap();
                 self.reusable_stacks.recycle(value_stack);
+                if let Some(global_memory) = store.global_memory.take() {
+                    self.global_memory_pool.recycle(global_memory);
+                }
                 res
             }
         };
-        if let Some(global_memory) = store.global_memory.take() {
-            self.global_memory_pool.recycle(global_memory);
-        }
         result
     }
 }

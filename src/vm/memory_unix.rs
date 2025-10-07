@@ -112,7 +112,7 @@ pub mod rwmem {
         }
 
         /// Zero-and-forget: turn the committed range back into “fresh zero” without unmapping.
-        pub unsafe fn recycle(&self) {
+        pub unsafe fn recycle(&mut self) {
             let len = self.committed_len();
             if len == 0 {
                 return;
@@ -120,6 +120,7 @@ pub mod rwmem {
             let ptr = self.base.as_ptr() as *mut c_void;
             // Keep writable; just tell kernel we don't need contents.
             let _ = madvise(ptr, len, MADV_DONTNEED);
+            self.committed_len.store(0, Ordering::Relaxed);
         }
     }
 
@@ -254,7 +255,7 @@ pub mod rwmem {
             unsafe { self.heap.grow(delta_pages) }
         }
         #[inline]
-        pub unsafe fn recycle(&self) {
+        pub unsafe fn recycle(&mut self) {
             self.heap.recycle()
         }
     }

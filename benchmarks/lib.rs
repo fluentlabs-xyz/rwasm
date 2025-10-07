@@ -65,6 +65,7 @@ mod tests {
         strategy
             .execute(&mut store, "fib32", &[Value::I32(FIB_VALUE)], &mut result)
             .unwrap();
+        assert_eq!(165580141, result[0].i32().unwrap());
         core::hint::black_box(result);
     }
 }
