@@ -1,4 +1,4 @@
-`use criterion::{criterion_main, Criterion};
+use criterion::{criterion_main, Criterion};
 use hex_literal::hex;
 use revm_bytecode::Bytecode;
 use rwasm::{compile_wasmi_module, compile_wasmtime_module, CompilationConfig, RwasmModule};
