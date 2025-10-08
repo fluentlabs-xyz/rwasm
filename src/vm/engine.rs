@@ -1,24 +1,16 @@
-use crate::vm::memory::GlobalMemorySimple;
-use crate::vm::reusable_pool::ItemBehavior;
-use crate::vm::reusable_pool::ReusablePool;
-use crate::vm::reusable_pool::ReusablePoolConfig;
-use crate::CallStack;
-#[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
-use crate::GlobalMemoryPreallocated;
-use crate::IGlobalMemory;
-use crate::Pages;
-use crate::RwasmExecutor;
-use crate::RwasmModule;
-use crate::RwasmStore;
-use crate::TrapCode;
-use crate::Value;
-use crate::ValueStack;
-use crate::N_DEFAULT_STACK_SIZE;
-use crate::N_MAX_STACK_SIZE;
+use crate::{
+    vm::{
+        memory::OnDemandGlobalMemory,
+        reusable_pool::{ItemBehavior, ReusablePool, ReusablePoolConfig},
+    },
+    CallStack, IGlobalMemory, Pages, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value,
+    ValueStack, N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
+};
 use alloc::{sync::Arc, vec::Vec};
-use core::mem::take;
-use core::ops::Deref;
-use core::ops::DerefMut;
+use core::{
+    mem::take,
+    ops::{Deref, DerefMut},
+};
 use spin::Mutex;
 
 #[derive(Clone)]
@@ -36,9 +28,9 @@ pub const GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY: usize = 0;
 pub const GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY: usize = 1;
 
 pub enum GlobalMemory {
-    Simple(GlobalMemorySimple),
-    #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
-    Preallocated(GlobalMemoryPreallocated),
+    OnDemand(OnDemandGlobalMemory),
+    #[cfg(feature = "unix-memory")]
+    Pooling(crate::vm::memory::mmap::PoolingGlobalMemory),
 }
 
 impl Deref for GlobalMemory {
@@ -46,9 +38,9 @@ impl Deref for GlobalMemory {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            GlobalMemory::Simple(v) => v,
-            #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
-            GlobalMemory::Preallocated(v) => v,
+            GlobalMemory::OnDemand(v) => v,
+            #[cfg(feature = "unix-memory")]
+            GlobalMemory::Pooling(v) => v,
         }
     }
 }
@@ -56,41 +48,42 @@ impl Deref for GlobalMemory {
 impl DerefMut for GlobalMemory {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
-            GlobalMemory::Simple(v) => v,
-            #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
-            GlobalMemory::Preallocated(v) => v,
+            GlobalMemory::OnDemand(v) => v,
+            #[cfg(feature = "unix-memory")]
+            GlobalMemory::Pooling(v) => v,
         }
     }
 }
 
-#[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
-impl From<GlobalMemoryPreallocated> for GlobalMemory {
-    fn from(value: GlobalMemoryPreallocated) -> Self {
-        GlobalMemory::Preallocated(value)
+#[cfg(feature = "unix-memory")]
+impl From<crate::vm::memory::mmap::PoolingGlobalMemory> for GlobalMemory {
+    fn from(value: crate::vm::memory::mmap::PoolingGlobalMemory) -> Self {
+        GlobalMemory::Pooling(value)
     }
 }
 
-impl From<GlobalMemorySimple> for GlobalMemory {
-    fn from(value: GlobalMemorySimple) -> Self {
-        GlobalMemory::Simple(value)
+impl From<OnDemandGlobalMemory> for GlobalMemory {
+    fn from(value: OnDemandGlobalMemory) -> Self {
+        GlobalMemory::OnDemand(value)
     }
 }
 
 impl ItemBehavior<GlobalMemory> for GlobalMemoryConfig {
+    fn create_item(&self) -> GlobalMemory {
+        self.create_item_with_strategy::<GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY>()
+    }
+
     fn create_item_with_strategy<const STRATEGY: usize>(&self) -> GlobalMemory {
         match STRATEGY {
             GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY => {
-                GlobalMemorySimple::new(self.initial_pages).into()
+                OnDemandGlobalMemory::new(self.initial_pages).into()
             }
-            #[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
+            #[cfg(feature = "unix-memory")]
             GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY => {
-                GlobalMemoryPreallocated::new(self.initial_pages).into()
+                crate::vm::memory::mmap::PoolingGlobalMemory::new(self.initial_pages).into()
             }
-            _ => GlobalMemorySimple::new(self.initial_pages).into(),
+            _ => OnDemandGlobalMemory::new(self.initial_pages).into(),
         }
-    }
-    fn create_item(&self) -> GlobalMemory {
-        self.create_item_with_strategy::<GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY>()
     }
 
     fn reset_for_reuse(item: &mut GlobalMemory) {
@@ -153,16 +146,17 @@ impl ReusableStackConfig {
 }
 
 impl ItemBehavior<(ValueStack, CallStack)> for ReusableStackConfig {
-    #[inline]
-    fn create_item_with_strategy<const STRATEGY: usize>(&self) -> (ValueStack, CallStack) {
-        self.create_item()
-    }
     #[inline(always)]
     fn create_item(&self) -> (ValueStack, CallStack) {
         (
             ValueStack::new(self.initial_len, self.maximum_len),
             CallStack::default(),
         )
+    }
+
+    #[inline]
+    fn create_item_with_strategy<const STRATEGY: usize>(&self) -> (ValueStack, CallStack) {
+        self.create_item()
     }
 
     fn reset_for_reuse(item: &mut (ValueStack, CallStack)) {

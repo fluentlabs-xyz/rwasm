@@ -66,15 +66,7 @@ fpu = []
 wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:futures"]
 cache-compiled-artifacts = ["wasmtime", "dep:directories"]
 pooling-allocator = []
-unix-memory = [
-    "dep:setjmp"
-]
-
-[target.'cfg(all(unix, not(target_arch = "wasm32")))'.dependencies]
-#setjmp = { version = "0.1.4", default-features = false, features = [], optional = true }
-#setjmp = { path = "setjmp", default-features = false, features = [], optional = true }
-#setjmp = { path = "../setjmp.rs", default-features = false, features = [], optional = true }
-setjmp = { git = "https://github.com/fluentlabs-xyz/setjmp.rs", default-features = false, features = [], optional = true }
+unix-memory = []
 
 [[test]]
 name = "integration"

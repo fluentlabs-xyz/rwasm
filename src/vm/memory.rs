@@ -1,11 +1,10 @@
 use crate::types::{Pages, TrapCode, N_MAX_MEMORY_PAGES};
-#[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
-use crate::vm::memory_unix::rwmem::RwMemory;
 use bytes::BytesMut;
 
+#[cfg(feature = "unix-memory")]
+pub mod mmap;
+
 pub trait IGlobalMemory {
-    /// Resets memory (can be useful for reuse)
-    fn reset(&mut self);
     /// Returns the number of pages in use by the linear memory.
     fn current_pages(&self) -> Pages;
     /// Grows the linear memory by the given number of new pages.
@@ -51,15 +50,17 @@ pub trait IGlobalMemory {
         slice.copy_from_slice(buffer);
         Ok(())
     }
+    /// Resets memory (can be useful for reuse)
+    fn reset(&mut self);
 }
 
-const MEMORY_MAX_PAGES: Pages = Pages::new_unchecked(N_MAX_MEMORY_PAGES * 2);
+pub const MEMORY_MAX_PAGES: Pages = Pages::new_unchecked(N_MAX_MEMORY_PAGES * 2);
 
 /// Shared linear memory backing store for a running module.
 /// Tracks current size in Wasm pages and provides bounds-checked read/write helpers.
 /// The buffer is pre-reserved and grown in page-sized steps.
 
-pub struct GlobalMemorySimple {
+pub struct OnDemandGlobalMemory {
     /// Underlying byte buffer for the linear memory.
     pub shared_memory: BytesMut,
     /// Current logical size of the linear memory in pages given at creation.
@@ -68,7 +69,7 @@ pub struct GlobalMemorySimple {
     pub current_pages: Pages,
 }
 
-impl GlobalMemorySimple {
+impl OnDemandGlobalMemory {
     pub fn new(initial_pages: Pages) -> Self {
         let initial_len = initial_pages
             .to_bytes()
@@ -90,12 +91,7 @@ impl GlobalMemorySimple {
     }
 }
 
-impl IGlobalMemory for GlobalMemorySimple {
-    /// Resets memory (can be useful for reuse)
-    fn reset(&mut self) {
-        self.current_pages = self.initial_pages;
-        self.shared_memory.resize(0, 0);
-    }
+impl IGlobalMemory for OnDemandGlobalMemory {
     /// Returns the number of pages in use by the linear memory.
     fn current_pages(&self) -> Pages {
         self.current_pages
@@ -129,87 +125,15 @@ impl IGlobalMemory for GlobalMemorySimple {
     }
     /// Returns a shared slice to the bytes underlying to the byte buffer.
     fn data(&self) -> &[u8] {
-        return self.shared_memory.as_ref();
+        self.shared_memory.as_ref()
     }
     /// Returns an exclusive slice to the bytes underlying to the byte buffer.
     fn data_mut(&mut self) -> &mut [u8] {
         self.shared_memory.as_mut()
     }
-}
-
-#[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
-pub struct GlobalMemoryPreallocated {
-    pub shared_memory: RwMemory,
-    pub initial_pages: Pages,
-    pub current_pages: Pages,
-}
-
-#[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
-impl GlobalMemoryPreallocated {
-    pub fn new(initial_pages: Pages) -> Self {
-        let initial_len = initial_pages
-            .to_bytes()
-            .expect("rwasm: not supported target pointer width");
-        let maximum_len = MEMORY_MAX_PAGES
-            .to_bytes()
-            .expect("rwasm: not supported target pointer width");
-        debug_assert!(
-            initial_len <= maximum_len,
-            "rwasm: initial memory size is greater than the maximum"
-        );
-        unsafe { core::hint::assert_unchecked(initial_len <= maximum_len) };
-        {
-            let shared_memory = crate::vm::memory_unix::rwmem::Memory::new(
-                initial_pages.into_inner(),
-                MEMORY_MAX_PAGES.into_inner(),
-            )
-            .unwrap();
-            Self {
-                initial_pages,
-                shared_memory,
-                current_pages: initial_pages,
-            }
-        }
-    }
-}
-
-#[cfg(all(feature = "unix-memory", unix, not(target_arch = "wasm32")))]
-impl IGlobalMemory for GlobalMemoryPreallocated {
+    /// Resets memory (can be useful for reuse)
     fn reset(&mut self) {
         self.current_pages = self.initial_pages;
-        unsafe { self.shared_memory.heap.recycle() }
-    }
-    fn current_pages(&self) -> Pages {
-        self.current_pages
-    }
-
-    fn grow(&mut self, additional: Pages) -> Option<Pages> {
-        let current_pages = self.current_pages();
-        if additional == Pages::from(0) {
-            return Some(current_pages);
-        }
-        let desired_pages = current_pages.checked_add(additional)?;
-        if desired_pages > MEMORY_MAX_PAGES {
-            return None;
-        }
-        // At this point, it is okay to grow the underlying virtual memory
-        // by the given number of additional pages.
-        let new_size = desired_pages
-            .to_bytes()
-            .expect("rwasm: not supported target pointer width");
-        assert!(new_size >= self.shared_memory.committed_len());
-        if self.shared_memory.grow(additional.into_inner()).is_err() {
-            return None;
-        };
-        self.current_pages = desired_pages;
-        Some(current_pages)
-    }
-
-    fn data(&self) -> &[u8] {
-        self.shared_memory.as_slice()
-    }
-
-    fn data_mut(&mut self) -> &mut [u8] {
-        self.shared_memory.as_slice_mut()
+        self.shared_memory.resize(0, 0);
     }
 }
