@@ -348,11 +348,9 @@ pub fn deserialize_wasmtime_module(
     _compilation_config: CompilationConfig,
     wasmtime_binary: impl AsRef<[u8]>,
 ) -> anyhow::Result<WasmtimeModule> {
-    eprint!("parsing wasmtime module... ");
     let start = Instant::now();
     let engine = wasmtime_engine();
     let module = unsafe { wasmtime::Module::deserialize(&engine, wasmtime_binary) };
-    eprintln!("{:?}", start.elapsed());
     module
 }
 
@@ -360,11 +358,9 @@ pub fn compile_wasmtime_module(
     _compilation_config: CompilationConfig,
     wasm_binary: impl AsRef<[u8]>,
 ) -> anyhow::Result<WasmtimeModule> {
-    eprint!("compiling wasmtime module... ");
     let start = Instant::now();
     let engine = wasmtime_engine();
     let module = wasmtime::Module::new(&engine, wasm_binary);
-    eprintln!("{:?}", start.elapsed());
     module
 }
 
