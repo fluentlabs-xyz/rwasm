@@ -32,6 +32,10 @@ name = "bitvec"
 harness = false
 
 [[bench]]
+name = "compilation"
+harness = false
+
+[[bench]]
 name = "fib32"
 harness = false
 
@@ -43,5 +47,12 @@ harness = false
 name = "fib256"
 harness = false
 
+[[bench]]
+name = "parsing"
+harness = false
+
 [dependencies]
 alloy-primitives = { version = "1.4.0", default-features = false }
+
+[features]
+default = ["rwasm/unix-memory"]
