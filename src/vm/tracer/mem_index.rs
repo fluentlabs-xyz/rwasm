@@ -1,11 +1,6 @@
 use crate::{
-    N_DEFAULT_STACK_SIZE,
-    N_MAX_DATA_SEGMENTS_BITS,
-    N_MAX_ELEM_SEGMENTS_BITS,
-    N_MAX_RECURSION_DEPTH,
-    N_MAX_STACK_SIZE,
-    N_MAX_TABLES,
-    N_MAX_TABLE_SIZE,
+    N_DEFAULT_STACK_SIZE, N_MAX_DATA_SEGMENTS_BITS, N_MAX_ELEM_SEGMENTS_BITS,
+    N_MAX_RECURSION_DEPTH, N_MAX_STACK_SIZE, N_MAX_TABLES, N_MAX_TABLE_SIZE,
 };
 
 /// We map every type of data of rwasm engine including stack, tables and call frames and memory
@@ -20,12 +15,14 @@ pub const UNIT: u32 = 4; // size_of<u32>() / size_of<u8>()
 
 /// The stack starts with and invalid position, and every element in the stack has an index less
 /// than SP_START.
-pub const SP_START: u32 = N_MAX_STACK_SIZE as u32 * UNIT + UNIT;
+pub const SP_START: u32 = N_MAX_STACK_SIZE as u32 * UNIT + SP_END;
 
 /// This is the index when the stack reaches the max length. So every valid index for the stack is
 /// >0. Making the index of a stack element strictly larger than 0 makes circuit checking this bound
 /// simpler.
-pub const SP_END: u32 = UNIT;
+/// 
+/// We add 32 to prevent writes to the SP1 registers
+pub const SP_END: u32 = 32 + UNIT;
 
 pub const FUNC_FRAME_SIZE: u32 = UNIT; // TODO (dmitry123): "it looks like the call stack only save the returning pc right?, Yes(Yao)"
 pub const FUNC_FRAME_START: u32 = SP_START + UNIT;
@@ -38,7 +35,8 @@ pub const DATA_SEG_START: u32 = TABLE_SEG_END + UNIT;
 pub const DATA_SEG_END: u32 = DATA_SEG_START + N_MAX_DATA_SEGMENTS_BITS as u32 * DATA_SEG_ELEM_SIZE;
 pub const ELEMENT_SEG_SIZE: u32 = UNIT;
 pub const ELEMENT_SEG_START: u32 = DATA_SEG_END + UNIT;
-pub const ELEMENT_SEG_END: u32 = ELEMENT_SEG_START + N_MAX_ELEM_SEGMENTS_BITS as u32 * ELEMENT_SEG_SIZE;
+pub const ELEMENT_SEG_END: u32 =
+    ELEMENT_SEG_START + N_MAX_ELEM_SEGMENTS_BITS as u32 * ELEMENT_SEG_SIZE;
 pub const GLOBAL_MEM_START: u32 = ELEMENT_SEG_END + UNIT;
 pub const GLOBAL_MEM_END: u32 = GLOBAL_MEM_START + (1 << 8) << 20;
 #[derive(Debug)]
