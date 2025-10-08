@@ -122,9 +122,10 @@ fn bench_comparisons(c: &mut Criterion) {
             .with_consume_fuel(false);
         let (module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
         group.bench_function("bench_rwasm", |b| {
+            let engine = ExecutionEngine::acquire_shared();
             let strategy = Strategy::Rwasm {
                 module: module.clone(),
-                engine: ExecutionEngine::acquire_shared(),
+                engine,
             };
             bench_strategy(b, strategy);
         });

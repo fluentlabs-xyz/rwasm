@@ -1,6 +1,7 @@
 use crate::{
     bitvec_inlined::BitVecInlined as BV, FuelConfig, GlobalMemory, ImportLinker, InstructionPtr,
-    Pages, SignatureIdx, Store, SyscallHandler, TableEntity, TrapCode, UntypedValue, ValueStackPtr,
+    OnDemandGlobalMemory, Pages, SignatureIdx, Store, SyscallHandler, TableEntity, TrapCode,
+    UntypedValue, ValueStackPtr,
 };
 use alloc::{sync::Arc, vec::Vec};
 
@@ -112,10 +113,8 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
     }
 
     pub fn get_global_memory(&mut self) -> &mut GlobalMemory {
-        if self.global_memory.is_none() {
-            self.global_memory = Some(GlobalMemory::new(Pages::default()))
-        }
-        self.global_memory.as_mut().unwrap()
+        self.global_memory
+            .get_or_insert_with(|| OnDemandGlobalMemory::new(Pages::default()).into())
     }
 
     /// Resets the state of the current execution context.

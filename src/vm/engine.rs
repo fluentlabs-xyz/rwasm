@@ -1,11 +1,95 @@
 use crate::{
-    vm::reusable_pool::{ItemConfig, ReusablePool, ReusablePoolConfig},
-    CallStack, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value, ValueStack,
-    N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
+    vm::{
+        memory::OnDemandGlobalMemory,
+        reusable_pool::{ItemBehavior, ReusablePool, ReusablePoolConfig},
+    },
+    CallStack, IGlobalMemory, Pages, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value,
+    ValueStack, N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
 };
 use alloc::{sync::Arc, vec::Vec};
-use core::mem::take;
+use core::{
+    mem::take,
+    ops::{Deref, DerefMut},
+};
 use spin::Mutex;
+
+#[derive(Clone)]
+pub struct GlobalMemoryConfig {
+    initial_pages: Pages,
+}
+
+impl GlobalMemoryConfig {
+    pub fn new(initial_pages: Pages) -> Self {
+        Self { initial_pages }
+    }
+}
+
+pub const GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY: usize = 0;
+pub const GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY: usize = 1;
+
+pub enum GlobalMemory {
+    OnDemand(OnDemandGlobalMemory),
+    #[cfg(feature = "unix-memory")]
+    Pooling(crate::vm::memory::mmap::PoolingGlobalMemory),
+}
+
+impl Deref for GlobalMemory {
+    type Target = dyn IGlobalMemory;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            GlobalMemory::OnDemand(v) => v,
+            #[cfg(feature = "unix-memory")]
+            GlobalMemory::Pooling(v) => v,
+        }
+    }
+}
+
+impl DerefMut for GlobalMemory {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            GlobalMemory::OnDemand(v) => v,
+            #[cfg(feature = "unix-memory")]
+            GlobalMemory::Pooling(v) => v,
+        }
+    }
+}
+
+#[cfg(feature = "unix-memory")]
+impl From<crate::vm::memory::mmap::PoolingGlobalMemory> for GlobalMemory {
+    fn from(value: crate::vm::memory::mmap::PoolingGlobalMemory) -> Self {
+        GlobalMemory::Pooling(value)
+    }
+}
+
+impl From<OnDemandGlobalMemory> for GlobalMemory {
+    fn from(value: OnDemandGlobalMemory) -> Self {
+        GlobalMemory::OnDemand(value)
+    }
+}
+
+impl ItemBehavior<GlobalMemory> for GlobalMemoryConfig {
+    fn create_item(&self) -> GlobalMemory {
+        self.create_item_with_strategy::<GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY>()
+    }
+
+    fn create_item_with_strategy<const STRATEGY: usize>(&self) -> GlobalMemory {
+        match STRATEGY {
+            GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY => {
+                OnDemandGlobalMemory::new(self.initial_pages).into()
+            }
+            #[cfg(feature = "unix-memory")]
+            GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY => {
+                crate::vm::memory::mmap::PoolingGlobalMemory::new(self.initial_pages).into()
+            }
+            _ => OnDemandGlobalMemory::new(self.initial_pages).into(),
+        }
+    }
+
+    fn reset_for_reuse(item: &mut GlobalMemory) {
+        item.reset()
+    }
+}
 
 /// Represents the core execution engine for managing the execution of a program,
 /// including the handling of values and function calls.
@@ -61,12 +145,18 @@ impl ReusableStackConfig {
     }
 }
 
-impl ItemConfig<(ValueStack, CallStack)> for ReusableStackConfig {
+impl ItemBehavior<(ValueStack, CallStack)> for ReusableStackConfig {
+    #[inline(always)]
     fn create_item(&self) -> (ValueStack, CallStack) {
         (
             ValueStack::new(self.initial_len, self.maximum_len),
             CallStack::default(),
         )
+    }
+
+    #[inline]
+    fn create_item_with_strategy<const STRATEGY: usize>(&self) -> (ValueStack, CallStack) {
+        self.create_item()
     }
 
     fn reset_for_reuse(item: &mut (ValueStack, CallStack)) {
@@ -78,16 +168,24 @@ impl ItemConfig<(ValueStack, CallStack)> for ReusableStackConfig {
 struct ExecutionEngineInner {
     acquired_stacks: Vec<(ValueStack, CallStack)>,
     reusable_stacks: ReusablePool<(ValueStack, CallStack), ReusableStackConfig>,
+    global_memory_pool: ReusablePool<GlobalMemory, GlobalMemoryConfig>,
 }
 
 impl Default for ExecutionEngineInner {
     fn default() -> Self {
+        let mut global_memory_pool = ReusablePool::new(ReusablePoolConfig::new(
+            REUSABLE_POOL_KEEP,
+            GlobalMemoryConfig::new(0.into()),
+        ));
+        let reusable_stacks = ReusablePool::new(ReusablePoolConfig::new(
+            REUSABLE_POOL_KEEP,
+            ReusableStackConfig::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE),
+        ));
+        global_memory_pool.warmup::<GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY>(None);
         Self {
             acquired_stacks: Vec::with_capacity(ESTIMATED_CALL_DEPTH),
-            reusable_stacks: ReusablePool::new(ReusablePoolConfig::new(
-                REUSABLE_POOL_KEEP,
-                ReusableStackConfig::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE),
-            )),
+            reusable_stacks,
+            global_memory_pool,
         }
     }
 }
@@ -101,12 +199,18 @@ impl ExecutionEngineInner {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        let (value_stack, call_stack) = self.reusable_stacks.reuse_or_new();
+        let (value_stack, call_stack) = self.reusable_stacks.reuse_or_new_item::<0>();
         self.acquired_stacks.push((value_stack, call_stack));
         let (value_stack_ref, call_stack_ref) = self.acquired_stacks.last_mut().unwrap();
+        if store.global_memory.is_none() {
+            store.global_memory = self
+                .global_memory_pool
+                .reuse_or_new_item::<GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY>()
+                .into();
+        }
         let mut executor =
             RwasmExecutor::entrypoint(&module, value_stack_ref, call_stack_ref, store);
-        match executor.run(params, result) {
+        let result = match executor.run(params, result) {
             Err(TrapCode::InterruptionCalled) => {
                 store.resumable_context = Some((executor.ip, executor.sp));
                 Err(TrapCode::InterruptionCalled)
@@ -114,9 +218,13 @@ impl ExecutionEngineInner {
             res => {
                 let stacks = self.acquired_stacks.pop().unwrap();
                 self.reusable_stacks.recycle(stacks);
+                if let Some(global_memory) = store.global_memory.take() {
+                    self.global_memory_pool.recycle(global_memory);
+                }
                 res
             }
-        }
+        };
+        result
     }
 
     /// Resumes the execution of a WASM (WebAssembly) function that was previously interrupted.
@@ -133,7 +241,7 @@ impl ExecutionEngineInner {
         });
         let mut executor =
             RwasmExecutor::new(&module, value_stack_ref, sp, call_stack_ref, ip, store);
-        match executor.run(params, result) {
+        let result = match executor.run(params, result) {
             Err(TrapCode::InterruptionCalled) => {
                 store.resumable_context = Some((executor.ip, executor.sp));
                 Err(TrapCode::InterruptionCalled)
@@ -141,9 +249,12 @@ impl ExecutionEngineInner {
             res => {
                 let value_stack = self.acquired_stacks.pop().unwrap();
                 self.reusable_stacks.recycle(value_stack);
+                self.global_memory_pool
+                    .try_recycle_option(&mut store.global_memory);
                 res
             }
-        }
+        };
+        result
     }
 }
 
