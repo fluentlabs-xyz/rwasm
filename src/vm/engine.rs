@@ -209,15 +209,10 @@ impl ExecutionEngineInner {
         self.acquired_stacks.push((value_stack, call_stack));
         let (value_stack_ref, call_stack_ref) = self.acquired_stacks.last_mut().unwrap();
         if store.global_memory.is_none() {
-            store.global_memory =
-                if let Some(global_memory) = self.global_memory_pool.try_reuse_item() {
-                    Some(global_memory)
-                } else {
-                    Some(
-                        self.global_memory_pool
-                            .new_item::<GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY>(),
-                    )
-                };
+            store.global_memory = self
+                .global_memory_pool
+                .reuse_or_new_item::<GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY>()
+                .into();
         }
         let mut executor =
             RwasmExecutor::entrypoint(&module, value_stack_ref, call_stack_ref, store);
@@ -250,12 +245,6 @@ impl ExecutionEngineInner {
         let (ip, sp) = take(&mut store.resumable_context).unwrap_or_else(|| {
             unreachable!("resume calling without a remaining call stack");
         });
-        if store.global_memory.is_none() {
-            store.global_memory = Some(
-                self.global_memory_pool
-                    .reuse_or_new_item::<GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY>(),
-            );
-        }
         let mut executor =
             RwasmExecutor::new(&module, value_stack_ref, sp, call_stack_ref, ip, store);
         let result = match executor.run(params, result) {
@@ -266,9 +255,8 @@ impl ExecutionEngineInner {
             res => {
                 let value_stack = self.acquired_stacks.pop().unwrap();
                 self.reusable_stacks.recycle(value_stack);
-                if let Some(global_memory) = store.global_memory.take() {
-                    self.global_memory_pool.recycle(global_memory);
-                }
+                self.global_memory_pool
+                    .try_recycle_option(&mut store.global_memory);
                 res
             }
         };

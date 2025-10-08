@@ -1415,8 +1415,7 @@ dependencies = [
 [[package]]
 name = "setjmp"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bce8e042e9b4349ccf7ce5caeb5c9b7ee6007ff543b494733ae8ed4ea083c73"
+source = "git+https://github.com/fluentlabs-xyz/setjmp.rs#6097aa3a07801fe29b1370f4e3b32978c4fd2b97"
 dependencies = [
  "bindgen",
  "clang-sys",

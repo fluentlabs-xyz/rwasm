@@ -53,6 +53,17 @@ impl<ITEM, CONFIG: ItemBehavior<ITEM>> ReusablePool<ITEM, CONFIG> {
     }
 
     #[inline]
+    pub fn with_reuse<const STRATEGY: usize, HANDLER, ERR>(&mut self, handler: HANDLER) -> ERR
+    where
+        HANDLER: FnOnce(&mut ITEM) -> ERR,
+    {
+        let mut item = self.reuse_or_new_item::<STRATEGY>();
+        let result = handler(&mut item);
+        self.recycle(item);
+        result
+    }
+
+    #[inline]
     pub fn new_item<const STRATEGY: usize>(&mut self) -> ITEM {
         self.item_config.create_item_with_strategy::<STRATEGY>()
     }
@@ -75,6 +86,13 @@ impl<ITEM, CONFIG: ItemBehavior<ITEM>> ReusablePool<ITEM, CONFIG> {
         if self.items.len() < self.keep {
             CONFIG::reset_for_reuse(&mut item);
             self.items.push(item);
+        }
+    }
+
+    #[inline]
+    pub fn try_recycle_option(&mut self, item_option: &mut Option<ITEM>) {
+        if let Some(global_memory) = item_option.take() {
+            self.recycle(global_memory);
         }
     }
 }

@@ -11,6 +11,11 @@ pub mod rwmem {
         SA_ONSTACK, SA_SIGINFO, SIGSEGV,
     };
 
+    // extern "C" {
+    //     fn setjmp(env: *mut libc::jmp_buf) -> libc::c_int;
+    //     fn longjmp(env: *mut libc::jmp_buf, val: libc::c_int) -> !;
+    // }
+
     pub const WASM_PAGE: usize = 64 * 1024;
     pub type Pages = u32; // 32-bit pointers / sizes in pages
 
