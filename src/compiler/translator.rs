@@ -739,12 +739,17 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let stack_height = self.frame_stack_height(block_type);
             let else_label = self.alloc.labels.new_label();
             let end_label = self.alloc.labels.new_label();
-            self.bump_fuel_consumption(|| FuelCosts::BASE)?;
+            match block_type {
+                BlockType::Type(_) | BlockType::FuncType(_) => {
+                    self.bump_fuel_consumption(|| FuelCosts::BASE)?;
+                }
+                _ => {}
+            }
             let branch_offset = self.branch_offset(else_label)?;
             self.alloc.instruction_set.op_br_if_eqz(branch_offset);
             let consume_fuel = self
                 .is_fuel_metering_enabled()
-                .then(|| self.push_consume_fuel_empty());
+                .then(|| self.push_consume_fuel_base());
             self.alloc.control_frames.push_frame(IfControlFrame::new(
                 block_type,
                 end_label,
@@ -792,6 +797,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.bump_fuel_consumption(|| FuelCosts::BASE)?;
             let offset = self.branch_offset(if_frame.end_label())?;
             self.alloc.instruction_set.op_br(offset);
+            match if_frame.block_type() {
+                BlockType::Type(_) | BlockType::FuncType(_) => {
+                    self.bump_fuel_consumption(|| FuelCosts::BASE)?;
+                }
+                _ => {}
+            }
         }
         // Now resolve labels for the instructions of the `else` block
         self.pin_label(if_frame.else_label());
@@ -800,7 +811,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         // since the `ConsumeFuel` instruction for the `then` block is no longer
         // used from this point on.
         self.is_fuel_metering_enabled().then(|| {
-            let consume_fuel = self.push_consume_fuel_empty();
+            let consume_fuel = self.push_consume_fuel_base();
             if_frame.update_consume_fuel_instr(consume_fuel);
         });
         let mut old_stack_height = self.stack_height.height();
