@@ -11,6 +11,10 @@ name = "fibonacci_perf32"
 path = "fibonacci_perf32.rs"
 
 [[bin]]
+name = "fibonacci_perf32_wasmtime"
+path = "fibonacci_perf32_wasmtime.rs"
+
+[[bin]]
 name = "fibonacci_perf64"
 path = "fibonacci_perf64.rs"
 
@@ -45,6 +49,8 @@ rpath = true
 rwasm = { path = "..", features = [
     "std",
     "wasmtime",
+    "pooling-allocator",
+    "unix-memory",
 ] }
 wat = "1.230.0"
 revm-interpreter = "25.0.3"
