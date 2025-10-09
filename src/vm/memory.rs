@@ -1,7 +1,7 @@
 use crate::types::{Pages, TrapCode, N_MAX_MEMORY_PAGES};
 use bytes::BytesMut;
 
-#[cfg(feature = "unix-memory")]
+#[cfg(all(feature = "unix-memory", unix))]
 pub mod mmap;
 
 pub trait IGlobalMemory {

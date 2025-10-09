@@ -29,7 +29,7 @@ pub const GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY: usize = 1;
 
 pub enum GlobalMemory {
     OnDemand(OnDemandGlobalMemory),
-    #[cfg(feature = "unix-memory")]
+    #[cfg(all(feature = "unix-memory", unix))]
     Pooling(crate::vm::memory::mmap::PoolingGlobalMemory),
 }
 
@@ -39,7 +39,7 @@ impl Deref for GlobalMemory {
     fn deref(&self) -> &Self::Target {
         match self {
             GlobalMemory::OnDemand(v) => v,
-            #[cfg(feature = "unix-memory")]
+            #[cfg(all(feature = "unix-memory", unix))]
             GlobalMemory::Pooling(v) => v,
         }
     }
@@ -49,13 +49,13 @@ impl DerefMut for GlobalMemory {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             GlobalMemory::OnDemand(v) => v,
-            #[cfg(feature = "unix-memory")]
+            #[cfg(all(feature = "unix-memory", unix))]
             GlobalMemory::Pooling(v) => v,
         }
     }
 }
 
-#[cfg(feature = "unix-memory")]
+#[cfg(all(feature = "unix-memory", unix))]
 impl From<crate::vm::memory::mmap::PoolingGlobalMemory> for GlobalMemory {
     fn from(value: crate::vm::memory::mmap::PoolingGlobalMemory) -> Self {
         GlobalMemory::Pooling(value)
@@ -78,7 +78,7 @@ impl ItemBehavior<GlobalMemory> for GlobalMemoryConfig {
             GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY => {
                 OnDemandGlobalMemory::new(self.initial_pages).into()
             }
-            #[cfg(feature = "unix-memory")]
+            #[cfg(all(feature = "unix-memory", unix))]
             GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY => {
                 crate::vm::memory::mmap::PoolingGlobalMemory::new(self.initial_pages).into()
             }

@@ -1,4 +1,4 @@
-use criterion::{criterion_main, Bencher, Criterion};
+use criterion::{criterion_main, BatchSize, Bencher, Criterion};
 use hex_literal::hex;
 use revm_bytecode::Bytecode;
 use revm_interpreter::{
@@ -90,6 +90,27 @@ fn bench_comparisons(c: &mut Criterion) {
         });
     }
 
+    fn bench_batched(b: &mut Bencher, strategy: Strategy) {
+        b.iter_batched(
+            || {
+                strategy.create_store(
+                    Arc::new(ImportLinker::default()),
+                    (),
+                    always_failing_syscall_handler,
+                    FuelConfig::default(),
+                )
+            },
+            |mut store| {
+                let mut result = [Value::I32(0)];
+                strategy
+                    .execute(&mut store, "fib32", &[Value::I32(FIB_VALUE)], &mut result)
+                    .unwrap();
+                core::hint::black_box(result);
+            },
+            BatchSize::SmallInput,
+        );
+    }
+
     {
         let wasm_binary = include_bytes!("../lib.wasm");
         let config = CompilationConfig::default().with_consume_fuel(false);
@@ -127,7 +148,7 @@ fn bench_comparisons(c: &mut Criterion) {
                 module: module.clone(),
                 engine,
             };
-            bench_strategy(b, strategy);
+            bench_batched(b, strategy);
         });
     }
 

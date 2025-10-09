@@ -5,7 +5,7 @@ use rwasm::{
     compile_wasmi_module, compile_wasmtime_module, wasmtime::deserialize_wasmtime_module,
     CompilationConfig, RwasmModule, RwasmModuleView,
 };
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 const FIB_VALUE: i64 = 43;
 
