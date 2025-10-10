@@ -14,7 +14,7 @@ fn factory_wasmtime_engine() -> Engine {
     {
         use wasmtime::{InstanceAllocationStrategy, PoolingAllocationConfig};
         // TODO(dmitry123): How many concurrent instances do we want to have?
-        const CONCURRENCY: u32 = 1024;
+        const CONCURRENCY: u32 = 4096;
         const MEMORIES_PER_INST: u32 = 1;
         const TABLES_PER_INST: u32 = 5;
         // Create pooling allocator config
