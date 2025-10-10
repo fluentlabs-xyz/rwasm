@@ -14,7 +14,9 @@ use std::{
     task::{Context, Poll},
     time::Instant,
 };
-use wasmtime::{AsContext, AsContextMut, StoreLimits, StoreLimitsBuilder};
+use wasmtime::{
+    AsContext, AsContextMut, StoreContext, StoreContextMut, StoreLimits, StoreLimitsBuilder,
+};
 
 pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<T>;
@@ -69,10 +71,9 @@ pub type ExecFuture<T> = Pin<
 
 pub struct WasmtimeStore<T: 'static + Send + Sync> {
     pub store: Option<wasmtime::Store<WrappedContext<T>>>,
-    pub instance_pre: wasmtime::InstancePre<WrappedContext<T>>,
     pub fut: Option<ExecFuture<T>>,
     pub shared_control_state: Arc<RwLock<SharedControlState<T>>>,
-    pub instance: Option<wasmtime::Instance>,
+    pub instance: wasmtime::Instance,
 }
 
 impl<T: 'static + Send + Sync> WasmtimeStore<T> {
@@ -104,15 +105,13 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
             }
         }
         let linker = wasmtime_import_linker(module.engine(), import_linker);
-        let instance_pre = linker
-            .instantiate_pre(&module)
+        let instance = futures::executor::block_on(linker.instantiate_async(&mut store, &module))
             .unwrap_or_else(|err| panic!("wasmtime: can't pre-instantiate module: {}", err));
         Self {
             store: Some(store),
-            instance_pre,
             fut: None,
             shared_control_state,
-            instance: None,
+            instance,
         }
     }
 
@@ -136,18 +135,10 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         debug_assert!(shared_control_state.interrupt_channel.is_none());
         drop(shared_control_state);
 
-        let (instance, entrypoint) = futures::executor::block_on(async {
-            let instance = self
-                .instance_pre
-                .instantiate_async(store.as_context_mut())
-                .await
-                .unwrap_or_else(|err| panic!("wasmtime: can't instantiate module: {}", err));
-            let entrypoint = instance
-                .get_func(store.as_context_mut(), func_name)
-                .unwrap_or_else(|| unreachable!("wasmtime: missing entrypoint: {}", func_name));
-            (instance, entrypoint)
-        });
-        self.instance = Some(instance);
+        let entrypoint = self
+            .instance
+            .get_func(store.as_context_mut(), func_name)
+            .unwrap_or_else(|| unreachable!("wasmtime: missing entrypoint: {}", func_name));
 
         let mut buffer = Vec::<wasmtime::Val>::default();
         for (i, value) in params.iter().enumerate() {
@@ -234,6 +225,12 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         }
     }
 
+    fn validate_fut_is_none(&self) {
+        if self.fut.is_some() {
+            unimplemented!("wasmtime: you can't access store with locked future state")
+        }
+    }
+
     fn with_store_mut<R, F: FnOnce(&mut wasmtime::Store<WrappedContext<T>>) -> R>(
         &mut self,
         f: F,
@@ -256,21 +253,17 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
 
 impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        let instance = self.instance.clone().unwrap();
-        self.with_store_mut(|store| {
-            let global_memory = instance
-                .get_export(store.as_context_mut(), "memory")
-                .unwrap_or_else(|| {
-                    unreachable!("wasmtime: missing memory export, it's not possible")
-                })
-                .into_memory()
-                .unwrap_or_else(|| {
-                    unreachable!("wasmtime: missing memory export, it's not possible")
-                });
-            global_memory
-                .read(store.as_context(), offset, buffer)
-                .map_err(|_| TrapCode::MemoryOutOfBounds)
-        })
+        // let instance = self.instance.clone().unwrap();
+        self.validate_fut_is_none();
+        let global_memory = self
+            .instance
+            .get_export(self.store.as_mut().unwrap().as_context_mut(), "memory")
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
+            .into_memory()
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        global_memory
+            .read(self.store.as_mut().unwrap().as_context(), offset, buffer)
+            .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
@@ -285,21 +278,22 @@ impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
                 });
             return Ok(());
         }
-        let instance = self.instance.clone().unwrap();
-        self.with_store_mut(|store| {
-            let global_memory = instance
-                .get_export(store.as_context_mut(), "memory")
-                .unwrap_or_else(|| {
-                    unreachable!("wasmtime: missing memory export, it's not possible")
-                })
-                .into_memory()
-                .unwrap_or_else(|| {
-                    unreachable!("wasmtime: missing memory export, it's not possible")
-                });
-            global_memory
-                .write(store.as_context_mut(), offset, &buffer)
-                .map_err(|_| TrapCode::MemoryOutOfBounds)
-        })
+        // let instance = self.instance.clone().unwrap();
+        self.validate_fut_is_none();
+        let global_memory = self
+            .instance
+            .get_export(self.store.as_mut().unwrap().as_context_mut(), "memory")
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
+            .into_memory()
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        global_memory
+            .write(
+                self.store.as_mut().unwrap().as_context_mut(),
+                offset,
+                &buffer,
+            )
+            .map_err(|_| TrapCode::MemoryOutOfBounds)
+        // })
     }
 
     fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
