@@ -1,5 +1,5 @@
 use alloy_primitives::U256;
-use criterion::{criterion_main, BatchSize, Bencher, Criterion};
+use criterion::{criterion_main, Bencher, Criterion};
 use hex_literal::hex;
 use revm_bytecode::Bytecode;
 use revm_interpreter::{
@@ -65,16 +65,24 @@ fn bench_comparisons(c: &mut Criterion) {
     };
 
     fn bench_strategy(b: &mut Bencher, strategy: Strategy) {
-        b.iter_batched(
+        // b.iter_batched(
+        //     || {
+        //         strategy.create_store(
+        //             Arc::new(ImportLinker::default()),
+        //             (),
+        //             always_failing_syscall_handler,
+        //             FuelConfig::default(),
+        //         )
+        //     },
+        //     |mut store| {
+        b.iter(
             || {
-                strategy.create_store(
+                let mut store = strategy.create_store(
                     Arc::new(ImportLinker::default()),
                     (),
                     always_failing_syscall_handler,
                     FuelConfig::default(),
-                )
-            },
-            |mut store| {
+                );
                 let mut result = [];
                 strategy
                     .execute(
@@ -86,7 +94,7 @@ fn bench_comparisons(c: &mut Criterion) {
                     .unwrap();
                 core::hint::black_box(result);
             },
-            BatchSize::SmallInput,
+            // BatchSize::SmallInput,
         );
     }
 
