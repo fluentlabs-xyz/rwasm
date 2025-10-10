@@ -14,7 +14,9 @@ use std::{
     task::{Context, Poll},
     time::Instant,
 };
-use wasmtime::{AsContext, AsContextMut, StoreLimits, StoreLimitsBuilder};
+use wasmtime::{
+    AsContext, AsContextMut, StoreContext, StoreContextMut, StoreLimits, StoreLimitsBuilder,
+};
 
 pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<T>;
@@ -223,6 +225,12 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         }
     }
 
+    fn validate_fut_is_none(&self) {
+        if self.fut.is_some() {
+            unimplemented!("wasmtime: you can't access store with locked future state")
+        }
+    }
+
     fn with_store_mut<R, F: FnOnce(&mut wasmtime::Store<WrappedContext<T>>) -> R>(
         &mut self,
         f: F,
@@ -246,6 +254,7 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
 impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         // let instance = self.instance.clone().unwrap();
+        self.validate_fut_is_none();
         let global_memory = self
             .instance
             .get_export(self.store.as_mut().unwrap().as_context_mut(), "memory")
@@ -270,6 +279,7 @@ impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
             return Ok(());
         }
         // let instance = self.instance.clone().unwrap();
+        self.validate_fut_is_none();
         let global_memory = self
             .instance
             .get_export(self.store.as_mut().unwrap().as_context_mut(), "memory")
