@@ -1,4 +1,4 @@
-use criterion::{criterion_main, Bencher, Criterion};
+use criterion::{criterion_main, BatchSize, Bencher, Criterion};
 use hex_literal::hex;
 use revm_bytecode::Bytecode;
 use revm_interpreter::{
@@ -75,24 +75,30 @@ fn bench_comparisons(c: &mut Criterion) {
     };
 
     fn bench_strategy(b: &mut Bencher, strategy: Strategy) {
+        let mut store = strategy.create_store(
+            Arc::new(ImportLinker::default()),
+            (),
+            always_failing_syscall_handler,
+            FuelConfig::default(),
+        );
         // b.iter_batched(
-        // || {
-        //     strategy.create_store(
-        //         Arc::new(ImportLinker::default()),
-        //         (),
-        //         always_failing_syscall_handler,
-        //         FuelConfig::default(),
-        //     )
-        // },
-        // |mut store| {
+        //     || {
+        //         strategy.create_store(
+        //             Arc::new(ImportLinker::default()),
+        //             (),
+        //             always_failing_syscall_handler,
+        //             FuelConfig::default(),
+        //         )
+        //     },
+        //     |mut store| {
         b.iter(
             || {
-                let mut store = strategy.create_store(
-                    Arc::new(ImportLinker::default()),
-                    (),
-                    always_failing_syscall_handler,
-                    FuelConfig::default(),
-                );
+                //         let mut store = strategy.create_store(
+                //             Arc::new(ImportLinker::default()),
+                //             (),
+                //             always_failing_syscall_handler,
+                //             FuelConfig::default(),
+                //         );
                 let mut result = [Value::I32(0)];
                 strategy
                     .execute(&mut store, "fib32", &[Value::I32(FIB_VALUE)], &mut result)
