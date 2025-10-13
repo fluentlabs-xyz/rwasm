@@ -40,7 +40,7 @@ fn factory_wasmtime_engine() -> Engine {
     cfg.memory_init_cow(true);
     cfg.cranelift_opt_level(OptLevel::SpeedAndSize);
     cfg.parallel_compilation(false);
-    cfg.consume_fuel(false);
+    cfg.consume_fuel(true);
     // Enable debug info and backtrace for debug mode
     #[cfg(debug_assertions)]
     {
