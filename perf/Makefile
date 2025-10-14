@@ -20,6 +20,11 @@ fibonacci_perf32_flame:
 	perf.sh target/$(PROFILE)/fibonacci_perf32
 	mv flame.svg fibonacci_perf32_flame.svg
 
+.PHONY: fibonacci_perf32_wasmtime_flame
+fibonacci_perf32_wasmtime_flame:
+	perf.sh target/$(PROFILE)/fibonacci_perf32_wasmtime
+	mv flame.svg fibonacci_perf32_wasmtime_flame.svg
+
 .PHONY: fibonacci_perf64_flame
 fibonacci_perf64_flame:
 	perf.sh target/$(PROFILE)/fibonacci_perf64
@@ -40,7 +45,8 @@ all_sequentially:
 	$(MAKE) build_wasm
 	$(MAKE) build
 	#$(MAKE) evm_fibonacci_perf_flame
-	$(MAKE) fibonacci_perf32_flame
+	#$(MAKE) fibonacci_perf32_flame
+	$(MAKE) fibonacci_perf32_wasmtime_flame
 	#$(MAKE) fibonacci_perf64_flame
 	#$(MAKE) load_perf_flame
 

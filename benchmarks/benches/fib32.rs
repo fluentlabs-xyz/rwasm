@@ -75,19 +75,32 @@ fn bench_comparisons(c: &mut Criterion) {
     };
 
     fn bench_strategy(b: &mut Bencher, strategy: Strategy) {
-        b.iter(|| {
-            let mut store = strategy.create_store(
-                Arc::new(ImportLinker::default()),
-                (),
-                always_failing_syscall_handler,
-                FuelConfig::default(),
-            );
-            let mut result = [Value::I32(0)];
-            strategy
-                .execute(&mut store, "fib32", &[Value::I32(FIB_VALUE)], &mut result)
-                .unwrap();
-            core::hint::black_box(result);
-        });
+        // b.iter_batched(
+        // || {
+        //     strategy.create_store(
+        //         Arc::new(ImportLinker::default()),
+        //         (),
+        //         always_failing_syscall_handler,
+        //         FuelConfig::default(),
+        //     )
+        // },
+        // |mut store| {
+        b.iter(
+            || {
+                let mut store = strategy.create_store(
+                    Arc::new(ImportLinker::default()),
+                    (),
+                    always_failing_syscall_handler,
+                    FuelConfig::default(),
+                );
+                let mut result = [Value::I32(0)];
+                strategy
+                    .execute(&mut store, "fib32", &[Value::I32(FIB_VALUE)], &mut result)
+                    .unwrap();
+                core::hint::black_box(result);
+            },
+            // BatchSize::SmallInput,
+        );
     }
 
     {
