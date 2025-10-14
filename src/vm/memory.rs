@@ -59,7 +59,6 @@ pub const MEMORY_MAX_PAGES: Pages = Pages::new_unchecked(N_MAX_MEMORY_PAGES * 2)
 /// Shared linear memory backing store for a running module.
 /// Tracks current size in Wasm pages and provides bounds-checked read/write helpers.
 /// The buffer is pre-reserved and grown in page-sized steps.
-
 pub struct OnDemandGlobalMemory {
     /// Underlying byte buffer for the linear memory.
     pub shared_memory: BytesMut,
