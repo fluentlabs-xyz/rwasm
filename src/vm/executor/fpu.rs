@@ -1,6 +1,6 @@
 use crate::{
-    AddressOffset, ArithmeticOps, ExtendInto, Float, IGlobalMemory, Opcode, RwasmExecutor,
-    TrapCode, TruncateSaturateInto, TryTruncateInto, UntypedValue, WrapInto, F32, F64,
+    AddressOffset, ArithmeticOps, ExtendInto, Float, Opcode, RwasmExecutor, TrapCode,
+    TruncateSaturateInto, TryTruncateInto, UntypedValue, WrapInto, F32, F64,
 };
 use core::ops::Neg;
 
