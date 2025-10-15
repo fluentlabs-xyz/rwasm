@@ -167,10 +167,12 @@ impl ExecutionEngineInner {
                 Err(TrapCode::InterruptionCalled)
             }
             res => {
-                self.reusable_stacks.recycle(ReusableStacks {
+                let mut reusable_stacks = ReusableStacks {
                     value_stack,
                     call_stack,
-                });
+                };
+                reusable_stacks.make_recyclable();
+                self.reusable_stacks.recycle(reusable_stacks);
                 if let Some(global_memory) = store.global_memory.take() {
                     self.memory_allocator.recycle_memory(global_memory);
                 }
