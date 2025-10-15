@@ -5,11 +5,14 @@ test-specific-cases:
 	cd wasm && make
 	cd snippets && make
 	# run tests
-	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml
-	cargo test --color=always --no-fail-fast --manifest-path e2e/Cargo.toml
+	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml --no-default-features --features=std,wasmtime
+	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml --no-default-features --features=std,wasmtime,unix-memory
+	cargo test --color=always --no-fail-fast --manifest-path e2e/Cargo.toml --no-default-features --features=std,wasmtime
+	cargo test --color=always --no-fail-fast --manifest-path e2e/Cargo.toml --no-default-features --features=std,wasmtime,unix-memory
 	cargo +nightly-2025-09-20 test --color=always --no-fail-fast --manifest-path snippets/Cargo.toml
 	# run nitro test (with release flag)
-	cargo test --release --package rwasm --test nitro-verifier test_nitro_verifier -- --ignored
+	cargo test --release --package rwasm --test nitro-verifier test_nitro_verifier --no-default-features --features=std,wasmtime -- --ignored
+	cargo test --release --package rwasm --test nitro-verifier test_nitro_verifier --no-default-features --features=std,wasmtime,unix-memory -- --ignored
 
 .PHONY: coverage
 coverage:

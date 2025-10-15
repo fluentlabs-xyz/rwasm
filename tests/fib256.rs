@@ -16,7 +16,7 @@ fn test_fib256_iter() {
         module: module.clone(),
         engine: ExecutionEngine::acquire_shared(),
     };
-    for i in 0..10_000 {
+    for _ in 0..10_000 {
         let mut store = strategy.create_store(
             Arc::new(ImportLinker::default()),
             (),
