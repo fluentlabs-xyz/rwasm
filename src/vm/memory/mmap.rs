@@ -1,3 +1,4 @@
+use crate::{IGlobalMemory, Pages, MEMORY_MAX_PAGES};
 use core::{
     ptr,
     ptr::NonNull,
@@ -9,7 +10,6 @@ use libc::{
 };
 
 pub const WASM_PAGE: usize = 64 * 1024;
-pub type Pages = u32; // 32-bit pointers / sizes in pages
 
 #[inline]
 fn ceil_to_pages(len: usize) -> usize {
@@ -17,7 +17,7 @@ fn ceil_to_pages(len: usize) -> usize {
 }
 
 /// Linear memory reservation with front/back guards.
-pub struct MmapHeap {
+struct MmapHeap {
     base: NonNull<u8>, // points to start of HEAP (after front guard)
     max_len: usize,    // total HEAP bytes reserved (without guards)
     len: AtomicUsize,  // bytes currently RW (multiple of page)
@@ -26,7 +26,7 @@ pub struct MmapHeap {
 impl MmapHeap {
     /// Reserve `[GUARD | HEAP | GUARD]` and commit `initial_pages`.
     /// `max_pages` caps growth; both guards are at least one page.
-    unsafe fn new_unsafe(initial_pages: Pages, max_pages: Pages) -> Result<Self, &'static str> {
+    unsafe fn new_unsafe(initial_pages: u32, max_pages: u32) -> Result<Self, &'static str> {
         let map_len = (max_pages as usize) * WASM_PAGE;
 
         let addr = mmap(
@@ -74,7 +74,7 @@ impl MmapHeap {
     }
 
     /// Grow by `delta_pages`. Newly committed pages are logically zero via DONTNEED.
-    unsafe fn grow_unsafe(&self, delta_pages: Pages) -> Result<(), &'static str> {
+    unsafe fn grow_unsafe(&self, delta_pages: u32) -> Result<(), &'static str> {
         if delta_pages == 0 {
             return Ok(());
         }
@@ -111,7 +111,7 @@ impl Drop for MmapHeap {
 }
 
 impl MmapHeap {
-    pub fn new(initial_pages: Pages, max_pages: Pages) -> Result<Self, &'static str> {
+    pub fn new(initial_pages: u32, max_pages: u32) -> Result<Self, &'static str> {
         unsafe { MmapHeap::new_unsafe(initial_pages, max_pages) }
     }
     #[inline]
@@ -123,7 +123,7 @@ impl MmapHeap {
         unsafe { core::slice::from_raw_parts_mut(self.base.as_ptr(), self.len()) }
     }
     #[inline]
-    pub fn grow(&self, delta_pages: Pages) -> Result<(), &'static str> {
+    pub fn grow(&self, delta_pages: u32) -> Result<(), &'static str> {
         unsafe { self.grow_unsafe(delta_pages) }
     }
     #[inline]
@@ -132,16 +132,14 @@ impl MmapHeap {
     }
 }
 
-use crate::{IGlobalMemory, MEMORY_MAX_PAGES};
-
-pub struct PoolingGlobalMemory {
-    pub shared_memory: MmapHeap,
-    pub initial_pages: crate::Pages,
-    pub current_pages: crate::Pages,
+pub struct MmapGlobalMemory {
+    shared_memory: MmapHeap,
+    initial_pages: Pages,
+    current_pages: Pages,
 }
 
-impl PoolingGlobalMemory {
-    pub fn new(initial_pages: crate::Pages) -> Self {
+impl MmapGlobalMemory {
+    pub fn new(initial_pages: Pages) -> Self {
         let initial_len = initial_pages
             .to_bytes()
             .expect("rwasm: not supported target pointer width");
@@ -163,13 +161,14 @@ impl PoolingGlobalMemory {
     }
 }
 
-impl IGlobalMemory for PoolingGlobalMemory {
-    fn current_pages(&self) -> crate::Pages {
+impl IGlobalMemory for MmapGlobalMemory {
+    fn current_pages(&self) -> Pages {
         self.current_pages
     }
-    fn grow(&mut self, additional: crate::Pages) -> Option<crate::Pages> {
+
+    fn grow(&mut self, additional: Pages) -> Option<Pages> {
         let current_pages = self.current_pages();
-        if additional == crate::Pages::from(0) {
+        if additional == Pages::from(0) {
             return Some(current_pages);
         }
         let desired_pages = current_pages.checked_add(additional)?;
@@ -201,11 +200,15 @@ impl IGlobalMemory for PoolingGlobalMemory {
         self.current_pages = self.initial_pages;
         self.shared_memory.recycle();
     }
+
+    fn resize_for(&mut self, _initial_pages: Pages) {
+        // we allocate max possible memory by default, we use `madvise` to zero it
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::vm::mmap::{MmapHeap, WASM_PAGE};
+    use super::*;
 
     #[test]
     fn test_rw_memory() {

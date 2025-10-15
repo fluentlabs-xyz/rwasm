@@ -81,7 +81,7 @@ fn bench_comparisons(c: &mut Criterion) {
         let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
         println!("{}", rwasm_module);
         let mut store = RwasmStore::<()>::default();
-        let engine = ExecutionEngine::new();
+        let engine = ExecutionEngine::default();
         let mut result = [Value::I64(0); 1];
         group.bench_function("bitvec_inlined (through ExecutionEngine)", |b| {
             b.iter(|| {
