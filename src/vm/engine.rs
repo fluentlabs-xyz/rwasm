@@ -2,12 +2,11 @@ use crate::{
     vm::{
         memory::OnDemandGlobalMemory,
         reusable_pool::{ItemBehavior, ReusablePool, ReusablePoolConfig},
-        ResumableContext,
     },
     CallStack, IGlobalMemory, Pages, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value,
     ValueStack, N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
 };
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 use core::{
     mem::take,
     ops::{Deref, DerefMut},
@@ -128,6 +127,7 @@ impl ExecutionEngine {
     }
 }
 
+const ESTIMATED_CALL_DEPTH: usize = 1024;
 const REUSABLE_POOL_KEEP: usize = 128;
 
 #[derive(Clone)]
@@ -166,6 +166,7 @@ impl ItemBehavior<(ValueStack, CallStack)> for ReusableStackConfig {
 }
 
 struct ExecutionEngineInner {
+    acquired_stacks: Vec<(ValueStack, CallStack)>,
     reusable_stacks: ReusablePool<(ValueStack, CallStack), ReusableStackConfig>,
     global_memory_pool: ReusablePool<GlobalMemory, GlobalMemoryConfig>,
 }
@@ -182,6 +183,7 @@ impl Default for ExecutionEngineInner {
         ));
         global_memory_pool.warmup::<GLOBAL_MEMORY_ITEM_BEHAVIOR_PREALLOC_CREATE_STRATEGY>(None);
         Self {
+            acquired_stacks: Vec::with_capacity(ESTIMATED_CALL_DEPTH),
             reusable_stacks,
             global_memory_pool,
         }
@@ -197,28 +199,25 @@ impl ExecutionEngineInner {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        let (mut value_stack, mut call_stack) = self.reusable_stacks.reuse_or_new_item::<0>();
-        store.global_memory.get_or_insert_with(|| {
-            self.global_memory_pool
+        let (value_stack, call_stack) = self.reusable_stacks.reuse_or_new_item::<0>();
+        self.acquired_stacks.push((value_stack, call_stack));
+        let (value_stack_ref, call_stack_ref) = self.acquired_stacks.last_mut().unwrap();
+        if store.global_memory.is_none() {
+            store.global_memory = self
+                .global_memory_pool
                 .reuse_or_new_item::<GLOBAL_MEMORY_ITEM_BEHAVIOR_SIMPLE_CREATE_STRATEGY>()
-                .into()
-        });
+                .into();
+        }
         let mut executor =
-            RwasmExecutor::entrypoint(&module, &mut value_stack, &mut call_stack, store);
+            RwasmExecutor::entrypoint(&module, value_stack_ref, call_stack_ref, store);
         let result = match executor.run(params, result) {
             Err(TrapCode::InterruptionCalled) => {
-                let sp = executor.sp;
-                let ip = executor.ip;
-                store.resumable_context = Some(ResumableContext {
-                    value_stack,
-                    sp,
-                    call_stack,
-                    ip,
-                });
+                store.resumable_context = Some((executor.ip, executor.sp));
                 Err(TrapCode::InterruptionCalled)
             }
             res => {
-                self.reusable_stacks.recycle((value_stack, call_stack));
+                let stacks = self.acquired_stacks.pop().unwrap();
+                self.reusable_stacks.recycle(stacks);
                 if let Some(global_memory) = store.global_memory.take() {
                     self.global_memory_pool.recycle(global_memory);
                 }
@@ -236,30 +235,20 @@ impl ExecutionEngineInner {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        let ResumableContext {
-            mut value_stack,
-            sp,
-            mut call_stack,
-            ip,
-        } = take(&mut store.resumable_context).unwrap_or_else(|| {
+        let (value_stack_ref, call_stack_ref) = self.acquired_stacks.last_mut().unwrap();
+        let (ip, sp) = take(&mut store.resumable_context).unwrap_or_else(|| {
             unreachable!("resume calling without a remaining call stack");
         });
         let mut executor =
-            RwasmExecutor::new(&module, &mut value_stack, sp, &mut call_stack, ip, store);
+            RwasmExecutor::new(&module, value_stack_ref, sp, call_stack_ref, ip, store);
         let result = match executor.run(params, result) {
             Err(TrapCode::InterruptionCalled) => {
-                let sp = executor.sp;
-                let ip = executor.ip;
-                store.resumable_context = Some(ResumableContext {
-                    value_stack,
-                    sp,
-                    call_stack,
-                    ip,
-                });
+                store.resumable_context = Some((executor.ip, executor.sp));
                 Err(TrapCode::InterruptionCalled)
             }
             res => {
-                self.reusable_stacks.recycle((value_stack, call_stack));
+                let value_stack = self.acquired_stacks.pop().unwrap();
+                self.reusable_stacks.recycle(value_stack);
                 self.global_memory_pool
                     .try_recycle_option(&mut store.global_memory);
                 res
