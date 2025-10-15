@@ -113,7 +113,7 @@ fn test_nitro_verifier_rwasm() {
         .with_allow_malformed_entrypoint_func_type(true)
         .with_import_linker(import_linker.clone());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     let mut store = RwasmStore::<()>::new(
         import_linker.clone(),
         (),

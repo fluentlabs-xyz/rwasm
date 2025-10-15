@@ -9,8 +9,8 @@ mod table;
 
 use crate::{
     types::{AddressOffset, TableIdx, UntypedValue},
-    CallStack, InstructionPtr, Opcode, RwasmCaller, RwasmModule, RwasmStore, SysFuncIdx, TrapCode,
-    TypedCaller, Value, ValueStack, ValueStackPtr,
+    CallStack, IGlobalMemory, InstructionPtr, Opcode, RwasmCaller, RwasmModule, RwasmStore,
+    SysFuncIdx, TrapCode, TypedCaller, Value, ValueStack, ValueStackPtr,
 };
 use smallvec::SmallVec;
 
@@ -300,7 +300,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     fn trace_instr_pre(&mut self, instr: &Opcode) {
         self.store.tracer.state.next_cycle();
         let pc = self.program_counter();
-        let memory_size: u32 = self.store.get_global_memory().current_pages().into();
+        let memory_size: u32 = self.store.global_memory().current_pages().into();
         let consumed_fuel = self.store.fuel_consumed();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
     }
@@ -359,7 +359,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         ) -> Result<UntypedValue, TrapCode>,
     ) -> Result<(), TrapCode> {
         self.sp.try_eval_top(|address| {
-            let memory = self.store.get_global_memory().data();
+            let memory = self.store.global_memory().data();
             let value = load_extend(memory, address, offset)?;
             Ok(value)
         })?;
@@ -380,7 +380,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         #[allow(unused_variables)] len: u32,
     ) -> Result<(), TrapCode> {
         let (address, value) = self.sp.pop2();
-        let memory = self.store.get_global_memory().data_mut();
+        let memory = self.store.global_memory().data_mut();
         store_wrap(memory, address, offset, value)?;
         #[cfg(feature = "tracing")]
         {

@@ -44,7 +44,7 @@ fn test_intrinsic_replace() {
         always_failing_syscall_handler,
         FuelConfig::default().with_fuel_limit(100),
     );
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     engine
         .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap();
@@ -91,7 +91,7 @@ fn test_intrinsic_remove() {
         always_failing_syscall_handler,
         FuelConfig::default(),
     );
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     engine
         .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap();

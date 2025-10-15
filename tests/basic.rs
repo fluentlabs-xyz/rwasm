@@ -43,7 +43,7 @@ fn test_i64_load8_s() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     let mut result = [Value::I64(0); 1];
     engine
         .execute(&mut store, &rwasm_module, &[Value::I32(0)], &mut result)
@@ -71,7 +71,7 @@ fn test_i64_load() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     let mut result = [Value::I64(0); 1];
     engine
         .execute(&mut store, &rwasm_module, &[Value::I32(0)], &mut result)
@@ -131,7 +131,7 @@ fn test_bulk_bench() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     let mut result = [Value::I64(0); 1];
     engine
         .execute(&mut store, &rwasm_module, &[Value::I64(5000)], &mut result)

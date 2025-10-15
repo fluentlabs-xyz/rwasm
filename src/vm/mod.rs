@@ -1,4 +1,5 @@
 mod call_stack;
+mod config;
 mod context;
 mod engine;
 mod executor;
@@ -13,6 +14,7 @@ mod tracer;
 mod value_stack;
 
 pub use call_stack::*;
+pub use config::*;
 pub use context::*;
 pub use engine::*;
 pub use executor::*;

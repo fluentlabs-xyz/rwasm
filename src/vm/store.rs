@@ -1,6 +1,6 @@
 use crate::{
-    bitvec_inlined::BitVecInlined as BV, CallStack, FuelConfig, GlobalMemory, ImportLinker,
-    InstructionPtr, OnDemandGlobalMemory, Pages, SignatureIdx, Store, SyscallHandler, TableEntity,
+    bitvec_inlined::BitVecInlined as BV, CallStack, FuelConfig, GlobalMemory, IGlobalMemory,
+    ImportLinker, InstructionPtr, Pages, SignatureIdx, Store, SyscallHandler, TableEntity,
     TrapCode, UntypedValue, ValueStack, ValueStackPtr,
 };
 use alloc::{sync::Arc, vec::Vec};
@@ -58,12 +58,12 @@ impl<T: 'static + Send + Sync + Default> Default for RwasmStore<T> {
 
 impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        self.get_global_memory().read(offset, buffer)?;
+        self.global_memory().read(offset, buffer)?;
         Ok(())
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        self.get_global_memory().write(offset, buffer)?;
+        self.global_memory().write(offset, buffer)?;
         #[cfg(feature = "tracing")]
         self.tracer
             .memory_change(offset as u32, buffer.len() as u32, buffer);
@@ -119,9 +119,11 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         }
     }
 
-    pub fn get_global_memory(&mut self) -> &mut GlobalMemory {
+    pub(crate) fn global_memory(&mut self) -> &mut GlobalMemory {
+        // TODO(dmitry123): We insert default global memory here only for e2e tests,
+        //  once we refactor them to use engine then we'll be able to remove this.
         self.global_memory
-            .get_or_insert_with(|| OnDemandGlobalMemory::new(Pages::default()).into())
+            .get_or_insert_with(|| GlobalMemory::new(Pages::default()))
     }
 
     /// Resets the state of the current execution context.

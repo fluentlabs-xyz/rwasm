@@ -44,7 +44,7 @@ fn test_interrupted_call_rwasm() {
         },
         FuelConfig::default().with_fuel_limit(100_000),
     );
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     let err = engine
         .execute(&mut store, &module, &[], &mut [])
         .unwrap_err();
@@ -89,7 +89,7 @@ fn test_interrupted_call_wasmtime() {
         FuelConfig::default(),
     );
     store.set_syscall_handler(interrupting_syscall_handler);
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     let mut result = [Value::I32(0); 1];
     let err = engine
         .execute(&mut store, &rwasm_module, &[], &mut result)
@@ -146,7 +146,7 @@ fn test_call_stack_empty_after_trap_in_nested_call() {
         },
         FuelConfig::default(),
     );
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     let err = engine
         .execute(&mut store, &module, &[], &mut [])
         .unwrap_err();

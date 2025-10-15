@@ -1,6 +1,6 @@
 use crate::{
-    AddressOffset, ArithmeticOps, ExtendInto, Float, Opcode, RwasmExecutor, TrapCode,
-    TruncateSaturateInto, TryTruncateInto, UntypedValue, WrapInto, F32, F64,
+    AddressOffset, ArithmeticOps, ExtendInto, Float, IGlobalMemory, Opcode, RwasmExecutor,
+    TrapCode, TruncateSaturateInto, TryTruncateInto, UntypedValue, WrapInto, F32, F64,
 };
 use core::ops::Neg;
 
@@ -63,7 +63,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_f32_load(&mut self, address_offset: AddressOffset) -> Result<(), TrapCode> {
         self.sp.try_eval_top(|address| {
-            let memory = self.store.get_global_memory().data();
+            let memory = self.store.global_memory().data();
             let value = UntypedValue::f32_load(memory, address, address_offset)?;
             Ok(value)
         })?;
@@ -74,7 +74,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_f64_load(&mut self, address_offset: AddressOffset) -> Result<(), TrapCode> {
         let address = self.sp.pop_i32();
-        let memory = self.store.get_global_memory().data();
+        let memory = self.store.global_memory().data();
         let value = UntypedValue::load_typed::<F64>(memory, address as u32, address_offset)?;
         self.sp.push_f64(value);
         self.ip.add(1);
@@ -87,7 +87,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         address_offset: AddressOffset,
     ) -> Result<(), TrapCode> {
         let (address, value) = self.sp.pop2();
-        let memory = self.store.get_global_memory().data_mut();
+        let memory = self.store.global_memory().data_mut();
         UntypedValue::f32_store(memory, address, address_offset, value)?;
         #[cfg(feature = "tracing")]
         {
@@ -109,7 +109,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     ) -> Result<(), TrapCode> {
         let value = self.sp.pop_f64();
         let address = self.sp.pop_i32();
-        let memory = self.store.get_global_memory().data_mut();
+        let memory = self.store.global_memory().data_mut();
         UntypedValue::store_typed(memory, address as u32, address_offset, value)?;
         self.ip.add(1);
         Ok(())

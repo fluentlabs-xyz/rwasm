@@ -1,4 +1,6 @@
-use crate::{AddressOffset, DataSegmentIdx, Pages, RwasmExecutor, TrapCode, UntypedValue};
+use crate::{
+    AddressOffset, DataSegmentIdx, IGlobalMemory, Pages, RwasmExecutor, TrapCode, UntypedValue,
+};
 
 macro_rules! impl_visit_load {
     ( $( fn $visit_ident:ident($untyped_ident:ident); )* ) => {
@@ -40,7 +42,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[inline(always)]
     pub(crate) fn visit_memory_size(&mut self) {
-        let result: u32 = self.store.get_global_memory().current_pages().into();
+        let result: u32 = self.store.global_memory().current_pages().into();
         self.sp.push_as(result);
         self.ip.add(1);
     }
@@ -58,7 +60,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         };
         let new_pages = self
             .store
-            .get_global_memory()
+            .global_memory()
             .grow(delta)
             .map(u32::from)
             .unwrap_or(u32::MAX);
@@ -75,7 +77,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let byte = u8::from(val);
         let memory = self
             .store
-            .get_global_memory()
+            .global_memory()
             .data_mut()
             .get_mut(offset..)
             .and_then(|memory| memory.get_mut(..n))
@@ -99,7 +101,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let src_offset = i32::from(s) as usize;
         let dst_offset = i32::from(d) as usize;
         // these accesses just perform the bound checks required by the Wasm spec.
-        let data = self.store.get_global_memory().data_mut();
+        let data = self.store.global_memory().data_mut();
         data.get(src_offset..)
             .and_then(|memory| memory.get(..n))
             .ok_or(TrapCode::MemoryOutOfBounds)?;
@@ -136,7 +138,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let dst_offset = i32::from(d) as usize;
         let memory = self
             .store
-            .get_global_memory()
+            .global_memory()
             .data_mut()
             .get_mut(dst_offset..)
             .and_then(|memory| memory.get_mut(..n))
