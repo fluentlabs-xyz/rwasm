@@ -800,7 +800,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         // since the `ConsumeFuel` instruction for the `then` block is no longer
         // used from this point on.
         self.is_fuel_metering_enabled().then(|| {
-            let consume_fuel = self.push_consume_fuel_base();
+            let consume_fuel = self.push_consume_fuel_empty();
             if_frame.update_consume_fuel_instr(consume_fuel);
         });
         let mut old_stack_height = self.stack_height.height();
@@ -1614,6 +1614,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_f32_const(&mut self, value: Ieee32) -> Self::Output {
         self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(ValType::F32);
             builder.stack_height.push1();
             use crate::F32;
@@ -1625,6 +1626,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_f64_const(&mut self, value: Ieee64) -> Self::Output {
         self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(ValType::F64);
             builder.stack_height.push2();
             let value = value.bits() as i64;
