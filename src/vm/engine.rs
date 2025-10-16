@@ -8,8 +8,7 @@ use crate::{
         reusable_pool::ReusablePool,
         ResumableContext,
     },
-    MemoryAllocationStrategy, Pages, PoolingAllocatorConfig, ReusableStackConfig, RwasmExecutor,
-    RwasmModule, RwasmStore, TrapCode, Value,
+    Pages, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value,
 };
 use alloc::sync::Arc;
 use core::mem::take;
@@ -187,6 +186,7 @@ impl ExecutionEngineInner {
 #[cfg(feature = "std")]
 impl ExecutionEngine {
     pub fn acquire_shared() -> ExecutionEngine {
+        use crate::{MemoryAllocationStrategy, PoolingAllocatorConfig, ReusableStackConfig};
         static ENGINE: std::sync::OnceLock<ExecutionEngine> = std::sync::OnceLock::new();
         ENGINE
             .get_or_init(|| {
