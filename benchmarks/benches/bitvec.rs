@@ -2,7 +2,7 @@ use bitvec::{order::Lsb0, vec::BitVec};
 use criterion::{criterion_main, Criterion};
 use rwasm::{
     bitvec_inlined::{BitVecInlined, USIZE_BITS},
-    CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore, Value,
+    CompilationConfig, Config, ExecutionEngine, RwasmModule, RwasmStore, Value,
 };
 use std::time::Duration;
 
@@ -81,7 +81,7 @@ fn bench_comparisons(c: &mut Criterion) {
         let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
         println!("{}", rwasm_module);
         let mut store = RwasmStore::<()>::default();
-        let engine = ExecutionEngine::default();
+        let engine = ExecutionEngine::acquire_shared();
         let mut result = [Value::I64(0); 1];
         group.bench_function("bitvec_inlined (through ExecutionEngine)", |b| {
             b.iter(|| {

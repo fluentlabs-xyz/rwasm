@@ -184,13 +184,20 @@ impl ExecutionEngineInner {
 }
 
 #[cfg(feature = "std")]
-thread_local! {
-    static ENGINE: ExecutionEngine = ExecutionEngine::new(Config::default());
-}
-
-#[cfg(feature = "std")]
 impl ExecutionEngine {
     pub fn acquire_shared() -> ExecutionEngine {
-        ENGINE.with(Clone::clone)
+        use crate::{MemoryAllocationStrategy, PoolingAllocatorConfig, ReusableStackConfig};
+        static ENGINE: std::sync::OnceLock<ExecutionEngine> = std::sync::OnceLock::new();
+        ENGINE
+            .get_or_init(|| {
+                ExecutionEngine::new(Config {
+                    memory_allocation_strategy: MemoryAllocationStrategy::Pooling(
+                        PoolingAllocatorConfig::default(),
+                    ),
+                    reusable_stack: ReusableStackConfig::default(),
+                    default_memory_pages: 1,
+                })
+            })
+            .clone()
     }
 }
