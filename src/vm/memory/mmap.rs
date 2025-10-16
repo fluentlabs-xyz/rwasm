@@ -23,6 +23,8 @@ struct MmapHeap {
     len: AtomicUsize,  // bytes currently RW (multiple of page)
 }
 
+unsafe impl Send for MmapHeap {}
+
 impl MmapHeap {
     /// Reserve `[GUARD | HEAP | GUARD]` and commit `initial_pages`.
     /// `max_pages` caps growth; both guards are at least one page.
