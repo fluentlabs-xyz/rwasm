@@ -39,7 +39,9 @@ pub const ELEMENT_SEG_END: u32 =
     ELEMENT_SEG_START + N_MAX_ELEM_SEGMENTS_BITS as u32 * ELEMENT_SEG_SIZE;
 pub const GLOBAL_MEM_START: u32 = ELEMENT_SEG_END + UNIT;
 pub const GLOBAL_MEM_END: u32 = GLOBAL_MEM_START + (1 << 8) << 20;
-#[derive(Debug,Clone,Copy)]
+
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy)]
 pub enum TypedAddress {
     Stack(u32),
     FuncFrame(u32),
@@ -48,28 +50,28 @@ pub enum TypedAddress {
     Element(u32),
     GlobalMemory(u32),
 }
-pub enum AddressType{
-    Stack =1,
-    FuncFrame=2,
-    Table =3,
+pub enum AddressType {
+    Stack = 1,
+    FuncFrame = 2,
+    Table = 3,
     Data = 4,
     Element = 5,
-    GlobalMemory =6,
+    GlobalMemory = 6,
 }
 
-impl From<u32> for AddressType{
+impl From<u32> for AddressType {
     fn from(value: u32) -> Self {
-        if value<SP_START{
+        if value < SP_START {
             return Self::Stack;
-        } else if value<=FUNC_FRAME_END {
+        } else if value <= FUNC_FRAME_END {
             return Self::FuncFrame;
-        } else if value<=TABLE_SEG_END{
+        } else if value <= TABLE_SEG_END {
             return Self::Table;
-        } else if value<=DATA_SEG_END {
+        } else if value <= DATA_SEG_END {
             return Self::Data;
-        } else if value<=ELEMENT_SEG_END {
-            return Self::Element;   
-        } else if value<=GLOBAL_MEM_END {
+        } else if value <= ELEMENT_SEG_END {
+            return Self::Element;
+        } else if value <= GLOBAL_MEM_END {
             return Self::GlobalMemory;
         } else {
             unreachable!()
@@ -77,8 +79,11 @@ impl From<u32> for AddressType{
     }
 }
 
-
 impl TypedAddress {
+    pub fn from_stack_vaddr(sp: u32) -> TypedAddress {
+        TypedAddress::Stack((SP_START - sp - UNIT) / 4)
+    }
+
     pub fn to_virtual_addr(&self) -> u32 {
         match self {
             TypedAddress::Stack(offset) => {
@@ -130,4 +135,3 @@ impl TypedAddress {
         }
     }
 }
-
