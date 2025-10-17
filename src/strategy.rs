@@ -338,13 +338,13 @@ impl Strategy {
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
         match self {
-            Strategy::Rwasm { module, engine } => {
+            Strategy::Rwasm { engine, .. } => {
                 let store = match store {
                     TypedStore::Rwasm(store) => store,
                     #[allow(unreachable_patterns)]
                     _ => unreachable!(),
                 };
-                engine.resume(store, &module, interruption_result, result)
+                engine.resume(store, interruption_result, result)
             }
             #[cfg(feature = "wasmtime")]
             Strategy::Wasmtime { .. } => {
