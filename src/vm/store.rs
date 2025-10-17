@@ -1,6 +1,7 @@
 use crate::{
-    FuelConfig, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, SignatureIdx, Store,
-    SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStackPtr,
+    CallStack, FuelConfig, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages,
+    RwasmModule, SignatureIdx, Store, SyscallHandler, TableEntity, TableIdx, TrapCode,
+    UntypedValue, ValueStack,
 };
 use alloc::sync::Arc;
 use bitvec::{order::Lsb0, vec::BitVec};
@@ -31,12 +32,19 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     /// Linker that resolves imports to host functions/globals.
     pub(crate) import_linker: Arc<ImportLinker>,
     /// If set, contains the instruction/value-stack pointers to resume after a suspension.
-    pub(crate) resumable_context: Option<(InstructionPtr, ValueStackPtr)>,
+    pub(crate) resumable_context: Option<ReusableContext>,
     /// A fuel config.
     pub(crate) fuel_config: FuelConfig,
     /// Execution tracer used when the `tracing` feature is enabled.
     #[cfg(feature = "tracing")]
     pub tracer: crate::Tracer,
+}
+
+pub struct ReusableContext {
+    pub module: RwasmModule,
+    pub call_stack: CallStack,
+    pub ip: InstructionPtr,
+    pub value_stack: ValueStack,
 }
 
 #[cfg(feature = "std")]

@@ -1,7 +1,9 @@
-use crate::{CallStack, RwasmExecutor, RwasmModule, RwasmStore, TrapCode, Value, ValueStack};
+use crate::{
+    CallStack, InstructionPtr, ReusableContext, RwasmExecutor, RwasmModule, RwasmStore, TrapCode,
+    Value, ValueStack,
+};
 use alloc::sync::Arc;
 use core::mem::take;
-use smallvec::SmallVec;
 use spin::Mutex;
 
 /// Represents the core execution engine for managing the execution of a program,
@@ -31,20 +33,16 @@ impl ExecutionEngine {
     pub fn resume<T: Send + Sync>(
         &self,
         store: &mut RwasmStore<T>,
-        module: &RwasmModule,
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
         let mut ctx = self.inner.lock();
-        ctx.resume(store, module, params, result)
+        ctx.resume(store, params, result)
     }
 }
 
 #[derive(Default)]
-struct ExecutionEngineInner {
-    value_stack: SmallVec<[ValueStack; 8]>,
-    call_stack: SmallVec<[CallStack; 8]>,
-}
+struct ExecutionEngineInner {}
 
 impl ExecutionEngineInner {
     /// Executes a rWasm module's function with the given parameters and stores the result.
@@ -55,24 +53,21 @@ impl ExecutionEngineInner {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        self.value_stack.push(ValueStack::default());
-        self.call_stack.push(CallStack::default());
-        let mut executor = RwasmExecutor::entrypoint(
-            &module,
-            self.value_stack.last_mut().unwrap(),
-            self.call_stack.last_mut().unwrap(),
-            store,
+        let mut value_stack = ValueStack::default();
+        let mut call_stack = CallStack::default();
+        debug_assert!(
+            store.resumable_context.is_none(),
+            "rwasm: resumable context is presented"
         );
+        let mut executor =
+            RwasmExecutor::entrypoint(&module, &mut value_stack, &mut call_stack, store);
         match executor.run(params, result) {
             Err(TrapCode::InterruptionCalled) => {
-                store.resumable_context = Some((executor.ip, executor.sp));
-                Err(TrapCode::InterruptionCalled)
+                let (ip, sp) = (executor.ip, executor.sp);
+                value_stack.sync_stack_ptr(sp);
+                self.remember_context(module.clone(), store, value_stack, call_stack, ip)
             }
-            res => {
-                self.value_stack.pop().unwrap();
-                self.call_stack.pop().unwrap();
-                res
-            }
+            res => res,
         }
     }
 
@@ -80,30 +75,45 @@ impl ExecutionEngineInner {
     pub fn resume<T: Send + Sync>(
         &mut self,
         store: &mut RwasmStore<T>,
-        module: &RwasmModule,
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        let (value_stack, call_stack) = (
-            self.value_stack.last_mut().unwrap(),
-            self.call_stack.last_mut().unwrap(),
-        );
-        let (ip, sp) = take(&mut store.resumable_context).unwrap_or_else(|| {
+        let ReusableContext {
+            module,
+            mut call_stack,
+            ip,
+            mut value_stack,
+        } = take(&mut store.resumable_context).unwrap_or_else(|| {
             unreachable!("resume calling without a remaining call stack");
         });
-        let mut executor = RwasmExecutor::new(&module, value_stack, sp, call_stack, ip, store);
+        let sp = value_stack.stack_ptr();
+        let mut executor =
+            RwasmExecutor::new(&module, &mut value_stack, sp, &mut call_stack, ip, store);
         match executor.run(params, result) {
             Err(TrapCode::InterruptionCalled) => {
-                store.resumable_context = Some((executor.ip, executor.sp));
-                Err(TrapCode::InterruptionCalled)
+                let (ip, sp) = (executor.ip, executor.sp);
+                value_stack.sync_stack_ptr(sp);
+                self.remember_context(module, store, value_stack, call_stack, ip)
             }
-            res => {
-                // TODO: Recycle stack
-                self.value_stack.pop().unwrap();
-                self.call_stack.pop().unwrap();
-                res
-            }
+            res => res,
         }
+    }
+
+    fn remember_context<T: Send + Sync>(
+        &mut self,
+        module: RwasmModule,
+        store: &mut RwasmStore<T>,
+        value_stack: ValueStack,
+        call_stack: CallStack,
+        ip: InstructionPtr,
+    ) -> Result<(), TrapCode> {
+        store.resumable_context = Some(ReusableContext {
+            module,
+            call_stack,
+            ip,
+            value_stack,
+        });
+        Err(TrapCode::InterruptionCalled)
     }
 }
 
