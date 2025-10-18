@@ -26,6 +26,7 @@ pub struct MessageInterruptionResult {
 
 pub enum FutureStateChange {
     MemoryWrite { offset: usize, buffer: Vec<u8> },
+    TryConsumeFuel { delta: u64 },
 }
 
 #[derive(Default)]
@@ -313,6 +314,20 @@ impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
+        if self.fut.is_some() {
+            let mut ctx = self.shared_control_state.write().unwrap();
+            // Make sure we have enough fuel before writing state change
+            // (state change should never fail)
+            if let Some(fuel_remaining) = ctx.fuel_remaining {
+                if delta > fuel_remaining {
+                    return Err(TrapCode::OutOfFuel);
+                }
+            }
+            // Write consume fuel event to execute once we have access to the store context
+            ctx.state_changes
+                .push(FutureStateChange::TryConsumeFuel { delta });
+            return Ok(());
+        }
         self.with_store_mut(|store| {
             if let Ok(remaining_fuel) = store.get_fuel() {
                 let new_fuel = remaining_fuel
@@ -418,10 +433,6 @@ async fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
             let MessageInterruptionResult {
                 result: interruption_result,
             } = resp_rx.await.expect("wasmtime: interruption dropped");
-            // if let Ok(fuel_remaining) = caller.get_fuel() {
-            //     let new_fuel = fuel_remaining.checked_sub(0).ok_or(TrapCode::OutOfFuel)?;
-            //     caller.set_fuel(new_fuel).unwrap_or_else(|_| unreachable!());
-            // }
             for (i, value) in interruption_result?.iter().enumerate() {
                 result[i] = match value {
                     Value::I32(value) => wasmtime::Val::I32(*value),
@@ -441,6 +452,9 @@ async fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
                 match state_change {
                     FutureStateChange::MemoryWrite { offset, buffer } => {
                         caller_adapter.memory_write(offset, &buffer)?;
+                    }
+                    FutureStateChange::TryConsumeFuel { delta } => {
+                        caller_adapter.try_consume_fuel(delta)?;
                     }
                 }
             }
