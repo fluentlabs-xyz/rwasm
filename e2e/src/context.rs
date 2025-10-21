@@ -5,11 +5,7 @@ use crate::handler::{
 };
 use anyhow::Result;
 use rwasm::{
-<<<<<<< HEAD
-    instruction_set, CallStack, CompilationConfig, ExecutionEngine, FuncType, I64ValueSplit,
-=======
     instruction_set, CallStack, CompilationConfig, FuelConfig, FuncType, I64ValueSplit,
->>>>>>> devel
     ImportLinker, ImportLinkerEntity, ImportName, InstructionSet, ModuleParser, Opcode,
     RwasmExecutor, RwasmModule, RwasmStore, StateRouterConfig, Store, ValType, Value, ValueStack,
     F64,
@@ -229,10 +225,6 @@ impl TestContext<'_> {
         println!("{}", rwasm_module);
 
         let mut store = RwasmStore::<TestingContext>::new(
-<<<<<<< HEAD
-            ExecutionEngine::acquire_shared(),
-=======
->>>>>>> devel
             self.import_linker.clone(),
             TestingContext::default(),
             testing_context_syscall_handler,

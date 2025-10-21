@@ -118,7 +118,7 @@ fn test_interrupted_call_wasmtime() {
     );
     let mut result = [Value::I32(0); 1];
     let err = wasmtime_worker
-        .execute("main", &[], &mut result, None)
+        .execute("main", &[], &mut result)
         .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
     let err = wasmtime_worker.resume(Ok(&[]), &mut result).unwrap_err();
@@ -148,7 +148,7 @@ fn test_call_stack_empty_after_trap_in_nested_call() {
     );
     let engine = ExecutionEngine::default();
     let err = engine
-        .execute(&mut store, &module, &[], &mut [], None)
+        .execute(&mut store, &module, &[], &mut [])
         .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
     let err = engine
@@ -187,7 +187,7 @@ fn test_memory_write_during_interruption() {
         );
         let mut result = [Value::I32(0); 1];
         let err = strategy
-            .execute(&mut store, "main", &[], &mut result, None)
+            .execute(&mut store, "main", &[], &mut result)
             .unwrap_err();
         assert_eq!(err, TrapCode::InterruptionCalled);
         strategy.resume(&mut store, &[], &mut result).unwrap();
