@@ -183,9 +183,9 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                     );
                 }
                 for offset in 0..len {
-                    use crate::mem_index::AddressType;
+                    use crate::mem_index::TypedAddress;
 
-                    let src_addr = AddressType::Element(src_index + offset);
+                    let src_addr = TypedAddress::Element(src_index + offset);
 
                     let read_record = self.store.tracer.mr_with_local_access(
                         src_addr.to_virtual_addr(),
@@ -196,9 +196,9 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 }
                 self.store.tracer.state.next_cycle();
                 for offset in 0..len {
-                    use crate::{mem_index::AddressType, N_MAX_TABLE_SIZE};
+                    use crate::{mem_index::TypedAddress, N_MAX_TABLE_SIZE};
                     let value = table_init_event.memory_read_access[offset as usize].value;
-                    let dst_addr = AddressType::Table(
+                    let dst_addr = TypedAddress::Table(
                         table_idx as u32 * N_MAX_TABLE_SIZE + dst_index + offset,
                     );
                     let write_record = self.store.tracer.mw_with_local_access(

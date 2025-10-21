@@ -39,8 +39,8 @@ pub const ELEMENT_SEG_END: u32 =
     ELEMENT_SEG_START + N_MAX_ELEM_SEGMENTS_BITS as u32 * ELEMENT_SEG_SIZE;
 pub const GLOBAL_MEM_START: u32 = ELEMENT_SEG_END + UNIT;
 pub const GLOBAL_MEM_END: u32 = GLOBAL_MEM_START + (1 << 8) << 20;
-#[derive(Debug)]
-pub enum AddressType {
+#[derive(Debug,Clone,Copy)]
+pub enum TypedAddress {
     Stack(u32),
     FuncFrame(u32),
     Table(u32),
@@ -48,41 +48,70 @@ pub enum AddressType {
     Element(u32),
     GlobalMemory(u32),
 }
+pub enum AddressType{
+    Stack =1,
+    FuncFrame=2,
+    Table =3,
+    Data = 4,
+    Element = 5,
+    GlobalMemory =6,
+}
 
-impl AddressType {
+impl From<u32> for AddressType{
+    fn from(value: u32) -> Self {
+        if value<SP_START{
+            return Self::Stack;
+        } else if value<=FUNC_FRAME_END {
+            return Self::FuncFrame;
+        } else if value<=TABLE_SEG_END{
+            return Self::Table;
+        } else if value<=DATA_SEG_END {
+            return Self::Data;
+        } else if value<=ELEMENT_SEG_END {
+            return Self::Element;   
+        } else if value<=GLOBAL_MEM_END {
+            return Self::GlobalMemory;
+        } else {
+            unreachable!()
+        }
+    }
+}
+
+
+impl TypedAddress {
     pub fn to_virtual_addr(&self) -> u32 {
         match self {
-            AddressType::Stack(offset) => {
+            TypedAddress::Stack(offset) => {
                 let v_addr = (SP_START - offset * UNIT) - UNIT;
                 debug_assert!(v_addr >= SP_END);
                 debug_assert!(v_addr < SP_START);
                 v_addr
             }
-            AddressType::FuncFrame(offset) => {
+            TypedAddress::FuncFrame(offset) => {
                 let v_addr = FUNC_FRAME_START + *offset * UNIT;
                 debug_assert!(v_addr >= FUNC_FRAME_START);
                 debug_assert!(v_addr < FUNC_FRAME_END);
                 v_addr
             }
-            AddressType::Table(offset) => {
+            TypedAddress::Table(offset) => {
                 let v_addr = TABLE_SEG_START + offset * UNIT;
                 debug_assert!(v_addr >= TABLE_SEG_START);
                 debug_assert!(v_addr < TABLE_SEG_END);
                 v_addr
             }
-            AddressType::Data(offset) => {
+            TypedAddress::Data(offset) => {
                 let v_addr = DATA_SEG_START + offset * UNIT;
                 debug_assert!(v_addr >= DATA_SEG_START);
                 debug_assert!(v_addr < DATA_SEG_END);
                 v_addr
             }
-            AddressType::Element(offset) => {
+            TypedAddress::Element(offset) => {
                 let v_addr = ELEMENT_SEG_START + offset * UNIT;
                 debug_assert!(v_addr >= ELEMENT_SEG_START);
                 debug_assert!(v_addr < ELEMENT_SEG_END);
                 v_addr
             }
-            AddressType::GlobalMemory(offset) => {
+            TypedAddress::GlobalMemory(offset) => {
                 let v_addr = GLOBAL_MEM_START + offset;
                 debug_assert!(v_addr >= GLOBAL_MEM_START);
                 debug_assert!(v_addr < GLOBAL_MEM_END);
@@ -91,13 +120,14 @@ impl AddressType {
         }
     }
 
-    pub fn v_addr_to_pre_addr(v_addr: u32) -> Option<AddressType> {
+    pub fn v_addr_to_pre_addr(v_addr: u32) -> Option<TypedAddress> {
         if v_addr >= ELEMENT_SEG_START && v_addr < ELEMENT_SEG_END {
-            Some(AddressType::Element((v_addr - ELEMENT_SEG_START) / UNIT))
+            Some(TypedAddress::Element((v_addr - ELEMENT_SEG_START) / UNIT))
         } else if v_addr >= DATA_SEG_START && v_addr < DATA_SEG_END {
-            Some(AddressType::Element((v_addr - DATA_SEG_START) / UNIT))
+            Some(TypedAddress::Element((v_addr - DATA_SEG_START) / UNIT))
         } else {
             None
         }
     }
 }
+
