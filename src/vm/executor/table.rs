@@ -169,11 +169,13 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
             if let FatOpEvent::TableInit(mut table_init_event) = fat_op {
                 use crate::mem::MemoryLocalEvent;
+                use fnv::FnvBuildHasher;
                 use hashbrown::HashMap;
                 table_init_event.s = s.into();
                 table_init_event.d = d.into();
                 table_init_event.n = n.into();
-                let mut local_memory_access: HashMap<u32, MemoryLocalEvent> = HashMap::new();
+                let mut local_memory_access: HashMap<u32, MemoryLocalEvent, FnvBuildHasher> =
+                    HashMap::default();
                 for idx in 0..table_init_event.local_mem_access.len() {
                     local_memory_access.insert(
                         table_init_event.local_mem_access_addr[idx],

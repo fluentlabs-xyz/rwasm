@@ -18,6 +18,7 @@ use core::{
     fmt::{Debug, Formatter},
     mem::take,
 };
+use fnv::FnvBuildHasher;
 use hashbrown::HashMap;
 
 pub mod event;
@@ -199,7 +200,7 @@ impl Tracer {
         if opcode.is_table_instruction() {
             if let Opcode::TableInit(_) = opcode {
                 let mut fat_op_event = TableInitEvent::default();
-                let mut local_memory_access = HashMap::new();
+                let mut local_memory_access = HashMap::default();
                 for idx in 0..3 {
                     let addr = sp + idx * UNIT;
                     println!("idx:{},addr:{}", idx, addr);
@@ -474,7 +475,7 @@ impl Tracer {
     pub fn mr_with_local_access(
         &mut self,
         addr: u32,
-        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
+        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent, FnvBuildHasher>>,
     ) -> MemoryReadRecord {
         let clk = self.state.clk;
         let shard = self.state.shard;
@@ -520,7 +521,7 @@ impl Tracer {
         &mut self,
         addr: u32,
         value: u32,
-        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
+        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent, FnvBuildHasher>>,
     ) -> MemoryWriteRecord {
         let record = self.memory_records.entry(addr).or_default();
         println!("addr: {}record:{:?}", addr, record);

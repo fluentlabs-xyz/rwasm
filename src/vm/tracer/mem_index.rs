@@ -20,7 +20,7 @@ pub const SP_START: u32 = N_MAX_STACK_SIZE as u32 * UNIT + SP_END;
 /// This is the index when the stack reaches the max length. So every valid index for the stack is
 /// >0. Making the index of a stack element strictly larger than 0 makes circuit checking this bound
 /// simpler.
-/// 
+///
 /// We add 32 to prevent writes to the SP1 registers
 pub const SP_END: u32 = 32 + UNIT;
 
