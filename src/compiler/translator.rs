@@ -63,7 +63,7 @@ pub struct FuncTranslatorAllocations {
     pub(crate) tables: Vec<TableType>,
     pub(crate) memories: Vec<MemoryType>,
     pub(crate) globals: Vec<GlobalVariable>,
-    pub(crate) exported_funcs: HashMap<Box<str>, FuncIdx>,
+    pub(crate) exported_funcs: HashMap<Box<str>, FuncIdx, fnv::FnvBuildHasher>,
     pub(crate) start_func: Option<FuncIdx>,
     pub(crate) func_offsets: Vec<u32>,
     pub(crate) constructor_params: ConstructorParams,

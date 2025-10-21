@@ -1,8 +1,8 @@
 use hex_literal::hex;
 use rwasm::{
-    compile_wasmtime_module, for_each_strategy, CompilationConfig, ExecutionEngine, ImportLinker,
-    ImportName, InstructionSet, RwasmModule, RwasmStore, Store, Strategy, TrapCode, TypedCaller,
-    Value,
+    compile_wasmtime_module, for_each_strategy, CompilationConfig, ExecutionEngine, FuelConfig,
+    ImportLinker, ImportName, InstructionSet, RwasmModule, RwasmStore, Store, Strategy, TrapCode,
+    TypedCaller, Value,
 };
 use std::sync::Arc;
 use wasmparser::ValType;
@@ -113,15 +113,15 @@ fn test_nitro_verifier_rwasm() {
         .with_allow_malformed_entrypoint_func_type(true)
         .with_import_linker(import_linker.clone());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     let mut store = RwasmStore::<()>::new(
-        ExecutionEngine::acquire_shared(),
         import_linker.clone(),
         (),
         fluentbase_syscall_handler,
+        FuelConfig::default(),
     );
     engine
-        .execute(&mut store, &rwasm_module, &[], &mut [], None)
+        .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap();
 }
 
@@ -143,8 +143,14 @@ fn test_nitro_verifier_wasmtime() {
         &rwasm_module.hint_section,
     )
     .unwrap();
-    let mut worker = WasmtimeStore::new(module, import_linker, (), fluentbase_syscall_handler);
-    worker.execute("main", &[], &mut [], None).unwrap();
+    let mut worker = WasmtimeStore::new(
+        module,
+        import_linker,
+        (),
+        fluentbase_syscall_handler,
+        FuelConfig::default(),
+    );
+    worker.execute("main", &[], &mut []).unwrap();
 }
 
 #[cfg(feature = "wasmtime")]
@@ -158,10 +164,14 @@ fn test_nitro_verifier_strategy() {
         .with_allow_malformed_entrypoint_func_type(true)
         .with_import_linker(import_linker.clone());
     let exec_strategy = |strategy: Strategy| {
-        let mut store =
-            strategy.create_store(import_linker.clone(), (), fluentbase_syscall_handler);
+        let mut store = strategy.create_store(
+            import_linker.clone(),
+            (),
+            fluentbase_syscall_handler,
+            FuelConfig::default().with_fuel_limit(1_000_000_000),
+        );
         strategy
-            .execute::<()>(&mut store, "main", &[], &mut [], Some(1_000_000_000))
+            .execute::<()>(&mut store, "main", &[], &mut [])
             .map_err(Into::into)
     };
     // run with rwasm strategy first

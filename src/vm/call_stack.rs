@@ -1,9 +1,13 @@
 use crate::InstructionPtr;
-use smallvec::SmallVec;
+use alloc::vec::Vec;
 
 #[derive(Default, Clone)]
+/// A lightweight call stack used by the interpreter to track return addresses.
+/// It stores instruction pointers for active calls and allows fast push/pop without heap churn.
+/// The capacity grows on demand but is typically small due to Wasm's structured control flow.
 pub struct CallStack {
-    buf: SmallVec<[InstructionPtr; 16]>,
+    /// Return address stack backing storage; holds instruction pointers for nested calls.
+    buf: Vec<InstructionPtr>,
 }
 
 impl CallStack {

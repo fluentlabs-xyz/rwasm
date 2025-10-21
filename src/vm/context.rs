@@ -1,6 +1,6 @@
 use crate::{
     types::{TrapCode, UntypedValue},
-    Caller, RwasmStore, Store, ValueStackPtr,
+    Caller, IGlobalMemory, RwasmStore, Store, ValueStackPtr,
 };
 
 pub struct RwasmCaller<'a, T: 'static + Send + Sync> {
@@ -25,12 +25,12 @@ impl<'a, T: 'static + Send + Sync> RwasmCaller<'a, T> {
 
 impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        self.store.global_memory.read(offset, buffer)?;
+        self.store.global_memory().read(offset, buffer)?;
         Ok(())
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        self.store.global_memory.write(offset, buffer)?;
+        self.store.global_memory().write(offset, buffer)?;
         #[cfg(feature = "tracing")]
         self.store
             .tracer
@@ -50,7 +50,7 @@ impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
         self.store.try_consume_fuel(delta)
     }
 
-    fn remaining_fuel(&mut self) -> Option<u64> {
+    fn remaining_fuel(&self) -> Option<u64> {
         self.store.remaining_fuel()
     }
 }

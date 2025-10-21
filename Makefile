@@ -5,11 +5,14 @@ test-specific-cases:
 	cd wasm && make
 	cd snippets && make
 	# run tests
-	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml
-	cargo test --color=always --no-fail-fast --manifest-path e2e/Cargo.toml
-	cargo +nightly test --color=always --no-fail-fast --manifest-path snippets/Cargo.toml
+	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml --no-default-features --features=std,wasmtime
+	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml --no-default-features --features=std,wasmtime,unix-memory
+	cargo test --color=always --no-fail-fast --manifest-path e2e/Cargo.toml --no-default-features --features=std,wasmtime
+	cargo test --color=always --no-fail-fast --manifest-path e2e/Cargo.toml --no-default-features --features=std,wasmtime,unix-memory
+	cargo +nightly-2025-09-20 test --color=always --no-fail-fast --manifest-path snippets/Cargo.toml
 	# run nitro test (with release flag)
-	cargo test --release --package rwasm --test nitro-verifier test_nitro_verifier -- --ignored
+	cargo test --release --package rwasm --test nitro-verifier test_nitro_verifier --no-default-features --features=std,wasmtime -- --ignored
+	cargo test --release --package rwasm --test nitro-verifier test_nitro_verifier --no-default-features --features=std,wasmtime,unix-memory -- --ignored
 
 .PHONY: coverage
 coverage:
@@ -18,7 +21,7 @@ coverage:
 	cd wasm && make
 	cd snippets && make
 	# run tests
-	cargo +nightly llvm-cov --lcov --manifest-path=./snippets/Cargo.toml > lcov1.info
+	cargo +nightly-2025-09-20 llvm-cov --lcov --manifest-path=./snippets/Cargo.toml > lcov1.info
 	cargo llvm-cov --lcov --manifest-path=./Cargo.toml > lcov2.info
 	cargo llvm-cov --lcov --manifest-path=./e2e/Cargo.toml > lcov3.info
 	# merge all lcov files together
@@ -30,5 +33,9 @@ clean:
 	find . -type d -name "target" -exec rm -rf {} +
 	# Delete all Cargo.lock files except the root
 	find . -name Cargo.lock ! -path './Cargo.lock' -type f -exec rm -f {} +
+
+.PHONY: test
+test:
+	cargo test
 
 all: test-specific-cases

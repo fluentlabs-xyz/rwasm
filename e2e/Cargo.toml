@@ -9,5 +9,8 @@ anyhow = "1.0.71"
 wast = "=64.0"
 
 [features]
-default = []
+default = ["std"]
+std = ["rwasm/std"]
 debug-print = ["rwasm/debug-print"]
+wasmtime = ["rwasm/wasmtime"]
+unix-memory = ["rwasm/unix-memory"]

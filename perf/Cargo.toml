@@ -1,0 +1,62 @@
+[package]
+name = "perf"
+version = "0.1.0"
+edition = "2021"
+
+[build]
+rustflags = ["-C", "force-frame-pointers=yes"]
+
+[[bin]]
+name = "fibonacci_perf32"
+path = "fibonacci_perf32.rs"
+
+[[bin]]
+name = "fibonacci_perf32_wasmtime"
+path = "fibonacci_perf32_wasmtime.rs"
+
+[[bin]]
+name = "fibonacci_perf64"
+path = "fibonacci_perf64.rs"
+
+[[bin]]
+name = "load_perf"
+path = "load_perf.rs"
+
+[[bin]]
+name = "evm_fibonacci_perf"
+path = "evm_fibonacci_perf.rs"
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = 3
+strip = false
+debug = true
+debug-assertions = true
+rpath = true
+codegen-units = 1
+
+[profile.dev]
+panic = "abort"
+debug = true
+opt-level = 0
+debug-assertions = true
+strip = false
+codegen-units = 256
+rpath = true
+
+[dependencies]
+rwasm = { path = "..", features = [
+    "std",
+    "wasmtime",
+    "pooling-allocator",
+    "unix-memory",
+] }
+wat = "1.230.0"
+revm-interpreter = "25.0.3"
+revm-bytecode = "6.2.2"
+hex-literal = "1.0.0"
+
+[dev-dependencies]
+
+

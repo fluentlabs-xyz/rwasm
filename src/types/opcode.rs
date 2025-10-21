@@ -9,7 +9,7 @@ use alloc::{format, vec::Vec};
 use bincode::{Decode, Encode};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
-#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u16)]
 pub enum Opcode {
     // stack/system

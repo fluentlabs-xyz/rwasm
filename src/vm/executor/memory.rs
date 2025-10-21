@@ -1,4 +1,6 @@
-use crate::{AddressOffset, DataSegmentIdx, Pages, RwasmExecutor, TrapCode, UntypedValue};
+use crate::{
+    AddressOffset, DataSegmentIdx, IGlobalMemory, Pages, RwasmExecutor, TrapCode, UntypedValue,
+};
 
 macro_rules! impl_visit_load {
     ( $( fn $visit_ident:ident($untyped_ident:ident); )* ) => {
@@ -40,7 +42,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[inline(always)]
     pub(crate) fn visit_memory_size(&mut self) {
-        let result: u32 = self.store.global_memory.current_pages().into();
+        let result: u32 = self.store.global_memory().current_pages().into();
         self.sp.push_as(result);
         self.ip.add(1);
     }
@@ -58,7 +60,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         };
         let new_pages = self
             .store
-            .global_memory
+            .global_memory()
             .grow(delta)
             .map(u32::from)
             .unwrap_or(u32::MAX);
@@ -75,16 +77,19 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let byte = u8::from(val);
         let memory = self
             .store
-            .global_memory
+            .global_memory()
             .data_mut()
             .get_mut(offset..)
             .and_then(|memory| memory.get_mut(..n))
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         memory.fill(byte);
         #[cfg(feature = "tracing")]
-        self.store
-            .tracer
-            .memory_change(offset as u32, n as u32, memory);
+        {
+            let memory = memory.to_vec();
+            self.store
+                .tracer
+                .memory_change(offset as u32, n as u32, &memory);
+        }
         self.ip.add(1);
         Ok(())
     }
@@ -96,7 +101,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let src_offset = i32::from(s) as usize;
         let dst_offset = i32::from(d) as usize;
         // these accesses just perform the bound checks required by the Wasm spec.
-        let data = self.store.global_memory.data_mut();
+        let data = self.store.global_memory().data_mut();
         data.get(src_offset..)
             .and_then(|memory| memory.get(..n))
             .ok_or(TrapCode::MemoryOutOfBounds)?;
@@ -105,11 +110,14 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         data.copy_within(src_offset..src_offset.wrapping_add(n), dst_offset);
         #[cfg(feature = "tracing")]
-        self.store.tracer.memory_change(
-            dst_offset as u32,
-            n as u32,
-            &data[dst_offset..(dst_offset + n)],
-        );
+        {
+            let data = data.to_vec();
+            self.store.tracer.memory_change(
+                dst_offset as u32,
+                n as u32,
+                &data[dst_offset..(dst_offset + n)],
+            );
+        }
         self.ip.add(1);
         Ok(())
     }
@@ -123,8 +131,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .store
             .empty_data_segments
             .get(data_segment_idx as usize)
-            .as_deref()
-            .copied()
             .unwrap_or(false);
         let (d, s, n) = self.sp.pop3();
         let n = i32::from(n) as usize;
@@ -132,7 +138,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let dst_offset = i32::from(d) as usize;
         let memory = self
             .store
-            .global_memory
+            .global_memory()
             .data_mut()
             .get_mut(dst_offset..)
             .and_then(|memory| memory.get_mut(..n))
@@ -147,9 +153,12 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         memory.copy_from_slice(data);
         #[cfg(feature = "tracing")]
-        self.store
-            .tracer
-            .global_memory(dst_offset as u32, n as u32, memory);
+        {
+            let memory = memory.to_vec();
+            self.store
+                .tracer
+                .global_memory(dst_offset as u32, n as u32, &memory);
+        }
         self.ip.add(1);
         Ok(())
     }

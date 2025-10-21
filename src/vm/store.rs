@@ -1,52 +1,69 @@
 use crate::{
-    ExecutionEngine, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, SignatureIdx,
-    Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStackPtr,
+    bitvec_inlined::BitVecInlined as BV, CallStack, FuelConfig, GlobalMemory, IGlobalMemory,
+    ImportLinker, InstructionPtr, Pages, SignatureIdx, Store, SyscallHandler, TableEntity,
+    TrapCode, UntypedValue, ValueStack, ValueStackPtr,
 };
-use alloc::sync::Arc;
-use bitvec::{order::Lsb0, vec::BitVec};
-use hashbrown::HashMap;
+use alloc::{sync::Arc, vec::Vec};
 
+/// Host-side store that holds memory, tables, globals and host context for an rwasm instance.
+/// It also tracks fuel for metering and provides access to imported functions and syscalls.
+/// The store is passed to host callbacks and persists across invocations of the same module.
 pub struct RwasmStore<T: 'static + Send + Sync> {
+    /// Total amount of fuel consumed by the currently running instance.
     pub(crate) consumed_fuel: u64,
-    pub(crate) global_memory: GlobalMemory,
+    /// The linear memory shared by the running module and the host.
+    pub(crate) global_memory: Option<GlobalMemory>,
+    /// User-defined context available to host functions and syscalls.
     pub(crate) context: T,
-    pub(crate) fuel_limit: Option<u64>,
-    // the last used signature (needed for indirect calls type checks)
+    /// The last used signature index used for validating indirect calls.
     pub(crate) last_signature: Option<SignatureIdx>,
-    // rwasm modified segments
-    pub tables: HashMap<TableIdx, TableEntity>,
-    pub(crate) global_variables: HashMap<GlobalIdx, UntypedValue>,
-    // elem/data emptiness flags
-    pub(crate) empty_data_segments: BitVec,
-    pub(crate) empty_elem_segments: BitVec,
-    // list of nested calls return pointers
+    /// Runtime-managed tables (may differ from compile-time layout due to mutations).
+    pub(crate) tables: Vec<TableEntity>,
+    /// Runtime values of mutable and immutable globals.
+    pub(crate) global_variables: Vec<UntypedValue>,
+    /// Bitset tracking which data segments have been consumed/emptied.
+    pub(crate) empty_data_segments: BV<2>,
+    /// Bitset tracking which element segments have been consumed/emptied.
+    pub(crate) empty_elem_segments: BV<2>,
+    /// Dispatcher for system calls made by the guest.
     pub(crate) syscall_handler: SyscallHandler<T>,
+    /// Linker that resolves imports to host functions/globals.
     pub(crate) import_linker: Arc<ImportLinker>,
-    pub(crate) resumable_context: Option<(InstructionPtr, ValueStackPtr)>,
+    /// If set, contains the instruction/value-stack pointers to resume after a suspension.
+    pub(crate) resumable_context: Option<ResumableContext>,
+    /// A fuel config.
+    pub(crate) fuel_config: FuelConfig,
+    /// Execution tracer used when the `tracing` feature is enabled.
     #[cfg(feature = "tracing")]
     pub tracer: crate::Tracer,
 }
 
-#[cfg(feature = "std")]
+pub(crate) struct ResumableContext {
+    pub(crate) value_stack: ValueStack,
+    pub(crate) sp: ValueStackPtr,
+    pub(crate) call_stack: CallStack,
+    pub(crate) ip: InstructionPtr,
+}
+
 impl<T: 'static + Send + Sync + Default> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
-            ExecutionEngine::acquire_shared(),
             Arc::new(ImportLinker::default()),
             T::default(),
             crate::always_failing_syscall_handler,
+            FuelConfig::default(),
         )
     }
 }
 
 impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        self.global_memory.read(offset, buffer)?;
+        self.global_memory().read(offset, buffer)?;
         Ok(())
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        self.global_memory.write(offset, buffer)?;
+        self.global_memory().write(offset, buffer)?;
         #[cfg(feature = "tracing")]
         self.tracer
             .memory_change(offset as u32, buffer.len() as u32, buffer);
@@ -63,7 +80,7 @@ impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
         let consumed_fuel = self.consumed_fuel.checked_add(delta).unwrap_or(u64::MAX);
-        if let Some(fuel_limit) = self.fuel_limit {
+        if let Some(fuel_limit) = self.fuel_config.fuel_limit {
             if consumed_fuel > fuel_limit {
                 return Err(TrapCode::OutOfFuel);
             }
@@ -72,35 +89,41 @@ impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
         Ok(())
     }
 
-    fn remaining_fuel(&mut self) -> Option<u64> {
-        Some(self.fuel_limit? - self.consumed_fuel)
+    fn remaining_fuel(&self) -> Option<u64> {
+        Some(self.fuel_config.fuel_limit? - self.consumed_fuel)
     }
 }
 
 impl<T: 'static + Send + Sync> RwasmStore<T> {
     pub fn new(
-        engine: ExecutionEngine,
         import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
+        fuel_config: FuelConfig,
     ) -> Self {
-        let global_memory = GlobalMemory::new(Pages::default());
         Self {
             consumed_fuel: 0,
-            global_memory,
+            global_memory: None,
             context,
-            fuel_limit: None,
             #[cfg(feature = "tracing")]
             tracer: crate::Tracer::default(),
             global_variables: Default::default(),
             tables: Default::default(),
             last_signature: None,
             syscall_handler,
-            empty_data_segments: BitVec::EMPTY,
-            empty_elem_segments: BitVec::EMPTY,
+            empty_data_segments: BV::EMPTY,
+            empty_elem_segments: BV::EMPTY,
             import_linker,
             resumable_context: None,
+            fuel_config,
         }
+    }
+
+    pub(crate) fn global_memory(&mut self) -> &mut GlobalMemory {
+        // TODO(dmitry123): We insert default global memory here only for e2e tests,
+        //  once we refactor them to use engine then we'll be able to remove this.
+        self.global_memory
+            .get_or_insert_with(|| GlobalMemory::new(Pages::default()))
     }
 
     /// Resets the state of the current execution context.
@@ -109,20 +132,8 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         self.consumed_fuel = 0;
         // we might want to keep data/elem flags between calls, it's required for e2e tests
         if !keep_flags {
-            // we don't do any assumptions regarding how data segments are used,
-            // maybe there is a way to optimize reuse of bitset.
-            if self.empty_data_segments.len() <= size_of::<usize>() {
-                self.empty_data_segments.fill(false);
-            } else {
-                self.empty_data_segments = BitVec::<usize, Lsb0>::EMPTY;
-            }
-            // we don't do any assumptions regarding how tables are used inside the applications,
-            // so keep it always empty, probably there is an optimization here.
-            if self.empty_elem_segments.len() <= size_of::<usize>() {
-                self.empty_elem_segments.fill(false);
-            } else {
-                self.empty_elem_segments = BitVec::<usize, Lsb0>::EMPTY;
-            }
+            self.empty_data_segments = BV::EMPTY;
+            self.empty_elem_segments = BV::EMPTY;
         }
         // in case of a trap, we might have this flag remains active
         self.last_signature = None;

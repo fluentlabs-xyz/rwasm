@@ -1,12 +1,10 @@
 use bincode::{Decode, Encode};
-#[cfg(feature = "tracing")]
-use serde::{Deserialize, Serialize};
 
 /// A signed offset for branch instructions.
 ///
 /// This defines how much the instruction pointer is offset
 /// upon taking the respective branch.
-#[cfg_attr(feature = "tracing", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord, Encode, Decode)]
 pub struct BranchOffset(i32);
 

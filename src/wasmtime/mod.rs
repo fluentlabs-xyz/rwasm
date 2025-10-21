@@ -1,11 +1,10 @@
 mod engine;
 
 use crate::{
-    wasmtime::engine::wasmtime_engine, Caller, CompilationConfig, ImportLinker, Store,
+    wasmtime::engine::wasmtime_engine, Caller, CompilationConfig, FuelConfig, ImportLinker, Store,
     SyscallHandler, TrapCode, TypedCaller, UntypedValue, ValType, Value, F32, F64,
 };
 use futures::{channel::oneshot, future::Either, task::noop_waker};
-use ouroboros::self_referencing;
 use smallvec::SmallVec;
 use std::{
     future::Future,
@@ -15,22 +14,22 @@ use std::{
     task::{Context, Poll},
     time::Instant,
 };
-use wasmtime::{AsContext, AsContextMut};
+use wasmtime::{AsContext, AsContextMut, StoreLimits, StoreLimitsBuilder};
 
 pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<T>;
 
 #[derive(Debug)]
-struct MessageInterruptionResult {
+pub struct MessageInterruptionResult {
     pub result: Result<SmallVec<[Value; 16]>, TrapCode>,
 }
 
-enum FutureStateChange {
+pub enum FutureStateChange {
     MemoryWrite { offset: usize, buffer: Vec<u8> },
 }
 
 #[derive(Default)]
-struct SharedControlState<T: 'static + Send + Sync> {
+pub struct SharedControlState<T: 'static + Send + Sync> {
     interrupt_channel: Option<oneshot::Sender<MessageInterruptionResult>>,
     inner: T,
     state_changes: SmallVec<[FutureStateChange; 8]>,
@@ -48,29 +47,32 @@ impl<T: 'static + Send + Sync> SharedControlState<T> {
     }
 }
 
-struct WrappedContext<T: 'static + Send + Sync> {
+pub struct WrappedContext<T: 'static + Send + Sync> {
     shared_control_state: Arc<RwLock<SharedControlState<T>>>,
     syscall_handler: SyscallHandler<T>,
     fuel: Option<u64>,
+    resource_limiter: StoreLimits,
 }
 
-type StoreFuture<'a> = Pin<Box<dyn Future<Output = Result<(), TrapCode>> + 'a>>;
-
-#[self_referencing]
-pub struct FutureContextHolder<T: 'static + Send + Sync> {
-    store: wasmtime::Store<WrappedContext<T>>,
-    params_len: usize,
-    buffer: Vec<wasmtime::Val>,
-    #[borrows(mut store, params_len, mut buffer)]
-    #[covariant]
-    dependent: StoreFuture<'this>,
-}
+pub type ExecFuture<T> = Pin<
+    Box<
+        dyn Future<
+            Output = (
+                wasmtime::Store<WrappedContext<T>>,
+                Vec<wasmtime::Val>,
+                usize,
+                Result<(), TrapCode>,
+            ),
+        >,
+    >,
+>;
 
 pub struct WasmtimeStore<T: 'static + Send + Sync> {
-    store: Option<wasmtime::Store<WrappedContext<T>>>,
-    instance: wasmtime::Instance,
-    fut: Option<FutureContextHolder<T>>,
-    shared_control_state: Arc<RwLock<SharedControlState<T>>>,
+    pub store: Option<wasmtime::Store<WrappedContext<T>>>,
+    pub instance_pre: wasmtime::InstancePre<WrappedContext<T>>,
+    pub fut: Option<ExecFuture<T>>,
+    pub shared_control_state: Arc<RwLock<SharedControlState<T>>>,
+    pub instance: Option<wasmtime::Instance>,
 }
 
 impl<T: 'static + Send + Sync> WasmtimeStore<T> {
@@ -79,35 +81,38 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
-    ) -> Self {
-        futures::executor::block_on(async move {
-            Self::new_async(module, import_linker, context, syscall_handler).await
-        })
-    }
-
-    async fn new_async(
-        module: wasmtime::Module,
-        import_linker: Arc<ImportLinker>,
-        context: T,
-        syscall_handler: SyscallHandler<T>,
+        fuel_config: FuelConfig,
     ) -> Self {
         let shared_control_state = Arc::new(RwLock::new(SharedControlState::new(context)));
         let context = WrappedContext {
             shared_control_state: shared_control_state.clone(),
             syscall_handler,
             fuel: None,
+            resource_limiter: StoreLimitsBuilder::new()
+                .instances(usize::MAX)
+                .tables(usize::MAX)
+                .memories(usize::MAX)
+                .build(),
         };
         let mut store = wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context);
+        store.limiter(|ctx| &mut ctx.resource_limiter);
+        if let Some(fuel) = fuel_config.fuel_limit {
+            if let Ok(_) = store.get_fuel() {
+                store.set_fuel(fuel).expect("wasmtime: fuel is not enabled");
+            } else {
+                store.data_mut().fuel = Some(fuel);
+            }
+        }
         let linker = wasmtime_import_linker(module.engine(), import_linker);
-        let instance = linker
-            .instantiate_async(store.as_context_mut(), &module)
-            .await
-            .unwrap_or_else(|err| panic!("wasmtime: can't instantiate module: {}", err));
+        let instance_pre = linker
+            .instantiate_pre(&module)
+            .unwrap_or_else(|err| panic!("wasmtime: can't pre-instantiate module: {}", err));
         Self {
             store: Some(store),
-            instance,
+            instance_pre,
             fut: None,
             shared_control_state,
+            instance: None,
         }
     }
 
@@ -116,24 +121,34 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         func_name: &'static str,
         params: &[Value],
         result: &mut [Value],
-        fuel: Option<u64>,
     ) -> Result<(), TrapCode> {
         assert!(
             self.fut.is_none(),
             "wasmtime: there is an unfinished future"
         );
         let mut store = self.store.take().expect("wasmtime: store is not present");
-        if let Some(fuel) = fuel {
-            if let Ok(_) = store.get_fuel() {
-                store.set_fuel(fuel).expect("wasmtime: fuel is not enabled");
-            } else {
-                store.data_mut().fuel = Some(fuel);
-            }
-        }
-        let entrypoint = self
-            .instance
-            .get_func(store.as_context_mut(), func_name)
-            .unwrap_or_else(|| unreachable!("wasmtime: missing entrypoint: {}", func_name));
+        let mut shared_control_state = self
+            .shared_control_state
+            .write()
+            .expect("wasmtime: lock poisoned, can't resume");
+        debug_assert!(shared_control_state.state_changes.is_empty());
+        shared_control_state.fuel_remaining = None;
+        debug_assert!(shared_control_state.interrupt_channel.is_none());
+        drop(shared_control_state);
+
+        let (instance, entrypoint) = futures::executor::block_on(async {
+            let instance = self
+                .instance_pre
+                .instantiate_async(store.as_context_mut())
+                .await
+                .unwrap_or_else(|err| panic!("wasmtime: can't instantiate module: {}", err));
+            let entrypoint = instance
+                .get_func(store.as_context_mut(), func_name)
+                .unwrap_or_else(|| unreachable!("wasmtime: missing entrypoint: {}", func_name));
+            (instance, entrypoint)
+        });
+        self.instance = Some(instance);
+
         let mut buffer = Vec::<wasmtime::Val>::default();
         for (i, value) in params.iter().enumerate() {
             let value = match value {
@@ -148,34 +163,26 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         }
         let params_len = params.len();
         buffer.extend(std::iter::repeat(wasmtime::Val::I32(0)).take(result.len()));
-        let fut = FutureContextHolderBuilder {
-            store,
-            params_len,
-            buffer,
-            dependent_builder:
-                move |store: &mut wasmtime::Store<WrappedContext<T>>,
-                      params_len: &usize,
-                      buffer: &mut Vec<wasmtime::Val>| {
-                    // func and params are moved into this async future (owned)
-                    Box::pin(async move {
-                        // call_async returns a future borrowing &func; we await it *inside*,
-                        // so the borrow doesn't escape.
-                        let (mapped_params, mapped_result) = buffer.split_at_mut(*params_len);
-                        entrypoint
-                            .call_async(store.as_context_mut(), mapped_params, mapped_result)
-                            .await
-                            .map_err(map_anyhow_error)
-                            .or_else(|trap_code| {
-                                if trap_code == TrapCode::ExecutionHalted {
-                                    Ok(())
-                                } else {
-                                    Err(trap_code)
-                                }
-                            })
+        let fut: ExecFuture<T> = Box::pin(async move {
+            let mut store = store;
+            let mut buffer = buffer;
+            let params_len = params_len;
+            let res = {
+                let (mapped_params, mapped_result) = buffer.split_at_mut(params_len);
+                entrypoint
+                    .call_async(store.as_context_mut(), mapped_params, mapped_result)
+                    .await
+                    .map_err(map_anyhow_error)
+                    .or_else(|trap_code| {
+                        if trap_code == TrapCode::ExecutionHalted {
+                            Ok(())
+                        } else {
+                            Err(trap_code)
+                        }
                     })
-                },
-        }
-        .build();
+            };
+            (store, buffer, params_len, res)
+        });
         self.fut = Some(fut);
         self.poll_step(result)
     }
@@ -202,29 +209,29 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
     }
 
     fn poll_step(&mut self, result: &mut [Value]) -> Result<(), TrapCode> {
-        let Some(exec) = &mut self.fut else {
+        if self.fut.is_none() {
             panic!("wasmtime: no in-flight exec");
-        };
+        }
         let w = noop_waker();
         let mut cx = Context::from_waker(&w);
-        exec.with_mut(|user| {});
-        let polled = exec.with_dependent_mut(|fut| fut.as_mut().poll(&mut cx));
-        let res = match polled {
-            Poll::Pending => return Err(TrapCode::InterruptionCalled),
-            Poll::Ready(res) => res,
-        };
-        let heads = self.fut.take().unwrap().into_heads();
-        self.store = Some(heads.store);
-        for (i, x) in heads.buffer[heads.params_len..].iter().enumerate() {
-            result[i] = match x {
-                wasmtime::Val::I32(value) => Value::I32(*value),
-                wasmtime::Val::I64(value) => Value::I64(*value),
-                wasmtime::Val::F32(value) => Value::F32(F32::from_bits(*value)),
-                wasmtime::Val::F64(value) => Value::F64(F64::from_bits(*value)),
-                _ => unreachable!("wasmtime: not supported type: {:?}", x),
-            };
+        let polled = self.fut.as_mut().unwrap().as_mut().poll(&mut cx);
+        match polled {
+            Poll::Pending => Err(TrapCode::InterruptionCalled),
+            Poll::Ready((store, buffer, params_len, res)) => {
+                self.fut = None;
+                self.store = Some(store);
+                for (i, x) in buffer[params_len..].iter().cloned().enumerate() {
+                    result[i] = match x {
+                        wasmtime::Val::I32(value) => Value::I32(value),
+                        wasmtime::Val::I64(value) => Value::I64(value),
+                        wasmtime::Val::F32(value) => Value::F32(F32::from_bits(value)),
+                        wasmtime::Val::F64(value) => Value::F64(F64::from_bits(value)),
+                        _ => unreachable!("wasmtime: not supported type: {:?}", x),
+                    };
+                }
+                res
+            }
         }
-        res
     }
 
     fn with_store_mut<R, F: FnOnce(&mut wasmtime::Store<WrappedContext<T>>) -> R>(
@@ -237,11 +244,19 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
             f(self.store.as_mut().unwrap())
         }
     }
+
+    fn with_store<R, F: FnOnce(&wasmtime::Store<WrappedContext<T>>) -> R>(&self, f: F) -> R {
+        if let Some(fut) = self.fut.as_ref() {
+            unimplemented!("wasmtime: you can't access store with locked future state")
+        } else {
+            f(self.store.as_ref().unwrap())
+        }
+    }
 }
 
 impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        let instance = self.instance;
+        let instance = self.instance.clone().unwrap();
         self.with_store_mut(|store| {
             let global_memory = instance
                 .get_export(store.as_context_mut(), "memory")
@@ -270,7 +285,7 @@ impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
                 });
             return Ok(());
         }
-        let instance = self.instance;
+        let instance = self.instance.clone().unwrap();
         self.with_store_mut(|store| {
             let global_memory = instance
                 .get_export(store.as_context_mut(), "memory")
@@ -313,11 +328,11 @@ impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
         })
     }
 
-    fn remaining_fuel(&mut self) -> Option<u64> {
+    fn remaining_fuel(&self) -> Option<u64> {
         if self.fut.is_some() {
             return self.shared_control_state.read().unwrap().fuel_remaining;
         }
-        self.with_store_mut(|store| {
+        self.with_store(|store| {
             if let Ok(fuel) = store.get_fuel() {
                 Some(fuel)
             } else if let Some(fuel) = store.data().fuel.as_ref() {
@@ -333,11 +348,9 @@ pub fn deserialize_wasmtime_module(
     _compilation_config: CompilationConfig,
     wasmtime_binary: impl AsRef<[u8]>,
 ) -> anyhow::Result<WasmtimeModule> {
-    print!("parsing wasmtime module... ");
     let start = Instant::now();
     let engine = wasmtime_engine();
     let module = unsafe { wasmtime::Module::deserialize(&engine, wasmtime_binary) };
-    println!("{:?}", start.elapsed());
     module
 }
 
@@ -345,11 +358,9 @@ pub fn compile_wasmtime_module(
     _compilation_config: CompilationConfig,
     wasm_binary: impl AsRef<[u8]>,
 ) -> anyhow::Result<WasmtimeModule> {
-    print!("compiling wasmtime module... ");
     let start = Instant::now();
     let engine = wasmtime_engine();
     let module = wasmtime::Module::new(&engine, wasm_binary);
-    println!("{:?}", start.elapsed());
     module
 }
 
@@ -460,7 +471,7 @@ async fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
     Ok(())
 }
 
-fn wasmtime_import_linker<T: Send + Sync + 'static>(
+pub fn wasmtime_import_linker<T: Send + Sync + 'static>(
     engine: &wasmtime::Engine,
     import_linker: Arc<ImportLinker>,
 ) -> wasmtime::Linker<WrappedContext<T>> {
@@ -501,7 +512,7 @@ fn wasmtime_import_linker<T: Send + Sync + 'static>(
     linker
 }
 
-fn map_anyhow_error(err: anyhow::Error) -> TrapCode {
+pub fn map_anyhow_error(err: anyhow::Error) -> TrapCode {
     if let Some(trap) = err.downcast_ref::<wasmtime::Trap>() {
         // map wasmtime trap codes into our trap codes
         use wasmtime::Trap;
@@ -541,7 +552,7 @@ fn map_anyhow_error(err: anyhow::Error) -> TrapCode {
     }
 }
 
-fn map_val_type(val_type: ValType) -> wasmtime::ValType {
+pub fn map_val_type(val_type: ValType) -> wasmtime::ValType {
     match val_type {
         ValType::I32 => wasmtime::ValType::I32,
         ValType::I64 => wasmtime::ValType::I64,
@@ -556,10 +567,10 @@ pub struct WasmtimeCaller<'a, T: 'static + Send + Sync> {
 }
 
 impl<'a, T: 'static + Send + Sync> WasmtimeCaller<'a, T> {
-    fn wrap_typed(caller: wasmtime::Caller<'a, WrappedContext<T>>) -> TypedCaller<'a, T> {
+    pub fn wrap_typed(caller: wasmtime::Caller<'a, WrappedContext<T>>) -> TypedCaller<'a, T> {
         TypedCaller::Wasmtime(Self { caller })
     }
-    fn unwrap(self) -> wasmtime::Caller<'a, WrappedContext<T>> {
+    pub fn unwrap(self) -> wasmtime::Caller<'a, WrappedContext<T>> {
         self.caller
     }
 }
@@ -613,7 +624,7 @@ impl<'a, T: 'static + Send + Sync> Store<T> for WasmtimeCaller<'a, T> {
         Ok(())
     }
 
-    fn remaining_fuel(&mut self) -> Option<u64> {
+    fn remaining_fuel(&self) -> Option<u64> {
         // TODO(dmitry123): "do we want to deal with wasmtime's fuel?"
         if let Ok(fuel) = self.caller.get_fuel() {
             Some(fuel)

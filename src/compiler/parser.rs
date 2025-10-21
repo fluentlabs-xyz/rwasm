@@ -22,6 +22,9 @@ use wasmparser::{
     Payload, TableSectionReader, Type, TypeRef, TypeSectionReader, ValType, Validator,
 };
 
+/// Single-pass Wasm front-end that validates, translates, and assembles rwasm bytecode.
+/// It streams the Wasm module with wasmparser, builds the instruction set and sections,
+/// and applies configuration (entry routing, snippets) before finalizing the module.
 pub struct ModuleParser {
     /// The Wasm validator used throughout stream parsing.
     validator: Validator,
@@ -237,7 +240,8 @@ impl ModuleParser {
     }
 
     pub fn emit_snippets(&mut self) {
-        let mut emitted_snippets: HashMap<Snippet, FuncIdx> = HashMap::new();
+        let mut emitted_snippets: HashMap<Snippet, FuncIdx, fnv::FnvBuildHasher> =
+            Default::default();
 
         let snippet_calls = self.allocations.translation.snippet_calls.clone();
         for snippet_call in snippet_calls {

@@ -11,16 +11,41 @@ use bincode::{
 };
 use core::ops::Deref;
 
+mod view;
+pub use view::*;
+
 /// Represents a compiled rWasm module.
 ///
 /// An `RwasmModule` encapsulates the executable code, static data, and element (function/table
 /// reference) information needed for execution within the rWasm virtual machine.
 ///
 /// It's compiled from Wasm
-#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Default, Clone, Debug, PartialEq)]
+#[derive(Default, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct RwasmModule {
     inner: Arc<RwasmModuleInner>,
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for RwasmModule {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.inner.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for RwasmModule {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let result = RwasmModuleInner::deserialize(deserializer)?;
+        Ok(Self {
+            inner: Arc::new(result),
+        })
+    }
 }
 
 fn _check() {
@@ -67,10 +92,13 @@ impl RwasmModule {
     }
 
     pub fn new(sink: &[u8]) -> (Self, usize) {
+        Self::new_checked(sink).unwrap_or_else(|_| unreachable!("rwasm: malformed rwasm binary"))
+    }
+
+    pub fn new_checked(sink: &[u8]) -> Result<(Self, usize), DecodeError> {
         let (inner, bytes_read): (RwasmModuleInner, usize) =
-            bincode::decode_from_slice(sink, bincode::config::legacy())
-                .unwrap_or_else(|_| unreachable!("rwasm: malformed rwasm binary"));
-        (inner.into(), bytes_read)
+            bincode::decode_from_slice(sink, bincode::config::legacy())?;
+        Ok((inner.into(), bytes_read))
     }
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -99,8 +127,8 @@ impl Deref for RwasmModule {
     }
 }
 
-#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Default, Clone, Debug, PartialEq)]
+#[derive(Default, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RwasmModuleInner {
     /// The main instruction set (bytecode) for this module that includes an entrypoint
     /// and all required functions.
@@ -122,11 +150,11 @@ pub struct RwasmModuleInner {
 }
 
 /// Rwasm magic bytes 0xef52 (0x52 stands for 'R' in ASCII)
-const RWASM_MAGIC_BYTE_0: u8 = 0xef;
-const RWASM_MAGIC_BYTE_1: u8 = 0x52;
+pub const RWASM_MAGIC_BYTE_0: u8 = 0xef;
+pub const RWASM_MAGIC_BYTE_1: u8 = 0x52;
 
 /// Rwasm binary version
-const RWASM_VERSION_V1: u8 = 0x01;
+pub const RWASM_VERSION_V1: u8 = 0x01;
 
 impl Encode for RwasmModuleInner {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {

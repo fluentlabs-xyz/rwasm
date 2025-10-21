@@ -108,8 +108,8 @@ pub struct Tracer {
     pub fns_meta: Vec<TracerFunctionMeta>,
     pub global_variables: Vec<TracerGlobalVariable>,
     pub nested_calls: u32,
-    pub memory_records: HashMap<u32, MemoryRecord>,
-    pub local_memory_event: HashMap<u32, MemoryLocalEvent>,
+    pub memory_records: HashMap<u32, MemoryRecord, fnv::FnvBuildHasher>,
+    pub local_memory_event: HashMap<u32, MemoryLocalEvent, fnv::FnvBuildHasher>,
     pub state: VMState,
     pub ip_max: u64,
     // We need once generate all memory record for elements and data segements before execution.

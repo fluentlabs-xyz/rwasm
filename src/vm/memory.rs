@@ -1,36 +1,20 @@
 use crate::types::{Pages, TrapCode, N_MAX_MEMORY_PAGES};
-use bytes::BytesMut;
 
-pub struct GlobalMemory {
-    pub shared_memory: BytesMut,
-    pub current_pages: Pages,
+#[cfg(all(feature = "unix-memory", unix))]
+mod mmap;
+mod simple;
+
+cfg_if::cfg_if! {
+    if #[cfg(all(feature = "unix-memory", unix))] {
+        pub type GlobalMemory = mmap::MmapGlobalMemory;
+    } else {
+        pub type GlobalMemory = simple::SimpleGlobalMemory;
+    }
 }
 
-const MEMORY_MAX_PAGES: Pages = Pages::new_unchecked(N_MAX_MEMORY_PAGES * 2);
-
-impl GlobalMemory {
-    pub fn new(initial_pages: Pages) -> Self {
-        let initial_len = initial_pages
-            .to_bytes()
-            .expect("rwasm: not supported target pointer width");
-        let maximum_len = MEMORY_MAX_PAGES
-            .to_bytes()
-            .expect("rwasm: not supported target pointer width");
-        if initial_len > maximum_len {
-            unreachable!("rwasm: initial memory size is greater than the maximum");
-        }
-        let mut shared_memory = BytesMut::with_capacity(maximum_len);
-        shared_memory.resize(initial_len, 0);
-        Self {
-            shared_memory,
-            current_pages: initial_pages,
-        }
-    }
-
+pub trait IGlobalMemory {
     /// Returns the number of pages in use by the linear memory.
-    pub fn current_pages(&self) -> Pages {
-        self.current_pages
-    }
+    fn current_pages(&self) -> Pages;
 
     /// Grows the linear memory by the given number of new pages.
     ///
@@ -40,35 +24,13 @@ impl GlobalMemory {
     ///
     /// If the linear memory grows beyond its maximum limit after
     /// the growth operation.
-    pub fn grow(&mut self, additional: Pages) -> Option<Pages> {
-        let current_pages = self.current_pages();
-        if additional == Pages::from(0) {
-            return Some(current_pages);
-        }
-        let desired_pages = current_pages.checked_add(additional)?;
-        if desired_pages > MEMORY_MAX_PAGES {
-            return None;
-        }
-        // At this point, it is okay to grow the underlying virtual memory
-        // by the given number of additional pages.
-        let new_size = desired_pages
-            .to_bytes()
-            .expect("rwasm: not supported target pointer width");
-        assert!(new_size >= self.shared_memory.len());
-        self.shared_memory.resize(new_size, 0);
-        self.current_pages = desired_pages;
-        Some(current_pages)
-    }
+    fn grow(&mut self, additional: Pages) -> Option<Pages>;
 
     /// Returns a shared slice to the bytes underlying to the byte buffer.
-    pub fn data(&self) -> &[u8] {
-        self.shared_memory.as_ref()
-    }
+    fn data(&self) -> &[u8];
 
     /// Returns an exclusive slice to the bytes underlying to the byte buffer.
-    pub fn data_mut(&mut self) -> &mut [u8] {
-        self.shared_memory.as_mut()
-    }
+    fn data_mut(&mut self) -> &mut [u8];
 
     /// Reads `n` bytes from `memory[offset..offset+n]` into `buffer`
     /// where `n` is the length of `buffer`.
@@ -76,7 +38,7 @@ impl GlobalMemory {
     /// # Errors
     ///
     /// If this operation accesses out of bounds linear memory.
-    pub fn read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+    fn read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let len_buffer = buffer.len();
         let slice = self
             .data()
@@ -92,7 +54,7 @@ impl GlobalMemory {
     /// # Errors
     ///
     /// If this operation accesses out of bounds linear memory.
-    pub fn write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
+    fn write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
         let len_buffer = buffer.len();
         let slice = self
             .data_mut()
@@ -101,4 +63,12 @@ impl GlobalMemory {
         slice.copy_from_slice(buffer);
         Ok(())
     }
+
+    /// Resets memory (can be useful for reuse).
+    fn reset(&mut self);
+
+    /// Resizes memory to fit into required initial pages.
+    fn resize_for(&mut self, initial_pages: Pages);
 }
+
+pub const MEMORY_MAX_PAGES: Pages = Pages::new_unchecked(N_MAX_MEMORY_PAGES);

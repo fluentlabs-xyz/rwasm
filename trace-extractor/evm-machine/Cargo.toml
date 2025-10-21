@@ -1,0 +1,13 @@
+[package]
+name = "evm-machine"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+path = "lib.rs"
+
+[dependencies]
+revm-interpreter = { version = "25.0.3", default-features = false }
+revm-bytecode = { version = "6.2.2", default-features = false }
+hex-literal = { version = "1.0.0", default-features = false }

@@ -8,10 +8,9 @@ mod system;
 mod table;
 
 use crate::{
-  
     types::{AddressOffset, TableIdx, UntypedValue},
-    CallStack, InstructionPtr, Opcode, RwasmCaller, RwasmModule, RwasmStore, SysFuncIdx, TrapCode,
-    TypedCaller, Value, ValueStack, ValueStackPtr,
+    CallStack, IGlobalMemory, InstructionPtr, Opcode, RwasmCaller, RwasmModule, RwasmStore,
+    SysFuncIdx, TrapCode, TypedCaller, Value, ValueStack, ValueStackPtr,
 };
 use smallvec::SmallVec;
 
@@ -235,6 +234,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             #[cfg(feature = "debug-print")]
             self.debug_print(&instr);
             exec_opcode!(self, instr, break Ok(()));
+            #[cfg(feature = "test-build")]
             self.value_stack.check_max_stack_height(self.sp);
         };
         // trap halts the execution, we need to clear the stack
@@ -342,7 +342,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[cfg(feature = "tracing")]
     fn trace_instr_pre(&mut self, instr: &Opcode) {
         let pc = self.program_counter();
-        let memory_size: u32 = self.store.global_memory.current_pages().into();
+        let memory_size: u32 = self.store.global_memory().current_pages().into();
         let consumed_fuel = self.store.fuel_consumed();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
         if !instr.is_fat_op() {
@@ -415,7 +415,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         ) -> Result<UntypedValue, TrapCode>,
     ) -> Result<(), TrapCode> {
         self.sp.try_eval_top(|address| {
-            let memory = self.store.global_memory.data();
+            let memory = self.store.global_memory().data();
             let value = load_extend(memory, address, offset)?;
             Ok(value)
         })?;
@@ -438,11 +438,12 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         #[cfg(not(feature = "tracing"))]
         {
             let (address, value) = self.sp.pop2();
-            let memory = self.store.global_memory.data_mut();
+            let memory = self.store.global_memory().data_mut();
             store_wrap(memory, address, offset, value)?;
         }
         #[cfg(feature = "tracing")]
         {
+            let memory = memory.to_vec();
             use crate::{align, is_multi_align, mem::MemoryRecordEnum, mem_index::{AddressType, UNIT}};
             let (address, value) = self.sp.pop2();
             println!("base_addrss:{},value:{}", address, value);
