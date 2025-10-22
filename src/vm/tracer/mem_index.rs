@@ -51,25 +51,7 @@ pub enum TypedAddress {
     GlobalMemory(u32),
 }
 
-impl From<u32> for AddressType {
-    fn from(value: u32) -> Self {
-        if value < SP_START {
-            return Self::Stack;
-        } else if value <= FUNC_FRAME_END {
-            return Self::FuncFrame;
-        } else if value <= TABLE_SEG_END {
-            return Self::Table;
-        } else if value <= DATA_SEG_END {
-            return Self::Data;
-        } else if value <= ELEMENT_SEG_END {
-            return Self::Element;
-        } else if value <= GLOBAL_MEM_END {
-            return Self::GlobalMemory;
-        } else {
-            unreachable!()
-        }
-    }
-}
+
 
 impl TypedAddress {
     pub fn from_stack_vaddr(sp: u32) -> TypedAddress {
