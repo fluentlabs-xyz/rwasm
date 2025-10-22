@@ -273,10 +273,10 @@ pub struct MemoryAccessRecord {
 
     pub call_sp_access: Option<MemoryRecordEnum>,
 
-    pub arg1_addr:Option<TypedAddress>,
-    pub arg2_addr:Option<TypedAddress>,
-    pub res_addr:Option<TypedAddress>,
-    pub memory_addr:Option<TypedAddress>,
-    pub memory_hi_addr:Option<TypedAddress>,
-     pub call_sp_addr: Option<TypedAddress>,
+    pub arg1_addr: Option<TypedAddress>,
+    pub arg2_addr: Option<TypedAddress>,
+    pub res_addr: Option<TypedAddress>,
+    pub memory_addr: Option<TypedAddress>,
+    pub memory_hi_addr: Option<TypedAddress>,
+    pub call_sp_addr: Option<TypedAddress>,
 }

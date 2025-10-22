@@ -50,14 +50,6 @@ pub enum TypedAddress {
     Element(u32),
     GlobalMemory(u32),
 }
-pub enum AddressType {
-    Stack = 1,
-    FuncFrame = 2,
-    Table = 3,
-    Data = 4,
-    Element = 5,
-    GlobalMemory = 6,
-}
 
 impl From<u32> for AddressType {
     fn from(value: u32) -> Self {

@@ -260,7 +260,8 @@ impl Tracer {
                 println!("value:{},addr:{}", value, v_addr);
                 let res_record = Some(MemoryRecordEnum::Write(self.mw(v_addr, value)));
                 self.logs.last_mut().unwrap().memory_access.res_record = res_record;
-                self.logs.last_mut().unwrap().memory_access.res_addr =Some(TypedAddress::from_stack_vaddr(v_addr));
+                self.logs.last_mut().unwrap().memory_access.res_addr =
+                    Some(TypedAddress::from_stack_vaddr(v_addr));
                 self.logs.last_mut().unwrap().res = res_record.unwrap().value();
             }
             //We are different from RISCV so that we have to send the branching offset with res
@@ -450,7 +451,7 @@ impl Tracer {
             println!("localgetaddr:{}", v_addr);
             let read_record = self.mr(v_addr);
             memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
-            memory_access.arg1_addr= Some(TypedAddress::from_stack_vaddr(v_addr));
+            memory_access.arg1_addr = Some(TypedAddress::from_stack_vaddr(v_addr));
         }
 
         if let Opcode::Return = ins {

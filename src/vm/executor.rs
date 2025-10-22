@@ -480,7 +480,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             };
 
             let typed_addr = TypedAddress::GlobalMemory(aligned_addr.into());
-           
+
             println!("rawaddr store:{}", aligned_addr);
             println!("virtual_addr:{}", typed_addr.to_virtual_addr());
             let res_memory_record = self
