@@ -1,6 +1,8 @@
 #[cfg(feature = "tracing")]
 use serde::{Deserialize, Serialize};
 
+use crate::mem_index::TypedAddress;
+
 /// Memory Record.
 ///
 /// This object encapsulates the information needed to prove a memory access operation. This
@@ -270,4 +272,11 @@ pub struct MemoryAccessRecord {
     pub memory_hi: Option<MemoryRecordEnum>,
 
     pub call_sp_access: Option<MemoryRecordEnum>,
+
+    pub arg1_addr: Option<TypedAddress>,
+    pub arg2_addr: Option<TypedAddress>,
+    pub res_addr: Option<TypedAddress>,
+    pub memory_addr: Option<TypedAddress>,
+    pub memory_hi_addr: Option<TypedAddress>,
+    pub call_sp_addr: Option<TypedAddress>,
 }

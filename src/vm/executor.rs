@@ -308,13 +308,13 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "tracing")]
     pub fn prepare_memory_record(&mut self) {
-        use crate::{mem::MemoryRecord, mem_index::AddressType};
+        use crate::{mem::MemoryRecord, mem_index::TypedAddress};
 
         for item in self.module.data_section.windows(4).enumerate() {
             let (addr, data) = item;
             let addr = addr as u32;
             let word = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-            let v_addr = AddressType::Data(addr).to_virtual_addr();
+            let v_addr = TypedAddress::Data(addr).to_virtual_addr();
             let record = MemoryRecord {
                 shard: 0,
                 timestamp: 0,
@@ -328,7 +328,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             let (addr, data) = item;
             let addr = addr as u32;
 
-            let v_addr = AddressType::Element(addr).to_virtual_addr();
+            let v_addr = TypedAddress::Element(addr).to_virtual_addr();
             let record = MemoryRecord {
                 shard: 0,
                 timestamp: 0,
@@ -446,7 +446,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             use crate::{
                 align, is_multi_align,
                 mem::MemoryRecordEnum,
-                mem_index::{AddressType, UNIT},
+                mem_index::{TypedAddress, UNIT},
             };
             let (address, value) = self.sp.pop2();
             let addr = address.to_bits() + offset;
@@ -479,7 +479,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 (new_val, new_val_hi)
             };
 
-            let typed_addr = AddressType::GlobalMemory(aligned_addr.into());
+            let typed_addr = TypedAddress::GlobalMemory(aligned_addr.into());
 
             println!("rawaddr store:{}", aligned_addr);
             println!("virtual_addr:{}", typed_addr.to_virtual_addr());
@@ -500,7 +500,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
             if is_multi_align(opcode, addr) {
                 let aligned_addr_hi = aligned_addr + UNIT;
-                let typed_addr_hi = AddressType::GlobalMemory(aligned_addr_hi.into());
+                let typed_addr_hi = TypedAddress::GlobalMemory(aligned_addr_hi.into());
                 let res_record_hi = self
                     .store
                     .tracer

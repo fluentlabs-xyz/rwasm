@@ -1,7 +1,7 @@
 use super::ValueStackPtr;
 use crate::{
     event::{FatOpEvent, TableInitEvent},
-    mem_index::{AddressType, GLOBAL_MEM_START, UNIT},
+    mem_index::{TypedAddress, GLOBAL_MEM_START, SP_START, UNIT},
     types::Opcode,
     vm::tracer::{
         mem::{
@@ -260,6 +260,8 @@ impl Tracer {
                 println!("value:{},addr:{}", value, v_addr);
                 let res_record = Some(MemoryRecordEnum::Write(self.mw(v_addr, value)));
                 self.logs.last_mut().unwrap().memory_access.res_record = res_record;
+                self.logs.last_mut().unwrap().memory_access.res_addr =
+                    Some(TypedAddress::from_stack_vaddr(v_addr));
                 self.logs.last_mut().unwrap().res = res_record.unwrap().value();
             }
             //We are different from RISCV so that we have to send the branching offset with res
@@ -288,7 +290,7 @@ impl Tracer {
             Opcode::CallInternal(compiled_func) => {
                 let old_pc = self.logs.last_mut().unwrap().pc + 1;
                 let new_call_sp = self.state.call_sp + 1;
-                let typed_addr = AddressType::FuncFrame(new_call_sp);
+                let typed_addr = TypedAddress::FuncFrame(new_call_sp);
                 let v_addr = typed_addr.to_virtual_addr();
                 let write_record = self.mw(v_addr, old_pc);
                 let res_record = Some(MemoryRecordEnum::Write(write_record));
@@ -403,15 +405,18 @@ impl Tracer {
                 1 => {
                     println!("arg1:read_record:{:?}", read_record);
                     memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
+                    memory_access.arg1_addr = Some(TypedAddress::from_stack_vaddr(addr));
                 }
                 0 => match length {
                     2 => {
                         println!("arg2:load:read_record:{:?}", read_record);
                         memory_access.arg2_record = Some(MemoryRecordEnum::Read(read_record));
+                        memory_access.arg2_addr = Some(TypedAddress::from_stack_vaddr(addr));
                     }
                     1 => {
                         println!("arg1:load:read_record:{:?}", read_record);
                         memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
+                        memory_access.arg1_addr = Some(TypedAddress::from_stack_vaddr(addr));
                     }
                     _ => unreachable!(),
                 },
@@ -424,7 +429,7 @@ impl Tracer {
             let raw_addr = memory_access.arg1_record.unwrap().value();
             println!("rawaddr load:{}", raw_addr);
             let aligned_addr = align(raw_addr.wrapping_add(offset));
-            let typed_addr = AddressType::GlobalMemory(aligned_addr);
+            let typed_addr = TypedAddress::GlobalMemory(aligned_addr);
             let read_record = self.mr(typed_addr.to_virtual_addr());
             println!(
                 "load:addr{},read_record:{:?}",
@@ -433,7 +438,7 @@ impl Tracer {
             );
             memory_access.memory = Some(MemoryRecordEnum::Read(read_record));
             if is_multi_align(ins, raw_addr.wrapping_add(offset)) {
-                let typed_addr_hi = AddressType::GlobalMemory(aligned_addr + UNIT);
+                let typed_addr_hi = TypedAddress::GlobalMemory(aligned_addr + UNIT);
                 let read_record_hi = self.mr(typed_addr_hi.to_virtual_addr());
                 memory_access.memory_hi = Some(MemoryRecordEnum::Read(read_record_hi));
             }
@@ -446,11 +451,12 @@ impl Tracer {
             println!("localgetaddr:{}", v_addr);
             let read_record = self.mr(v_addr);
             memory_access.arg1_record = Some(MemoryRecordEnum::Read(read_record));
+            memory_access.arg1_addr = Some(TypedAddress::from_stack_vaddr(v_addr));
         }
 
         if let Opcode::Return = ins {
             if self.state.call_sp != 0 {
-                let typed_addr = AddressType::FuncFrame(self.state.call_sp);
+                let typed_addr = TypedAddress::FuncFrame(self.state.call_sp);
                 let read_record = self.mr(typed_addr.to_virtual_addr());
                 memory_access.call_sp_access = Some(MemoryRecordEnum::Read(read_record));
                 self.state.call_sp -= 1;
@@ -465,9 +471,10 @@ impl Tracer {
         if ins.opcode_stack_write() {
             let value = stack.last().unwrap().as_u32();
             let res_record = self.mw(sp, value);
-
             self.logs.last_mut().unwrap().memory_access.res_record =
                 Some(MemoryRecordEnum::Write(res_record));
+            self.logs.last_mut().unwrap().memory_access.res_addr =
+                Some(TypedAddress::from_stack_vaddr(sp));
             self.logs.last_mut().unwrap().res = res_record.value;
         }
     }
