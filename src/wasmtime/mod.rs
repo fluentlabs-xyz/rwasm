@@ -182,6 +182,22 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
                 Value::I64(value) => wasmtime::Val::I64(*value),
                 Value::F32(value) => wasmtime::Val::F32(value.to_bits()),
                 Value::F64(value) => wasmtime::Val::F64(value.to_bits()),
+                #[cfg(feature = "e2e")]
+                Value::FuncRef(value) => wasmtime::Val::FuncRef(None),
+                #[cfg(feature = "e2e")]
+                Value::ExternRef(value) => {
+                    let func_idx = value.0;
+                    if func_idx == 0 {
+                        wasmtime::Val::ExternRef(None)
+                    } else {
+                        let extern_ref = futures::executor::block_on(async {
+                            wasmtime::ExternRef::new_async(&mut store, func_idx)
+                                .await
+                                .ok()
+                        });
+                        wasmtime::Val::ExternRef(extern_ref)
+                    }
+                }
                 // this should never happen because rWasm rejects such binaries during compilation
                 _ => unreachable!("wasmtime: not supported type: {:?}", value),
             };
@@ -252,6 +268,17 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
                         wasmtime::Val::I64(value) => Value::I64(value),
                         wasmtime::Val::F32(value) => Value::F32(F32::from_bits(value)),
                         wasmtime::Val::F64(value) => Value::F64(F64::from_bits(value)),
+                        #[cfg(feature = "e2e")]
+                        wasmtime::Val::FuncRef(value) => Value::FuncRef(FuncRef::new(0)),
+                        #[cfg(feature = "e2e")]
+                        wasmtime::Val::ExternRef(value) => {
+                            let value: Option<&u32> = value
+                                .and_then(|ext_ref| {
+                                    ext_ref.data(self.store.as_mut().unwrap()).ok().flatten()
+                                })
+                                .and_then(|v| v.downcast_ref());
+                            Value::ExternRef(ExternRef::new(value.map(|v| *v).unwrap_or_default()))
+                        }
                         _ => unreachable!("wasmtime: not supported type: {:?}", x),
                     };
                 }
@@ -696,5 +723,9 @@ impl<'a, T: 'static + Send + Sync> Caller<T> for WasmtimeCaller<'a, T> {
 
     fn stack_push(&mut self, _value: UntypedValue) {
         unimplemented!("wasmtime: not allowed in wasmtime mode")
+    }
+
+    fn consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
+        self.try_consume_fuel(fuel)
     }
 }
