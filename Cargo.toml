@@ -11,6 +11,7 @@ keywords = ["wasm", "webassembly", "interpreter", "vm"]
 categories = ["wasm", "no-std", "virtualization"]
 publish = true
 version = "0.1.0"
+description = "ZK-friendly WebAssembly runtime optimized for blockchain and zero-knowledge applications"
 
 [dependencies]
 wasmparser = { version = "0.100.1", package = "wasmparser-nostd", default-features = false }
