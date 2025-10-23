@@ -46,7 +46,7 @@ codegen-units = 256
 rpath = true
 
 [dependencies]
-rwasm = { path = "..", features = [
+rwasm = { path = "..", package = "fluent-rwasm", features = [
     "std",
     "wasmtime",
     "pooling-allocator",
