@@ -1,5 +1,5 @@
 [package]
-name = "rwasm"
+name = "fluent-rwasm"
 edition = "2021"
 authors = [
     "Dmitry Savonin <dmitry@fluentlabs.xyz>",
@@ -9,6 +9,8 @@ readme = "README.md"
 license = "MIT"
 keywords = ["wasm", "webassembly", "interpreter", "vm"]
 categories = ["wasm", "no-std", "virtualization"]
+publish = true
+version = "0.1.0"
 
 [dependencies]
 wasmparser = { version = "0.100.1", package = "wasmparser-nostd", default-features = false }

@@ -1,5 +1,5 @@
 use hex_literal::hex;
-use rwasm::{
+use fluent_rwasm::{
     CompilationConfig, ExecutionEngine, FuelConfig, ImportLinker, ImportName, Opcode, RwasmModule,
     RwasmStore, StateRouterConfig, Store, TrapCode, TypedCaller, Value,
 };
