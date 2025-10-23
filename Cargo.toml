@@ -10,7 +10,7 @@ license = "MIT"
 keywords = ["wasm", "webassembly", "interpreter", "vm"]
 categories = ["wasm", "no-std", "virtualization"]
 publish = true
-version = "0.1.0"
+version = "0.3.2"
 description = "ZK-friendly WebAssembly runtime optimized for blockchain and zero-knowledge applications"
 
 [dependencies]
