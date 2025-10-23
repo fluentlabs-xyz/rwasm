@@ -873,7 +873,9 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .unwrap_or_else(|err| panic!("failed to pin label: {err}"));
         }
         let is_branches = self.reachable && frame.is_branched_to();
-        self.reachable = self.reachable | frame.is_branched_to();
+
+        // These bindings are required because of borrowing issues.
+        let frame_reachable = frame.is_reachable();
 
         // These bindings are required because of borrowing issues.
         let frame_stack_height = frame.stack_height();
@@ -883,6 +885,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // we know that we are ending the function body `block`
             // frame, and therefore we have to return from the function.
             self.visit_return()?;
+        } else {
+            // The following code is only reachable if the ended control flow
+            // frame was reachable upon entering to begin with.
+            self.reachable = frame_reachable;
         }
         if let Some(frame_stack_height) = frame_stack_height {
             let mut old_stack_height = self.stack_height.height();
