@@ -1237,7 +1237,7 @@ fn run_i64_binary_op(op: &str, a: i64, b: i64, expected: i64) {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
 
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     let mut result = [Value::I64(0); 1];
 
     let execution_result = engine.execute(
@@ -1288,7 +1288,7 @@ fn run_i64_comparation_op(op: &str, a: i64, b: i64, expected: bool) {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
 
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     let mut result = [Value::I32(0); 1];
 
     let execution_result = engine.execute(
