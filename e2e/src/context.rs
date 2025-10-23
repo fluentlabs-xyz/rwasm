@@ -49,10 +49,10 @@ impl InstanceInner {
                 ))
             }
             (Strategy::Wasmtime { .. }, TypedStore::Wasmtime(wasmtime_store)) => {
-                todo!()
+                unreachable!("Wasmtime isn't supported executor")
             }
             (Strategy::Wasmi { .. }, TypedStore::Wasmi(wasmi_store)) => {
-                todo!()
+                unreachable!("Wasmi isn't supported executor")
             }
             _ => panic!("inconsistent types of module and store"),
         }
@@ -455,10 +455,13 @@ impl TestContext<'_> {
                     instance.store.context_mut(|ctx| ctx.state = func_state);
 
                     let pc = instance.program_counter;
-
+                    #[cfg(feature = "debug-print")]
+                    println!("Rwasm before call: {:?}", instance.store.remaining_fuel());
                     let mut vm = instance.new_executor();
                     vm.advance_ip(pc);
                     vm.run(&[], &mut [])?;
+                    #[cfg(feature = "debug-print")]
+                    println!("Rwasm after call: {:?}", instance.store.remaining_fuel());
 
                     // copy results
                     let func_type = self.extern_types.get(func_name).unwrap();
@@ -493,14 +496,25 @@ impl TestContext<'_> {
                 Strategy::Wasmtime { .. } => {
                     let func_type = self.extern_types.get(func_name).unwrap();
                     let mut result = vec![Value::I32(0); func_type.results().len()];
+                    #[cfg(feature = "debug-print")]
+                    println!(
+                        "Wasmitime before call: {:?}",
+                        instance.store.remaining_fuel()
+                    );
                     instance.execute(func_name, args, result.as_mut(), Some(u64::MAX))?;
+                    #[cfg(feature = "debug-print")]
+                    println!("Wasmtime after call: {:?}", instance.store.remaining_fuel());
                     remaining_fuel.push(instance.store.remaining_fuel());
                     all_results.push(result)
                 }
                 Strategy::Wasmi { .. } => {
                     let func_type = self.extern_types.get(func_name).unwrap();
                     let mut result = vec![Value::I32(0); func_type.results().len()];
+                    #[cfg(feature = "debug-print")]
+                    println!("Wasmi before call: {:?}", instance.store.remaining_fuel());
                     instance.execute(func_name, args, result.as_mut(), Some(u64::MAX))?;
+                    #[cfg(feature = "debug-print")]
+                    println!("Wasmi after call: {:?}", instance.store.remaining_fuel());
                     remaining_fuel.push(instance.store.remaining_fuel());
                     all_results.push(result)
                 }
@@ -527,11 +541,11 @@ impl TestContext<'_> {
         }
 
         for fuel in remaining_fuel.iter() {
-            // assert_eq!(
-            //     *fuel, remaining_fuel[0],
-            //     "Gas not equal between engines: {:?}",
-            //     remaining_fuel
-            // );
+            assert_eq!(
+                *fuel, remaining_fuel[0],
+                "Gas not equal between engines: {:?}",
+                remaining_fuel
+            );
         }
         Ok(all_results.pop().unwrap())
     }
