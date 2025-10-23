@@ -64,4 +64,9 @@ impl<'a, T: 'static + Send + Sync> Caller<T> for RwasmCaller<'a, T> {
     fn stack_push(&mut self, value: UntypedValue) {
         self.sp.push(value);
     }
+
+    fn consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
+        //Not needed to consume fuel for rwasm
+        Ok(())
+    }
 }

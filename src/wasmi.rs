@@ -77,6 +77,10 @@ impl<'a, T: 'static + Send + Sync> Caller<T> for WasmiCaller<'a, T> {
     fn stack_push(&mut self, _value: UntypedValue) {
         unimplemented!("not allowed in wasmtime mode")
     }
+
+    fn consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
+        self.try_consume_fuel(fuel)
+    }
 }
 
 pub struct WasmiStore<T: 'static + Send + Sync> {

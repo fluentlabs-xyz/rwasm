@@ -27,6 +27,8 @@ pub trait Caller<T>: Store<T> {
 
     // #[deprecated(note = "only for e2e testing suite will be removed soon")]
     fn stack_push(&mut self, value: UntypedValue);
+
+    fn consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode>;
 }
 
 pub type SyscallHandler<T> =
@@ -162,6 +164,14 @@ impl<'a, T: Send + Sync> Caller<T> for TypedCaller<'a, T> {
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.stack_push(value),
             TypedCaller::Wasmi(store) => store.stack_push(value),
+        }
+    }
+
+    fn consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
+        match self {
+            TypedCaller::Rwasm(caller) => caller.consume_fuel(fuel),
+            TypedCaller::Wasmtime(caller) => caller.consume_fuel(fuel),
+            TypedCaller::Wasmi(caller) => caller.consume_fuel(fuel),
         }
     }
 }
