@@ -957,6 +957,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 }
                 AcquiredTarget::Return(_) => {
                     // In this case, the `br` can be directly translated as `return`.
+                    builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
                     builder.visit_return()?;
                 }
             }
@@ -978,8 +979,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                         builder.alloc.instruction_set.op_br_if_nez(offset);
                     } else {
                         builder
-                            .bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
-                        builder
                             .alloc
                             .instruction_set
                             .op_br_if_eqz(BranchOffset::uninit());
@@ -998,6 +997,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                     }
                 }
                 AcquiredTarget::Return(drop_keep) => {
+                    builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
                     builder
                         .alloc
                         .instruction_set
@@ -1191,7 +1191,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_return(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
             let drop_keep = builder.drop_keep_return()?;
-            builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
             drop_keep.translate_drop_keep(
                 &mut builder.alloc.instruction_set,
                 &mut builder.stack_height,
@@ -1241,7 +1240,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let func_type = &builder.alloc.func_types[func_type_idx as usize];
             let drop_keep = builder.drop_keep_return_call(&func_type)?;
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
-            builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
             drop_keep.translate_drop_keep(
                 &mut builder.alloc.instruction_set,
                 &mut builder.stack_height,
@@ -1670,6 +1668,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_ref_func(&mut self, function_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(ValType::FuncRef);
             builder.stack_height.push1();
             // We do +1 here because 0 offset is reserved for `null` value and an entrypoint
@@ -2078,8 +2077,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_i32_wrap_i64(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            //TODO: maybe add for registry
-            // builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             let popped_value = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(popped_value, ValType::I64);
             builder.alloc.stack_types.push(ValType::I32);
@@ -4004,6 +4002,7 @@ impl InstructionTranslator {
         self.translate_if_reachable(|builder| {
             let lhs_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(lhs_type, input_type);
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(output_type);
             // calc stack height
             builder.stack_height.pop_type(input_type);
