@@ -266,7 +266,7 @@ impl InstructionTranslator {
         }
         let consume_fuel = self
             .is_fuel_metering_enabled()
-            .then(|| self.push_consume_fuel_base());
+            .then(|| self.push_consume_fuel_empty());
         let block_frame = BlockControlFrame::new(block_type, end_label, 0, consume_fuel);
         self.alloc.control_frames.push_frame(block_frame);
         let original_func_types = self

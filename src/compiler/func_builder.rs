@@ -33,6 +33,7 @@ impl<'a> FuncBuilder<'a> {
 
     pub fn translate(mut self) -> Result<ReusableAllocations, CompilationError> {
         self.translator.prepare(self.func_idx)?;
+        self.translator.bump_fuel_consumption(|| FuelCosts::BASE)?;
         // emit special opcodes before the beginning of the function
         self.translate_stack_alloc();
         self.translate_locals()?;
