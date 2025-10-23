@@ -1,4 +1,4 @@
-use rwasm::{
+use fluent_rwasm::{
     always_failing_syscall_handler, intrinsic::Intrinsic, CompilationConfig, ExecutionEngine,
     FuelConfig, ImportLinker, ImportName, Opcode, RwasmModule, RwasmStore,
 };

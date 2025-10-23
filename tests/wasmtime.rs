@@ -1,4 +1,4 @@
-use rwasm::{
+use fluent_rwasm::{
     always_failing_syscall_handler, compile_wasmtime_module, CompilationConfig, FuelConfig,
     ImportLinker, Strategy, Value,
 };
