@@ -181,6 +181,14 @@ impl BlockControlFrame {
     pub fn consume_fuel_instr(&self) -> Option<InstrLoc> {
         self.consume_fuel
     }
+
+    pub fn update_consume_fuel_instr(&mut self, instr: InstrLoc) {
+        assert!(
+            self.consume_fuel.is_some(),
+            "can only update the consumption fuel instruction if it existed before"
+        );
+        self.consume_fuel = Some(instr);
+    }
 }
 
 /// A Wasm `loop` control flow frame.
@@ -260,6 +268,14 @@ impl LoopControlFrame {
 
     pub fn is_branched_to(&self) -> bool {
         self.len_branches > 0
+    }
+
+    pub fn update_consume_fuel_instr(&mut self, instr: InstrLoc) {
+        assert!(
+            self.consume_fuel.is_some(),
+            "can only update the consumption fuel instruction if it existed before"
+        );
+        self.consume_fuel = Some(instr);
     }
 }
 
@@ -595,6 +611,17 @@ impl ControlFrame {
             Self::Loop(frame) => frame.is_branched_to(),
             Self::If(frame) => frame.is_branched_to(),
             Self::Unreachable(frame) => false,
+        }
+    }
+
+    pub fn update_consume_fuel_instr(&mut self, instr: InstrLoc) {
+        match self {
+            Self::Block(frame) => frame.update_consume_fuel_instr(instr),
+            Self::Loop(frame) => frame.update_consume_fuel_instr(instr),
+            Self::If(frame) => frame.update_consume_fuel_instr(instr),
+            Self::Unreachable(frame) => unreachable!(
+                "tried to `update_consume_fuel_instr` on an unreachable control frame: {frame:?}"
+            ),
         }
     }
 }
