@@ -30,8 +30,9 @@ fnv = { version = "1.0.7", default-features = false }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 # wasmtime
-wasmtime = { git = "https://github.com/fluentlabs-xyz/wasmtime", branch = "devel", optional = true, features = ["disable-fpu", "cache"] }
+wasmtime = { version = "34.0.1", package = "wasmtime-rwasm", optional = true, features = ["disable-fpu", "cache"] }
 #wasmtime = { path = "../wasmtime/crates/wasmtime", optional = true, features = ["disable-fpu", "cache"] }
+
 anyhow = { version = "1.0.98", default-features = false, optional = true }
 directories = { version = "6.0.0", optional = true }
 futures = { version = "0.3.31", optional = true }
