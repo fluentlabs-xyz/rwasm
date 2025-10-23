@@ -21,7 +21,7 @@ codegen-units = 1
 criterion = { version = "0.7.0", default-features = false, features = [] }
 
 [dev-dependencies]
-rwasm = { path = "..", features = ["std", "wasmtime"] }
+rwasm = { path = "..", package = "fluent-rwasm", features = ["std", "wasmtime"] }
 
 [[bench]]
 name = "bench"
