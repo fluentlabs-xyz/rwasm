@@ -22,4 +22,4 @@ codegen-units = 1
 
 [dependencies]
 walrus = "0.23.3"
-rwasm = { path = "..", package = "fluent-rwasm", default-features = false, features = [] }
+rwasm = { path = "..", default-features = false, features = [] }

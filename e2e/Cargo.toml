@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rwasm = { path = "..", package = "fluent-rwasm", features = ["fpu"] }
+rwasm = { path = "..", features = ["fpu"] }
 anyhow = "1.0.71"
 wast = "=64.0"
 

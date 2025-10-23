@@ -8,5 +8,5 @@ crate-type = ["cdylib"]
 path = "lib.rs"
 
 [dependencies]
-rwasm = { path = "..", package = "fluent-rwasm", default-features = false }
+rwasm = { path = "..", default-features = false }
 wat = "1.230.0"

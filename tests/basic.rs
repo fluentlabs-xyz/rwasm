@@ -1,4 +1,4 @@
-use fluent_rwasm::{
+use rwasm::{
     for_each_strategy, CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore, Value,
 };
 

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-rwasm = { path = "..", package = "fluent-rwasm", default-features = false, features = ["tracing"] }
+rwasm = { path = "..", default-features = false, features = ["tracing"] }
 
 [features]
 default = ["std"]

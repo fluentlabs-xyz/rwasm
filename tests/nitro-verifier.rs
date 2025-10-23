@@ -1,5 +1,5 @@
 use hex_literal::hex;
-use fluent_rwasm::{
+use rwasm::{
     compile_wasmtime_module, for_each_strategy, CompilationConfig, ExecutionEngine, FuelConfig,
     ImportLinker, ImportName, InstructionSet, RwasmModule, RwasmStore, Store, Strategy, TrapCode,
     TypedCaller, Value,
@@ -128,7 +128,7 @@ fn test_nitro_verifier_rwasm() {
 #[cfg(feature = "wasmtime")]
 #[test]
 fn test_nitro_verifier_wasmtime() {
-    use fluent_rwasm::WasmtimeStore;
+    use rwasm::WasmtimeStore;
     let wasm_binary = include_bytes!("./assets/nitro-verifier.wasm");
     let import_linker = create_import_linker();
     let config = CompilationConfig::default()
