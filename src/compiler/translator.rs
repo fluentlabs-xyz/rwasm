@@ -941,7 +941,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_br(&mut self, relative_depth: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            println!("Visit br depth: {}", relative_depth);
             builder.add_branch(relative_depth);
 
             match builder.acquire_target(relative_depth)? {
@@ -1265,7 +1264,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // TODO(dmitry123): "why? is there a bug in [drop_keep_return_call]?"
             drop_keep.keep += 1;
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
-            builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
             drop_keep.translate_drop_keep(
                 &mut builder.alloc.instruction_set,
                 &mut builder.stack_height,
@@ -1595,7 +1593,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder
                 .alloc
                 .instruction_set
-                .op_memory_grow_checked(Some(max_pages), builder.is_fuel_metering_enabled());
+                .op_memory_grow_checked(Some(max_pages), false);
             // make sure types are correct
             let popped_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(popped_type, ValType::I32);
@@ -2406,12 +2404,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop2();
             builder.stack_height.pop3();
             // since we store all data sections in the one segment, then the index is always 0
-            ib.op_memory_init_checked(
-                Some(offset),
-                Some(length),
-                data_segment_index + 1,
-                is_fuel_metering_enabled,
-            );
+            ib.op_memory_init_checked(Some(offset), Some(length), data_segment_index + 1, false);
             Ok(())
         })
     }
@@ -2437,10 +2430,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder
-                .alloc
-                .instruction_set
-                .op_memory_copy_checked(builder.is_fuel_metering_enabled());
+            builder.alloc.instruction_set.op_memory_copy_checked(false);
             Ok(())
         })
     }
@@ -2455,10 +2445,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder
-                .alloc
-                .instruction_set
-                .op_memory_fill_checked(builder.is_fuel_metering_enabled());
+            builder.alloc.instruction_set.op_memory_fill_checked(false);
             Ok(())
         })
     }
@@ -2485,7 +2472,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 TableIdx::try_from(table_index).unwrap(),
                 length,
                 offset,
-                is_fuel_metering_enabled,
+                false,
             );
             builder
                 .stack_height
@@ -2526,7 +2513,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.instruction_set.op_table_copy_checked(
                 TableIdx::try_from(dst_table).unwrap(),
                 TableIdx::try_from(src_table).unwrap(),
-                is_fuel_metering_enabled,
+                false,
             );
             Ok(())
         })
@@ -2546,10 +2533,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.instruction_set.op_table_fill_checked(
-                TableIdx::try_from(table_index).unwrap(),
-                is_fuel_metering_enabled,
-            );
+            builder
+                .alloc
+                .instruction_set
+                .op_table_fill_checked(TableIdx::try_from(table_index).unwrap(), false);
             Ok(())
         })
     }
@@ -2595,7 +2582,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             ib.op_table_grow_checked(
                 TableIdx::try_from(table_index).unwrap(),
                 Some(max_table_elements),
-                is_fuel_metering_enabled,
+                false,
             );
             builder
                 .stack_height
