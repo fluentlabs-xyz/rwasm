@@ -1,5 +1,5 @@
 [package]
-name = "fluent-rwasm"
+name = "rwasm-runtime"
 edition = "2021"
 authors = [
     "Dmitry Savonin <dmitry@fluentlabs.xyz>",

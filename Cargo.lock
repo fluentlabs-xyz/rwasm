@@ -471,34 +471,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
 
 [[package]]
-name = "fluent-rwasm"
-version = "0.3.2"
-dependencies = [
- "anyhow",
- "bincode",
- "bitvec",
- "bytes",
- "directories",
- "downcast-rs",
- "futures",
- "hashbrown",
- "hex-literal",
- "libm",
- "num-derive",
- "num-traits",
- "paste",
- "rand",
- "serde",
- "smallvec",
- "spin 0.10.0",
- "tiny-keccak",
- "wasmi",
- "wasmparser-nostd",
- "wasmtime-rwasm",
- "wat",
-]
-
-[[package]]
 name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1139,6 +1111,34 @@ name = "rustversion"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a0d197bd2c9dc6e53b84da9556a69ba4cdfab8619eb41a8bd1cc2027a0f6b1d"
+
+[[package]]
+name = "rwasm-runtime"
+version = "0.3.2"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "bitvec",
+ "bytes",
+ "directories",
+ "downcast-rs",
+ "futures",
+ "hashbrown",
+ "hex-literal",
+ "libm",
+ "num-derive",
+ "num-traits",
+ "paste",
+ "rand",
+ "serde",
+ "smallvec",
+ "spin 0.10.0",
+ "tiny-keccak",
+ "wasmi",
+ "wasmparser-nostd",
+ "wasmtime-rwasm",
+ "wat",
+]
 
 [[package]]
 name = "ryu"

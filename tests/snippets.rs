@@ -51,7 +51,7 @@ use rand::Rng;
 /// | op_i64_rem_s          |         |
 /// | op_i64_rem_u          |         |
 /// |-----------------------|---------|
-use fluent_rwasm::{
+use rwasm_runtime::{
     CallStack, CompilationConfig, ExecutionEngine, InstructionSet, RwasmExecutor, RwasmModule,
     RwasmStore, TrapCode, Value, ValueStack,
 };

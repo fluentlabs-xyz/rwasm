@@ -1,4 +1,4 @@
-use fluent_rwasm::{
+use rwasm_runtime::{
     always_failing_syscall_handler, compile_wasmtime_module, instruction_set, CompilationConfig,
     ExecutionEngine, FuelConfig, ImportLinker, ImportName, InstructionSet, RwasmModule, RwasmStore,
     Store, Strategy, TrapCode, TypedCaller, Value, WasmtimeStore,
