@@ -89,15 +89,15 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let (address, value) = self.sp.pop2();
         let memory = self.store.global_memory().data_mut();
         UntypedValue::f32_store(memory, address, address_offset, value)?;
-        #[cfg(feature = "tracing")]
-        {
-            let base_address = address_offset + u32::from(address);
-            self.store.tracer.memory_change(
-                base_address,
-                4,
-                &memory[base_address as usize..(base_address + 4) as usize],
-            );
-        }
+        // #[cfg(feature = "tracing")]
+        // {
+        //     let base_address = address_offset + u32::from(address);
+        //     self.store.tracer.memory_change(
+        //         base_address,
+        //         4,
+        //         &memory[base_address as usize..(base_address + 4) as usize],
+        //     );
+        // }
         self.ip.add(1);
         Ok(())
     }

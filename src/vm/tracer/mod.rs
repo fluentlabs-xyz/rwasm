@@ -1,7 +1,7 @@
 use super::ValueStackPtr;
 use crate::{
-    event::{FatOpEvent, TableInitEvent},
-    mem_index::{TypedAddress, GLOBAL_MEM_START, SP_START, UNIT},
+    event::{FatOpEvent, TableGrowEvent, TableInitEvent},
+    mem_index::{TypedAddress, UNIT},
     types::Opcode,
     vm::tracer::{
         mem::{
@@ -183,6 +183,11 @@ impl Tracer {
         if opcode.is_local_instruction() {
             opcode_state.arg2 = opcode.aux_value();
         }
+
+        if opcode.is_fat_op() {
+            opcode_state.arg2 = opcode.aux_value();
+        }
+
         println!("op_code_state:{:?}", opcode_state);
 
         opcode_state.memory_access = memory_access;
@@ -233,6 +238,38 @@ impl Tracer {
                 fat_op_event.local_mem_access_addr =
                     local_memory_access.iter().map(|(k, v)| (*k)).collect();
                 opcode_state.fat_op = Some(FatOpEvent::TableInit(fat_op_event));
+            }
+
+            if let Opcode::TableGrow(table_idx) = opcode {
+                let mut fat_op_event = TableGrowEvent::default();
+                let mut local_memory_access = HashMap::default();
+
+                for idx in 0..2 {
+                    let addr = sp + idx * UNIT;
+
+                    let read_record =
+                        self.mr_with_local_access(addr, Some(&mut local_memory_access));
+
+                    match idx {
+                        1 => {
+                            fat_op_event.stack_access[0] = read_record;
+                        }
+                        0 => {
+                            fat_op_event.stack_access[1] = read_record;
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                fat_op_event.table_idx = table_idx as u32;
+                fat_op_event.clk = self.state.clk;
+                fat_op_event.shard = self.state.shard;
+                fat_op_event.sp = sp;
+                fat_op_event.next_sp = sp + 2 * UNIT;
+                fat_op_event.local_mem_access =
+                    local_memory_access.iter().map(|(_, v)| (*v)).collect();
+                fat_op_event.local_mem_access_addr =
+                    local_memory_access.iter().map(|(k, v)| (*k)).collect();
+                opcode_state.fat_op = Some(FatOpEvent::TableGrow(fat_op_event));
             }
         }
 
@@ -314,17 +351,22 @@ impl Tracer {
             }
             _ => self.record_sw(opcode, new_sp, stack),
         }
-        if opcode.is_fat_op() {
-            let main_op_event = self.logs.last().unwrap();
+        // if opcode.is_fat_op() {
+        //     let main_op_event = self.logs.last().unwrap();
 
-            let sub_op_event = self.make_sub_op_event(main_op_event.clone());
-        }
+        //     let sub_op_event = self.make_sub_op_event(main_op_event.clone());
+        // }
+
         self.state.sp = new_sp;
 
         self.state.next_cycle();
-        if opcode.is_fat_op() {
-            self.state.next_cycle();
-            self.state.next_cycle();
+
+        match opcode {
+            Opcode::TableInit(_) => {
+                self.state.next_cycle();
+                self.state.next_cycle();
+            }
+            _ => {}
         }
     }
 
@@ -561,6 +603,7 @@ impl Tracer {
             prev_record.timestamp,
         )
     }
+
     pub fn mw(&mut self, addr: u32, value: u32) -> MemoryWriteRecord {
         self.mw_with_local_access(addr, value, None)
     }

@@ -1,5 +1,4 @@
-use crate::intrinsic::Intrinsic;
-use crate::{ImportName, InstructionSet};
+use crate::{intrinsic::Intrinsic, ImportName, InstructionSet};
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use wasmparser::{FuncType, ValType};

@@ -342,8 +342,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[cfg(feature = "tracing")]
     fn trace_instr_pre(&mut self, instr: &Opcode) {
         let pc = self.program_counter();
-        let memory_size: u32 = self.store.global_memory().current_pages().into();
-        let consumed_fuel = self.store.fuel_consumed();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
         if !instr.is_fat_op() {
             self.store.tracer.state.next_cycle();
