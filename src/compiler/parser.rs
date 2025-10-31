@@ -492,10 +492,33 @@ impl ModuleParser {
                 .alloc
                 .resolve_func_type_signature(func_type_index);
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
-            if self.config.builtins_consume_fuel {
-                for instr in import_linker_entity.block_fuel.iter() {
-                    translator.alloc.instruction_set.push(instr.clone());
-                }
+            if self.config.builtins_consume_fuel
+                && import_linker_entity.syscall_fuel_param.linear_fuel
+                    | import_linker_entity.syscall_fuel_param.base_fuel
+                    != 0
+            {
+                translator
+                    .alloc
+                    .instruction_set
+                    .op_local_get(LocalDepth::from(
+                        import_linker_entity.syscall_fuel_param.param_index as u32,
+                    ));
+                translator
+                    .alloc
+                    .instruction_set
+                    .op_i32_const(UntypedValue::from(
+                        import_linker_entity.syscall_fuel_param.linear_fuel,
+                    ));
+                translator.alloc.instruction_set.op_i32_mul();
+                translator
+                    .alloc
+                    .instruction_set
+                    .op_i32_const(UntypedValue::from(
+                        import_linker_entity.syscall_fuel_param.base_fuel,
+                    ));
+                translator.alloc.instruction_set.op_i32_add();
+
+                translator.alloc.instruction_set.op_consume_fuel_stack()
             }
             translator
                 .alloc
