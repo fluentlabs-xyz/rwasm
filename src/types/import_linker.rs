@@ -1,4 +1,4 @@
-use crate::{ImportName, InstructionSet};
+use crate::{ImportName, InstructionSet, SyscallFuelParams};
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use wasmparser::{FuncType, ValType};
@@ -14,7 +14,7 @@ pub struct ImportLinker {
 #[derive(Debug, Clone)]
 pub struct ImportLinkerEntity {
     pub sys_func_idx: u32,
-    pub block_fuel: InstructionSet,
+    pub syscall_fuel_param: SyscallFuelParams,
     pub params: &'static [ValType],
     pub result: &'static [ValType],
     pub intrinsic: Option<Intrinsic>,
@@ -86,7 +86,7 @@ impl ImportLinker {
             import_name,
             ImportLinkerEntity {
                 sys_func_idx,
-                block_fuel,
+                syscall_fuel_param: Default::default(),
                 params,
                 result,
                 intrinsic: None,
@@ -106,7 +106,7 @@ impl ImportLinker {
             import_name,
             ImportLinkerEntity {
                 sys_func_idx,
-                block_fuel: InstructionSet::default(),
+                syscall_fuel_param: Default::default(),
                 params,
                 result,
                 intrinsic: Some(intrinsic),

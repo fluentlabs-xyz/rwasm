@@ -34,6 +34,13 @@ pub trait Caller<T>: Store<T> {
 pub type SyscallHandler<T> =
     fn(&mut TypedCaller<'_, T>, u32, &[Value], &mut [Value]) -> Result<(), TrapCode>;
 
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SyscallFuelParams {
+    pub base_fuel: u64,
+    pub param_index: u64,
+    pub linear_fuel: u64,
+}
+
 pub fn always_failing_syscall_handler<T: 'static + Send + Sync>(
     _caller: &mut TypedCaller<'_, T>,
     _func_idx: u32,

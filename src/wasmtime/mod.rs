@@ -1,5 +1,6 @@
 mod engine;
 
+use crate::wasmtime::engine::wasmtime_engine_with_linker;
 use crate::{
     wasmtime::engine::wasmtime_engine, Caller, CompilationConfig, FuelConfig, ImportLinker, Store,
     SyscallHandler, TrapCode, TypedCaller, UntypedValue, ValType, Value, F32, F64,
@@ -412,24 +413,24 @@ impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
 }
 
 pub fn deserialize_wasmtime_module(
-    _compilation_config: CompilationConfig,
+    compilation_config: CompilationConfig,
     wasmtime_binary: impl AsRef<[u8]>,
 ) -> anyhow::Result<WasmtimeModule> {
     print!("parsing wasmtime module... ");
     let start = Instant::now();
-    let engine = wasmtime_engine();
+    let engine = wasmtime_engine_with_linker(compilation_config.import_linker);
     let module = unsafe { wasmtime::Module::deserialize(&engine, wasmtime_binary) };
     println!("{:?}", start.elapsed());
     module
 }
 
 pub fn compile_wasmtime_module(
-    _compilation_config: CompilationConfig,
+    compilation_config: CompilationConfig,
     wasm_binary: impl AsRef<[u8]>,
 ) -> anyhow::Result<WasmtimeModule> {
     print!("compiling wasmtime module... ");
     let start = Instant::now();
-    let engine = wasmtime_engine();
+    let engine = wasmtime_engine_with_linker(compilation_config.import_linker);
     let module = wasmtime::Module::new(&engine, wasm_binary);
     println!("{:?}", start.elapsed());
     module

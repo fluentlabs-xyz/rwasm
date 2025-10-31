@@ -1,4 +1,9 @@
-use crate::N_MAX_STACK_SIZE;
+use crate::{ImportLinker, N_MAX_STACK_SIZE};
+use alloc::rc::Rc;
+
+use std::collections::HashMap;
+use std::sync::OnceLock;
+use wasmtime::Engine;
 use std::{mem::size_of, sync::OnceLock};
 use wasmtime::{Config, Engine, OptLevel, Strategy};
 
@@ -9,6 +14,14 @@ pub fn wasmtime_engine() -> &'static Engine {
 }
 
 fn factory_wasmtime_engine() -> Engine {
+    factory_wasmtime_engine_with_linker(None)
+}
+
+pub fn wasmtime_engine_with_linker(import_linker: Option<Rc<ImportLinker>>) -> &'static Engine {
+    ENGINE.get_or_init(|| factory_wasmtime_engine_with_linker(import_linker))
+}
+
+fn factory_wasmtime_engine_with_linker(import_linker: Option<Rc<ImportLinker>>) -> Engine {
     let mut cfg = Config::new();
     #[cfg(feature = "pooling-allocator")]
     {
@@ -48,5 +61,41 @@ fn factory_wasmtime_engine() -> Engine {
         cfg.wasm_backtrace(true);
     }
     cfg.wasm_simd(true);
+
+    if let Some(import_linker) = import_linker {
+        let mut syscall_params = HashMap::new();
+        for (import_name, import_entity) in import_linker.iter() {
+            if import_entity.syscall_fuel_param != Default::default() {
+                syscall_params.insert(
+                    (
+                        import_name.module.to_string(),
+                        import_name.field.to_string(),
+                    ),
+                    (
+                        import_entity.syscall_fuel_param.base_fuel,
+                        import_entity.syscall_fuel_param.param_index,
+                        import_entity.syscall_fuel_param.linear_fuel,
+                    ),
+                );
+            }
+        }
+        cfg.syscall_fuel_params(syscall_params);
+    }
+
+    // use caching for artifacts
+    #[cfg(feature = "cache-compiled-artifacts")]
+    {
+        use directories::ProjectDirs;
+        use std::path::PathBuf;
+        use wasmtime::{Cache, CacheConfig};
+        let project_dirs = ProjectDirs::from("com", "bytecodealliance", "wasmtime").unwrap();
+        let cache_dir = project_dirs.cache_dir();
+        std::fs::create_dir_all(cache_dir).expect("failed to create cache dir");
+        let mut cache_config = CacheConfig::default();
+        cache_config.with_directory(PathBuf::from(cache_dir));
+        let cache = Cache::new(cache_config).expect("failed to create cache config");
+        cfg.cache(Some(cache));
+    }
+
     Engine::new(&cfg).expect("failed to create engine")
 }

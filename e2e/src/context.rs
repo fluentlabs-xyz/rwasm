@@ -10,10 +10,6 @@ use rwasm::{
     FuncType, I64ValueSplit, ImportLinker, ImportLinkerEntity, ImportName, InstructionSet,
     ModuleParser, Opcode, RwasmExecutor, RwasmModule, StateRouterConfig, Store, Strategy, TrapCode,
     TypedExecutor, TypedStore, ValType, Value, ValueStack, F64,
-    instruction_set, CallStack, CompilationConfig, ExecutionEngine, FuncType, I64ValueSplit,
-    ImportLinker, ImportLinkerEntity, ImportName, InstructionSet, ModuleParser, Opcode,
-    RwasmExecutor, RwasmModule, RwasmStore, StateRouterConfig, Store, ValType, Value, ValueStack,
-    F64,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use wast::token::{Id, Span};
@@ -120,7 +116,7 @@ impl<'a> TestContext<'a> {
                 ImportName::new("__nothing_here", "__absolutely_nothing"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_ENTRYPOINT,
-                    block_fuel: InstructionSet::default(),
+                    syscall_fuel_param: Default::default(),
                     params: &[],
                     result: &[],
                     intrinsic: None,
@@ -130,7 +126,7 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT,
-                    block_fuel: block_fuel.clone(),
+                    syscall_fuel_param: Default::default(),
                     params: &[],
                     result: &[],
                     intrinsic: None,
@@ -141,6 +137,7 @@ impl<'a> TestContext<'a> {
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I32,
                     block_fuel: block_fuel.clone(),
+                    syscall_fuel_param: Default::default(),
                     params: &[ValType::I32],
                     result: &[],
                     intrinsic: None,
@@ -150,7 +147,7 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_i64"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I64,
-                    block_fuel: block_fuel.clone(),
+                    syscall_fuel_param: Default::default(),
                     params: &[ValType::I64],
                     result: &[],
                     intrinsic: None,
@@ -160,7 +157,7 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_f32"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_F32,
-                    block_fuel: block_fuel.clone(),
+                    syscall_fuel_param: Default::default(),
                     params: &[ValType::F32],
                     result: &[],
                     intrinsic: None,
@@ -170,7 +167,7 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_f64"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_F64,
-                    block_fuel: block_fuel.clone(),
+                    syscall_fuel_param: Default::default(),
                     params: &[ValType::F64],
                     result: &[],
                     intrinsic: None,
@@ -181,6 +178,7 @@ impl<'a> TestContext<'a> {
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I32_F32,
                     block_fuel: block_fuel.clone(),
+                    syscall_fuel_param: Default::default(),
                     params: &[ValType::I32, ValType::F32],
                     result: &[],
                     intrinsic: None,
@@ -190,7 +188,7 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_i64_f64"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I64_F64,
-                    block_fuel: block_fuel.clone(),
+                    syscall_fuel_param: Default::default(),
                     params: &[ValType::I64, ValType::F64],
                     result: &[],
                     intrinsic: None,
@@ -271,7 +269,7 @@ impl TestContext<'_> {
         let config = CompilationConfig::default()
             .with_import_linker(self.import_linker.clone())
             .with_allow_malformed_entrypoint_func_type(true)
-            .with_builtins_consume_fuel(false)
+            .with_builtins_consume_fuel(true)
             .with_default_imported_global_value(666.into())
             .with_allow_func_ref_function_types(true)
             .with_consume_fuel(true);
