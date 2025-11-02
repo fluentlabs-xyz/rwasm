@@ -9,6 +9,7 @@ mod memory;
 mod reusable_pool;
 mod store;
 mod table_entity;
+
 #[cfg(feature = "tracing")]
 mod tracer;
 mod value_stack;

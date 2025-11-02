@@ -284,7 +284,17 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     }
 
     #[cfg(feature = "tracing")]
-    pub fn step(&mut self) -> Result<bool, TrapCode> {
+    pub fn step(mut self) -> (Result<bool, TrapCode>, InstructionPtr, ValueStackPtr) {
+        if self.store.tracer.is_memory_inited == false {
+            self.prepare_memory_record();
+            self.store.tracer.is_memory_inited = true;
+        }
+        if !self
+            .ip
+            .is_valid((*self.module.code_section).last().unwrap() as *const Opcode as u64)
+        {
+            return (Err(TrapCode::UnreachableCodeReached), self.ip, self.sp);
+        };
         let instr = self.ip.get();
         self.trace_instr_pre(&instr);
         let mut wrapper = |instr: Opcode| -> Result<bool, TrapCode> {
@@ -293,26 +303,72 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         };
         let res = wrapper(instr);
         self.trace_instr_post(&instr, res.err());
-        res
+        (res, self.ip, self.sp)
+    }
+
+    #[cfg(feature = "tracing")]
+    pub fn prepare_memory_record(&mut self) {
+        use crate::{mem::MemoryRecord, mem_index::TypedAddress};
+
+        for item in self.module.data_section.windows(4).enumerate() {
+            let (addr, data) = item;
+            let addr = addr as u32;
+            let word = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+            let v_addr = TypedAddress::Data(addr).to_virtual_addr();
+            let record = MemoryRecord {
+                shard: 0,
+                timestamp: 0,
+                value: word,
+            };
+            println!("addr:{:?}drecord:{:?}", addr, record);
+
+            self.store.tracer.memory_records.insert(v_addr, record);
+        }
+        for item in self.module.elem_section.iter().enumerate() {
+            let (addr, data) = item;
+            let addr = addr as u32;
+
+            let v_addr = TypedAddress::Element(addr).to_virtual_addr();
+            let record = MemoryRecord {
+                shard: 0,
+                timestamp: 0,
+                value: *data,
+            };
+
+            self.store.tracer.memory_records.insert(v_addr, record);
+        }
     }
 
     #[cfg(feature = "tracing")]
     fn trace_instr_pre(&mut self, instr: &Opcode) {
-        self.store.tracer.state.next_cycle();
         let pc = self.program_counter();
         let memory_size: u32 = self.store.global_memory().current_pages().into();
         let consumed_fuel = self.store.fuel_consumed();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
+        if !instr.is_fat_op() {
+            self.store.tracer.state.next_cycle();
+        }
     }
 
     #[cfg(feature = "tracing")]
     fn trace_instr_post(&mut self, instr: &Opcode, trap_code: Option<TrapCode>) {
-        // TODO(wangyao): "track trap codes"
         let sp = self.sp.to_relative_address();
         let pc = self.program_counter();
         self.value_stack.sync_stack_ptr(self.sp);
         let stack = self.value_stack.dump_stack();
-        self.store.tracer.post_opcode_state(pc, sp, stack);
+        let op_state = self.store.tracer.logs.last_mut().unwrap();
+        op_state.next_pc = pc;
+        op_state.next_sp = sp;
+        let opcode = op_state.opcode;
+        self.store.tracer.post_opcode_state(pc, sp, *instr, stack);
+
+        println!("op_state:{:?}", self.store.tracer.logs.last());
+        // TODO(wangyao): "track trap codes"
+    }
+
+    #[cfg(feature = "tracing")]
+    pub fn relative_ip(self) -> isize {
+        self.ip.to_offset(self.module.code_section.as_ptr())
     }
 
     #[cfg(feature = "debug-print")]
@@ -379,18 +435,84 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         ) -> Result<(), TrapCode>,
         #[allow(unused_variables)] len: u32,
     ) -> Result<(), TrapCode> {
-        let (address, value) = self.sp.pop2();
-        let memory = self.store.global_memory().data_mut();
-        store_wrap(memory, address, offset, value)?;
+        #[cfg(not(feature = "tracing"))]
+        {
+            let (address, value) = self.sp.pop2();
+            let memory = self.store.global_memory().data_mut();
+            store_wrap(memory, address, offset, value)?;
+        }
         #[cfg(feature = "tracing")]
         {
-            let memory = memory.to_vec();
-            let base_address = offset + u32::from(address);
-            self.store.tracer.memory_change(
-                base_address,
-                len,
-                &memory[base_address as usize..(base_address + len) as usize],
-            );
+            use crate::{
+                align, is_multi_align,
+                mem::MemoryRecordEnum,
+                mem_index::{TypedAddress, UNIT},
+            };
+            let (address, value) = self.sp.pop2();
+            let addr = address.to_bits() + offset;
+            let aligned_addr: u32 = align(addr);
+            println!("base_addrss:{},value:{}", address, value);
+            let old_val = match self.store.tracer.memory_records.get(&aligned_addr).clone() {
+                Some(record) => record.value,
+                None => 0,
+            };
+            let opcode = self.ip.get();
+            let (new_val, new_val_hi) = {
+                let memory = self.store.global_memory().data_mut();
+                store_wrap(memory, address, offset, value)?;
+                let new_val = u32::from_le_bytes(
+                    memory[aligned_addr as usize..(aligned_addr + UNIT) as usize]
+                        .try_into()
+                        .unwrap(),
+                );
+
+                let new_val_hi = if is_multi_align(opcode, addr) {
+                    let aligned_addr_hi = aligned_addr + UNIT;
+                    u32::from_le_bytes(
+                        memory[(aligned_addr_hi) as usize..(aligned_addr_hi + UNIT) as usize]
+                            .try_into()
+                            .unwrap(),
+                    )
+                } else {
+                    0
+                };
+                (new_val, new_val_hi)
+            };
+
+            let typed_addr = TypedAddress::GlobalMemory(aligned_addr.into());
+
+            println!("rawaddr store:{}", aligned_addr);
+            println!("virtual_addr:{}", typed_addr.to_virtual_addr());
+            let res_memory_record = self
+                .store
+                .tracer
+                .mw(typed_addr.to_virtual_addr(), new_val.into());
+
+            self.store
+                .tracer
+                .logs
+                .last_mut()
+                .unwrap()
+                .memory_access
+                .memory = Some(MemoryRecordEnum::Write(res_memory_record));
+
+            self.store.tracer.logs.last_mut().unwrap().res = value.into();
+
+            if is_multi_align(opcode, addr) {
+                let aligned_addr_hi = aligned_addr + UNIT;
+                let typed_addr_hi = TypedAddress::GlobalMemory(aligned_addr_hi.into());
+                let res_record_hi = self
+                    .store
+                    .tracer
+                    .mw(typed_addr_hi.to_virtual_addr(), new_val_hi);
+                self.store
+                    .tracer
+                    .logs
+                    .last_mut()
+                    .unwrap()
+                    .memory_access
+                    .memory_hi = Some(MemoryRecordEnum::Write(res_record_hi));
+            }
         }
         self.ip.add(1);
         Ok(())

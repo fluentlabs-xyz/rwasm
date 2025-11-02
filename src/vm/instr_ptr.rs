@@ -67,4 +67,9 @@ impl InstructionPtr {
     pub fn is_valid(self, max: u64) -> bool {
         self.ptr as u64 <= max
     }
+
+    #[cfg(feature = "tracing")]
+    pub fn to_offset(self, src: *const Opcode) -> isize {
+        unsafe { self.ptr.offset_from(src) }
+    }
 }

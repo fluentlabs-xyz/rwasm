@@ -1,6 +1,8 @@
 #[cfg(feature = "tracing")]
 use serde::{Deserialize, Serialize};
 
+use crate::mem_index::TypedAddress;
+
 /// Memory Record.
 ///
 /// This object encapsulates the information needed to prove a memory access operation. This
@@ -246,7 +248,7 @@ impl From<MemoryWriteRecord> for MemoryRecordEnum {
 /// This object encapsulates the information needed to prove a memory access operation within a
 /// shard. This includes the address, initial memory access, and final memory access within a
 /// shard.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Copy)]
 pub struct MemoryLocalEvent {
     /// The address.
     pub addr: u32,
@@ -258,11 +260,23 @@ pub struct MemoryLocalEvent {
 #[derive(Debug, Copy, Clone, Default)]
 pub struct MemoryAccessRecord {
     /// The memory access of the `a` register.
-    pub a: Option<MemoryRecordEnum>,
+    pub arg1_record: Option<MemoryRecordEnum>,
     /// The memory access of the `b` register.
-    pub b: Option<MemoryRecordEnum>,
+    pub arg2_record: Option<MemoryRecordEnum>,
     /// The memory access of the `c` register.
-    pub c: Option<MemoryRecordEnum>,
+    pub res_record: Option<MemoryRecordEnum>,
     /// The memory access of the `memory` register.
     pub memory: Option<MemoryRecordEnum>,
+
+    /// The high memory access of memory op. This is only valid when the memory op is not aligned.
+    pub memory_hi: Option<MemoryRecordEnum>,
+
+    pub call_sp_access: Option<MemoryRecordEnum>,
+
+    pub arg1_addr: Option<TypedAddress>,
+    pub arg2_addr: Option<TypedAddress>,
+    pub res_addr: Option<TypedAddress>,
+    pub memory_addr: Option<TypedAddress>,
+    pub memory_hi_addr: Option<TypedAddress>,
+    pub call_sp_addr: Option<TypedAddress>,
 }

@@ -343,14 +343,14 @@ impl Opcode {
 
     pub fn is_ecall_instruction(self) -> bool {
         match self {
-            Opcode::Call(_) | Opcode::ReturnCall(_) => true,
+            Opcode::Call(_) | Opcode::ReturnCall(_) | Opcode::TableInit(_) => true,
             _ => false,
         }
     }
 
     pub fn is_branch_instruction(self) -> bool {
         match self {
-            Opcode::Br(_) | Opcode::BrIfEqz(_) | Opcode::BrIfNez(_) => true,
+            Opcode::Br(_) | Opcode::BrIfEqz(_) | Opcode::BrIfNez(_) | Opcode::BrTable(_) => true,
             _ => false,
         }
     }
@@ -416,9 +416,11 @@ impl Opcode {
         match self {
             Opcode::CallIndirect(_)
             | Opcode::CallInternal(_)
+            | Opcode::Call(_)
+            | Opcode::Return
             | Opcode::ReturnCallIndirect(_)
             | Opcode::ReturnCallInternal(_)
-            | Opcode::Return => true,
+            | Opcode::ReturnCall(_) => true,
             _ => false,
         }
     }
@@ -433,6 +435,37 @@ impl Opcode {
     pub fn is_local_instruction(self) -> bool {
         match self {
             Opcode::LocalGet(_) | Opcode::LocalSet(_) | Opcode::LocalTee(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_state_instrucition(self) -> bool {
+        match self {
+            Opcode::MemoryCopy
+            | Opcode::MemoryGrow
+            | Opcode::MemorySize
+            | Opcode::ConsumeFuel(_)
+            | Opcode::ConsumeFuelStack => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_table_instruction(self) -> bool {
+        match self {
+            Opcode::TableCopy(_, _)
+            | Opcode::TableFill(_)
+            | Opcode::TableInit(_)
+            | Opcode::TableGet(_)
+            | Opcode::TableSize(_)
+            | Opcode::TableSet(_)
+            | Opcode::TableGrow(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_fat_op(self) -> bool {
+        match self {
+            Opcode::TableInit(_) => true,
             _ => false,
         }
     }
