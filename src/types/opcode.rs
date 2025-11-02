@@ -343,10 +343,7 @@ impl Opcode {
 
     pub fn is_ecall_instruction(self) -> bool {
         match self {
-            Opcode::Call(_)
-            | Opcode::ReturnCall(_)
-            | Opcode::TableInit(_)
-            | Opcode::TableGrow(_) => true,
+            Opcode::Call(_) | Opcode::ReturnCall(_) | Opcode::TableInit(_) => true,
             _ => false,
         }
     }
@@ -468,7 +465,7 @@ impl Opcode {
 
     pub fn is_fat_op(self) -> bool {
         match self {
-            Opcode::TableInit(_) | Opcode::TableGrow(_) => true,
+            Opcode::TableInit(_) => true,
             _ => false,
         }
     }

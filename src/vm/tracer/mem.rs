@@ -1,6 +1,7 @@
-use crate::mem_index::TypedAddress;
 #[cfg(feature = "tracing")]
 use serde::{Deserialize, Serialize};
+
+use crate::mem_index::TypedAddress;
 
 /// Memory Record.
 ///
