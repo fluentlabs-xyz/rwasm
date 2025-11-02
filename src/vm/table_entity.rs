@@ -1,6 +1,6 @@
 use crate::{
     types::{TrapCode, UntypedValue},
-    N_MAX_TABLE_SIZE,
+    N_MAX_STACK_SIZE,
 };
 use alloc::vec::Vec;
 
@@ -44,7 +44,7 @@ impl TableEntity {
         let Some(desired) = current.checked_add(delta) else {
             return u32::MAX;
         };
-        if desired > N_MAX_TABLE_SIZE {
+        if desired as usize > N_MAX_STACK_SIZE {
             return u32::MAX;
         }
         self.elements.resize(desired as usize, init.to_bits());

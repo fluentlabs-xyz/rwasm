@@ -1,5 +1,9 @@
-use bitvec::{index::BitIdx, order::Lsb0, store::BitStore, vec::BitVec};
-use core::{cmp::min, ops::Range};
+use bitvec::index::BitIdx;
+use bitvec::order::Lsb0;
+use bitvec::store::BitStore;
+use bitvec::vec::BitVec;
+use core::cmp::min;
+use core::ops::Range;
 
 pub const USIZE_BITS: usize = 0_usize.count_zeros() as usize;
 
@@ -203,7 +207,8 @@ impl<const INLINE: usize> BitVecInlined<INLINE> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{bitvec_inlined::USIZE_BITS, types::bitvec_inlined::BitVecInlined};
+    use crate::bitvec_inlined::USIZE_BITS;
+    use crate::types::bitvec_inlined::BitVecInlined;
 
     #[test]
     fn tt() {

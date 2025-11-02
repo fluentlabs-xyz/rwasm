@@ -1,6 +1,6 @@
 use crate::{
-    N_MAX_DATA_SEGMENTS_BITS, N_MAX_ELEM_SEGMENTS_BITS, N_MAX_RECURSION_DEPTH, N_MAX_STACK_SIZE,
-    N_MAX_TABLES, N_MAX_TABLE_SIZE,
+    N_DEFAULT_STACK_SIZE, N_MAX_DATA_SEGMENTS_BITS, N_MAX_ELEM_SEGMENTS_BITS,
+    N_MAX_RECURSION_DEPTH, N_MAX_STACK_SIZE, N_MAX_TABLES, N_MAX_TABLE_SIZE,
 };
 
 /// We map every type of data of rwasm engine including stack, tables and call frames and memory
@@ -30,10 +30,8 @@ pub const FUNC_FRAME_END: u32 = FUNC_FRAME_START + FUNC_FRAME_SIZE * N_MAX_RECUR
 pub const TABLE_ELEM_SIZE: u32 = UNIT;
 pub const TABLE_SEG_START: u32 = FUNC_FRAME_END + UNIT;
 pub const TABLE_SEG_END: u32 = TABLE_SEG_START + N_MAX_TABLES * N_MAX_TABLE_SIZE * TABLE_ELEM_SIZE;
-pub const TABLE_SIZES_START: u32 = TABLE_SEG_END + UNIT;
-pub const TABLE_SIZES_END: u32 = TABLE_SIZES_START + N_MAX_TABLES * UNIT;
 pub const DATA_SEG_ELEM_SIZE: u32 = UNIT;
-pub const DATA_SEG_START: u32 = TABLE_SIZES_END + UNIT;
+pub const DATA_SEG_START: u32 = TABLE_SEG_END + UNIT;
 pub const DATA_SEG_END: u32 = DATA_SEG_START + N_MAX_DATA_SEGMENTS_BITS as u32 * DATA_SEG_ELEM_SIZE;
 pub const ELEMENT_SEG_SIZE: u32 = UNIT;
 pub const ELEMENT_SEG_START: u32 = DATA_SEG_END + UNIT;
@@ -48,11 +46,12 @@ pub enum TypedAddress {
     Stack(u32),
     FuncFrame(u32),
     Table(u32),
-    TableSize(u32),
     Data(u32),
     Element(u32),
     GlobalMemory(u32),
 }
+
+
 
 impl TypedAddress {
     pub fn from_stack_vaddr(sp: u32) -> TypedAddress {
@@ -77,12 +76,6 @@ impl TypedAddress {
                 let v_addr = TABLE_SEG_START + offset * UNIT;
                 debug_assert!(v_addr >= TABLE_SEG_START);
                 debug_assert!(v_addr < TABLE_SEG_END);
-                v_addr
-            }
-            TypedAddress::TableSize(offset) => {
-                let v_addr = TABLE_SIZES_START + offset * UNIT;
-                debug_assert!(v_addr >= TABLE_SIZES_START);
-                debug_assert!(v_addr < TABLE_SIZES_END);
                 v_addr
             }
             TypedAddress::Data(offset) => {
