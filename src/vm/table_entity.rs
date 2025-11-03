@@ -17,7 +17,7 @@ impl TableEntity {
     ///
     /// If `init` does not match the [`TableType`] element type.
     pub fn new() -> Self {
-        let elements = Vec::with_capacity(N_MAX_TABLE_SIZE as usize);
+        let elements = Vec::new();
         Self { elements }
     }
 
@@ -44,7 +44,7 @@ impl TableEntity {
         let Some(desired) = current.checked_add(delta) else {
             return u32::MAX;
         };
-        if desired as usize > self.elements.capacity() {
+        if desired > N_MAX_TABLE_SIZE {
             return u32::MAX;
         }
         self.elements.resize(desired as usize, init.to_bits());
