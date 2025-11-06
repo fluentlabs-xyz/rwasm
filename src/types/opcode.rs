@@ -304,7 +304,9 @@ impl Opcode {
             | Opcode::I32ShrS
             | Opcode::I32ShrU
             | Opcode::I32Rotl
-            | Opcode::I32Rotr => true,
+            | Opcode::I32Rotr
+            | Opcode::I32Extend8S
+            | Opcode::I32Extend16S => true,
             _ => false,
         }
     }
@@ -372,7 +374,12 @@ impl Opcode {
 
     pub fn is_unary_instruction(self) -> bool {
         match self {
-            Opcode::I32Clz | Opcode::I32Ctz | Opcode::I32Popcnt | Opcode::I32Eqz => true,
+            Opcode::I32Clz
+            | Opcode::I32Ctz
+            | Opcode::I32Popcnt
+            | Opcode::I32Eqz
+            | Opcode::I32Extend8S
+            | Opcode::I32Extend16S => true,
             _ => false,
         }
     }
