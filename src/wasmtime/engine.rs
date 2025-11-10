@@ -2,9 +2,8 @@ use crate::{ImportLinker, N_MAX_STACK_SIZE};
 use alloc::rc::Rc;
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
-use wasmtime::Engine;
-use std::{mem::size_of, sync::OnceLock};
+use std::mem::size_of;
+use std::sync::{Arc, OnceLock};
 use wasmtime::{Config, Engine, OptLevel, Strategy};
 
 static ENGINE: OnceLock<Engine> = OnceLock::new();
@@ -17,11 +16,11 @@ fn factory_wasmtime_engine() -> Engine {
     factory_wasmtime_engine_with_linker(None)
 }
 
-pub fn wasmtime_engine_with_linker(import_linker: Option<Rc<ImportLinker>>) -> &'static Engine {
+pub fn wasmtime_engine_with_linker(import_linker: Option<Arc<ImportLinker>>) -> &'static Engine {
     ENGINE.get_or_init(|| factory_wasmtime_engine_with_linker(import_linker))
 }
 
-fn factory_wasmtime_engine_with_linker(import_linker: Option<Rc<ImportLinker>>) -> Engine {
+fn factory_wasmtime_engine_with_linker(import_linker: Option<Arc<ImportLinker>>) -> Engine {
     let mut cfg = Config::new();
     #[cfg(feature = "pooling-allocator")]
     {

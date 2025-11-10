@@ -7,7 +7,7 @@ use anyhow::Result;
 use lazy_static::lazy_static;
 use rwasm::{
     compile_wasmi_module, compile_wasmtime_module, instruction_set, CallStack, CompilationConfig,
-    FuncType, I64ValueSplit, ImportLinker, ImportLinkerEntity, ImportName, InstructionSet,
+    FuelConfig, FuncType, I64ValueSplit, ImportLinker, ImportLinkerEntity, ImportName,
     ModuleParser, Opcode, RwasmExecutor, RwasmModule, StateRouterConfig, Store, Strategy, TrapCode,
     TypedExecutor, TypedStore, ValType, Value, ValueStack, F64,
 };
@@ -61,8 +61,13 @@ impl InstanceInner {
         result: &mut [Value],
         fuel: Option<u64>,
     ) -> std::result::Result<(), TrapCode> {
-        self.strategy
-            .execute(&mut self.store, func_name, params, result, fuel)
+        self.strategy.execute(
+            &mut self.store,
+            func_name,
+            params,
+            result,
+            FuelConfig { fuel_limit: fuel },
+        )
     }
 }
 
@@ -136,7 +141,11 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_i32"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I32,
-                    block_fuel: block_fuel.clone(),
+                    // syscall_fuel_param: SyscallFuelParams {
+                    //     base_fuel: 5,
+                    //     param_index: 1,
+                    //     linear_fuel: 2,
+                    // },
                     syscall_fuel_param: Default::default(),
                     params: &[ValType::I32],
                     result: &[],
@@ -177,7 +186,11 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_i32_f32"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I32_F32,
-                    block_fuel: block_fuel.clone(),
+                    // syscall_fuel_param: SyscallFuelParams {
+                    //     base_fuel: 10,
+                    //     param_index: 2,
+                    //     linear_fuel: 2,
+                    // },
                     syscall_fuel_param: Default::default(),
                     params: &[ValType::I32, ValType::F32],
                     result: &[],
@@ -303,20 +316,20 @@ impl TestContext<'_> {
                 }
 
                 Strategy::Rwasm {
-                    module: Rc::new(rwasm_module),
-                    engine: Rc::new(RefCell::new(Default::default())),
+                    module: rwasm_module,
+                    engine: Default::default(),
                 }
             }
             EngineMode::Wasmtime => {
                 let wasmtime_module = compile_wasmtime_module(config, wasm).unwrap();
                 Strategy::Wasmtime {
-                    module: Rc::new(wasmtime_module),
+                    module: wasmtime_module,
                 }
             }
             EngineMode::Wasmi => {
                 let wasmi_module = compile_wasmi_module(config, wasm).unwrap();
                 Strategy::Wasmi {
-                    module: Rc::new(wasmi_module),
+                    module: wasmi_module,
                 }
             }
         };
@@ -325,7 +338,7 @@ impl TestContext<'_> {
             self.import_linker.clone(),
             TestingContext::default(),
             testing_context_syscall_handler,
-            FuelConfig::new(u64::MAX),
+            FuelConfig::default().with_fuel_limit(u64::MAX),
         );
         store.context_mut(|ctx| ctx.state = FUNC_ENTRYPOINT);
         Ok(InstanceInner {

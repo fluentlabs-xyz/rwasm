@@ -6,8 +6,8 @@ use crate::{
         translator::{InstructionTranslator, ReusableAllocations},
     },
     CompilationConfig, CompilationError, ConstructorParams, DataSegmentIdx, ElementSegmentIdx,
-    FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName, Opcode, RwasmModule, RwasmModuleInner,
-    TableIdx, DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
+    FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName, LocalDepth, Opcode, RwasmModule,
+    RwasmModuleInner, TableIdx, UntypedValue, DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::{

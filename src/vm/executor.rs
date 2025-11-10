@@ -317,7 +317,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let sp = self.sp.to_relative_address();
 
         let pc = self.program_counter();
-        let stack = self.value_stack.dump_stack(self.sp);
+        let stack = self.value_stack.dump_stack();
         self.store.tracer.post_opcode_state(pc, sp, stack);
     }
 

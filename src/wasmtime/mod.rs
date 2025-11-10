@@ -1,6 +1,8 @@
 mod engine;
 
 use crate::wasmtime::engine::wasmtime_engine_with_linker;
+use crate::ExternRef;
+use crate::FuncRef;
 use crate::{
     wasmtime::engine::wasmtime_engine, Caller, CompilationConfig, FuelConfig, ImportLinker, Store,
     SyscallHandler, TrapCode, TypedCaller, UntypedValue, ValType, Value, F32, F64,
@@ -15,8 +17,10 @@ use std::{
     task::{Context, Poll},
     time::Instant,
 };
-use wasmi::{Mutability, StoreLimitsBuilder, Val};
-use wasmtime::{AsContext, AsContextMut, Extern, Func, Global, GlobalType, Rooted, WasmParams};
+use wasmtime::{
+    AsContext, AsContextMut, Extern, Global, GlobalType, StoreLimits, StoreLimitsBuilder,
+    WasmParams,
+};
 
 pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<T>;
@@ -113,7 +117,7 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
                 GlobalType::new(wasmtime::ValType::I32, wasmtime::Mutability::Const),
                 wasmtime::Val::I32(666),
             )
-                .unwrap(),
+            .unwrap(),
         );
         linker
             .define(store.as_context_mut(), "spectest", "global_i32", global)
@@ -125,7 +129,7 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
                 GlobalType::new(wasmtime::ValType::I64, wasmtime::Mutability::Const),
                 wasmtime::Val::I64(666),
             )
-                .unwrap(),
+            .unwrap(),
         );
         linker
             .define(store.as_context_mut(), "spectest", "global_i64", global)
