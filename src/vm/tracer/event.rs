@@ -74,6 +74,7 @@ pub struct TableInitEvent {
     pub stack_access: [MemoryReadRecord; 3],
     pub memory_read_access: Vec<MemoryReadRecord>,
     pub memory_write_acess: Vec<MemoryWriteRecord>,
+    pub table_size_read_acess: MemoryReadRecord,
     //If a memory addr is nenver touched by cpu it will ended up here.
     pub local_mem_access: Vec<MemoryLocalEvent>,
     pub local_mem_access_addr: Vec<u32>,

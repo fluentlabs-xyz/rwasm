@@ -271,6 +271,13 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                         let value = read_record.value;
                         table_init_event.memory_read_access.push(read_record);
                     }
+
+                    table_init_event.table_size_read_acess =
+                        self.store.tracer.mr_with_local_access(
+                            TypedAddress::TableSize(table_idx as u32).to_virtual_addr(),
+                            Some(&mut local_memory_access),
+                        );
+
                     self.store.tracer.state.next_cycle();
                     for offset in 0..len {
                         let value = table_init_event.memory_read_access[offset as usize].value;
