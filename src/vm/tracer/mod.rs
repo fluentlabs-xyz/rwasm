@@ -80,6 +80,7 @@ pub struct TracerInstrState {
 
     pub arg2: u32,
     pub res: u32,
+    pub res_hi: u32,
 
     pub call_state: Option<TraceCallData>,
     pub fat_op: Option<FatOpEvent>,
@@ -164,6 +165,7 @@ impl Tracer {
             arg1: 0,
             arg2: 0,
             res: 0,
+            res_hi: 0,
             call_state: None,
             fat_op: None,
         };
@@ -349,6 +351,22 @@ impl Tracer {
                     self.logs.last_mut().unwrap().next_call_sp = self.state.call_sp;
                 }
             }
+            Opcode::I32Add64 | Opcode::I32Mul64 => {
+                let hi_value = stack.last().unwrap().as_u32();
+                let low_value = stack[stack.len() - 2].as_u32();
+                let hi_record = self.mw(new_sp, hi_value);
+                let low_record = self.mw(new_sp + 4, low_value);
+                self.logs.last_mut().unwrap().memory_access.res_record =
+                    Some(MemoryRecordEnum::Write(low_record));
+                self.logs.last_mut().unwrap().res = low_value;
+                self.logs.last_mut().unwrap().memory_access.res_addr =
+                    Some(TypedAddress::from_stack_vaddr(new_sp + 4));
+                self.logs.last_mut().unwrap().memory_access.res_hi_record =
+                    Some(MemoryRecordEnum::Write(hi_record));
+                self.logs.last_mut().unwrap().res_hi = hi_value;
+                self.logs.last_mut().unwrap().memory_access.res_hi_addr =
+                    Some(TypedAddress::from_stack_vaddr(new_sp));
+            }
             _ => self.record_sw(opcode, new_sp, stack),
         }
         // if opcode.is_fat_op() {
@@ -427,6 +445,7 @@ impl Tracer {
             arg1: 0,
             arg2: 0,
             res: 0,
+            res_hi: 0,
             call_state: None,
             fat_op: None,
             next_pc: main_op_log.next_pc + 1,

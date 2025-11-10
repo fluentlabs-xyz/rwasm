@@ -28,6 +28,9 @@ impl Opcode {
                 return 1;
             }
         }
+        if self.is_64b_op() {
+            return 2;
+        }
         0
     }
     pub fn opcode_stack_write(self) -> bool {

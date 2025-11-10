@@ -16,25 +16,6 @@ pub struct MemoryRecord {
     pub value: u32,
 }
 
-/// Memory Access Position.
-///
-/// This enum represents the position of memory access in a register. For example, if memory
-/// access is performed in the C register, it will have a position of C.
-///
-/// Note: The register positions require that they be read and written in the following order:
-/// C, B, A.
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum MemoryAccessPosition {
-    /// Memory access position.
-    Memory = 0,
-    /// C register access position.
-    C = 1,
-    /// B register access position.
-    B = 2,
-    /// A register access position.
-    A = 3,
-}
-
 /// Memory Read Record.
 ///
 /// This object encapsulates the information needed to prove a memory read operation. This
@@ -264,6 +245,8 @@ pub struct MemoryAccessRecord {
     pub arg2_record: Option<MemoryRecordEnum>,
     /// The memory access of the `c` register.
     pub res_record: Option<MemoryRecordEnum>,
+
+    pub res_hi_record: Option<MemoryRecordEnum>,
     /// The memory access of the `memory` register.
     pub memory: Option<MemoryRecordEnum>,
 
@@ -275,6 +258,7 @@ pub struct MemoryAccessRecord {
     pub arg1_addr: Option<TypedAddress>,
     pub arg2_addr: Option<TypedAddress>,
     pub res_addr: Option<TypedAddress>,
+    pub res_hi_addr: Option<TypedAddress>,
     pub memory_addr: Option<TypedAddress>,
     pub memory_hi_addr: Option<TypedAddress>,
     pub call_sp_addr: Option<TypedAddress>,

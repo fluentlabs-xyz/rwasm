@@ -473,6 +473,13 @@ impl Opcode {
         }
     }
 
+    pub fn is_64b_op(self) -> bool {
+        match self {
+            Opcode::I32Add64 | Opcode::I32Mul64 => true,
+            _ => false,
+        }
+    }
+
     #[inline]
     pub fn aux_value(&self) -> u32 {
         match self {
