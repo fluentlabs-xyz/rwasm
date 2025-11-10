@@ -355,7 +355,7 @@ impl Tracer {
                 let hi_value = stack.last().unwrap().as_u32();
                 let low_value = stack[stack.len() - 2].as_u32();
                 let hi_record = self.mw(new_sp, hi_value);
-                let low_record = self.mw(new_sp + 4, low_value);
+                let low_record = self.mw(new_sp + UNIT, low_value);
                 self.logs.last_mut().unwrap().memory_access.res_record =
                     Some(MemoryRecordEnum::Write(low_record));
                 self.logs.last_mut().unwrap().res = low_value;
