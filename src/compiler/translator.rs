@@ -930,7 +930,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             _ => {}
         }
         let fuel_ix = self.push_consume_fuel_empty();
-        if self.alloc.control_frames.len() != 0 {
+        if self.is_fuel_metering_enabled() && self.alloc.control_frames.len() != 0 {
             let mut frame = self.alloc.control_frames.pop_frame();
             frame.update_consume_fuel_instr(fuel_ix);
             self.alloc.control_frames.push_frame(frame);
@@ -1016,9 +1016,11 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             }
 
             let fuel_ix = builder.push_consume_fuel_empty();
-            let mut frame = builder.alloc.control_frames.pop_frame();
-            frame.update_consume_fuel_instr(fuel_ix);
-            builder.alloc.control_frames.push_frame(frame);
+            if builder.is_fuel_metering_enabled() {
+                let mut frame = builder.alloc.control_frames.pop_frame();
+                frame.update_consume_fuel_instr(fuel_ix);
+                builder.alloc.control_frames.push_frame(frame);
+            }
 
             Ok(())
         })
