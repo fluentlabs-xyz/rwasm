@@ -4,7 +4,7 @@ use alloc::rc::Rc;
 use std::collections::HashMap;
 use std::mem::size_of;
 use std::sync::{Arc, OnceLock};
-use wasmtime::{Config, Engine, OptLevel, Strategy};
+use wasmtime::{Config, Engine, OptLevel, Strategy, SyscallFuelParams, SyscallName};
 
 static ENGINE: OnceLock<Engine> = OnceLock::new();
 
@@ -66,15 +66,15 @@ fn factory_wasmtime_engine_with_linker(import_linker: Option<Arc<ImportLinker>>)
         for (import_name, import_entity) in import_linker.iter() {
             if import_entity.syscall_fuel_param != Default::default() {
                 syscall_params.insert(
-                    (
-                        import_name.module.to_string(),
-                        import_name.field.to_string(),
-                    ),
-                    (
-                        import_entity.syscall_fuel_param.base_fuel,
-                        import_entity.syscall_fuel_param.param_index,
-                        import_entity.syscall_fuel_param.linear_fuel,
-                    ),
+                    SyscallName {
+                        module: import_name.module.to_string(),
+                        name: import_name.field.to_string(),
+                    },
+                    SyscallFuelParams {
+                        base_fuel: import_entity.syscall_fuel_param.base_fuel,
+                        param_index: import_entity.syscall_fuel_param.param_index,
+                        linear_fuel: import_entity.syscall_fuel_param.linear_fuel,
+                    },
                 );
             }
         }
