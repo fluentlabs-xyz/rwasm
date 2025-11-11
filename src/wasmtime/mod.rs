@@ -79,7 +79,7 @@ pub struct WasmtimeStore<T: 'static + Send + Sync> {
     pub instance_pre: wasmtime::InstancePre<WrappedContext<T>>,
     pub fut: Option<ExecFuture<T>>,
     pub shared_control_state: Arc<RwLock<SharedControlState<T>>>,
-    pub instance: Option<wasmtime::Instance>,
+    pub instance: wasmtime::Instance,
 }
 
 impl<T: 'static + Send + Sync> WasmtimeStore<T> {
@@ -138,12 +138,18 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         let instance_pre = linker
             .instantiate_pre(&module)
             .unwrap_or_else(|err| panic!("wasmtime: can't pre-instantiate module: {}", err));
+        let instance = futures::executor::block_on(async {
+            instance_pre
+                .instantiate_async(store.as_context_mut())
+                .await
+                .unwrap_or_else(|err| panic!("wasmtime: can't instantiate module: {}", err))
+        });
         Self {
             store: Some(store),
             instance_pre,
             fut: None,
             shared_control_state,
-            instance: None,
+            instance,
         }
     }
 
@@ -167,18 +173,16 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         debug_assert!(shared_control_state.interrupt_channel.is_none());
         drop(shared_control_state);
 
-        let (instance, entrypoint) = futures::executor::block_on(async {
-            let instance = self
-                .instance_pre
-                .instantiate_async(store.as_context_mut())
-                .await
-                .unwrap_or_else(|err| panic!("wasmtime: can't instantiate module: {}", err));
-            let entrypoint = instance
-                .get_func(store.as_context_mut(), func_name)
-                .unwrap_or_else(|| unreachable!("wasmtime: missing entrypoint: {}", func_name));
-            (instance, entrypoint)
-        });
-        self.instance = Some(instance);
+        let before_init = store.get_fuel();
+
+        let entrypoint = self
+            .instance
+            .get_func(store.as_context_mut(), func_name)
+            .unwrap_or_else(|| unreachable!("wasmtime: missing entrypoint: {}", func_name));
+
+        let after_init = store.get_fuel();
+
+        println!("Before {:?}, after: {:?}", before_init, after_init);
 
         let mut buffer = Vec::<wasmtime::Val>::default();
         for (i, value) in params.iter().enumerate() {
@@ -314,7 +318,7 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
 
 impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        let instance = self.instance.clone().unwrap();
+        let instance = self.instance.clone();
         self.with_store_mut(|store| {
             let global_memory = instance
                 .get_export(store.as_context_mut(), "memory")
@@ -343,7 +347,7 @@ impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
                 });
             return Ok(());
         }
-        let instance = self.instance.clone().unwrap();
+        let instance = self.instance.clone();
         self.with_store_mut(|store| {
             let global_memory = instance
                 .get_export(store.as_context_mut(), "memory")
