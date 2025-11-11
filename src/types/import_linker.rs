@@ -78,7 +78,7 @@ impl ImportLinker {
         &mut self,
         import_name: ImportName,
         sys_func_idx: u32,
-        block_fuel: InstructionSet,
+        syscall_fuel_param: SyscallFuelParams,
         params: &'static [ValType],
         result: &'static [ValType],
     ) {
@@ -86,7 +86,7 @@ impl ImportLinker {
             import_name,
             ImportLinkerEntity {
                 sys_func_idx,
-                syscall_fuel_param: Default::default(),
+                syscall_fuel_param,
                 params,
                 result,
                 intrinsic: None,
