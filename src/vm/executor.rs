@@ -417,7 +417,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let mut buffer = SmallVec::<[Value; 16]>::default();
         buffer.resize(params.len() + result.len(), Value::I32(0));
         for (i, x) in params.iter().enumerate() {
-            buffer[params.len() - i - 1] = self.sp.pop_value(*x);
+            buffer[i] = self.sp.pop_value(*x);
         }
         for (i, x) in result.iter().enumerate() {
             buffer[params.len() + i] = Value::default(*x);
