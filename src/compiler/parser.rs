@@ -506,6 +506,16 @@ impl ModuleParser {
                 translator
                     .alloc
                     .instruction_set
+                    .op_i32_const(UntypedValue::from(31));
+                translator.alloc.instruction_set.op_i32_add();
+                translator
+                    .alloc
+                    .instruction_set
+                    .op_i32_const(UntypedValue::from(32));
+                translator.alloc.instruction_set.op_i32_div_u();
+                translator
+                    .alloc
+                    .instruction_set
                     .op_i32_const(UntypedValue::from(
                         import_linker_entity.syscall_fuel_param.linear_fuel,
                     ));
