@@ -1,4 +1,8 @@
-use crate::{Caller, CompilationConfig, FuelConfig, FuncRef, ImportLinker, Store, SysFuncIdx, SyscallHandler, TrapCode, TypedCaller, UntypedValue, Value, F32, F64, N_DEFAULT_STACK_SIZE, N_MAX_RECURSION_DEPTH, N_MAX_STACK_SIZE};
+use crate::{
+    Caller, CompilationConfig, FuelConfig, FuncRef, ImportLinker, Store, SysFuncIdx,
+    SyscallHandler, TrapCode, TypedCaller, UntypedValue, Value, F32, F64, N_DEFAULT_STACK_SIZE,
+    N_MAX_RECURSION_DEPTH, N_MAX_STACK_SIZE,
+};
 use alloc::{sync::Arc, vec::Vec};
 use num_traits::FromPrimitive;
 use smallvec::SmallVec;
@@ -243,23 +247,19 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
             )
             .unwrap();
 
-        let instance = linker
-            .instantiate(store.as_context_mut(), &module)
-            .map_err(map_wasmi_error)?;
-        if let Some(fuel_limit) = fuel {
+        let instance_pre = linker.instantiate(store.as_context_mut(), &module).unwrap();
+        if let Some(fuel_limit) = fuel_config.fuel_limit {
             store
                 .set_fuel(fuel_limit)
                 .unwrap_or_else(|_| unreachable!("trying to set fuel with disabled wasmi fuel"));
         }
-        let instance = instance_pre
-            .start(store.as_context_mut())
-            .map_err(map_wasmi_error)?;
+        let instance = instance_pre.start(store.as_context_mut()).unwrap();
 
-        Ok(Self {
+        Self {
             store,
             instance,
             resumable_context: None,
-        })
+        }
     }
 
     pub(crate) fn execute(
