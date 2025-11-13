@@ -1,7 +1,7 @@
 use rwasm::{
     always_failing_syscall_handler, compile_wasmtime_module, instruction_set, CompilationConfig,
-    ExecutionEngine, FuelConfig, ImportLinker, ImportName, InstructionSet, RwasmModule, RwasmStore,
-    Store, Strategy, TrapCode, TypedCaller, Value, WasmtimeStore,
+    ExecutionEngine, FuelConfig, ImportLinker, ImportName, RwasmModule, RwasmStore, Store,
+    Strategy, SyscallFuelParams, TrapCode, TypedCaller, Value, WasmtimeStore,
 };
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ fn default_import_linker() -> Arc<ImportLinker> {
     import_linker.insert_function(
         ImportName::new("hello", "world"),
         0xff,
-        InstructionSet::default(),
+        SyscallFuelParams::default(),
         &[],
         &[],
     );
@@ -111,8 +111,7 @@ fn test_interrupted_call_wasmtime() {
         (),
         interrupting_syscall_handler,
         FuelConfig::default(),
-    )
-    .unwrap();
+    );
     let mut result = [Value::I32(0); 1];
     let err = wasmtime_worker
         .execute("main", &[], &mut result)
@@ -179,8 +178,7 @@ fn test_memory_write_during_interruption() {
                 Err(TrapCode::InterruptionCalled)
             },
             FuelConfig::default(),
-        )
-            .unwrap();
+        );
         let mut result = [Value::I32(0); 1];
         let err = strategy
             .execute(&mut store, "main", &[], &mut result)

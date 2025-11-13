@@ -1,8 +1,8 @@
 use hex_literal::hex;
 use rwasm::{
     compile_wasmtime_module, for_each_strategy, CompilationConfig, ExecutionEngine, FuelConfig,
-    ImportLinker, ImportName, InstructionSet, RwasmModule, RwasmStore, Store, Strategy, TrapCode,
-    TypedCaller, Value,
+    ImportLinker, ImportName, InstructionSet, RwasmModule, RwasmStore, Store, Strategy,
+    SyscallFuelParams, TrapCode, TypedCaller, Value,
 };
 use std::sync::Arc;
 use wasmparser::ValType;
@@ -68,35 +68,35 @@ fn create_import_linker() -> Arc<ImportLinker> {
     import_linker.insert_function(
         ImportName::new("fluentbase_v1preview", "_debug_log"),
         70,
-        InstructionSet::default(),
+        SyscallFuelParams::default(),
         &[ValType::I32; 2],
         &[],
     );
     import_linker.insert_function(
         ImportName::new("fluentbase_v1preview", "_input_size"),
         71,
-        InstructionSet::default(),
+        SyscallFuelParams::default(),
         &[],
         &[ValType::I32; 1],
     );
     import_linker.insert_function(
         ImportName::new("fluentbase_v1preview", "_read"),
         72,
-        InstructionSet::default(),
+        SyscallFuelParams::default(),
         &[ValType::I32; 3],
         &[],
     );
     import_linker.insert_function(
         ImportName::new("fluentbase_v1preview", "_write"),
         73,
-        InstructionSet::default(),
+        SyscallFuelParams::default(),
         &[ValType::I32; 2],
         &[],
     );
     import_linker.insert_function(
         ImportName::new("fluentbase_v1preview", "_exit"),
         74,
-        InstructionSet::default(),
+        SyscallFuelParams::default(),
         &[ValType::I32; 1],
         &[],
     );
@@ -169,7 +169,8 @@ fn test_nitro_verifier_strategy() {
             (),
             fluentbase_syscall_handler,
             FuelConfig::default().with_fuel_limit(1_000_000_000),
-        ).unwrap();;
+        );
+
         strategy
             .execute::<()>(&mut store, "main", &[], &mut [])
             .map_err(Into::into)

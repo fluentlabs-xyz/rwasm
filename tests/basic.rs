@@ -10,7 +10,7 @@ fn test_fib() {
         .with_consume_fuel(false);
     for_each_strategy(
         |strategy| {
-            let mut store = strategy.empty_store().unwrap();
+            let mut store = strategy.empty_store();
             let mut result = [Value::I32(0); 1];
             strategy.execute(&mut store, "main", &[Value::I32(43)], &mut result)?;
             assert_eq!(result[0].i32().unwrap(), 433494437);

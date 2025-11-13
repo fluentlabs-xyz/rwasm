@@ -300,6 +300,15 @@ impl<T: Send + Sync> TypedStore<T> {
             TypedStore::Wasmi(_) => {}
         }
     }
+
+    pub fn set_fuel(&mut self, fuel: u64) {
+        match self {
+            TypedStore::Rwasm(store) => store.set_fuel(Some(fuel)),
+            #[cfg(feature = "wasmtime")]
+            TypedStore::Wasmtime(store) => store.store.as_mut().unwrap().set_fuel(fuel).unwrap(),
+            TypedStore::Wasmi(_) => {}
+        }
+    }
 }
 
 impl Strategy {
@@ -350,7 +359,6 @@ impl Strategy {
         func_name: &str,
         params: &[Value],
         result: &mut [Value],
-        fuel_config: FuelConfig,
     ) -> Result<(), TrapCode> {
         match self {
             Strategy::Rwasm { module, engine } => {
@@ -368,11 +376,6 @@ impl Strategy {
                     TypedStore::Wasmtime(store) => store,
                     _ => unreachable!(),
                 };
-                if let Some(s) = store.store.as_mut() {
-                    if let Some(fuel) = fuel_config.fuel_limit {
-                        s.set_fuel(fuel).unwrap();
-                    }
-                }
 
                 store.execute(func_name, params, result)
             }

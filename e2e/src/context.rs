@@ -6,10 +6,10 @@ use crate::handler::{
 use anyhow::Result;
 use lazy_static::lazy_static;
 use rwasm::{
-    compile_wasmi_module, compile_wasmtime_module, instruction_set, CallStack, CompilationConfig,
-    FuelConfig, FuncType, I64ValueSplit, ImportLinker, ImportLinkerEntity, ImportName,
-    ModuleParser, Opcode, RwasmExecutor, RwasmModule, StateRouterConfig, Store, Strategy, TrapCode,
-    TypedExecutor, TypedStore, ValType, Value, ValueStack, F64,
+    compile_wasmi_module, compile_wasmtime_module, CallStack, CompilationConfig, FuelConfig,
+    FuncType, I64ValueSplit, ImportLinker, ImportLinkerEntity, ImportName, ModuleParser, Opcode,
+    RwasmExecutor, RwasmModule, StateRouterConfig, Store, Strategy, TrapCode, TypedExecutor,
+    TypedStore, ValType, Value, ValueStack, F64,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use wast::token::{Id, Span};
@@ -44,10 +44,10 @@ impl InstanceInner {
                     rwasm_store,
                 ))
             }
-            (Strategy::Wasmtime { .. }, TypedStore::Wasmtime(wasmtime_store)) => {
+            (Strategy::Wasmtime { .. }, TypedStore::Wasmtime(_)) => {
                 unreachable!("Wasmtime isn't supported executor")
             }
-            (Strategy::Wasmi { .. }, TypedStore::Wasmi(wasmi_store)) => {
+            (Strategy::Wasmi { .. }, TypedStore::Wasmi(_)) => {
                 unreachable!("Wasmi isn't supported executor")
             }
             _ => panic!("inconsistent types of module and store"),
@@ -59,15 +59,9 @@ impl InstanceInner {
         func_name: &str,
         params: &[Value],
         result: &mut [Value],
-        fuel: Option<u64>,
     ) -> std::result::Result<(), TrapCode> {
-        self.strategy.execute(
-            &mut self.store,
-            func_name,
-            params,
-            result,
-            FuelConfig { fuel_limit: fuel },
-        )
+        self.strategy
+            .execute(&mut self.store, func_name, params, result)
     }
 }
 
@@ -113,9 +107,6 @@ impl<'a> TestContext<'a> {
     }
 
     pub fn create_import_linker() -> Arc<ImportLinker> {
-        let block_fuel = instruction_set! {
-            .op_i32_const(0)
-        };
         ImportLinker::from([
             (
                 ImportName::new("__nothing_here", "__absolutely_nothing"),
@@ -253,7 +244,7 @@ impl TestContext<'_> {
             if let Strategy::Rwasm { .. } = &instance_inner.strategy {
                 #[cfg(feature = "debug-print")]
                 println!(" --- entrypoint ---");
-                instance_inner.execute("", &[], &mut [], Some(u64::MAX))?;
+                instance_inner.execute("", &[], &mut [])?;
 
                 #[cfg(feature = "debug-print")]
                 println!();
@@ -507,12 +498,16 @@ impl TestContext<'_> {
                 Strategy::Wasmtime { .. } => {
                     let func_type = self.extern_types.get(func_name).unwrap();
                     let mut result = vec![Value::I32(0); func_type.results().len()];
+                    if let TypedStore::Wasmtime(store) = &mut instance.store {
+                        store.store.as_mut().unwrap().set_fuel(u64::MAX).unwrap();
+                    }
+
                     #[cfg(feature = "debug-print")]
                     println!(
                         "Wasmitime before call: {:?}",
                         instance.store.remaining_fuel()
                     );
-                    instance.execute(func_name, args, result.as_mut(), Some(u64::MAX))?;
+                    instance.execute(func_name, args, result.as_mut())?;
                     #[cfg(feature = "debug-print")]
                     println!("Wasmtime after call: {:?}", instance.store.remaining_fuel());
                     remaining_fuel.push(instance.store.remaining_fuel());
@@ -523,7 +518,7 @@ impl TestContext<'_> {
                     let mut result = vec![Value::I32(0); func_type.results().len()];
                     #[cfg(feature = "debug-print")]
                     println!("Wasmi before call: {:?}", instance.store.remaining_fuel());
-                    instance.execute(func_name, args, result.as_mut(), Some(u64::MAX))?;
+                    instance.execute(func_name, args, result.as_mut())?;
                     #[cfg(feature = "debug-print")]
                     println!("Wasmi after call: {:?}", instance.store.remaining_fuel());
                     remaining_fuel.push(instance.store.remaining_fuel());

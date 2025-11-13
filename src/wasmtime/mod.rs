@@ -4,8 +4,8 @@ use crate::wasmtime::engine::wasmtime_engine_with_linker;
 use crate::ExternRef;
 use crate::FuncRef;
 use crate::{
-    wasmtime::engine::wasmtime_engine, Caller, CompilationConfig, FuelConfig, ImportLinker, Store,
-    SyscallHandler, TrapCode, TypedCaller, UntypedValue, ValType, Value, F32, F64,
+    Caller, CompilationConfig, FuelConfig, ImportLinker, Store, SyscallHandler, TrapCode,
+    TypedCaller, UntypedValue, ValType, Value, F32, F64,
 };
 use futures::{channel::oneshot, future::Either, task::noop_waker};
 use smallvec::SmallVec;
@@ -426,7 +426,10 @@ pub fn deserialize_wasmtime_module(
 ) -> anyhow::Result<WasmtimeModule> {
     print!("parsing wasmtime module... ");
     let start = Instant::now();
-    let engine = wasmtime_engine_with_linker(compilation_config.import_linker);
+    let engine = wasmtime_engine_with_linker(
+        compilation_config.import_linker,
+        compilation_config.consume_fuel,
+    );
     let module = unsafe { wasmtime::Module::deserialize(&engine, wasmtime_binary) };
     println!("{:?}", start.elapsed());
     module
@@ -438,7 +441,10 @@ pub fn compile_wasmtime_module(
 ) -> anyhow::Result<WasmtimeModule> {
     print!("compiling wasmtime module... ");
     let start = Instant::now();
-    let engine = wasmtime_engine_with_linker(compilation_config.import_linker);
+    let engine = wasmtime_engine_with_linker(
+        compilation_config.import_linker,
+        compilation_config.consume_fuel,
+    );
     let module = wasmtime::Module::new(&engine, wasm_binary);
     println!("{:?}", start.elapsed());
     module

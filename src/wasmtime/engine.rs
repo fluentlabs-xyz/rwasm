@@ -13,14 +13,20 @@ pub fn wasmtime_engine() -> &'static Engine {
 }
 
 fn factory_wasmtime_engine() -> Engine {
-    factory_wasmtime_engine_with_linker(None)
+    factory_wasmtime_engine_with_linker(None, false)
 }
 
-pub fn wasmtime_engine_with_linker(import_linker: Option<Arc<ImportLinker>>) -> &'static Engine {
-    ENGINE.get_or_init(|| factory_wasmtime_engine_with_linker(import_linker))
+pub fn wasmtime_engine_with_linker(
+    import_linker: Option<Arc<ImportLinker>>,
+    consume_fuel: bool,
+) -> &'static Engine {
+    ENGINE.get_or_init(|| factory_wasmtime_engine_with_linker(import_linker, consume_fuel))
 }
 
-fn factory_wasmtime_engine_with_linker(import_linker: Option<Arc<ImportLinker>>) -> Engine {
+fn factory_wasmtime_engine_with_linker(
+    import_linker: Option<Arc<ImportLinker>>,
+    consume_fuel: bool,
+) -> Engine {
     let mut cfg = Config::new();
     #[cfg(feature = "pooling-allocator")]
     {
@@ -52,7 +58,7 @@ fn factory_wasmtime_engine_with_linker(import_linker: Option<Arc<ImportLinker>>)
     cfg.memory_init_cow(true);
     cfg.cranelift_opt_level(OptLevel::SpeedAndSize);
     cfg.parallel_compilation(false);
-    cfg.consume_fuel(true);
+    cfg.consume_fuel(consume_fuel);
     // Enable debug info and backtrace for debug mode
     #[cfg(debug_assertions)]
     {

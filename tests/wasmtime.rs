@@ -26,9 +26,11 @@ fn test_10001_instances_in_a_row() {
     };
     for _ in 0..10_000 {
         let mut store = strategy.empty_store();
+        store.set_fuel(u64::MAX);
         strategy.execute(&mut store, "main", &[], &mut []).unwrap();
     }
     let mut store = strategy.empty_store();
+    store.set_fuel(u64::MAX);
     strategy.execute(&mut store, "main", &[], &mut []).unwrap();
 }
 
