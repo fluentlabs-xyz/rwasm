@@ -162,6 +162,24 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         self.sp = self.value_stack.stack_ptr();
         self.ip = InstructionPtr::new(self.module.code_section.as_ptr());
         self.ip.add(instr_ref as usize);
+        #[cfg(feature = "tracing")]
+        {
+            use crate::{mem_index::TypedAddress, TraceCallData, N_MAX_TABLE_SIZE};
+
+            let addr = TypedAddress::Table(table as u32 * N_MAX_TABLE_SIZE + func_index);
+            let table_read_record = self.store.tracer.mr(addr.to_virtual_addr());
+
+            let call_state = TraceCallData {
+                calltype: crate::CallType::CallIndirect,
+                table_id: table as u32,
+                table_idx: func_index,
+                func_ref: instr_ref,
+                signature_id: signature_idx,
+                table_access: Some(table_read_record),
+            };
+            self.store.tracer.logs.last_mut().unwrap().call_state = Some(call_state);
+            self.store.tracer.state.next_cycle();
+        }
         Ok(())
     }
 }
