@@ -5,9 +5,10 @@ use crate::{
         snippets::Snippet,
         translator::{InstructionTranslator, ReusableAllocations},
     },
-    CompilationConfig, CompilationError, ConstructorParams, DataSegmentIdx, ElementSegmentIdx,
-    FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName, LocalDepth, Opcode, RwasmModule,
-    RwasmModuleInner, TableIdx, UntypedValue, DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
+    BranchOffset, CompilationConfig, CompilationError, ConstructorParams, DataSegmentIdx,
+    ElementSegmentIdx, FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName, LocalDepth, Opcode,
+    RwasmModule, RwasmModuleInner, TableIdx, TrapCode, UntypedValue, DEFAULT_MEMORY_INDEX,
+    SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::{
@@ -492,44 +493,71 @@ impl ModuleParser {
                 .alloc
                 .resolve_func_type_signature(func_type_index);
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
-            if self.config.builtins_consume_fuel
-                && import_linker_entity.syscall_fuel_param.linear_fuel
-                    | import_linker_entity.syscall_fuel_param.base_fuel
-                    != 0
-            {
-                translator
-                    .alloc
-                    .instruction_set
-                    .op_local_get(LocalDepth::from(
-                        import_linker_entity.syscall_fuel_param.param_index as u32,
-                    ));
-                translator
-                    .alloc
-                    .instruction_set
-                    .op_i32_const(UntypedValue::from(31));
-                translator.alloc.instruction_set.op_i32_add();
-                translator
-                    .alloc
-                    .instruction_set
-                    .op_i32_const(UntypedValue::from(32));
-                translator.alloc.instruction_set.op_i32_div_u();
-                translator
-                    .alloc
-                    .instruction_set
-                    .op_i32_const(UntypedValue::from(
-                        import_linker_entity.syscall_fuel_param.linear_fuel,
-                    ));
-                translator.alloc.instruction_set.op_i32_mul();
-                translator
-                    .alloc
-                    .instruction_set
-                    .op_i32_const(UntypedValue::from(
-                        import_linker_entity.syscall_fuel_param.base_fuel,
-                    ));
-                translator.alloc.instruction_set.op_i32_add();
 
-                translator.alloc.instruction_set.op_consume_fuel_stack()
+            if self.config.builtins_consume_fuel {
+                if import_linker_entity.syscall_fuel_param.linear_fuel != 0 {
+                    const FUEL_MAX_LINEAR_X: u32 = 262_143; // 2^18 - 1
+                    translator
+                        .alloc
+                        .instruction_set
+                        .op_local_get(LocalDepth::from(
+                            import_linker_entity.syscall_fuel_param.param_index as u32,
+                        ));
+                    translator
+                        .alloc
+                        .instruction_set
+                        .op_i32_const(UntypedValue::from(FUEL_MAX_LINEAR_X));
+                    translator.alloc.instruction_set.op_i32_gt_u();
+                    translator
+                        .alloc
+                        .instruction_set
+                        .op_br_if_eqz(BranchOffset::from(2));
+                    translator
+                        .alloc
+                        .instruction_set
+                        .op_trap(TrapCode::IntegerOverflow);
+
+                    translator
+                        .alloc
+                        .instruction_set
+                        .op_local_get(LocalDepth::from(
+                            import_linker_entity.syscall_fuel_param.param_index as u32,
+                        ));
+                    translator
+                        .alloc
+                        .instruction_set
+                        .op_i32_const(UntypedValue::from(31));
+                    translator.alloc.instruction_set.op_i32_add();
+                    translator
+                        .alloc
+                        .instruction_set
+                        .op_i32_const(UntypedValue::from(32));
+                    translator.alloc.instruction_set.op_i32_div_u();
+                    translator
+                        .alloc
+                        .instruction_set
+                        .op_i32_const(UntypedValue::from(
+                            import_linker_entity.syscall_fuel_param.linear_fuel,
+                        ));
+                    translator.alloc.instruction_set.op_i32_mul();
+                    if import_linker_entity.syscall_fuel_param.base_fuel != 0 {
+                        translator
+                            .alloc
+                            .instruction_set
+                            .op_i32_const(UntypedValue::from(
+                                import_linker_entity.syscall_fuel_param.base_fuel,
+                            ));
+                        translator.alloc.instruction_set.op_i32_add();
+                    }
+                    translator.alloc.instruction_set.op_consume_fuel_stack()
+                } else if import_linker_entity.syscall_fuel_param.base_fuel != 0 {
+                    translator
+                        .alloc
+                        .instruction_set
+                        .op_consume_fuel(import_linker_entity.syscall_fuel_param.base_fuel as u32)
+                }
             }
+
             translator
                 .alloc
                 .instruction_set
