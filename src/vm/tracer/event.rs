@@ -64,13 +64,13 @@ impl Opcode {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
 pub enum FatOpEvent {
-    TableInit(TableInitEvent),
+    TableInitFill(TableInitFillEvent),
     TableGrow(TableGrowEvent),
 }
 
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
-pub struct TableInitEvent {
+pub struct TableInitFillEvent {
     pub clk: u32,
     pub shard: u32,
     pub sp: u32,

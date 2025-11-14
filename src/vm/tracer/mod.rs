@@ -1,6 +1,6 @@
 use super::ValueStackPtr;
 use crate::{
-    event::{FatOpEvent, TableGrowEvent, TableInitEvent},
+    event::{FatOpEvent, TableGrowEvent, TableInitFillEvent},
     mem_index::{TypedAddress, UNIT},
     types::Opcode,
     vm::tracer::{
@@ -217,41 +217,43 @@ impl Tracer {
             opcode_state.next_call_sp = self.state.call_sp - 1;
         }
         if opcode.is_table_instruction() {
-            if let Opcode::TableInit(_) = opcode {
-                let mut fat_op_event = TableInitEvent::default();
-                let mut local_memory_access = HashMap::default();
-                for idx in 0..3 {
-                    let addr = sp + idx * UNIT;
-                    println!("idx:{},addr:{}", idx, addr);
-                    let read_record =
-                        self.mr_with_local_access(addr, Some(&mut local_memory_access));
+            match opcode {
+                Opcode::TableInit(_) | Opcode::TableFill(_) => {
+                    let mut fat_op_event = TableInitFillEvent::default();
+                    let mut local_memory_access = HashMap::default();
+                    for idx in 0..3 {
+                        let addr = sp + idx * UNIT;
 
-                    match idx {
-                        2 => {
-                            fat_op_event.stack_access[0] = read_record;
-                            fat_op_event.d = read_record.value;
+                        let read_record =
+                            self.mr_with_local_access(addr, Some(&mut local_memory_access));
+
+                        match idx {
+                            2 => {
+                                fat_op_event.stack_access[0] = read_record;
+                                fat_op_event.d = read_record.value;
+                            }
+                            1 => {
+                                fat_op_event.stack_access[1] = read_record;
+                                fat_op_event.s = read_record.value;
+                            }
+                            0 => {
+                                fat_op_event.stack_access[2] = read_record;
+                                fat_op_event.n = read_record.value;
+                            }
+                            _ => unreachable!(),
                         }
-                        1 => {
-                            println!("s: read_record:{:?}", read_record);
-                            fat_op_event.stack_access[1] = read_record;
-                            fat_op_event.s = read_record.value;
-                        }
-                        0 => {
-                            fat_op_event.stack_access[2] = read_record;
-                            fat_op_event.n = read_record.value;
-                        }
-                        _ => unreachable!(),
                     }
+                    fat_op_event.clk = self.state.clk;
+                    fat_op_event.shard = self.state.shard;
+                    fat_op_event.sp = sp;
+                    fat_op_event.next_sp = sp + 3 * UNIT;
+                    fat_op_event.local_mem_access =
+                        local_memory_access.iter().map(|(_, v)| (*v)).collect();
+                    fat_op_event.local_mem_access_addr =
+                        local_memory_access.iter().map(|(k, v)| (*k)).collect();
+                    opcode_state.fat_op = Some(FatOpEvent::TableInitFill(fat_op_event));
                 }
-                fat_op_event.clk = self.state.clk;
-                fat_op_event.shard = self.state.shard;
-                fat_op_event.sp = sp;
-                fat_op_event.next_sp = sp + 3 * UNIT;
-                fat_op_event.local_mem_access =
-                    local_memory_access.iter().map(|(_, v)| (*v)).collect();
-                fat_op_event.local_mem_access_addr =
-                    local_memory_access.iter().map(|(k, v)| (*k)).collect();
-                opcode_state.fat_op = Some(FatOpEvent::TableInit(fat_op_event));
+                _ => {}
             }
 
             if let Opcode::TableGrow(table_idx) = opcode {
@@ -464,7 +466,8 @@ impl Tracer {
         let sub_op = {
             match main_op_log.opcode {
                 Opcode::TableInit(_) => {
-                    if let FatOpEvent::TableInit(table_init_event) = main_op_log.fat_op.unwrap() {
+                    if let FatOpEvent::TableInitFill(table_init_event) = main_op_log.fat_op.unwrap()
+                    {
                         Opcode::TableGet(table_init_event.table_idx as u16)
                     } else {
                         unreachable!()
