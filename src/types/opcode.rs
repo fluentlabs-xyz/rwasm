@@ -348,6 +348,7 @@ impl Opcode {
             Opcode::Call(_)
             | Opcode::ReturnCall(_)
             | Opcode::TableInit(_)
+            | Opcode::TableFill(_)
             | Opcode::TableGrow(_) => true,
             _ => false,
         }
@@ -475,7 +476,7 @@ impl Opcode {
 
     pub fn is_fat_op(self) -> bool {
         match self {
-            Opcode::TableInit(_) | Opcode::TableGrow(_) => true,
+            Opcode::TableInit(_) | Opcode::TableFill(_) | Opcode::TableGrow(_) => true,
             _ => false,
         }
     }
