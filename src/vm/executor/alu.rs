@@ -1,5 +1,5 @@
-use bitvec::macros::internal::funty::Fundamental;
 use crate::{types::UntypedValue, vm::executor::RwasmExecutor, TrapCode};
+use bitvec::macros::internal::funty::Fundamental;
 
 macro_rules! impl_visit_unary {
     ( $( fn $visit_ident:ident($untyped_ident:ident); )* ) => {
