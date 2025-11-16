@@ -1,4 +1,3 @@
-use bitvec::macros::internal::funty::Fundamental;
 use crate::{types::UntypedValue, vm::executor::RwasmExecutor, TrapCode};
 use bitvec::macros::internal::funty::Fundamental;
 
