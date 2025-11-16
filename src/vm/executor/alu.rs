@@ -1,3 +1,4 @@
+use bitvec::macros::internal::funty::Fundamental;
 use crate::{types::UntypedValue, vm::executor::RwasmExecutor, TrapCode};
 
 macro_rules! impl_visit_unary {
@@ -68,7 +69,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_i32_mul64(&mut self) {
         let (lhs, rhs) = self.sp.pop2();
-        let res = lhs.as_i64().wrapping_mul(rhs.as_i64());
+        let res = lhs.as_i32().as_i64().wrapping_mul(rhs.as_i32().as_i64());
         self.sp.push_i64(res);
         self.ip.add(1);
     }
