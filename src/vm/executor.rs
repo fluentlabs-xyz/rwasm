@@ -343,8 +343,11 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     fn trace_instr_pre(&mut self, instr: &Opcode) {
         let pc = self.program_counter();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
-        if !instr.is_fat_op() {
-            self.store.tracer.state.next_cycle();
+        match instr {
+            Opcode::TableGrow(_) | Opcode::TableInit(_) | Opcode::CallIndirect(_) => (),
+            _ => {
+                self.store.tracer.state.next_cycle();
+            }
         }
     }
 

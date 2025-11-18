@@ -168,7 +168,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
             let addr = TypedAddress::Table(table as u32 * N_MAX_TABLE_SIZE + func_index);
             let table_read_record = self.store.tracer.mr(addr.to_virtual_addr());
-
             let call_state = TraceCallData {
                 calltype: crate::CallType::CallIndirect,
                 table_id: table as u32,

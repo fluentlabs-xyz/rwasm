@@ -379,6 +379,9 @@ impl Tracer {
 
                 self.logs.last_mut().unwrap().next_call_sp = new_call_sp;
                 self.state.call_sp = new_call_sp;
+
+                let sub_op_event = self.make_sub_op_event(self.logs.last().unwrap().clone());
+                self.data_op_logs.push(sub_op_event);
             }
             Opcode::Return => {
                 if self.logs.last_mut().unwrap().call_sp != 0 {
@@ -404,27 +407,9 @@ impl Tracer {
             }
             _ => self.record_sw(opcode, new_sp, stack),
         }
-        // if opcode.is_fat_op() {
-        //
-
-        //     let sub_op_event = self.make_sub_op_event(main_op_event.clone());
-        // }
-
-        match opcode {
-            Opcode::CallIndirect(_) => {
-                let main_op_event = self.logs.last().unwrap();
-                let sub_op_event = self.make_sub_op_event(main_op_event.clone());
-                self.data_op_logs.push(sub_op_event);
-            }
-            _ => (),
-        }
 
         self.state.sp = new_sp;
-        if let Opcode::CallIndirect(_) = opcode {
-            ()
-        } else {
-            self.state.next_cycle();
-        }
+        self.state.next_cycle();
 
         if let Opcode::TableInit(_) = opcode {
             self.state.next_cycle();
