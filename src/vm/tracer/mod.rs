@@ -345,6 +345,31 @@ impl Tracer {
                 self.logs.last_mut().unwrap().next_call_sp = new_call_sp;
                 self.state.call_sp = new_call_sp;
             }
+
+            Opcode::CallIndirect(signature_idx) => {
+                let func_idx = self
+                    .logs
+                    .last_mut()
+                    .unwrap()
+                    .memory_access
+                    .arg1_record
+                    .unwrap()
+                    .value();
+                let old_pc = self.logs.last_mut().unwrap().pc + 2;
+                let new_call_sp = self.state.call_sp + 1;
+                let typed_addr = TypedAddress::FuncFrame(new_call_sp);
+                let v_addr = typed_addr.to_virtual_addr();
+                let write_record = self.mw(v_addr, old_pc);
+                let res_record = Some(MemoryRecordEnum::Write(write_record));
+                self.logs.last_mut().unwrap().memory_access.call_sp_access =
+                    Some(MemoryRecordEnum::Write(write_record));
+
+                self.logs.last_mut().unwrap().next_call_sp = new_call_sp;
+                self.state.call_sp = new_call_sp;
+
+                let sub_op_event = self.make_sub_op_event(self.logs.last().unwrap().clone());
+                self.data_op_logs.push(sub_op_event);
+            }
             Opcode::Return => {
                 if self.logs.last_mut().unwrap().call_sp != 0 {
                     self.state.call_sp = self.logs.last_mut().unwrap().call_sp - 1;
@@ -369,14 +394,8 @@ impl Tracer {
             }
             _ => self.record_sw(opcode, new_sp, stack),
         }
-        // if opcode.is_fat_op() {
-        //     let main_op_event = self.logs.last().unwrap();
-
-        //     let sub_op_event = self.make_sub_op_event(main_op_event.clone());
-        // }
 
         self.state.sp = new_sp;
-
         self.state.next_cycle();
 
         match opcode {
