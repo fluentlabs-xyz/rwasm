@@ -30,7 +30,15 @@ impl Opcode {
         }
         if self.is_64b_op() {
             return 2;
+        } else if self.is_table_instruction() {
+            // if let Opcode::TableGrow(_) = self {
+            //     return 2;
+            // }
+            return 0;
+        } else if let Opcode::CallIndirect(_) = self {
+            return 1;
         }
+
         0
     }
     pub fn opcode_stack_write(self) -> bool {
