@@ -420,13 +420,6 @@ impl Tracer {
             _ => (),
         }
 
-        self.state.sp = new_sp;
-        if let Opcode::CallIndirect(_) = opcode {
-            ()
-        } else {
-            self.state.next_cycle();
-        }
-
         if let Opcode::TableInit(_) = opcode {
             self.state.next_cycle();
             self.state.next_cycle();
