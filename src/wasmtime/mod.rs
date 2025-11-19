@@ -1,5 +1,8 @@
 mod engine;
 
+#[cfg(test)]
+pub use crate::wasmtime::engine::wasmtime_new_engine_with_linker;
+
 use crate::wasmtime::engine::wasmtime_engine_with_linker;
 use crate::ExternRef;
 use crate::FuncRef;
@@ -742,5 +745,65 @@ impl<'a, T: 'static + Send + Sync> Caller<T> for WasmtimeCaller<'a, T> {
 
     fn consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
         self.try_consume_fuel(fuel)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        compile_wasmtime_module, CompilationConfig, FuelConfig, ImportLinker, ImportName,
+        SyscallFuelParams, TrapCode, WasmtimeStore,
+    };
+    use std::sync::Arc;
+
+    #[test]
+    fn test_call_with_charging_wasmtime() {
+        let wasm_binary = wat::parse_str(
+            r#"
+            (module
+              (func $default_call (import "hello" "world") (param i32))
+              (func (export "main")
+                (i32.const 300)
+                (call $default_call)
+              )
+            )
+            "#,
+        )
+        .unwrap();
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("hello", "world"),
+            0xee,
+            SyscallFuelParams {
+                base_fuel: 7,
+                param_index: 1,
+                linear_fuel: 5,
+            },
+            &[wasmparser::ValType::I32],
+            &[],
+        );
+        let import_linker = Arc::new(import_linker);
+        // run with wasmtime
+        let compilation_config = CompilationConfig::default()
+            .with_consume_fuel(true)
+            .with_builtins_consume_fuel(true)
+            .with_import_linker(import_linker.clone());
+
+        // let engine = Engine::new(&cfg).expect("failed to create engine");
+        // let module = wasmtime::Module::new(&engine, wasm_binary).unwrap();
+        let module = compile_wasmtime_module(compilation_config, wasm_binary).unwrap();
+        let mut wasmtime_worker = WasmtimeStore::new(
+            module,
+            import_linker.clone(),
+            (),
+            |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
+            FuelConfig::default().with_fuel_limit(100_000),
+        );
+
+        wasmtime_worker.execute("main", &[], &mut []).unwrap();
+        assert_eq!(
+            wasmtime_worker.store.unwrap().get_fuel().unwrap(),
+            100_000 - (3 + 10 * 5 + 7)
+        );
     }
 }

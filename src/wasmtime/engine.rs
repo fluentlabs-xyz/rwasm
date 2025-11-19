@@ -23,6 +23,14 @@ pub fn wasmtime_engine_with_linker(
     ENGINE.get_or_init(|| factory_wasmtime_engine_with_linker(import_linker, consume_fuel))
 }
 
+#[cfg(test)]
+pub fn wasmtime_new_engine_with_linker(
+    import_linker: Option<Arc<ImportLinker>>,
+    consume_fuel: bool,
+) -> Engine {
+    factory_wasmtime_engine_with_linker(import_linker, consume_fuel)
+}
+
 fn factory_wasmtime_engine_with_linker(
     import_linker: Option<Arc<ImportLinker>>,
     consume_fuel: bool,
