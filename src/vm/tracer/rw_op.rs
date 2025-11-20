@@ -292,13 +292,13 @@ impl Opcode {
             | Opcode::F64Div
             | Opcode::F64Min
             | Opcode::F64Max
-            | Opcode::F64Copysign => {
+            | Opcode::F64Copysign
+            | Opcode::I32WrapI64 => {
                 stack_ops.push(RwOp::StackRead(0));
                 stack_ops.push(RwOp::StackRead(0));
                 stack_ops.push(RwOp::StackWrite(0));
             }
 
-            Opcode::I32WrapI64
             | Opcode::I32TruncF32S
             | Opcode::I32TruncF32U
             | Opcode::I32TruncF64S
