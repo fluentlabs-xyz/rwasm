@@ -62,6 +62,7 @@ pub struct TraceCallData {
     pub table_idx: u32,
     pub func_ref: u32,
     pub signature_id: u32,
+    pub table_access: Option<MemoryReadRecord>,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +87,15 @@ pub struct TracerInstrState {
     pub fat_op: Option<FatOpEvent>,
 }
 
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Default, Clone, Debug)]
+pub struct DataOpEvent {
+    pub code: u32,
+    pub aux_value: u32,
+    pub pc: u32,
+    pub clk: u32,
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct TracerFunctionMeta {
     pub fn_index: u32,
@@ -104,6 +114,7 @@ pub struct TracerGlobalVariable {
 pub struct Tracer {
     pub global_memory: Vec<TracerMemoryState>,
     pub logs: Vec<TracerInstrState>,
+    pub data_op_logs: Vec<DataOpEvent>,
     pub memory_changes: Vec<TracerMemoryState>,
     pub table_changes: Vec<TraceTableState>,
     pub table_size_changes: Vec<TraceTableSizeState>,
@@ -200,6 +211,7 @@ impl Tracer {
                 table_idx: 0,
                 func_ref: 0,
                 signature_id: 0,
+                table_access: None,
             };
             opcode_state.call_state = Some(call_state);
             opcode_state.next_call_sp = self.state.call_sp - 1;
@@ -341,6 +353,7 @@ impl Tracer {
                     table_idx: 0,
                     func_ref: opcode.aux_value(),
                     signature_id: 0,
+                    table_access: None,
                 });
                 self.logs.last_mut().unwrap().next_call_sp = new_call_sp;
                 self.state.call_sp = new_call_sp;
@@ -399,11 +412,17 @@ impl Tracer {
         self.state.next_cycle();
 
         match opcode {
-            Opcode::TableInit(_) => {
-                self.state.next_cycle();
-                self.state.next_cycle();
+            Opcode::CallIndirect(_) => {
+                let main_op_event = self.logs.last().unwrap();
+                let sub_op_event = self.make_sub_op_event(main_op_event.clone());
+                self.data_op_logs.push(sub_op_event);
             }
-            _ => {}
+            _ => (),
+        }
+
+        if let Opcode::TableInit(_) = opcode {
+            self.state.next_cycle();
+            self.state.next_cycle();
         }
     }
 
@@ -438,7 +457,10 @@ impl Tracer {
         });
     }
 
-    pub fn make_sub_op_event(&mut self, main_op_log: TracerInstrState) -> TracerInstrState {
+    pub fn make_sub_op_event(&mut self, main_op_log: TracerInstrState) -> DataOpEvent {
+        let mut dataop_event = DataOpEvent::default();
+        dataop_event.clk = main_op_log.clk;
+        dataop_event.pc = main_op_log.pc + 1;
         let sub_op = {
             match main_op_log.opcode {
                 Opcode::TableInit(_) => {
@@ -448,27 +470,15 @@ impl Tracer {
                         unreachable!()
                     }
                 }
+                Opcode::CallIndirect(_) => {
+                    Opcode::TableGet(main_op_log.call_state.unwrap().table_id as u16)
+                }
                 _ => unreachable!(),
             }
         };
-        TracerInstrState {
-            clk: main_op_log.clk + 2,
-            pc: main_op_log.pc + 1,
-            opcode: sub_op,
-            sp: main_op_log.next_sp,
-            next_sp: main_op_log.next_sp,
-            call_sp: main_op_log.next_call_sp,
-            next_call_sp: main_op_log.next_call_sp,
-            call_id: 0,
-            memory_access: MemoryAccessRecord::default(),
-            arg1: 0,
-            arg2: 0,
-            res: 0,
-            res_hi: 0,
-            call_state: None,
-            fat_op: None,
-            next_pc: main_op_log.next_pc + 1,
-        }
+        dataop_event.code = sub_op.code();
+        dataop_event.aux_value = sub_op.aux_value();
+        dataop_event
     }
 
     pub fn record_mr(&mut self, ins: Opcode, sp: u32) -> MemoryAccessRecord {
