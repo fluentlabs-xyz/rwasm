@@ -22,7 +22,7 @@ jobs:
     name: Coverage
     runs-on: ubuntu-amd64-8core
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: "recursive"
       - name: Install Rust toolchain
