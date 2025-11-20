@@ -306,7 +306,8 @@ impl Opcode {
             | Opcode::I32Rotl
             | Opcode::I32Rotr
             | Opcode::I32Extend8S
-            | Opcode::I32Extend16S => true,
+            | Opcode::I32Extend16S
+            | Opcode::I32WrapI64 => true,
             _ => false,
         }
     }
@@ -410,7 +411,8 @@ impl Opcode {
             | Opcode::I32ShrS
             | Opcode::I32ShrU
             | Opcode::I32Rotl
-            | Opcode::I32Rotr => true,
+            | Opcode::I32Rotr
+            | Opcode::I32WrapI64 => true,
             _ => false,
         }
     }
