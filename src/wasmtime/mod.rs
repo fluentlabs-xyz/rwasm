@@ -806,4 +806,52 @@ mod tests {
             100_000 - (3 + 10 * 5 + 7)
         );
     }
+
+    #[test]
+    fn test_call_with_charging_param_overflow_wasmtime() {
+        let wasm_binary = wat::parse_str(
+            r#"
+            (module
+              (func $default_call (import "hello" "world") (param i32))
+              (func (export "main")
+                (i32.const 262_144)
+                (call $default_call)
+              )
+            )
+            "#,
+        )
+        .unwrap();
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("hello", "world"),
+            0xee,
+            SyscallFuelParams {
+                base_fuel: 7,
+                param_index: 1,
+                linear_fuel: 5,
+            },
+            &[wasmparser::ValType::I32],
+            &[],
+        );
+        let import_linker = Arc::new(import_linker);
+        // run with wasmtime
+        let compilation_config = CompilationConfig::default()
+            .with_consume_fuel(true)
+            .with_builtins_consume_fuel(true)
+            .with_import_linker(import_linker.clone());
+
+        // let engine = Engine::new(&cfg).expect("failed to create engine");
+        // let module = wasmtime::Module::new(&engine, wasm_binary).unwrap();
+        let module = compile_wasmtime_module(compilation_config, wasm_binary).unwrap();
+        let mut wasmtime_worker = WasmtimeStore::new(
+            module,
+            import_linker.clone(),
+            (),
+            |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
+            FuelConfig::default().with_fuel_limit(100_000),
+        );
+
+        let err = wasmtime_worker.execute("main", &[], &mut []).unwrap_err();
+        assert_eq!(err, TrapCode::IntegerOverflow);
+    }
 }
