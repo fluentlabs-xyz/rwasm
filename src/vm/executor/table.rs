@@ -147,7 +147,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 .unwrap();
 
             match fat_op {
-                FatOpEvent::TableInitFill(mut table_fill_event) => {
+                FatOpEvent::TableCopy(mut table_fill_event) => {
                     table_fill_event.s = val.into();
                     table_fill_event.d = i.into();
                     table_fill_event.n = n.into();
@@ -160,7 +160,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                         );
                     }
 
-                    table_fill_event.table_size_read_acess =
+                    table_fill_event.dst_table_size_read_acess =
                         self.store.tracer.mr_with_local_access(
                             TypedAddress::TableSize(table_idx as u32).to_virtual_addr(),
                             Some(&mut local_memory_access),
@@ -179,13 +179,13 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                         table_fill_event.memory_write_acess.push(write_record);
                     }
 
-                    table_fill_event.table_idx = table_idx as u32;
+                    table_fill_event.dst_table_idx = table_idx as u32;
                     table_fill_event.local_mem_access =
                         local_memory_access.iter().map(|(_, v)| (*v)).collect();
                     table_fill_event.local_mem_access_addr =
                         local_memory_access.iter().map(|(k, v)| (*k)).collect();
                     self.store.tracer.logs.last_mut().unwrap().fat_op =
-                        Some(FatOpEvent::TableInitFill(table_fill_event));
+                        Some(FatOpEvent::TableCopy(table_fill_event));
                 }
                 _ => {
                     unreachable!();
@@ -255,6 +255,93 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 .expect("rwasm: unresolved table segment");
             src.copy_within(dst_index, src_index, len)?;
         }
+
+        #[cfg(feature = "tracing")]
+        {
+            use crate::{
+                event::FatOpEvent, mem::MemoryLocalEvent, mem_index::TypedAddress, N_MAX_TABLE_SIZE,
+            };
+            use fnv::FnvBuildHasher;
+            use hashbrown::HashMap;
+
+            let fat_op = self
+                .store
+                .tracer
+                .logs
+                .last()
+                .unwrap()
+                .fat_op
+                .clone()
+                .unwrap();
+
+            match fat_op {
+                FatOpEvent::TableCopy(mut table_init_event) => {
+                    table_init_event.s = s.into();
+                    table_init_event.d = d.into();
+                    table_init_event.n = n.into();
+                    let mut local_memory_access: HashMap<u32, MemoryLocalEvent, FnvBuildHasher> =
+                        HashMap::default();
+                    for idx in 0..table_init_event.local_mem_access.len() {
+                        local_memory_access.insert(
+                            table_init_event.local_mem_access_addr[idx],
+                            table_init_event.local_mem_access[idx],
+                        );
+                    }
+
+                    for offset in 0..len {
+                        let src_addr = TypedAddress::Table(
+                            src_table_idx as u32 * N_MAX_TABLE_SIZE + src_index + offset,
+                        );
+
+                        let read_record = self.store.tracer.mr_with_local_access(
+                            src_addr.to_virtual_addr(),
+                            Some(&mut local_memory_access),
+                        );
+                        table_init_event.memory_read_access.push(read_record);
+                    }
+
+                    table_init_event.dst_table_size_read_acess =
+                        self.store.tracer.mr_with_local_access(
+                            TypedAddress::TableSize(dst_table_idx as u32).to_virtual_addr(),
+                            Some(&mut local_memory_access),
+                        );
+
+                    self.store.tracer.state.next_cycle();
+
+                    table_init_event.src_table_size_read_acess =
+                        self.store.tracer.mr_with_local_access(
+                            TypedAddress::TableSize(src_table_idx as u32).to_virtual_addr(),
+                            Some(&mut local_memory_access),
+                        );
+
+                    for offset in 0..len {
+                        let value = table_init_event.memory_read_access[offset as usize].value;
+                        let dst_addr = TypedAddress::Table(
+                            dst_table_idx as u32 * N_MAX_TABLE_SIZE + dst_index + offset,
+                        );
+                        let write_record = self.store.tracer.mw_with_local_access(
+                            dst_addr.to_virtual_addr(),
+                            value,
+                            Some(&mut local_memory_access),
+                        );
+                        table_init_event.memory_write_acess.push(write_record);
+                    }
+
+                    table_init_event.src_table_idx = src_table_idx as u32;
+                    table_init_event.dst_table_idx = dst_table_idx as u32;
+                    table_init_event.local_mem_access =
+                        local_memory_access.iter().map(|(_, v)| (*v)).collect();
+                    table_init_event.local_mem_access_addr =
+                        local_memory_access.iter().map(|(k, v)| (*k)).collect();
+                    self.store.tracer.logs.last_mut().unwrap().fat_op =
+                        Some(FatOpEvent::TableCopy(table_init_event));
+                }
+                _ => {
+                    unreachable!();
+                }
+            }
+        }
+
         self.ip.add(1);
         Ok(())
     }
@@ -315,7 +402,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 .unwrap();
 
             match fat_op {
-                FatOpEvent::TableInitFill(mut table_init_event) => {
+                FatOpEvent::TableCopy(mut table_init_event) => {
                     table_init_event.s = s.into();
                     table_init_event.d = d.into();
                     table_init_event.n = n.into();
@@ -338,7 +425,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                         table_init_event.memory_read_access.push(read_record);
                     }
 
-                    table_init_event.table_size_read_acess =
+                    table_init_event.dst_table_size_read_acess =
                         self.store.tracer.mr_with_local_access(
                             TypedAddress::TableSize(table_idx as u32).to_virtual_addr(),
                             Some(&mut local_memory_access),
@@ -358,13 +445,13 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                         table_init_event.memory_write_acess.push(write_record);
                     }
 
-                    table_init_event.table_idx = table_idx as u32;
+                    table_init_event.dst_table_idx = table_idx as u32;
                     table_init_event.local_mem_access =
                         local_memory_access.iter().map(|(_, v)| (*v)).collect();
                     table_init_event.local_mem_access_addr =
                         local_memory_access.iter().map(|(k, v)| (*k)).collect();
                     self.store.tracer.logs.last_mut().unwrap().fat_op =
-                        Some(FatOpEvent::TableInitFill(table_init_event));
+                        Some(FatOpEvent::TableCopy(table_init_event));
                 }
                 _ => {
                     unreachable!();

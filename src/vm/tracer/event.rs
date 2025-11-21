@@ -64,13 +64,13 @@ impl Opcode {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
 pub enum FatOpEvent {
-    TableInitFill(TableInitFillEvent),
+    TableCopy(TableCopyEvent),
     TableGrow(TableGrowEvent),
 }
 
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
-pub struct TableInitFillEvent {
+pub struct TableCopyEvent {
     pub clk: u32,
     pub shard: u32,
     pub sp: u32,
@@ -78,11 +78,13 @@ pub struct TableInitFillEvent {
     pub d: u32,
     pub s: u32,
     pub n: u32,
-    pub table_idx: u32,
+    pub src_table_idx: u32,
+    pub dst_table_idx: u32,
     pub stack_access: [MemoryReadRecord; 3],
     pub memory_read_access: Vec<MemoryReadRecord>,
     pub memory_write_acess: Vec<MemoryWriteRecord>,
-    pub table_size_read_acess: MemoryReadRecord,
+    pub src_table_size_read_acess: MemoryReadRecord,
+    pub dst_table_size_read_acess: MemoryReadRecord,
     //If a memory addr is nenver touched by cpu it will ended up here.
     pub local_mem_access: Vec<MemoryLocalEvent>,
     pub local_mem_access_addr: Vec<u32>,

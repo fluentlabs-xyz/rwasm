@@ -320,7 +320,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 timestamp: 0,
                 value: word,
             };
-            println!("addr:{:?}drecord:{:?}", addr, record);
 
             self.store.tracer.memory_records.insert(v_addr, record);
         }

@@ -1,6 +1,6 @@
 use super::ValueStackPtr;
 use crate::{
-    event::{FatOpEvent, TableGrowEvent, TableInitFillEvent},
+    event::{FatOpEvent, TableCopyEvent, TableGrowEvent},
     mem_index::{TypedAddress, UNIT},
     types::Opcode,
     vm::tracer::{
@@ -218,8 +218,8 @@ impl Tracer {
         }
         if opcode.is_table_instruction() {
             match opcode {
-                Opcode::TableInit(_) | Opcode::TableFill(_) => {
-                    let mut fat_op_event = TableInitFillEvent::default();
+                Opcode::TableInit(_) | Opcode::TableFill(_) | Opcode::TableCopy(..) => {
+                    let mut fat_op_event = TableCopyEvent::default();
                     let mut local_memory_access = HashMap::default();
                     for idx in 0..3 {
                         let addr = sp + idx * UNIT;
@@ -251,7 +251,7 @@ impl Tracer {
                         local_memory_access.iter().map(|(_, v)| (*v)).collect();
                     fat_op_event.local_mem_access_addr =
                         local_memory_access.iter().map(|(k, v)| (*k)).collect();
-                    opcode_state.fat_op = Some(FatOpEvent::TableInitFill(fat_op_event));
+                    opcode_state.fat_op = Some(FatOpEvent::TableCopy(fat_op_event));
                 }
                 _ => {}
             }
@@ -466,9 +466,8 @@ impl Tracer {
         let sub_op = {
             match main_op_log.opcode {
                 Opcode::TableInit(_) => {
-                    if let FatOpEvent::TableInitFill(table_init_event) = main_op_log.fat_op.unwrap()
-                    {
-                        Opcode::TableGet(table_init_event.table_idx as u16)
+                    if let FatOpEvent::TableCopy(table_init_event) = main_op_log.fat_op.unwrap() {
+                        Opcode::TableGet(table_init_event.dst_table_idx as u16)
                     } else {
                         unreachable!()
                     }
@@ -624,7 +623,6 @@ impl Tracer {
         local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent, FnvBuildHasher>>,
     ) -> MemoryWriteRecord {
         let record = self.memory_records.entry(addr).or_default();
-        println!("addr: {}record:{:?}", addr, record);
         let prev_record = *record;
         record.shard = self.state.shard;
         record.timestamp = self.state.clk;
