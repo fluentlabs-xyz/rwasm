@@ -343,7 +343,11 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let pc = self.program_counter();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
         match instr {
-            Opcode::TableGrow(_) | Opcode::TableInit(_) | Opcode::CallIndirect(_) => (),
+            Opcode::TableGrow(_)
+            | Opcode::TableInit(_)
+            | Opcode::TableFill(_)
+            | Opcode::TableCopy(..)
+            | Opcode::CallIndirect(_) => (),
             _ => {
                 self.store.tracer.state.next_cycle();
             }
