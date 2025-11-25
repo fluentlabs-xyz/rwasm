@@ -82,7 +82,8 @@ pub struct TracerInstrState {
     pub arg2: u32,
     pub res: u32,
     pub res_hi: u32,
-
+    pub last_sig_id: u32,
+    pub next_last_sig_id: u32,
     pub call_state: Option<TraceCallData>,
     pub fat_op: Option<FatOpEvent>,
 }
@@ -170,6 +171,8 @@ impl Tracer {
             call_sp: self.state.call_sp,
             next_call_sp: self.state.call_sp,
             call_id: 0,
+            last_sig_id: self.state.last_sig_id,
+            next_last_sig_id: self.state.last_sig_id,
             memory_access: MemoryAccessRecord::default(),
             sp,
             next_sp: 0,
@@ -382,6 +385,9 @@ impl Tracer {
 
                 let sub_op_event = self.make_sub_op_event(self.logs.last().unwrap().clone());
                 self.data_op_logs.push(sub_op_event);
+
+                self.state.last_sig_id = signature_idx;
+                self.logs.last_mut().unwrap().next_last_sig_id = signature_idx;
             }
             Opcode::Return => {
                 if self.logs.last_mut().unwrap().call_sp != 0 {
