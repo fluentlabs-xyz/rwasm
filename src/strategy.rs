@@ -35,10 +35,26 @@ pub type SyscallHandler<T> =
     fn(&mut TypedCaller<'_, T>, u32, &[Value], &mut [Value]) -> Result<(), TrapCode>;
 
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct SyscallFuelParams {
+pub enum SyscallFuelParams {
+    #[default]
+    None,
+    Const(u64),
+    LinearFuel(LinearFuelParams),
+    QuadraticFuel(QuadraticFuelParams),
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LinearFuelParams {
     pub base_fuel: u64,
     pub param_index: u64,
-    pub linear_fuel: u64,
+    pub word_cost: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct QuadraticFuelParams {
+    pub param_index: u64,
+    pub word_cost: u64,
+    pub divisor: u64,
 }
 
 pub fn always_failing_syscall_handler<T: 'static + Send + Sync>(

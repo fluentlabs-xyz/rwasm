@@ -1,7 +1,7 @@
 use rwasm::{
     always_failing_syscall_handler, compile_wasmtime_module, instruction_set, CompilationConfig,
-    ExecutionEngine, FuelConfig, ImportLinker, ImportName, RwasmModule, RwasmStore, Store,
-    Strategy, SyscallFuelParams, TrapCode, TypedCaller, Value, WasmtimeStore,
+    ExecutionEngine, FuelConfig, ImportLinker, ImportName, LinearFuelParams, RwasmModule,
+    RwasmStore, Store, Strategy, SyscallFuelParams, TrapCode, TypedCaller, Value, WasmtimeStore,
 };
 use std::sync::Arc;
 use wasmparser::ValType;
@@ -73,11 +73,11 @@ fn test_interrupted_call_rwasm_with_syscall() {
     import_linker.insert_function(
         ImportName::new("hello", "world"),
         0xee,
-        SyscallFuelParams {
+        SyscallFuelParams::LinearFuel(LinearFuelParams {
             base_fuel: 7,
             param_index: 1,
-            linear_fuel: 5,
-        },
+            word_cost: 5,
+        }),
         &[ValType::I32],
         &[],
     );
@@ -103,6 +103,56 @@ fn test_interrupted_call_rwasm_with_syscall() {
         .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap();
     assert_eq!(store.fuel_consumed(), 1 + 2 + 10 * 5 + 7);
+}
+
+#[test]
+fn test_interrupted_call_rwasm_with_overflow() {
+    let wasm_binary = wat::parse_str(
+        r#"
+            (module
+              (func $default_call (import "hello" "world") (param i32))
+              (func (export "main")
+                (i32.const 134_217_729)
+                (call $default_call)
+              )
+            )
+            "#,
+    )
+    .unwrap();
+    let mut import_linker = ImportLinker::default();
+    import_linker.insert_function(
+        ImportName::new("hello", "world"),
+        0xee,
+        SyscallFuelParams::LinearFuel(LinearFuelParams {
+            base_fuel: 7,
+            param_index: 1,
+            word_cost: 5,
+        }),
+        &[ValType::I32],
+        &[],
+    );
+    let import_linker = Arc::new(import_linker);
+
+    let (rwasm_module, _) = RwasmModule::compile(
+        CompilationConfig::default()
+            .with_builtins_consume_fuel(true)
+            .with_import_linker(import_linker.clone())
+            .with_entrypoint_name("main".into()),
+        &wasm_binary,
+    )
+    .unwrap();
+
+    let mut store = RwasmStore::<()>::new(
+        import_linker,
+        (),
+        |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
+        FuelConfig::default().with_fuel_limit(100_000),
+    );
+    let engine = ExecutionEngine::new();
+    let err = engine
+        .execute(&mut store, &rwasm_module, &[], &mut [])
+        .unwrap_err();
+    assert_eq!(err, TrapCode::IntegerOverflow);
 }
 
 #[test]
