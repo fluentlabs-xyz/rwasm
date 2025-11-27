@@ -1,7 +1,7 @@
 use super::ValueStackPtr;
 use crate::{
     event::{FatOpEvent, TableGrowEvent, TableInitEvent},
-    mem_index::{TypedAddress, UNIT},
+    mem_index::{TypedAddress, LAST_SIG_ADDR, UNIT},
     types::Opcode,
     vm::tracer::{
         mem::{
@@ -82,8 +82,6 @@ pub struct TracerInstrState {
     pub arg2: u32,
     pub res: u32,
     pub res_hi: u32,
-    pub last_sig_id: u32,
-    pub next_last_sig_id: u32,
     pub call_state: Option<TraceCallData>,
     pub fat_op: Option<FatOpEvent>,
 }
@@ -171,8 +169,6 @@ impl Tracer {
             call_sp: self.state.call_sp,
             next_call_sp: self.state.call_sp,
             call_id: 0,
-            last_sig_id: self.state.last_sig_id,
-            next_last_sig_id: self.state.last_sig_id,
             memory_access: MemoryAccessRecord::default(),
             sp,
             next_sp: 0,
@@ -183,7 +179,7 @@ impl Tracer {
             call_state: None,
             fat_op: None,
         };
-        let memory_access = self.record_mr(opcode, sp);
+        let mut memory_access = self.record_mr(opcode, sp);
 
         if let Some(memory_read_record) = memory_access.arg1_record {
             opcode_state.arg1 = memory_read_record.value();
@@ -194,6 +190,12 @@ impl Tracer {
 
         if let Opcode::BrTable(_) = opcode {
             opcode_state.arg2 = opcode.aux_value();
+        }
+
+        if let Opcode::SignatureCheck(_) = opcode {
+            let record = self.mr(LAST_SIG_ADDR);
+            memory_access.arg1_addr = Some(TypedAddress::LastSig);
+            memory_access.arg1_record = Some(MemoryRecordEnum::Read(record));
         }
 
         if opcode.is_local_instruction() {
@@ -385,9 +387,6 @@ impl Tracer {
 
                 let sub_op_event = self.make_sub_op_event(self.logs.last().unwrap().clone());
                 self.data_op_logs.push(sub_op_event);
-
-                self.state.last_sig_id = signature_idx;
-                self.logs.last_mut().unwrap().next_last_sig_id = signature_idx;
             }
             Opcode::Return => {
                 if self.logs.last_mut().unwrap().call_sp != 0 {
