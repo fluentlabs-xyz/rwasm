@@ -192,6 +192,13 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 .unwrap()
                 .memory_access
                 .res_record = Some(MemoryRecordEnum::Write(sig_id_record));
+            self.store
+                .tracer
+                .logs
+                .last_mut()
+                .unwrap()
+                .memory_access
+                .res_addr = Some(TypedAddress::LastSig);
         }
         Ok(())
     }
