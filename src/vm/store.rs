@@ -1,7 +1,7 @@
 use crate::{
     bitvec_inlined::BitVecInlined as BV, CallStack, FuelConfig, GlobalMemory, IGlobalMemory,
-    ImportLinker, InstructionPtr, Pages, SignatureIdx, Store, SyscallHandler, TableEntity,
-    TrapCode, UntypedValue, ValueStack, ValueStackPtr,
+    ImportLinker, InstructionPtr, Pages, RwasmModule, SignatureIdx, Store, SyscallHandler,
+    TableEntity, TrapCode, UntypedValue, ValueStack,
 };
 use alloc::{sync::Arc, vec::Vec};
 
@@ -38,13 +38,14 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     pub tracer: crate::Tracer,
 }
 
-pub(crate) struct ResumableContext {
-    pub(crate) value_stack: ValueStack,
-    pub(crate) sp: ValueStackPtr,
-    pub(crate) call_stack: CallStack,
-    pub(crate) ip: InstructionPtr,
+pub struct ResumableContext {
+    pub module: RwasmModule,
+    pub call_stack: CallStack,
+    pub ip: InstructionPtr,
+    pub value_stack: ValueStack,
 }
 
+#[cfg(feature = "std")]
 impl<T: 'static + Send + Sync + Default> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
