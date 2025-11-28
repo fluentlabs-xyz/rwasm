@@ -551,6 +551,7 @@ impl ModuleParser {
                     }
                     SyscallFuelParams::QuadraticFuel(fuel_params) => {
                         const FUEL_MAX_QUADRATIC_X: u32 = 1_310_720;
+                        const FUEL_DENOM_RATE: u32 = 1000;
                         let mut ixs = instruction_set! {
                              // Runtime overflow check
                             LocalGet(fuel_params.param_index)
@@ -588,9 +589,9 @@ impl ModuleParser {
                             // Sum: linear + quadratic
                             I32Add
 
-                            // // Convert gas -> fuel
-                            // I32Const(FUEL_DENOM_RATE as u32)
-                            // I32Mul
+                            // Convert gas -> fuel
+                            I32Const(FUEL_DENOM_RATE as u32)
+                            I32Mul
 
                             ConsumeFuelStack
                         };
