@@ -15,6 +15,7 @@ use core::{
     mem::{replace, take},
     ops::Range,
 };
+use fluentbase_types::{FUEL_DENOM_RATE, FUEL_MAX_LINEAR_X, FUEL_MAX_QUADRATIC_X};
 use hashbrown::HashMap;
 use wasmparser::{
     CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind,
@@ -502,7 +503,6 @@ impl ModuleParser {
                         .instruction_set
                         .op_consume_fuel(base as u32),
                     SyscallFuelParams::LinearFuel(fuel_params) => {
-                        const FUEL_MAX_LINEAR_X: u32 = 134_217_728; // 2^27
                         translator
                             .alloc
                             .instruction_set
@@ -550,8 +550,6 @@ impl ModuleParser {
                         translator.alloc.instruction_set.op_consume_fuel_stack()
                     }
                     SyscallFuelParams::QuadraticFuel(fuel_params) => {
-                        const FUEL_MAX_QUADRATIC_X: u32 = 1_310_720;
-                        const FUEL_DENOM_RATE: u32 = 1000;
                         let mut ixs = instruction_set! {
                              // Runtime overflow check
                             LocalGet(fuel_params.param_index)
