@@ -132,11 +132,6 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_i32"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I32,
-                    // syscall_fuel_param: SyscallFuelParams {
-                    //     base_fuel: 5,
-                    //     param_index: 1,
-                    //     linear_fuel: 2,
-                    // },
                     syscall_fuel_param: Default::default(),
                     params: &[ValType::I32],
                     result: &[],
@@ -177,11 +172,6 @@ impl<'a> TestContext<'a> {
                 ImportName::new("spectest", "print_i32_f32"),
                 ImportLinkerEntity {
                     sys_func_idx: FUNC_PRINT_I32_F32,
-                    // syscall_fuel_param: SyscallFuelParams {
-                    //     base_fuel: 10,
-                    //     param_index: 2,
-                    //     linear_fuel: 2,
-                    // },
                     syscall_fuel_param: Default::default(),
                     params: &[ValType::I32, ValType::F32],
                     result: &[],

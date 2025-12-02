@@ -15,7 +15,6 @@ use core::{
     mem::{replace, take},
     ops::Range,
 };
-use fluentbase_types::{FUEL_DENOM_RATE, FUEL_MAX_LINEAR_X, FUEL_MAX_QUADRATIC_X};
 use hashbrown::HashMap;
 use wasmparser::{
     CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind,
@@ -510,7 +509,7 @@ impl ModuleParser {
                         translator
                             .alloc
                             .instruction_set
-                            .op_i32_const(UntypedValue::from(FUEL_MAX_LINEAR_X));
+                            .op_i32_const(UntypedValue::from(fuel_params.max_linear));
                         translator.alloc.instruction_set.op_i32_gt_u();
                         translator
                             .alloc
@@ -553,7 +552,7 @@ impl ModuleParser {
                         let mut ixs = instruction_set! {
                              // Runtime overflow check
                             LocalGet(fuel_params.param_index)
-                            I32Const(FUEL_MAX_QUADRATIC_X)
+                            I32Const(fuel_params.max_quadratic)
                             I32GtU
                             BrIfEqz(2)
                             Trap(TrapCode::IntegerOverflow)
@@ -588,7 +587,7 @@ impl ModuleParser {
                             I32Add
 
                             // Convert gas -> fuel
-                            I32Const(FUEL_DENOM_RATE as u32)
+                            I32Const(fuel_params.fuel_denom_rate as u32)
                             I32Mul
 
                             ConsumeFuelStack

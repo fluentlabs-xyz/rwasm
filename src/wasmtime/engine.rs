@@ -96,6 +96,7 @@ fn factory_wasmtime_engine_with_linker(
                     base_fuel,
                     param_index,
                     word_cost,
+                    max_linear,
                 }) => {
                     syscall_params.insert(
                         SyscallName {
@@ -106,6 +107,7 @@ fn factory_wasmtime_engine_with_linker(
                             base_fuel,
                             word_cost,
                             linear_param_index: param_index,
+                            max_linear,
                         }),
                     );
                 }
@@ -113,6 +115,8 @@ fn factory_wasmtime_engine_with_linker(
                     param_index,
                     word_cost,
                     divisor,
+                    max_quadratic,
+                    fuel_denom_rate,
                 }) => {
                     syscall_params.insert(
                         SyscallName {
@@ -123,6 +127,8 @@ fn factory_wasmtime_engine_with_linker(
                             local_depth: param_index,
                             word_cost,
                             divisor,
+                            max_quadratic,
+                            fuel_denom_rate,
                         }),
                     );
                 }
