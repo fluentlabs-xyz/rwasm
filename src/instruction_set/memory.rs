@@ -1,5 +1,5 @@
 use crate::{
-    AddressOffset, DataSegmentIdx, I64ValueSplit, InstructionSet, TrapCode,
+    AddressOffset, DataSegmentIdx, I64ValueSplit, InstructionSet, TrapCode, MEMORY_BYTES_PER_FUEL,
     MEMORY_BYTES_PER_FUEL_LOG2, N_BYTES_PER_MEMORY_PAGE,
 };
 
@@ -135,9 +135,9 @@ impl InstructionSet {
         // so we can safely multiply the num of pages to the page size
         // to calculate fuel required for memory to grow
         if inject_fuel_check {
-            self.op_local_get(1);
+            self.op_local_get(1); // n
             self.op_i32_const(N_BYTES_PER_MEMORY_PAGE); // size of each memory page
-            self.op_i32_mul(); // overflow is impossible here
+            self.op_i32_mul(); // overflow is impossible here (we pass max pages in trustless mode)
             self.op_i32_const(MEMORY_BYTES_PER_FUEL_LOG2); // 2^6=64
             self.op_i32_shr_u(); // delta/64
             self.op_consume_fuel_stack();
@@ -151,6 +151,8 @@ impl InstructionSet {
         // [d, val, n]
         if inject_fuel_check {
             self.op_local_get(1); // n
+            self.op_i32_const(MEMORY_BYTES_PER_FUEL - 1); // upper round
+            self.op_i32_add();
             self.op_i32_const(MEMORY_BYTES_PER_FUEL_LOG2); // 2^6=64
             self.op_i32_shr_u(); // delta/64
             self.op_consume_fuel_stack();
@@ -164,6 +166,8 @@ impl InstructionSet {
         // [d, s, n]
         if inject_fuel_check {
             self.op_local_get(1); // n
+            self.op_i32_const(MEMORY_BYTES_PER_FUEL - 1); // upper round
+            self.op_i32_add();
             self.op_i32_const(MEMORY_BYTES_PER_FUEL_LOG2); // 2^6=64
             self.op_i32_shr_u(); // delta/64
             self.op_consume_fuel_stack();
@@ -234,6 +238,8 @@ impl InstructionSet {
         // [d, s, n]
         if inject_fuel_check {
             self.op_local_get(1); // n
+            self.op_i32_const(MEMORY_BYTES_PER_FUEL - 1); // upper round
+            self.op_i32_add();
             self.op_i32_const(MEMORY_BYTES_PER_FUEL_LOG2); // 2^6=64
             self.op_i32_shr_u(); // delta/64
             self.op_consume_fuel_stack();
