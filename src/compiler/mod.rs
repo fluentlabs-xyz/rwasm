@@ -5,6 +5,7 @@ mod drop_keep;
 mod error;
 mod fuel_costs;
 mod func_builder;
+mod func_type_registry;
 pub mod intrinsic;
 mod labels;
 mod locals_registry;
