@@ -21,9 +21,9 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     /// Runtime values of mutable and immutable globals.
     pub(crate) global_variables: Vec<UntypedValue>,
     /// Bitset tracking which data segments have been consumed/emptied.
-    pub(crate) empty_data_segments: BitVec<2>,
+    pub(crate) empty_data_segments: BitVec,
     /// Bitset tracking which element segments have been consumed/emptied.
-    pub(crate) empty_elem_segments: BitVec<2>,
+    pub(crate) empty_elem_segments: BitVec,
     /// Dispatcher for system calls made by the guest.
     pub(crate) syscall_handler: SyscallHandler<T>,
     /// Linker that resolves imports to host functions/globals.
