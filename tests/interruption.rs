@@ -50,7 +50,7 @@ fn test_interrupted_call_rwasm() {
         .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
     assert_eq!(store.fuel_consumed(), 1);
-    engine.resume(&mut store, &module, &[], &mut []).unwrap();
+    engine.resume(&mut store, &[], &mut []).unwrap();
     assert_eq!(store.fuel_consumed(), 3);
 }
 
@@ -95,13 +95,9 @@ fn test_interrupted_call_wasmtime() {
         .execute(&mut store, &rwasm_module, &[], &mut result)
         .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
-    let err = engine
-        .resume(&mut store, &rwasm_module, &[], &mut result)
-        .unwrap_err();
+    let err = engine.resume(&mut store, &[], &mut result).unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
-    engine
-        .resume(&mut store, &rwasm_module, &[], &mut result)
-        .unwrap();
+    engine.resume(&mut store, &[], &mut result).unwrap();
     assert_eq!(result[0].i32().unwrap(), 123);
     // run with wasmtime
     let module = compile_wasmtime_module(
@@ -151,9 +147,7 @@ fn test_call_stack_empty_after_trap_in_nested_call() {
         .execute(&mut store, &module, &[], &mut [])
         .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
-    let err = engine
-        .resume(&mut store, &module, &[], &mut [])
-        .unwrap_err();
+    let err = engine.resume(&mut store, &[], &mut []).unwrap_err();
     assert_eq!(err, TrapCode::UnreachableCodeReached);
 }
 

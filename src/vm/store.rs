@@ -1,9 +1,8 @@
 use crate::{
-    bitvec_inlined::BitVecInlined as BV, CallStack, FuelConfig, GlobalMemory, IGlobalMemory,
-    ImportLinker, InstructionPtr, Pages, SignatureIdx, Store, SyscallHandler, TableEntity,
-    TrapCode, UntypedValue, ValueStack, ValueStackPtr,
+    CallStack, FuelConfig, GlobalIdx, GlobalMemory, IGlobalMemory, ImportLinker, InstructionPtr, Pages, RwasmModule, SignatureIdx, Store, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStack
 };
 use alloc::{sync::Arc, vec::Vec};
+use bitvec::vec::BitVec;
 
 /// Host-side store that holds memory, tables, globals and host context for an rwasm instance.
 /// It also tracks fuel for metering and provides access to imported functions and syscalls.
@@ -22,15 +21,15 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     /// Runtime values of mutable and immutable globals.
     pub(crate) global_variables: Vec<UntypedValue>,
     /// Bitset tracking which data segments have been consumed/emptied.
-    pub(crate) empty_data_segments: BV<2>,
+    pub(crate) empty_data_segments: BitVec<2>,
     /// Bitset tracking which element segments have been consumed/emptied.
-    pub(crate) empty_elem_segments: BV<2>,
+    pub(crate) empty_elem_segments: BitVec<2>,
     /// Dispatcher for system calls made by the guest.
     pub(crate) syscall_handler: SyscallHandler<T>,
     /// Linker that resolves imports to host functions/globals.
     pub(crate) import_linker: Arc<ImportLinker>,
     /// If set, contains the instruction/value-stack pointers to resume after a suspension.
-    pub(crate) resumable_context: Option<ResumableContext>,
+    pub(crate) resumable_context: Option<ReusableContext>,
     /// A fuel config.
     pub(crate) fuel_config: FuelConfig,
     /// Execution tracer used when the `tracing` feature is enabled.
@@ -38,13 +37,14 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     pub tracer: crate::Tracer,
 }
 
-pub(crate) struct ResumableContext {
-    pub(crate) value_stack: ValueStack,
-    pub(crate) sp: ValueStackPtr,
-    pub(crate) call_stack: CallStack,
-    pub(crate) ip: InstructionPtr,
+pub struct ReusableContext {
+    pub module: RwasmModule,
+    pub call_stack: CallStack,
+    pub ip: InstructionPtr,
+    pub value_stack: ValueStack,
 }
 
+#[cfg(feature = "std")]
 impl<T: 'static + Send + Sync + Default> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
@@ -111,8 +111,8 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
             tables: Default::default(),
             last_signature: None,
             syscall_handler,
-            empty_data_segments: BV::EMPTY,
-            empty_elem_segments: BV::EMPTY,
+            empty_data_segments: BitVec::EMPTY,
+            empty_elem_segments: BitVec::EMPTY,
             import_linker,
             resumable_context: None,
             fuel_config,
@@ -132,8 +132,8 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         self.consumed_fuel = 0;
         // we might want to keep data/elem flags between calls, it's required for e2e tests
         if !keep_flags {
-            self.empty_data_segments = BV::EMPTY;
-            self.empty_elem_segments = BV::EMPTY;
+            self.empty_data_segments = BitVec::EMPTY;
+            self.empty_elem_segments = BitVec::EMPTY;
         }
         // in case of a trap, we might have this flag remains active
         self.last_signature = None;
