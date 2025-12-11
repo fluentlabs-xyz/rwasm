@@ -171,6 +171,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 func_ref: instr_ref,
                 signature_id: signature_idx,
                 table_access: Some(table_read_record),
+                syscall_data: None,
             };
 
             self.store.tracer.logs.last_mut().unwrap().call_state = Some(call_state);

@@ -542,11 +542,117 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let (params, result) = buffer.split_at_mut(params.len());
         let syscall_handler = self.store.syscall_handler;
         let mut caller = self.caller();
+
         match syscall_handler(&mut caller, sys_func_idx, params, result) {
             Ok(_) => {
                 // TODO(dmitry123): "resync SP, only for e2e testing suite"
                 self.sp = caller.as_rwasm_ref().sp();
                 // if execution succeeded, then copy output params back to the stack
+
+                #[cfg(feature = "tracing")]
+                {
+                    use hashbrown::HashMap;
+
+                    use crate::{SysCallData, TraceCallData};
+                    let mut sys_call_data = SysCallData::default();
+                    sys_call_data.sys_call_id=sys_func_idx;
+                    let mut local_memory_access = HashMap::default();
+
+                    let mut sp = self.sp.to_relative_address();
+                    use crate::mem_index::UNIT;
+                    // params are poped from stack, so we have to record them in reverse order to calculate sp
+                    for item in params.iter().rev() {
+                        match item {
+                            Value::I64(_) | Value::F64(_) => {
+                                let (lo, hi) = item.to_u32();
+
+                                sp += UNIT;
+                                sys_call_data.params.push(lo);
+
+                                let record = self
+                                    .store
+                                    .tracer
+                                    .mr_with_local_access(sp, Some(&mut local_memory_access));
+                                sys_call_data.memory_read_access.push(record);
+
+                                sp += UNIT;
+                                sys_call_data.params.push(hi);
+                                let record = self
+                                    .store
+                                    .tracer
+                                    .mr_with_local_access(sp, Some(&mut local_memory_access));
+                                sys_call_data.memory_read_access.push(record);
+                            }
+                            _ => {
+                                let (value, _) = item.to_u32();
+                                sp += UNIT;
+                                sys_call_data.params.push(value);
+
+                                let record = self
+                                    .store
+                                    .tracer
+                                    .mr_with_local_access(sp, Some(&mut local_memory_access));
+                                sys_call_data.memory_read_access.push(record);
+                            }
+                        }
+                    }
+
+                    self.store.tracer.state.next_cycle();
+
+                    let mut sp = self.sp.to_relative_address();
+                    for item in result.iter() {
+                        match item {
+                            Value::I64(_) | Value::F64(_) => {
+                                let (lo, hi) = item.to_u32();
+
+                                sp -= UNIT;
+                                sys_call_data.params.push(lo);
+
+                                let record = self.store.tracer.mw_with_local_access(
+                                    sp,
+                                    lo,
+                                    Some(&mut local_memory_access),
+                                );
+                                sys_call_data.memory_write_access.push(record);
+
+                                sp -= UNIT;
+                                sys_call_data.params.push(hi);
+                                let record = self.store.tracer.mw_with_local_access(
+                                    sp,
+                                    lo,
+                                    Some(&mut local_memory_access),
+                                );
+                                sys_call_data.memory_write_access.push(record);
+                            }
+                            _ => {
+                                let (value, _) = item.to_u32();
+
+                                sp -= UNIT;
+                                sys_call_data.params.push(value);
+
+                                let record = self.store.tracer.mw_with_local_access(
+                                    sp,
+                                    value,
+                                    Some(&mut local_memory_access),
+                                );
+                                sys_call_data.memory_write_access.push(record);
+                            }
+                        }
+                    }
+                    let last = self.store.tracer.logs.last_mut().unwrap();
+                    let mut call_state = TraceCallData {
+                        calltype: crate::CallType::Call,
+                        table_id: 0,
+                        table_idx: 0,
+                        func_ref: 0,
+                        signature_id: 0,
+                        table_access: None,
+                        syscall_data: None,
+                    };
+                    call_state.syscall_data = Some(sys_call_data);
+                    
+                    last.call_state = Some(call_state);
+                }
                 for x in result {
                     self.sp.push_value(x)
                 }

@@ -1,16 +1,12 @@
 use super::ValueStackPtr;
 use crate::{
-    event::{FatOpEvent, TableGrowEvent, TableInitEvent},
-    mem_index::{TypedAddress, LAST_SIG_ADDR, UNIT},
-    types::Opcode,
-    vm::tracer::{
+    SysFuncIdx, UntypedValue, event::{FatOpEvent, TableGrowEvent, TableInitEvent}, mem_index::{LAST_SIG_ADDR, TypedAddress, UNIT}, types::Opcode, vm::tracer::{
         mem::{
             MemoryAccessRecord, MemoryLocalEvent, MemoryReadRecord, MemoryRecord, MemoryRecordEnum,
             MemoryWriteRecord,
         },
         state::VMState,
-    },
-    UntypedValue,
+    }
 };
 use alloc::{string::String, vec::Vec};
 use core::{
@@ -54,7 +50,7 @@ pub enum CallType {
     Return,
 }
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct TraceCallData {
     pub calltype: CallType,
     pub table_id: u32,
@@ -62,8 +58,21 @@ pub struct TraceCallData {
     pub func_ref: u32,
     pub signature_id: u32,
     pub table_access: Option<MemoryReadRecord>,
+    pub syscall_data:Option<SysCallData>,
+
 }
 
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone,Default)]
+pub struct SysCallData{
+    pub sys_call_id:SysFuncIdx,
+    pub params: Vec<u32>,
+    pub result:Vec<u32>,
+    pub memory_read_access: Vec<MemoryReadRecord>,
+    pub memory_write_access: Vec<MemoryWriteRecord>,
+    pub local_mem_access: Vec<MemoryLocalEvent>,
+    pub local_mem_access_addr: Vec<u32>,
+}
 #[derive(Debug, Clone)]
 pub struct TracerInstrState {
     pub clk: u32,
@@ -216,6 +225,7 @@ impl Tracer {
                 func_ref: 0,
                 signature_id: 0,
                 table_access: None,
+                syscall_data: None,
             };
             opcode_state.call_state = Some(call_state);
             opcode_state.next_call_sp = self.state.call_sp - 1;
@@ -358,6 +368,7 @@ impl Tracer {
                     func_ref: opcode.aux_value(),
                     signature_id: 0,
                     table_access: None,
+                    syscall_data: None,
                 });
                 self.logs.last_mut().unwrap().next_call_sp = new_call_sp;
                 self.state.call_sp = new_call_sp;
