@@ -455,7 +455,8 @@ impl Opcode {
             | Opcode::MemoryGrow
             | Opcode::MemorySize
             | Opcode::ConsumeFuel(_)
-            | Opcode::ConsumeFuelStack => true,
+            | Opcode::ConsumeFuelStack
+            | Opcode::SignatureCheck(_) => true,
             _ => false,
         }
     }

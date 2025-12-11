@@ -23,9 +23,10 @@ pub const SP_START: u32 = N_MAX_STACK_SIZE as u32 * UNIT + SP_END;
 ///
 /// We add 32 to prevent writes to the SP1 registers
 pub const SP_END: u32 = 32 + UNIT;
-
+/// a special memory addresss reserved for saving the signature id of last call indirect op
+pub const LAST_SIG_ADDR: u32 = SP_START + UNIT;
 pub const FUNC_FRAME_SIZE: u32 = UNIT; // TODO (dmitry123): "it looks like the call stack only save the returning pc right?, Yes(Yao)"
-pub const FUNC_FRAME_START: u32 = SP_START + UNIT;
+pub const FUNC_FRAME_START: u32 = LAST_SIG_ADDR + UNIT;
 pub const FUNC_FRAME_END: u32 = FUNC_FRAME_START + FUNC_FRAME_SIZE * N_MAX_RECURSION_DEPTH as u32;
 pub const TABLE_ELEM_SIZE: u32 = UNIT;
 pub const TABLE_SEG_START: u32 = FUNC_FRAME_END + UNIT;
@@ -46,6 +47,7 @@ pub const GLOBAL_MEM_END: u32 = GLOBAL_MEM_START + (1 << 8) << 20;
 #[derive(Debug, Clone, Copy)]
 pub enum TypedAddress {
     Stack(u32),
+    LastSig,
     FuncFrame(u32),
     Table(u32),
     TableSize(u32),
@@ -67,6 +69,7 @@ impl TypedAddress {
                 debug_assert!(v_addr < SP_START);
                 v_addr
             }
+            TypedAddress::LastSig => LAST_SIG_ADDR,
             TypedAddress::FuncFrame(offset) => {
                 let v_addr = FUNC_FRAME_START + *offset * UNIT;
                 debug_assert!(v_addr >= FUNC_FRAME_START);
