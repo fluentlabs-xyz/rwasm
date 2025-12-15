@@ -283,12 +283,16 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     }
 
     #[cfg(feature = "tracing")]
-    pub fn step(&mut self) -> Result<bool, TrapCode> {
+    pub fn step(mut self) -> (Result<bool, TrapCode>, InstructionPtr, ValueStackPtr) {
+        if self.store.tracer.is_memory_inited == false {
+            self.prepare_memory_record();
+            self.store.tracer.is_memory_inited = true;
+        }
         if !self
             .ip
-            .is_valid((self.module.code_section.instr.last().unwrap()) as *const Opcode as u64)
+            .is_valid((*self.module.code_section).last().unwrap() as *const Opcode as u64)
         {
-            return Err(TrapCode::UnreachableCodeReached);
+            return (Err(TrapCode::UnreachableCodeReached), self.ip, self.sp);
         };
         let instr = self.ip.get();
         self.trace_instr_pre(&instr);
@@ -298,7 +302,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         };
         let res = wrapper(instr);
         self.trace_instr_post(&instr, res.err());
-        res
+        (res, self.ip, self.sp)
     }
 
     #[cfg(feature = "tracing")]
