@@ -305,6 +305,39 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         (res, self.ip, self.sp)
     }
 
+     #[cfg(feature = "tracing")]
+    pub fn prepare_memory_record(&mut self) {
+        use crate::{mem::MemoryRecord, mem_index::TypedAddress};
+
+        for item in self.module.data_section.windows(4).enumerate() {
+            let (addr, data) = item;
+            let addr = addr as u32;
+            let word = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+            let v_addr = TypedAddress::Data(addr).to_virtual_addr();
+            let record = MemoryRecord {
+                shard: 0,
+                timestamp: 0,
+                value: word,
+            };
+            println!("addr:{:?}drecord:{:?}", addr, record);
+
+            self.store.tracer.memory_records.insert(v_addr, record);
+        }
+        for item in self.module.elem_section.iter().enumerate() {
+            let (addr, data) = item;
+            let addr = addr as u32;
+
+            let v_addr = TypedAddress::Element(addr).to_virtual_addr();
+            let record = MemoryRecord {
+                shard: 0,
+                timestamp: 0,
+                value: *data,
+            };
+
+            self.store.tracer.memory_records.insert(v_addr, record);
+        }
+    }
+
    #[cfg(feature = "tracing")]
     fn trace_instr_pre(&mut self, instr: &Opcode) {
         let pc = self.program_counter();
