@@ -18,7 +18,6 @@ use core::{
     fmt::{Debug, Formatter},
     mem::take,
 };
-use fnv::FnvBuildHasher;
 use hashbrown::HashMap;
 
 pub mod event;
@@ -120,8 +119,8 @@ pub struct Tracer {
     pub fns_meta: Vec<TracerFunctionMeta>,
     pub global_variables: Vec<TracerGlobalVariable>,
     pub nested_calls: u32,
-    pub memory_records: HashMap<u32, MemoryRecord, fnv::FnvBuildHasher>,
-    pub local_memory_event: HashMap<u32, MemoryLocalEvent, fnv::FnvBuildHasher>,
+    pub memory_records: HashMap<u32, MemoryRecord>,
+    pub local_memory_event: HashMap<u32, MemoryLocalEvent>,
     pub state: VMState,
     pub ip_max: u64,
     // We need once generate all memory record for elements and data segements before execution.
@@ -577,7 +576,7 @@ impl Tracer {
     pub fn mr_with_local_access(
         &mut self,
         addr: u32,
-        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent, FnvBuildHasher>>,
+        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
     ) -> MemoryReadRecord {
         let clk = self.state.clk;
         let shard = self.state.shard;
@@ -623,7 +622,7 @@ impl Tracer {
         &mut self,
         addr: u32,
         value: u32,
-        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent, FnvBuildHasher>>,
+        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
     ) -> MemoryWriteRecord {
         let record = self.memory_records.entry(addr).or_default();
         println!("addr: {}record:{:?}", addr, record);
