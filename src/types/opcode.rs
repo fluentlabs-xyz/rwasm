@@ -304,7 +304,9 @@ impl Opcode {
             | Opcode::I32ShrS
             | Opcode::I32ShrU
             | Opcode::I32Rotl
-            | Opcode::I32Rotr => true,
+            | Opcode::I32Rotr
+            | Opcode::I32Extend8S
+            | Opcode::I32Extend16S => true,
             _ => false,
         }
     }
@@ -343,14 +345,17 @@ impl Opcode {
 
     pub fn is_ecall_instruction(self) -> bool {
         match self {
-            Opcode::Call(_) | Opcode::ReturnCall(_) => true,
+            Opcode::Call(_)
+            | Opcode::ReturnCall(_)
+            | Opcode::TableInit(_)
+            | Opcode::TableGrow(_) => true,
             _ => false,
         }
     }
 
     pub fn is_branch_instruction(self) -> bool {
         match self {
-            Opcode::Br(_) | Opcode::BrIfEqz(_) | Opcode::BrIfNez(_) => true,
+            Opcode::Br(_) | Opcode::BrIfEqz(_) | Opcode::BrIfNez(_) | Opcode::BrTable(_) => true,
             _ => false,
         }
     }
@@ -369,7 +374,12 @@ impl Opcode {
 
     pub fn is_unary_instruction(self) -> bool {
         match self {
-            Opcode::I32Clz | Opcode::I32Ctz | Opcode::I32Popcnt | Opcode::I32Eqz => true,
+            Opcode::I32Clz
+            | Opcode::I32Ctz
+            | Opcode::I32Popcnt
+            | Opcode::I32Eqz
+            | Opcode::I32Extend8S
+            | Opcode::I32Extend16S => true,
             _ => false,
         }
     }
@@ -416,9 +426,11 @@ impl Opcode {
         match self {
             Opcode::CallIndirect(_)
             | Opcode::CallInternal(_)
+            | Opcode::Call(_)
+            | Opcode::Return
             | Opcode::ReturnCallIndirect(_)
             | Opcode::ReturnCallInternal(_)
-            | Opcode::Return => true,
+            | Opcode::ReturnCall(_) => true,
             _ => false,
         }
     }
@@ -433,6 +445,45 @@ impl Opcode {
     pub fn is_local_instruction(self) -> bool {
         match self {
             Opcode::LocalGet(_) | Opcode::LocalSet(_) | Opcode::LocalTee(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_state_instrucition(self) -> bool {
+        match self {
+            Opcode::MemoryCopy
+            | Opcode::MemoryGrow
+            | Opcode::MemorySize
+            | Opcode::ConsumeFuel(_)
+            | Opcode::ConsumeFuelStack
+            | Opcode::SignatureCheck(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_table_instruction(self) -> bool {
+        match self {
+            Opcode::TableCopy(_, _)
+            | Opcode::TableFill(_)
+            | Opcode::TableInit(_)
+            | Opcode::TableGet(_)
+            | Opcode::TableSize(_)
+            | Opcode::TableSet(_)
+            | Opcode::TableGrow(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_fat_op(self) -> bool {
+        match self {
+            Opcode::TableInit(_) | Opcode::TableGrow(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_64b_op(self) -> bool {
+        match self {
+            Opcode::I32Add64 | Opcode::I32Mul64 => true,
             _ => false,
         }
     }
