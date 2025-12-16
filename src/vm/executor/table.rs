@@ -222,6 +222,74 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .expect("rwasm: missing table");
         table.init_untyped(dst_index, module_elements_section, src_index, len)?;
 
+         #[cfg(feature = "tracing")]
+        {
+            use crate::{
+                event::FatOpEvent, mem::MemoryLocalEvent, mem_index::TypedAddress, N_MAX_TABLE_SIZE,
+            };
+            use hashbrown::HashMap;
+
+            let fat_op = self
+                .store
+                .tracer
+                .logs
+                .last()
+                .unwrap()
+                .fat_op
+                .clone()
+                .unwrap();
+
+            match fat_op {
+                FatOpEvent::TableInit(mut table_init_event) => {
+                    table_init_event.s = s.into();
+                    table_init_event.d = d.into();
+                    table_init_event.n = n.into();
+                    let mut local_memory_access: HashMap<u32, MemoryLocalEvent> =
+                        HashMap::default();
+                    for idx in 0..table_init_event.local_mem_access.len() {
+                        local_memory_access.insert(
+                            table_init_event.local_mem_access_addr[idx],
+                            table_init_event.local_mem_access[idx],
+                        );
+                    }
+                    for offset in 0..len {
+                        let src_addr = TypedAddress::Element(src_index + offset);
+
+                        let read_record = self.store.tracer.mr_with_local_access(
+                            src_addr.to_virtual_addr(),
+                            Some(&mut local_memory_access),
+                        );
+                        let value = read_record.value;
+                        table_init_event.memory_read_access.push(read_record);
+                    }
+                    self.store.tracer.state.next_cycle();
+                    for offset in 0..len {
+                        let value = table_init_event.memory_read_access[offset as usize].value;
+                        let dst_addr = TypedAddress::Table(
+                            table_idx as u32 * N_MAX_TABLE_SIZE + dst_index + offset,
+                        );
+                        let write_record = self.store.tracer.mw_with_local_access(
+                            dst_addr.to_virtual_addr(),
+                            value,
+                            Some(&mut local_memory_access),
+                        );
+                        table_init_event.memory_write_acess.push(write_record);
+                    }
+
+                    table_init_event.table_idx = table_idx as u32;
+                    table_init_event.local_mem_access =
+                        local_memory_access.iter().map(|(_, v)| (*v)).collect();
+                    table_init_event.local_mem_access_addr =
+                        local_memory_access.iter().map(|(k, v)| (*k)).collect();
+                    self.store.tracer.logs.last_mut().unwrap().fat_op =
+                        Some(FatOpEvent::TableInit(table_init_event));
+                }
+                _ => {
+                    unreachable!();
+                }
+            }
+        }
+
         self.ip.add(2);
         Ok(())
     }
