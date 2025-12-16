@@ -1,8 +1,7 @@
-use crate::{ImportName, InstructionSet};
+use crate::{intrinsic::Intrinsic, ImportName, InstructionSet};
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use wasmparser::{FuncType, ValType};
-use crate::intrinsic::Intrinsic;
 
 #[derive(Debug, Default, Clone)]
 pub struct ImportLinker {

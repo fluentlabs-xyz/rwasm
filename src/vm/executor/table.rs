@@ -24,7 +24,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .or_insert_with(TableEntity::new);
         let result = table.grow_untyped(delta, init);
         self.sp.push_as(result);
-         #[cfg(feature = "tracing")]
+        #[cfg(feature = "tracing")]
         {
             use crate::{
                 event::FatOpEvent, mem::MemoryLocalEvent, mem_index::TypedAddress, N_MAX_TABLE_SIZE,
@@ -222,7 +222,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .expect("rwasm: missing table");
         table.init_untyped(dst_index, module_elements_section, src_index, len)?;
 
-         #[cfg(feature = "tracing")]
+        #[cfg(feature = "tracing")]
         {
             use crate::{
                 event::FatOpEvent, mem::MemoryLocalEvent, mem_index::TypedAddress, N_MAX_TABLE_SIZE,
