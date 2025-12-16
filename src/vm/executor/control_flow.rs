@@ -152,6 +152,45 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         if instr_ref == NULL_FUNC_IDX {
             return Err(TrapCode::IndirectCallToNull);
         }
+
+        #[cfg(feature = "tracing")]
+        {
+            use crate::{
+                mem::MemoryRecordEnum,
+                mem_index::{TypedAddress, LAST_SIG_ADDR},
+                TraceCallData, N_MAX_TABLE_SIZE,
+            };
+
+            let addr = TypedAddress::Table(table as u32 * N_MAX_TABLE_SIZE + func_index);
+            let table_read_record = self.store.tracer.mr(addr.to_virtual_addr());
+
+            let call_state = TraceCallData {
+                calltype: crate::CallType::CallIndirect,
+                table_id: table as u32,
+                table_idx: func_index,
+                func_ref: instr_ref,
+                signature_id: signature_idx,
+                table_access: Some(table_read_record),
+            };
+
+            self.store.tracer.logs.last_mut().unwrap().call_state = Some(call_state);
+            self.store.tracer.state.next_cycle();
+            let sig_id_record = self.store.tracer.mw(LAST_SIG_ADDR, signature_idx);
+            self.store
+                .tracer
+                .logs
+                .last_mut()
+                .unwrap()
+                .memory_access
+                .res_record = Some(MemoryRecordEnum::Write(sig_id_record));
+            self.store
+                .tracer
+                .logs
+                .last_mut()
+                .unwrap()
+                .memory_access
+                .res_addr = Some(TypedAddress::LastSig);
+        }
         // call func
         self.ip.add(2);
         self.value_stack.sync_stack_ptr(self.sp);
