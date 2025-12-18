@@ -1008,28 +1008,30 @@ impl Value {
     }
 }
 
- #[cfg(feature = "tracing")]
- impl Value{
-        pub fn to_u32(&self)->(u32,u32){
-
-            match self {
-                Value::I32(value) => (*value as u32,0),
-                Value::I64(value) => {
-                    let (i0,i1)=value.split_into_i32_tuple();
-                    (i0 as u32,i1 as u32)
-                },
-                Value::F32(value) => (value.to_bits(),0u32),
-                Value::F64(value) =>{
-                    let bits = value.to_bits();
-                    let (i0,i1)=bits.split_into_i32_tuple();
-                    (i0 as u32,i1 as u32)
-                } ,
-                Value::FuncRef(func_ref) => (func_ref.0 as u32,0u32),
-                Value::ExternRef(func_ref) => (func_ref.0 as u32,0u32),
+#[cfg(feature = "tracing")]
+impl Value {
+    pub fn to_u32(&self) -> (u32, Option<u32>) {
+        match self {
+            Value::I32(value) => (*value as u32, None),
+            Value::I64(value) => {
+                let (i0, i1) = value.split_into_i32_tuple();
+                (i0 as u32, Some(i1 as u32))
             }
+            Value::F32(value) => {
+                let bits = value.to_bits();
+                (bits as u32, None)
+            }
+            Value::F64(value) => {
+                let bits = value.to_bits();
+                let (i0, i1) = bits.split_into_i32_tuple();
+                (i0 as u32, Some(i1 as u32))
+            }
+            Value::FuncRef(func_ref) => (func_ref.0 as u32, None),
+            Value::ExternRef(func_ref) => (func_ref.0 as u32, None),
         }
     }
- 
+}
+
 impl From<i32> for Value {
     #[inline]
     fn from(val: i32) -> Self {

@@ -24,6 +24,8 @@ pub const SP_START: u32 = N_MAX_STACK_SIZE as u32 * UNIT + SP_END;
 /// We add 32 to prevent writes to the SP1 registers
 pub const SP_END: u32 = 32 + UNIT;
 /// a special memory addresss reserved for saving the signature id of last call indirect op
+pub const RESERVED_ADDR_START: u32 = SP_END + UNIT;
+pub const RESERVED_ADDR_END: u32 = RESERVED_ADDR_START + 1024 * UNIT;
 pub const LAST_SIG_ADDR: u32 = SP_START + UNIT;
 pub const FUNC_FRAME_SIZE: u32 = UNIT; // TODO (dmitry123): "it looks like the call stack only save the returning pc right?, Yes(Yao)"
 pub const FUNC_FRAME_START: u32 = LAST_SIG_ADDR + UNIT;
@@ -45,9 +47,16 @@ pub const GLOBAL_MEM_END: u32 = GLOBAL_MEM_START + (1 << 8) << 20;
 
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy)]
+pub enum ReservedAddrEnum {
+    LastSig = 0,
+    Fuel = 1,
+}
+
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy)]
 pub enum TypedAddress {
     Stack(u32),
-    LastSig,
+    ReservedAddrEnum(ReservedAddrEnum),
     FuncFrame(u32),
     Table(u32),
     TableSize(u32),
@@ -69,7 +78,12 @@ impl TypedAddress {
                 debug_assert!(v_addr < SP_START);
                 v_addr
             }
-            TypedAddress::LastSig => LAST_SIG_ADDR,
+            TypedAddress::ReservedAddrEnum(reserved_adr) => {
+                let v_addr = RESERVED_ADDR_START + (*reserved_adr as u32) * UNIT;
+                debug_assert!(v_addr >= RESERVED_ADDR_START);
+                debug_assert!(v_addr < RESERVED_ADDR_END);
+                v_addr
+            }
             TypedAddress::FuncFrame(offset) => {
                 let v_addr = FUNC_FRAME_START + *offset * UNIT;
                 debug_assert!(v_addr >= FUNC_FRAME_START);
@@ -117,5 +131,9 @@ impl TypedAddress {
         } else {
             None
         }
+    }
+
+    pub fn from_reserved_addr(addr: ReservedAddrEnum) -> TypedAddress {
+        TypedAddress::ReservedAddrEnum(addr)
     }
 }

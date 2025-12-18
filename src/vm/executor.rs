@@ -551,11 +551,10 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
                 #[cfg(feature = "tracing")]
                 {
-                    use hashbrown::HashMap;
-
                     use crate::{SysCallData, TraceCallData};
+                    use hashbrown::HashMap;
                     let mut sys_call_data = SysCallData::default();
-                    sys_call_data.sys_call_id=sys_func_idx;
+                    sys_call_data.sys_call_id = sys_func_idx;
                     let mut local_memory_access = HashMap::default();
 
                     let mut sp = self.sp.to_relative_address();
@@ -576,7 +575,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                                 sys_call_data.memory_read_access.push(record);
 
                                 sp += UNIT;
-                                sys_call_data.params.push(hi);
+                                sys_call_data.params.push(hi.unwrap());
                                 let record = self
                                     .store
                                     .tracer
@@ -584,7 +583,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                                 sys_call_data.memory_read_access.push(record);
                             }
                             _ => {
-                                let (value, _) = item.to_u32();
+                                let value = item.to_u32().0;
                                 sp += UNIT;
                                 sys_call_data.params.push(value);
 
@@ -616,7 +615,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                                 sys_call_data.memory_write_access.push(record);
 
                                 sp -= UNIT;
-                                sys_call_data.params.push(hi);
+                                sys_call_data.params.push(hi.unwrap());
                                 let record = self.store.tracer.mw_with_local_access(
                                     sp,
                                     lo,
@@ -639,7 +638,25 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                             }
                         }
                     }
+                    //13 is the sysfunc index for fuel op.
+                    if sys_func_idx == 13 {
+                        use crate::mem_index::{ReservedAddrEnum, TypedAddress};
+
+                        let addr = TypedAddress::from_reserved_addr(ReservedAddrEnum::Fuel)
+                            .to_virtual_addr();
+                        let record = self
+                            .store
+                            .tracer
+                            .mr_with_local_access(addr, Some(&mut local_memory_access));
+                        sys_call_data.memory_read_access.push(record);
+                    }
                     let last = self.store.tracer.logs.last_mut().unwrap();
+                    sys_call_data.local_mem_access =
+                        local_memory_access.iter().map(|(_, v)| *v).collect();
+                    sys_call_data.local_mem_access_addr =
+                        local_memory_access.keys().cloned().collect();
+                    sys_call_data.params = params.iter().map(|v| v.to_u32().0).collect();
+
                     let mut call_state = TraceCallData {
                         calltype: crate::CallType::Call,
                         table_id: 0,
@@ -650,7 +667,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                         syscall_data: None,
                     };
                     call_state.syscall_data = Some(sys_call_data);
-                    
+
                     last.call_state = Some(call_state);
                 }
                 for x in result {

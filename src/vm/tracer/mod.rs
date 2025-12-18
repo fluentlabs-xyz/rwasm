@@ -1,12 +1,16 @@
 use super::ValueStackPtr;
 use crate::{
-    SysFuncIdx, UntypedValue, event::{FatOpEvent, TableGrowEvent, TableInitEvent}, mem_index::{LAST_SIG_ADDR, TypedAddress, UNIT}, types::Opcode, vm::tracer::{
+    event::{FatOpEvent, TableGrowEvent, TableInitEvent},
+    mem_index::{ReservedAddrEnum, TypedAddress, LAST_SIG_ADDR, UNIT},
+    types::Opcode,
+    vm::tracer::{
         mem::{
             MemoryAccessRecord, MemoryLocalEvent, MemoryReadRecord, MemoryRecord, MemoryRecordEnum,
             MemoryWriteRecord,
         },
         state::VMState,
-    }
+    },
+    SysFuncIdx, UntypedValue,
 };
 use alloc::{string::String, vec::Vec};
 use core::{
@@ -58,16 +62,15 @@ pub struct TraceCallData {
     pub func_ref: u32,
     pub signature_id: u32,
     pub table_access: Option<MemoryReadRecord>,
-    pub syscall_data:Option<SysCallData>,
-
+    pub syscall_data: Option<SysCallData>,
 }
 
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone,Default)]
-pub struct SysCallData{
-    pub sys_call_id:SysFuncIdx,
+#[derive(Debug, Clone, Default)]
+pub struct SysCallData {
+    pub sys_call_id: SysFuncIdx,
     pub params: Vec<u32>,
-    pub result:Vec<u32>,
+    pub result: Vec<u32>,
     pub memory_read_access: Vec<MemoryReadRecord>,
     pub memory_write_access: Vec<MemoryWriteRecord>,
     pub local_mem_access: Vec<MemoryLocalEvent>,
@@ -202,7 +205,8 @@ impl Tracer {
 
         if let Opcode::SignatureCheck(_) = opcode {
             let record = self.mr(LAST_SIG_ADDR);
-            memory_access.arg1_addr = Some(TypedAddress::LastSig);
+            memory_access.arg1_addr =
+                TypedAddress::from_reserved_addr(ReservedAddrEnum::LastSig).into();
             memory_access.arg1_record = Some(MemoryRecordEnum::Read(record));
         }
 
