@@ -49,7 +49,8 @@ pub const GLOBAL_MEM_END: u32 = GLOBAL_MEM_START + (1 << 8) << 20;
 #[derive(Debug, Clone, Copy)]
 pub enum ReservedAddrEnum {
     LastSig = 0,
-    Fuel = 1,
+    FuelLimit = 1,
+    ConsumedFuel = 2,
 }
 
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]

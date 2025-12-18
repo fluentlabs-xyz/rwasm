@@ -307,7 +307,10 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "tracing")]
     pub fn prepare_memory_record(&mut self) {
-        use crate::{mem::MemoryRecord, mem_index::TypedAddress};
+        use crate::{
+            mem::MemoryRecord,
+            mem_index::{ReservedAddrEnum, TypedAddress},
+        };
 
         for item in self.module.data_section.windows(4).enumerate() {
             let (addr, data) = item;
@@ -336,6 +339,12 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
             self.store.tracer.memory_records.insert(v_addr, record);
         }
+
+        let fuel = self.store.fuel_config.fuel_limit;
+        self.store.tracer.mw(
+            TypedAddress::ReservedAddrEnum(ReservedAddrEnum::FuelLimit).to_virtual_addr(),
+            fuel.unwrap() as u32,
+        );
     }
 
     #[cfg(feature = "tracing")]
@@ -642,12 +651,19 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                     if sys_func_idx == 13 {
                         use crate::mem_index::{ReservedAddrEnum, TypedAddress};
 
-                        let addr = TypedAddress::from_reserved_addr(ReservedAddrEnum::Fuel)
+                        let fuel_limit_addr = TypedAddress::from_reserved_addr(ReservedAddrEnum::FuelLimit)
                             .to_virtual_addr();
                         let record = self
                             .store
                             .tracer
-                            .mr_with_local_access(addr, Some(&mut local_memory_access));
+                            .mr_with_local_access(fuel_limit_addr, Some(&mut local_memory_access));
+                        sys_call_data.memory_read_access.push(record);
+                         let consumed_fuel_addr = TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuel)
+                            .to_virtual_addr();
+                        let record = self
+                            .store
+                            .tracer
+                            .mr_with_local_access(consumed_fuel_addr, Some(&mut local_memory_access));
                         sys_call_data.memory_read_access.push(record);
                     }
                     let last = self.store.tracer.logs.last_mut().unwrap();

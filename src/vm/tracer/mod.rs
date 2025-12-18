@@ -191,7 +191,6 @@ impl Tracer {
             fat_op: None,
         };
         let mut memory_access = self.record_mr(opcode, sp);
-
         if let Some(memory_read_record) = memory_access.arg1_record {
             opcode_state.arg1 = memory_read_record.value();
         }
@@ -303,6 +302,20 @@ impl Tracer {
                     local_memory_access.iter().map(|(k, v)| (*k)).collect();
                 opcode_state.fat_op = Some(FatOpEvent::TableGrow(fat_op_event));
             }
+        }
+
+        if let Opcode::ConsumeFuel(fuel) = opcode   {
+            let fuel_limit_record = self.mr(
+                TypedAddress::from_reserved_addr(ReservedAddrEnum::FuelLimit).to_virtual_addr(),
+            );
+            opcode_state.memory_access.arg1_record =
+                Some(MemoryRecordEnum::Read(fuel_limit_record));
+            let consumed_fuel_record = self.mr(
+                TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuel).to_virtual_addr(),
+            );
+            opcode_state.memory_access.arg2_record =
+                Some(MemoryRecordEnum::Read(consumed_fuel_record));
+
         }
 
         self.logs.push(opcode_state);
@@ -423,6 +436,24 @@ impl Tracer {
                 self.logs.last_mut().unwrap().res_hi = hi_value;
                 self.logs.last_mut().unwrap().memory_access.res_hi_addr =
                     Some(TypedAddress::from_stack_vaddr(new_sp));
+            }
+            Opcode::ConsumeFuel(fuel)=> {
+               let new_consumed_fuel = self
+                    .logs
+                    .last()
+                    .unwrap()
+                    .memory_access
+                    .arg2_record
+                    .unwrap()
+                    .value()
+                    + fuel;
+                let consumed_fuel_record = self.mw(
+                    TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuel).to_virtual_addr(),
+                    new_consumed_fuel,
+                );
+                self.logs.last_mut().unwrap().memory_access.res_record =
+                    Some(MemoryRecordEnum::Write(consumed_fuel_record));
+                self.logs.last_mut().unwrap().res = new_consumed_fuel;
             }
             _ => self.record_sw(opcode, new_sp, stack),
         }
