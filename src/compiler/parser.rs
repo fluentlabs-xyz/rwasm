@@ -78,8 +78,12 @@ impl ModuleParser {
         parser.parse(wasm_binary)?;
         for (k, v) in &parser.allocations.translation.exported_funcs {
             let func_type_idx = parser.allocations.translation.resolve_func_type_index(*v);
-            let func_type =
-                parser.allocations.translation.original_func_types[func_type_idx as usize].clone();
+            let func_type = parser
+                .allocations
+                .translation
+                .func_type_registry
+                .resolve_original_func_type(func_type_idx)
+                .clone();
             result.push((k.clone(), *v, func_type));
             #[cfg(feature = "debug-print")]
             print!("{}: func_idx={}, func_type_idx={}\n", k, v, func_type_idx);
@@ -208,6 +212,7 @@ impl ModuleParser {
             let is_empty_func_type = self
                 .allocations
                 .translation
+                .func_type_registry
                 .resolve_func_type_ref(func_type_idx, |func_type| {
                     func_type.params().len() == 0 && func_type.results().len() == 0
                 });
@@ -372,41 +377,10 @@ impl ModuleParser {
             let func_type = match func_type? {
                 Type::Func(func_type) => func_type,
             };
-            let mut adjusted_params = Vec::new();
-            let mut adjusted_results = Vec::new();
-            for x in func_type.params() {
-                match x {
-                    ValType::I64 | ValType::F64 => {
-                        adjusted_params.push(ValType::I32);
-                        adjusted_params.push(ValType::I32);
-                    }
-                    ValType::V128 => {
-                        return Err(CompilationError::NotSupportedFuncType);
-                    }
-                    _ => adjusted_params.push(*x),
-                }
-            }
-            for x in func_type.results() {
-                match x {
-                    ValType::I64 | ValType::F64 => {
-                        adjusted_results.push(ValType::I32);
-                        adjusted_results.push(ValType::I32);
-                    }
-                    ValType::V128 => {
-                        return Err(CompilationError::NotSupportedFuncType);
-                    }
-                    _ => adjusted_results.push(*x),
-                }
-            }
-            let adjusted_func_type = FuncType::new(adjusted_params, adjusted_results);
             self.allocations
                 .translation
-                .original_func_types
-                .push(func_type);
-            self.allocations
-                .translation
-                .func_types
-                .push(adjusted_func_type);
+                .func_type_registry
+                .alloc_func_type(func_type)?;
         }
         Ok(())
     }
@@ -455,9 +429,8 @@ impl ModuleParser {
             let func_type = self
                 .allocations
                 .translation
-                .original_func_types
-                .get(func_type_index as usize)
-                .expect("missing function type");
+                .func_type_registry
+                .resolve_original_func_type(func_type_index);
             if !import_linker_entity.matches_func_type(func_type) {
                 return Err(CompilationError::MalformedImportFunctionType);
             }
@@ -490,6 +463,7 @@ impl ModuleParser {
             translator.prepare(func_idx)?;
             let signature_index = translator
                 .alloc
+                .func_type_registry
                 .resolve_func_type_signature(func_type_index);
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
             if self.config.builtins_consume_fuel {

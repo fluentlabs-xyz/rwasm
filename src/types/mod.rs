@@ -120,3 +120,8 @@ pub const LOCALS_PER_FUEL: u32 = 16;
 pub const LOCALS_PER_FUEL_LOG2: u32 = 4;
 pub const DROP_KEEP_PER_FUEL: u32 = 16;
 pub const DROP_KEEP_PER_FUEL_LOG2: u32 = 4;
+
+const _: () = assert!(MEMORY_BYTES_PER_FUEL == (1 << MEMORY_BYTES_PER_FUEL_LOG2));
+const _: () = assert!(TABLE_ELEMS_PER_FUEL == (1 << TABLE_ELEMS_PER_FUEL_LOG2));
+const _: () = assert!(LOCALS_PER_FUEL == (1 << LOCALS_PER_FUEL_LOG2));
+const _: () = assert!(DROP_KEEP_PER_FUEL == (1 << DROP_KEEP_PER_FUEL_LOG2));

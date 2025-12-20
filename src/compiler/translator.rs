@@ -7,6 +7,7 @@ use crate::{
         drop_keep::DropKeep,
         error::CompilationError,
         fuel_costs::FuelCosts,
+        func_type_registry::FuncTypeRegistry,
         intrinsic::{Intrinsic, IntrinsicHandler},
         labels::LabelRegistry,
         locals_registry::LocalsRegistry,
@@ -17,8 +18,8 @@ use crate::{
     },
     AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
     ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
-    Opcode, SignatureIdx, TableIdx, BASE_FUEL_COST, DEFAULT_MEMORY_INDEX, N_MAX_MEMORY_PAGES,
-    N_MAX_TABLE_SIZE, SNIPPET_FUNC_IDX_UNRESOLVED,
+    Opcode, TableIdx, BASE_FUEL_COST, DEFAULT_MEMORY_INDEX, N_MAX_MEMORY_PAGES, N_MAX_TABLE_SIZE,
+    SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec, vec::Vec};
 use bitvec::macros::internal::funty::Fundamental;
@@ -56,9 +57,9 @@ pub struct FuncTranslatorAllocations {
     pub(crate) stack_types: Vec<ValType>,
     /// Module builder for rWASM
     pub(crate) segment_builder: SegmentBuilder,
+    /// A registry for func types
+    pub(crate) func_type_registry: FuncTypeRegistry,
 
-    pub(crate) original_func_types: Vec<FuncType>,
-    pub(crate) func_types: Vec<FuncType>,
     pub(crate) compiled_funcs: Vec<FuncTypeIdx>,
     pub(crate) tables: Vec<TableType>,
     pub(crate) memories: Vec<MemoryType>,
@@ -80,8 +81,7 @@ impl Default for FuncTranslatorAllocations {
             br_table_branches: Default::default(),
             stack_types: vec![],
             segment_builder: Default::default(),
-            original_func_types: vec![],
-            func_types: vec![],
+            func_type_registry: Default::default(),
             compiled_funcs: vec![],
             tables: vec![],
             memories: vec![],
@@ -110,50 +110,9 @@ impl FuncTranslatorAllocations {
         self.stack_types.clear();
     }
 
-    pub(crate) fn resolve_func_params_len_type_by_block(&self, block_type: BlockType) -> usize {
-        let func_type_index = match block_type {
-            BlockType::FuncType(func_type_index) => func_type_index,
-            BlockType::Empty | BlockType::Type(_) => return 0,
-        };
-        self.resolve_func_type_ref(func_type_index, |func_type| func_type.params().len())
-    }
-
-    pub(crate) fn resolve_func_results_len_type_by_block(&self, block_type: BlockType) -> usize {
-        let func_type_index = match block_type {
-            BlockType::FuncType(func_type_index) => func_type_index,
-            BlockType::Type(ty) => {
-                return match ty {
-                    ValType::I64 | ValType::F64 => 2,
-                    _ => 1,
-                }
-            }
-            BlockType::Empty => return 0,
-        };
-        self.resolve_func_type_ref(func_type_index, |func_type| func_type.results().len())
-    }
-
-    pub(crate) fn resolve_func_type_ref<R, F: FnOnce(&FuncType) -> R>(
-        &self,
-        func_type_idx: FuncTypeIdx,
-        f: F,
-    ) -> R {
-        let func_type = self.func_types.get(func_type_idx as usize).unwrap();
-        f(func_type)
-    }
-
     pub(crate) fn resolve_func_type_index<I: Into<FuncIdx>>(&self, func_idx: I) -> FuncTypeIdx {
         let func_idx: FuncIdx = func_idx.into();
         self.compiled_funcs.get(func_idx as usize).copied().unwrap()
-    }
-
-    pub(crate) fn resolve_func_type_signature(&self, func_type_idx: FuncTypeIdx) -> SignatureIdx {
-        let func_type = &self.original_func_types[func_type_idx as usize];
-        for (i, x) in self.original_func_types.iter().enumerate() {
-            if x == func_type {
-                return i as SignatureIdx;
-            }
-        }
-        unreachable!()
     }
 
     pub(crate) fn emit_function_call(
@@ -163,7 +122,7 @@ impl FuncTranslatorAllocations {
         is_return_call: bool,
     ) {
         let func_type_idx = self.resolve_func_type_index(function_index);
-        let func_type = &self.func_types[func_type_idx as usize];
+        let func_type = self.func_type_registry.resolve_func_type(func_type_idx);
 
         let is = if is_entrypoint {
             &mut self.segment_builder.entrypoint_bytecode
@@ -259,7 +218,10 @@ impl InstructionTranslator {
         let end_label = self.alloc.labels.new_label();
         {
             let func_type_idx = self.alloc.resolve_func_type_index(func_idx);
-            let signature_index = self.alloc.resolve_func_type_signature(func_type_idx);
+            let signature_index = self
+                .alloc
+                .func_type_registry
+                .resolve_func_type_signature(func_type_idx);
             self.alloc
                 .instruction_set
                 .op_signature_check(signature_index);
@@ -271,11 +233,13 @@ impl InstructionTranslator {
         self.alloc.control_frames.push_frame(block_frame);
         let original_func_types = self
             .alloc
-            .original_func_types
-            .get(func_type_idx as usize)
-            .unwrap();
+            .func_type_registry
+            .resolve_original_func_type(func_type_idx);
         self.alloc.stack_types.extend(original_func_types.params());
-        let func_type = self.alloc.func_types.get(func_type_idx as usize).unwrap();
+        let func_type = self
+            .alloc
+            .func_type_registry
+            .resolve_func_type(func_type_idx);
         debug_assert_eq!(self.stack_height.height(), 0);
         debug_assert_eq!(self.stack_height.max_stack_height(), 0);
         let func_params_len = func_type.params().len();
@@ -356,7 +320,10 @@ impl InstructionTranslator {
     /// When the emulated value stack underflows. This should not happen
     /// since we have already validated the input Wasm prior.
     fn frame_stack_height(&self, block_type: BlockType) -> u32 {
-        let len_params = self.alloc.resolve_func_params_len_type_by_block(block_type) as u32;
+        let len_params = self
+            .alloc
+            .func_type_registry
+            .resolve_func_params_len_type_by_block(block_type) as u32;
         let stack_height = self.stack_height.height();
         stack_height.checked_sub(len_params).unwrap_or_else(|| {
             panic!(
@@ -488,9 +455,11 @@ impl InstructionTranslator {
         let keep = match frame.kind() {
             ControlFrameKind::Block | ControlFrameKind::If => self
                 .alloc
+                .func_type_registry
                 .resolve_func_results_len_type_by_block(frame.block_type()),
             ControlFrameKind::Loop => self
                 .alloc
+                .func_type_registry
                 .resolve_func_params_len_type_by_block(frame.block_type()),
         } as u32;
         // Find out how many values we need to drop.
@@ -619,10 +588,16 @@ impl InstructionTranslator {
 
     /// Adjusts the emulated value stack given the [`rwasm_legacy::FuncType`] of the call.
     fn adjust_value_stack_for_call(&mut self, func_type_idx: FuncTypeIdx) {
-        let func_type = &self.alloc.func_types[func_type_idx as usize];
+        let func_type = self
+            .alloc
+            .func_type_registry
+            .resolve_func_type(func_type_idx);
         self.stack_height.pop_n(func_type.params().len() as u32);
         self.stack_height.push_n(func_type.results().len() as u32);
-        let func_type = &self.alloc.original_func_types[func_type_idx as usize];
+        let func_type = self
+            .alloc
+            .func_type_registry
+            .resolve_original_func_type(func_type_idx);
         for func_type in func_type.params().iter().rev() {
             let popped_type = self.alloc.stack_types.pop().unwrap();
             assert_eq!(*func_type, popped_type)
@@ -803,7 +778,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         }
         match if_frame.block_type() {
             BlockType::FuncType(func_type_idx) => {
-                let func_type = self.alloc.func_types.get(func_type_idx as usize).unwrap();
+                let func_type = self
+                    .alloc
+                    .func_type_registry
+                    .resolve_func_type(func_type_idx);
                 func_type.params().iter().for_each(|param| {
                     if *param == ValType::I64 || *param == ValType::F64 {
                         self.stack_height.push_n(2);
@@ -886,9 +864,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             BlockType::FuncType(func_type_idx) => {
                 let func_type = self
                     .alloc
-                    .original_func_types
-                    .get(func_type_idx as usize)
-                    .unwrap();
+                    .func_type_registry
+                    .resolve_original_func_type(func_type_idx);
                 func_type.results().iter().for_each(|param| {
                     if *param == ValType::I64 || *param == ValType::F64 {
                         self.stack_height.push_n(2);
@@ -1178,7 +1155,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.alloc.stack_types.pop().unwrap();
             builder.adjust_value_stack_for_call(func_type_index as FuncTypeIdx);
-            let signature_idx = builder.alloc.resolve_func_type_signature(func_type_index);
+            let signature_idx = builder
+                .alloc
+                .func_type_registry
+                .resolve_func_type_signature(func_type_index);
             builder
                 .alloc
                 .instruction_set
@@ -1191,7 +1171,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_return_call(&mut self, function_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             let func_type_idx = builder.alloc.resolve_func_type_index(function_index);
-            let func_type = &builder.alloc.func_types[func_type_idx as usize];
+            let func_type = &builder
+                .alloc
+                .func_type_registry
+                .resolve_func_type(func_type_idx);
             let drop_keep = builder.drop_keep_return_call(&func_type)?;
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
             builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
@@ -1213,7 +1196,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         table_index: u32,
     ) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            let func_type = &builder.alloc.func_types[func_type_index as usize];
+            let func_type = builder
+                .alloc
+                .func_type_registry
+                .resolve_func_type(func_type_index);
             builder.stack_height.pop1();
             builder.alloc.stack_types.pop().unwrap();
             let mut drop_keep = builder.drop_keep_return_call(&func_type)?;
@@ -1225,7 +1211,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 &mut builder.alloc.instruction_set,
                 &mut builder.stack_height,
             );
-            let signature_idx = builder.alloc.resolve_func_type_signature(func_type_index);
+            let signature_idx = builder
+                .alloc
+                .func_type_registry
+                .resolve_func_type_signature(func_type_index);
             builder
                 .alloc
                 .instruction_set

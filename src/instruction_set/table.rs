@@ -1,4 +1,7 @@
-use crate::{ElementSegmentIdx, InstructionSet, TableIdx, TrapCode, TABLE_ELEMS_PER_FUEL_LOG2};
+use crate::{
+    ElementSegmentIdx, InstructionSet, TableIdx, TrapCode, TABLE_ELEMS_PER_FUEL,
+    TABLE_ELEMS_PER_FUEL_LOG2,
+};
 
 impl InstructionSet {
     pub const MSH_TABLE_INIT_CHECKED: u32 = 2;
@@ -33,6 +36,8 @@ impl InstructionSet {
         // charge fuel for this call after all checks
         if inject_fuel_check {
             self.op_local_get(1); // n
+            self.op_i32_const(TABLE_ELEMS_PER_FUEL - 1); // upper round
+            self.op_i32_add();
             self.op_i32_const(TABLE_ELEMS_PER_FUEL_LOG2); // 2^4=16
             self.op_i32_shr_u(); // n/16
             self.op_consume_fuel_stack();
@@ -61,10 +66,12 @@ impl InstructionSet {
             // we don't trap here, because, according to a wasm standard, we should put u32::MAX on
             // the top of the stack in case of overflow
             self.op_i32_const(u32::MAX);
-            self.op_br(if inject_fuel_check { 6 } else { 2 });
+            self.op_br(if inject_fuel_check { 8 } else { 2 });
         }
         if inject_fuel_check {
             self.op_local_get(1); // n
+            self.op_i32_const(TABLE_ELEMS_PER_FUEL - 1); // upper round
+            self.op_i32_add();
             self.op_i32_const(TABLE_ELEMS_PER_FUEL_LOG2); // 2^4=16
             self.op_i32_shr_u(); // n/16
             self.op_consume_fuel_stack();
@@ -76,6 +83,8 @@ impl InstructionSet {
     pub fn op_table_fill_checked(&mut self, table_idx: TableIdx, inject_fuel_check: bool) {
         if inject_fuel_check {
             self.op_local_get(1); // n
+            self.op_i32_const(TABLE_ELEMS_PER_FUEL - 1); // upper round
+            self.op_i32_add();
             self.op_i32_const(TABLE_ELEMS_PER_FUEL_LOG2); // 2^4=16
             self.op_i32_shr_u(); // n/16
             self.op_consume_fuel_stack();
@@ -92,6 +101,8 @@ impl InstructionSet {
     ) {
         if inject_fuel_check {
             self.op_local_get(1); // n
+            self.op_i32_const(TABLE_ELEMS_PER_FUEL - 1); // upper round
+            self.op_i32_add();
             self.op_i32_const(TABLE_ELEMS_PER_FUEL_LOG2); // 2^4=16
             self.op_i32_shr_u(); // n/16
             self.op_consume_fuel_stack();

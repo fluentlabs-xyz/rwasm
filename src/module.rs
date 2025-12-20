@@ -193,6 +193,49 @@ impl core::fmt::Display for RwasmModule {
     }
 }
 
+#[derive(Default)]
+pub struct RwasmModuleBuilder {
+    code_section: InstructionSet,
+    data_section: Vec<u8>,
+    elem_section: Vec<u32>,
+    hint_section: Vec<u8>,
+}
+
+impl RwasmModuleBuilder {
+    pub fn new(code_section: InstructionSet) -> Self {
+        Self {
+            code_section,
+            ..Default::default()
+        }
+    }
+
+    pub fn with_data_section(mut self, data: &[u8]) -> Self {
+        self.data_section.extend_from_slice(data);
+        self
+    }
+
+    pub fn with_elem_section(mut self, elem: &[u32]) -> Self {
+        self.elem_section.extend_from_slice(elem);
+        self
+    }
+
+    pub fn with_hint_section(mut self, hint: &[u8]) -> Self {
+        self.hint_section = hint.to_vec();
+        self
+    }
+
+    pub fn build(self) -> RwasmModule {
+        RwasmModule {
+            inner: Arc::new(RwasmModuleInner {
+                code_section: self.code_section,
+                data_section: self.data_section,
+                elem_section: self.elem_section,
+                hint_section: self.hint_section,
+            }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{instruction_set, RwasmModuleInner};
