@@ -304,24 +304,26 @@ impl Tracer {
             }
         }
 
-        if let Opcode::ConsumeFuel(fuel) = opcode   {
-            let fuel_limit_hi_record = self.mr(
-                TypedAddress::from_reserved_addr(ReservedAddrEnum::FuelLimitHi).to_virtual_addr(),
-            );
+        if let Opcode::ConsumeFuel(fuel) = opcode {
+            let fuel_limit_hi_record = self.mr(TypedAddress::from_reserved_addr(
+                ReservedAddrEnum::FuelLimitHi,
+            )
+            .to_virtual_addr());
             opcode_state.memory_access.arg1_hi_record =
                 Some(MemoryRecordEnum::Read(fuel_limit_hi_record));
-            let fuel_limit_low_record = self.mr(
-                TypedAddress::from_reserved_addr(ReservedAddrEnum::FuelLimitLow).to_virtual_addr(),
-            );
+            let fuel_limit_low_record = self.mr(TypedAddress::from_reserved_addr(
+                ReservedAddrEnum::FuelLimitLow,
+            )
+            .to_virtual_addr());
 
             opcode_state.memory_access.arg1_record =
                 Some(MemoryRecordEnum::Read(fuel_limit_low_record));
-            let consumed_fuel_record = self.mr(
-                TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuel).to_virtual_addr(),
-            );
+            let consumed_fuel_record = self.mr(TypedAddress::from_reserved_addr(
+                ReservedAddrEnum::ConsumedFuel,
+            )
+            .to_virtual_addr());
             opcode_state.memory_access.arg2_record =
                 Some(MemoryRecordEnum::Read(consumed_fuel_record));
-
         }
 
         self.logs.push(opcode_state);
@@ -443,8 +445,8 @@ impl Tracer {
                 self.logs.last_mut().unwrap().memory_access.res_hi_addr =
                     Some(TypedAddress::from_stack_vaddr(new_sp));
             }
-            Opcode::ConsumeFuel(fuel)=> {
-               let new_consumed_fuel = self
+            Opcode::ConsumeFuel(fuel) => {
+                let new_consumed_fuel = self
                     .logs
                     .last()
                     .unwrap()
@@ -454,7 +456,8 @@ impl Tracer {
                     .value()
                     + fuel;
                 let consumed_fuel_record = self.mw(
-                    TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuel).to_virtual_addr(),
+                    TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuel)
+                        .to_virtual_addr(),
                     new_consumed_fuel,
                 );
                 self.logs.last_mut().unwrap().memory_access.res_record =
