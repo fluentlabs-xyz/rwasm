@@ -305,11 +305,17 @@ impl Tracer {
         }
 
         if let Opcode::ConsumeFuel(fuel) = opcode   {
-            let fuel_limit_record = self.mr(
-                TypedAddress::from_reserved_addr(ReservedAddrEnum::FuelLimit).to_virtual_addr(),
+            let fuel_limit_hi_record = self.mr(
+                TypedAddress::from_reserved_addr(ReservedAddrEnum::FuelLimitHi).to_virtual_addr(),
             );
+            opcode_state.memory_access.arg1_hi_record =
+                Some(MemoryRecordEnum::Read(fuel_limit_hi_record));
+            let fuel_limit_low_record = self.mr(
+                TypedAddress::from_reserved_addr(ReservedAddrEnum::FuelLimitLow).to_virtual_addr(),
+            );
+
             opcode_state.memory_access.arg1_record =
-                Some(MemoryRecordEnum::Read(fuel_limit_record));
+                Some(MemoryRecordEnum::Read(fuel_limit_low_record));
             let consumed_fuel_record = self.mr(
                 TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuel).to_virtual_addr(),
             );
