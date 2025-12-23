@@ -341,10 +341,9 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         }
 
         let fuel = self.store.fuel_config.fuel_limit;
-         let (fuel_low, fuel_hi) = match fuel {
+        let (fuel_low, fuel_hi) = match fuel {
             Some(f) => ((f & 0xFFFFFFFF) as u32, (f >> 32) as u32),
             None => (u32::MAX, u32::MAX),
-
         };
 
         let fuel_low_record = MemoryRecord {
@@ -384,7 +383,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuelHi).to_virtual_addr(),
             consumed_fuel_hi_record,
         );
-        
     }
     fn trace_instr_pre(&mut self, instr: &Opcode) {
         let pc = self.program_counter();

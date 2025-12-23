@@ -304,48 +304,22 @@ impl Tracer {
             }
         }
 
-        if let Opcode::ConsumeFuel(fuel) = opcode {
-            let fuel_limit_hi_record = self.mr(TypedAddress::from_reserved_addr(
-                ReservedAddrEnum::FuelLimitHi,
-            )
-            .to_virtual_addr());
-            opcode_state.memory_access.arg1_hi_record =
-                Some(MemoryRecordEnum::Read(fuel_limit_hi_record));
-            let fuel_limit_low_record = self.mr(TypedAddress::from_reserved_addr(
-                ReservedAddrEnum::FuelLimitLow,
-            )
-            .to_virtual_addr());
-
-            opcode_state.memory_access.arg1_record =
-                Some(MemoryRecordEnum::Read(fuel_limit_low_record));
-            let consumed_fuel_record = self.mr(TypedAddress::from_reserved_addr(
-                ReservedAddrEnum::ConsumedFuelLow,
-            )
-            .to_virtual_addr());
-            opcode_state.memory_access.arg2_record =
-                Some(MemoryRecordEnum::Read(consumed_fuel_record));
-        }
+        if let Opcode::ConsumeFuel(fuel) = opcode {}
 
         if let Opcode::ConsumeFuelStack = opcode {
-            let fuel_limit_hi_record = self.mr(TypedAddress::from_reserved_addr(
-                ReservedAddrEnum::FuelLimitHi,
-            )
-            .to_virtual_addr());
-            opcode_state.memory_access.arg1_hi_record =
-                Some(MemoryRecordEnum::Read(fuel_limit_hi_record));
-            let fuel_limit_low_record = self.mr(TypedAddress::from_reserved_addr(
-                ReservedAddrEnum::FuelLimitLow,
-            )
-            .to_virtual_addr());
-
-            opcode_state.memory_access.arg1_record =
-                Some(MemoryRecordEnum::Read(fuel_limit_low_record));
-            let consumed_fuel_record = self.mr(TypedAddress::from_reserved_addr(
+            let consumed_fuel_record_low = self.mr(TypedAddress::from_reserved_addr(
                 ReservedAddrEnum::ConsumedFuelLow,
             )
             .to_virtual_addr());
-            opcode_state.memory_access.arg2_record =
-                Some(MemoryRecordEnum::Read(consumed_fuel_record));
+            opcode_state.memory_access.arg1_record =
+                Some(MemoryRecordEnum::Read(consumed_fuel_record_low));
+            let consumed_fuel_record_hi = self.mr(TypedAddress::from_reserved_addr(
+                ReservedAddrEnum::ConsumedFuelHi,
+            )
+            .to_virtual_addr());
+            opcode_state.memory_access.arg1_hi_record =
+                Some(MemoryRecordEnum::Read(consumed_fuel_record_hi));
+
             let stack_fuel_record = self.mr(sp);
             opcode_state.memory_access.arg2_record =
                 Some(MemoryRecordEnum::Read(stack_fuel_record));
@@ -470,9 +444,35 @@ impl Tracer {
                 self.logs.last_mut().unwrap().memory_access.res_hi_addr =
                     Some(TypedAddress::from_stack_vaddr(new_sp));
             }
-            Opcode::ConsumeFuel(fuel) => {
-                let conusmed_fuel_low =self.logs.last_mut().unwrap().memory_access.arg1_record.unwrap().value();
-                let conusmed_fuel_hi =self.logs.last_mut().unwrap().memory_access.arg1_hi_record.unwrap().value();
+            Opcode::ConsumeFuel(_) | Opcode::ConsumeFuelStack => {
+                let fuel = match opcode {
+                    Opcode::ConsumeFuel(fuel) => fuel,
+                    Opcode::ConsumeFuelStack => self
+                        .logs
+                        .last_mut()
+                        .unwrap()
+                        .memory_access
+                        .arg2_record
+                        .unwrap()
+                        .value(),
+                    _ => unreachable!(),
+                };
+                let conusmed_fuel_low = self
+                    .logs
+                    .last_mut()
+                    .unwrap()
+                    .memory_access
+                    .arg1_record
+                    .unwrap()
+                    .value();
+                let conusmed_fuel_hi = self
+                    .logs
+                    .last_mut()
+                    .unwrap()
+                    .memory_access
+                    .arg1_hi_record
+                    .unwrap()
+                    .value();
                 let consumed_fuel = ((conusmed_fuel_hi as u64) << 32) | (conusmed_fuel_low as u64);
                 let new_consumed_fuel = consumed_fuel.wrapping_add(fuel as u64);
                 let new_consumed_fuel_low = (new_consumed_fuel & 0xFFFFFFFF) as u32;
@@ -491,7 +491,7 @@ impl Tracer {
                     Some(MemoryRecordEnum::Write(consumed_fuel_low_record));
                 self.logs.last_mut().unwrap().memory_access.res_hi_record =
                     Some(MemoryRecordEnum::Write(consumed_fuel_hi_record));
-                self.logs.last_mut().unwrap().res = new_consumed_fuel_low   ;
+                self.logs.last_mut().unwrap().res = new_consumed_fuel_low;
             }
             _ => self.record_sw(opcode, new_sp, stack),
         }
