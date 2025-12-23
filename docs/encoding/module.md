@@ -45,9 +45,9 @@ All sections are encoded using bincode with legacy configuration for determinist
 
 ---
 
-## **3. Encoding of Each Section**
+## **2. Encoding of Each Section**
 
-### **3.1 Code Section**
+### **2.1 Code Section**
 
 The **code section** contains the compiled bytecode as an `InstructionSet`. The InstructionSet is a vector of `Opcode` enums, where each instruction is encoded using bincode.
 
@@ -86,7 +86,7 @@ Each instruction is encoded as a bincode-serialized `Opcode` enum with embedded 
 
 ---
 
-### **3.2 Data Section**
+### **2.2 Data Section**
 
 The **data section** contains **linear memory data** for the module. It's a concatenation of all data segments from the original WebAssembly binary.
 
@@ -108,7 +108,7 @@ This contains raw bytes that will be copied into linear memory during module ins
 
 ---
 
-### **3.3 Element Section**
+### **2.3 Element Section**
 
 The **element section** defines **function table elements**. It contains function indices that are used to initialize tables via the `table_init` instruction.
 
@@ -131,7 +131,7 @@ This defines:
 
 ---
 
-### **3.4 WASM Section**
+### **2.4 WASM Section**
 
 The **WASM section** stores the **original WebAssembly bytecode** used during compilation. This is kept for reference and debugging purposes.
 
@@ -151,7 +151,7 @@ This contains the original WebAssembly binary that was compiled to produce this 
 
 ---
 
-## **5. Example: Complete rWasm Module**
+## **3. Example: Complete rWasm Module**
 
 Here's a practical example of creating and encoding an rWasm module:
 
