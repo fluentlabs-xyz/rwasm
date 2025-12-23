@@ -341,16 +341,56 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         }
 
         let fuel = self.store.fuel_config.fuel_limit;
-        self.store.tracer.mw(
-            TypedAddress::ReservedAddrEnum(ReservedAddrEnum::FuelLimitHi).to_virtual_addr(),
-            fuel.unwrap() as u32,
-        );
-    }
+         let (fuel_low, fuel_hi) = match fuel {
+            Some(f) => ((f & 0xFFFFFFFF) as u32, (f >> 32) as u32),
+            None => (u32::MAX, u32::MAX),
 
-    #[cfg(feature = "tracing")]
+        };
+
+        let fuel_low_record = MemoryRecord {
+            shard: 0,
+            timestamp: 0,
+            value: fuel_low,
+        };
+        let fuel_hi_record = MemoryRecord {
+            shard: 0,
+            timestamp: 0,
+            value: fuel_hi,
+        };
+
+        self.store.tracer.memory_records.insert(
+            TypedAddress::from_reserved_addr(ReservedAddrEnum::FuelLimitLow).to_virtual_addr(),
+            fuel_low_record,
+        );
+        self.store.tracer.memory_records.insert(
+            TypedAddress::from_reserved_addr(ReservedAddrEnum::FuelLimitHi).to_virtual_addr(),
+            fuel_hi_record,
+        );
+        let consumed_fuel_low_record = MemoryRecord {
+            shard: 0,
+            timestamp: 0,
+            value: 0,
+        };
+        self.store.tracer.memory_records.insert(
+            TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuelLow).to_virtual_addr(),
+            consumed_fuel_low_record,
+        );
+        let consumed_fuel_hi_record = MemoryRecord {
+            shard: 0,
+            timestamp: 0,
+            value: 0,
+        };
+        self.store.tracer.memory_records.insert(
+            TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuelHi).to_virtual_addr(),
+            consumed_fuel_hi_record,
+        );
+        
+    }
     fn trace_instr_pre(&mut self, instr: &Opcode) {
         let pc = self.program_counter();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
+        //  Advance the cycle for memoery write phase.
+        //  For TableGrow/TableInit/CallIndirect, the cycle is advanced in their implementations.
         match instr {
             Opcode::TableGrow(_) | Opcode::TableInit(_) | Opcode::CallIndirect(_) => (),
             _ => {
@@ -660,7 +700,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                             .mr_with_local_access(fuel_limit_addr, Some(&mut local_memory_access));
                         sys_call_data.memory_read_access.push(record);
                         let consumed_fuel_addr =
-                            TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuel)
+                            TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuelLow)
                                 .to_virtual_addr();
                         let record = self.store.tracer.mr_with_local_access(
                             consumed_fuel_addr,

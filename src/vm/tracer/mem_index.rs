@@ -51,7 +51,8 @@ pub enum ReservedAddrEnum {
     LastSig = 0,
     FuelLimitHi = 1,
     FuelLimitLow = 2,
-    ConsumedFuel = 3,
+    ConsumedFuelLow = 3,
+    ConsumedFuelHi = 4,
 }
 
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
