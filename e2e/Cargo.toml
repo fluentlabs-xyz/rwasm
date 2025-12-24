@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 rwasm = { path = "..", features = ["std", "fpu", "wasmtime", "e2e"], default-features = false }
 wasmi = { version = "0.47.0", default-features = false, features = ["std"] }
-wasmtime = { git = "https://github.com/fluentlabs-xyz/wasmtime", branch = "feat/sync-strategies", optional = true, features = ["cache"] }
+wasmtime = { git = "https://github.com/fluentlabs-xyz/wasmtime", branch = "devel", optional = true, features = ["cache"] }
 #wasmtime = { version = "34.0.1", package = "wasmtime-rwasm", optional = true, features = ["disable-fpu", "cache"] }
 anyhow = "1.0.71"
 wast = "=64.0"
