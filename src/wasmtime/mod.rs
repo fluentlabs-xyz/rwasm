@@ -2,13 +2,10 @@ mod engine;
 
 #[cfg(test)]
 pub use crate::wasmtime::engine::wasmtime_new_engine_with_linker;
-
-use crate::wasmtime::engine::wasmtime_engine_with_linker;
-use crate::ExternRef;
-use crate::FuncRef;
 use crate::{
-    Caller, CompilationConfig, FuelConfig, ImportLinker, Store, SyscallHandler, TrapCode,
-    TypedCaller, UntypedValue, ValType, Value, F32, F64,
+    wasmtime::engine::wasmtime_engine_with_linker, Caller, CompilationConfig, ExternRef,
+    FuelConfig, FuncRef, ImportLinker, Store, SyscallHandler, TrapCode, TypedCaller, UntypedValue,
+    ValType, Value, F32, F64,
 };
 use futures::{channel::oneshot, future::Either, task::noop_waker};
 use smallvec::SmallVec;
@@ -184,8 +181,6 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
             .unwrap_or_else(|| unreachable!("wasmtime: missing entrypoint: {}", func_name));
 
         let after_init = store.get_fuel();
-
-        println!("Before {:?}, after: {:?}", before_init, after_init);
 
         let mut buffer = Vec::<wasmtime::Val>::default();
         for (i, value) in params.iter().enumerate() {

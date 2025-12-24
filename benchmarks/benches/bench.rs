@@ -34,7 +34,7 @@ fn bench_comparisons(c: &mut Criterion) {
                 Arc::new(ImportLinker::default()),
                 (),
                 always_failing_syscall_handler,
-                FuelConfig::default(),
+                FuelConfig::default().with_fuel_limit(1_000_000_000),
             );
             let mut result = [Value::I32(0)];
             strategy
@@ -46,7 +46,7 @@ fn bench_comparisons(c: &mut Criterion) {
 
     {
         let wasm_binary = include_bytes!("../lib.wasm");
-        let config = CompilationConfig::default().with_consume_fuel(false);
+        let config = CompilationConfig::default().with_consume_fuel(true);
         let module = compile_wasmtime_module(config, wasm_binary).unwrap();
         group.bench_function("bench_strategy_wasmtime", |b| {
             let strategy = Strategy::Wasmtime {
@@ -58,7 +58,7 @@ fn bench_comparisons(c: &mut Criterion) {
 
     {
         let wasm_binary = include_bytes!("../lib.wasm");
-        let config = CompilationConfig::default().with_consume_fuel(false);
+        let config = CompilationConfig::default().with_consume_fuel(true);
         let module = compile_wasmi_module(config, wasm_binary).unwrap();
         group.bench_function("bench_strategy_wasmi", |b| {
             let strategy = Strategy::Wasmi {
