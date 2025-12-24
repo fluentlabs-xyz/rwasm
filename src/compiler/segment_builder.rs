@@ -10,9 +10,9 @@ use wasmparser::{TableType, ValType};
 #[derive(Debug)]
 pub struct SegmentBuilder {
     pub(crate) global_memory_section: Vec<u8>,
-    pub(crate) memory_sections: HashMap<DataSegmentIdx, (u32, u32)>,
+    pub(crate) memory_sections: HashMap<DataSegmentIdx, (u32, u32), fnv::FnvBuildHasher>,
     pub(crate) global_element_section: Vec<u32>,
-    pub(crate) element_sections: HashMap<ElementSegmentIdx, (u32, u32)>,
+    pub(crate) element_sections: HashMap<ElementSegmentIdx, (u32, u32), fnv::FnvBuildHasher>,
     pub(crate) total_allocated_pages: u32,
     pub(crate) entrypoint_bytecode: InstructionSet,
 }

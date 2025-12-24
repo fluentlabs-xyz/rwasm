@@ -25,6 +25,7 @@ libm = "0.2.1"
 smallvec = "1.15.0"
 num-derive = "0.4.2"
 spin = "0.10.0"
+fnv = { version = "1.0.7", default-features = false }
 
 # tracing
 serde = { version = "1.0.219", features = ["derive"], optional = true }
@@ -32,13 +33,16 @@ serde = { version = "1.0.219", features = ["derive"], optional = true }
 # wasmtime
 wasmtime = { version = "34.0.1", package = "wasmtime-rwasm", optional = true, features = ["disable-fpu", "cache"] }
 #wasmtime = { path = "../wasmtime/crates/wasmtime", optional = true, features = ["disable-fpu", "cache"] }
-
 anyhow = { version = "1.0.98", default-features = false, optional = true }
 directories = { version = "6.0.0", optional = true }
 futures = { version = "0.3.31", optional = true }
+cfg-if = "1.0.4"
 
 # wasmi
 wasmi = { version = "0.47.0", default-features = false }
+
+# unix-memory
+libc = { version = "0.2.172", default-features = false, features = ["align", "extra_traits", "const-extern-fn"], optional = true }
 
 [dev-dependencies]
 rand = "0.9.1"
@@ -53,14 +57,23 @@ std = [
     "num-traits/std",
     "bitvec/std",
     "wasmtime?/std",
+    "unix-memory",
+    "pooling-allocator",
 ]
 more-max-pages = []
 serde = [
     "dep:serde", "serde/derive"
 ]
 tracing = ["serde"]
-debug-print = []
+test-build = []
+debug-print = ["std"]
 fpu = []
 wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:futures"]
 cache-compiled-artifacts = ["wasmtime", "dep:directories"]
 pooling-allocator = []
+unix-memory = ["dep:libc"]
+
+[[test]]
+name = "integration"
+path = "tests/snippets.rs"
+required-features = ["test-build"]

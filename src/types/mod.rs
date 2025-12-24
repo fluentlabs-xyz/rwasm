@@ -1,3 +1,4 @@
+pub mod bitvec_inlined;
 mod branch_offset;
 mod constructor_params;
 mod error;
@@ -44,16 +45,18 @@ pub const N_MAX_RECURSION_DEPTH: usize = 1024;
 /// memory page size is 64kB
 pub const N_BYTES_PER_MEMORY_PAGE: u32 = 65536;
 
-/// We have a hard limit for max possible memory used
-/// that is equal to 1024 pages (64mB)
-///
-/// TODO(dmitry): "should we revisit the limit?"
-///
-/// For SVM runtime we temporarily increase up to 128mB
-#[cfg(not(feature = "more-max-pages"))]
-pub const N_MAX_MEMORY_PAGES: u32 = 1024;
-#[cfg(feature = "more-max-pages")]
-pub const N_MAX_MEMORY_PAGES: u32 = 1024 * 10;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "more-max-pages")] {
+        /// For SVM runtime, we temporarily increase up to 128mB
+        pub const N_MAX_MEMORY_PAGES: u32 = 1024 * 10;
+    } else {
+        /// We have a hard limit for max possible memory used
+        /// that is equal to 1024 pages (64mB)
+        ///
+        /// TODO(dmitry): "should we revisit the limit?"
+        pub const N_MAX_MEMORY_PAGES: u32 = 1024;
+    }
+}
 
 /// A default memory index in a Wasm binary.
 /// According to Wasm validation rules, this value is always 0,

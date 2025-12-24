@@ -1,4 +1,7 @@
-use crate::{BlockFuel, GlobalIdx, MaxStackHeight, RwasmExecutor, SignatureIdx, Store, TrapCode};
+use crate::{
+    BlockFuel, GlobalIdx, MaxStackHeight, RwasmExecutor, SignatureIdx, Store, TrapCode,
+    UntypedValue,
+};
 
 impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     #[inline(always)]
@@ -48,7 +51,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let global_value = self
             .store
             .global_variables
-            .get(&global_idx)
+            .get(global_idx as usize)
             .copied()
             .unwrap_or_default();
         self.sp.push(global_value);
@@ -57,8 +60,19 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[inline(always)]
     pub(crate) fn visit_global_set(&mut self, global_idx: GlobalIdx) {
-        let new_value = self.sp.pop();
-        self.store.global_variables.insert(global_idx, new_value);
+        let new_value: UntypedValue = self.sp.pop();
+        let expected_cap = global_idx as usize + 1;
+        let len = self.store.global_variables.len();
+        if expected_cap > len {
+            self.store.global_variables.reserve(expected_cap - len);
+            let default_elements_count = global_idx as usize - len;
+            self.store
+                .global_variables
+                .extend(core::iter::repeat(UntypedValue::default()).take(default_elements_count));
+            self.store.global_variables.push(new_value);
+        } else {
+            self.store.global_variables[global_idx as usize] = new_value;
+        };
         self.ip.add(1);
     }
 }

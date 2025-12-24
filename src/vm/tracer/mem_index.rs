@@ -1,5 +1,5 @@
 use crate::{
-    N_DEFAULT_STACK_SIZE, N_MAX_DATA_SEGMENTS_BITS, N_MAX_RECURSION_DEPTH, N_MAX_TABLES,
+    N_MAX_DATA_SEGMENTS_BITS, N_MAX_RECURSION_DEPTH, N_MAX_STACK_SIZE, N_MAX_TABLES,
     N_MAX_TABLE_SIZE,
 };
 
@@ -15,7 +15,7 @@ pub const UNIT: u32 = 4; // size_of<u32>() / size_of<u8>()
 
 /// The stack starts with and invalid position, and every element in the stack has an index less
 /// than SP_START.
-pub const SP_START: u32 = N_DEFAULT_STACK_SIZE as u32 * UNIT + UNIT;
+pub const SP_START: u32 = N_MAX_STACK_SIZE as u32 * UNIT + UNIT;
 
 /// This is the index when the stack reaches the max length. So every valid index for the stack is
 /// >0. Making the index of a stack element strictly larger than 0 makes circuit checking this bound

@@ -89,7 +89,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let instr_ref: u32 = self
             .store
             .tables
-            .get(&table)
+            .get(table as usize)
             .expect("rwasm: unresolved table index")
             .get_untyped(func_index)
             .ok_or(TrapCode::TableOutOfBounds)?
@@ -144,7 +144,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let instr_ref = self
             .store
             .tables
-            .get(&table)
+            .get(table as usize)
             .expect("rwasm: unresolved table index")
             .get_untyped(func_index)
             .map(|v| v.as_u32())

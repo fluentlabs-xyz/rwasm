@@ -6,13 +6,13 @@ use rwasm::{
 fn test_fib() {
     let wasm_binary = include_bytes!("../benchmarks/lib.wasm");
     let config = CompilationConfig::default()
-        .with_entrypoint_name("main".into())
+        .with_entrypoint_name("fib32".into())
         .with_consume_fuel(false);
     for_each_strategy(
         |strategy| {
             let mut store = strategy.empty_store();
             let mut result = [Value::I32(0); 1];
-            strategy.execute(&mut store, "main", &[Value::I32(43)], &mut result)?;
+            strategy.execute(&mut store, "fib32", &[Value::I32(43)], &mut result)?;
             assert_eq!(result[0].i32().unwrap(), 433494437);
             Ok(())
         },
@@ -43,7 +43,7 @@ fn test_i64_load8_s() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     let mut result = [Value::I64(0); 1];
     engine
         .execute(&mut store, &rwasm_module, &[Value::I32(0)], &mut result)
@@ -71,7 +71,7 @@ fn test_i64_load() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     let mut result = [Value::I64(0); 1];
     engine
         .execute(&mut store, &rwasm_module, &[Value::I32(0)], &mut result)
@@ -131,7 +131,7 @@ fn test_bulk_bench() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let engine = ExecutionEngine::default();
     let mut result = [Value::I64(0); 1];
     engine
         .execute(&mut store, &rwasm_module, &[Value::I64(5000)], &mut result)
