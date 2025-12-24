@@ -33,6 +33,7 @@ impl<'a> FuncBuilder<'a> {
 
     pub fn translate(mut self) -> Result<ReusableAllocations, CompilationError> {
         self.translator.prepare(self.func_idx)?;
+        self.translator.bump_fuel_consumption(|| FuelCosts::BASE)?;
         // emit special opcodes before the beginning of the function
         self.translate_stack_alloc();
         self.translate_locals()?;
@@ -78,10 +79,6 @@ impl<'a> FuncBuilder<'a> {
             }
         }
 
-        // we exclude i64 locals from this check to satisfy wasm fuel calculation policy
-        let validated_locals = self.validator.len_locals();
-        self.translator
-            .bump_fuel_consumption(|| FuelCosts::fuel_for_locals(validated_locals))?;
         Ok(())
     }
 

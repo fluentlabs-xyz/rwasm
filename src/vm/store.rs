@@ -148,6 +148,10 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         self.last_signature = None;
     }
 
+    pub fn set_fuel(&mut self, fuel: Option<u64>) {
+        self.fuel_config.fuel_limit = fuel;
+    }
+
     pub fn fuel_consumed(&self) -> u64 {
         self.consumed_fuel
     }

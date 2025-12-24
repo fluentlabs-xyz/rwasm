@@ -75,6 +75,18 @@ impl ControlFlowStack {
                 )
             })
     }
+
+    pub fn nth_back_mut(&mut self, depth: u32) -> &mut ControlFrame {
+        let len = self.len();
+        self.frames
+            .iter_mut()
+            .nth_back(depth as usize)
+            .unwrap_or_else(|| {
+                panic!(
+                    "tried to peek the {depth}-th control flow frame, but there are only {len} control flow frames",
+                )
+            })
+    }
 }
 
 /// A Wasm `block` control flow frame.
@@ -96,6 +108,8 @@ pub struct BlockControlFrame {
     /// [`ControlFrame`] of the
     /// [`BlockControlFrame`].
     consume_fuel: Option<InstrLoc>,
+
+    len_branches: usize,
 }
 
 impl BlockControlFrame {
@@ -111,6 +125,7 @@ impl BlockControlFrame {
             stack_height,
             end_label,
             consume_fuel,
+            len_branches: 0,
         }
     }
 
@@ -123,6 +138,14 @@ impl BlockControlFrame {
     /// end of the frame.
     pub fn branch_destination(&self) -> LabelRef {
         self.end_label
+    }
+
+    pub(crate) fn bump_branches(&mut self) {
+        self.len_branches += 1;
+    }
+
+    pub fn is_branched_to(&self) -> bool {
+        self.len_branches > 0
     }
 
     /// Returns the label to the end of the
@@ -158,6 +181,14 @@ impl BlockControlFrame {
     pub fn consume_fuel_instr(&self) -> Option<InstrLoc> {
         self.consume_fuel
     }
+
+    pub fn update_consume_fuel_instr(&mut self, instr: InstrLoc) {
+        assert!(
+            self.consume_fuel.is_some(),
+            "can only update the consumption fuel instruction if it existed before"
+        );
+        self.consume_fuel = Some(instr);
+    }
 }
 
 /// A Wasm `loop` control flow frame.
@@ -177,6 +208,8 @@ pub struct LoopControlFrame {
     ///
     /// This must be `Some` if fuel metering is enabled and `None` otherwise.
     consume_fuel: Option<InstrLoc>,
+
+    len_branches: usize,
 }
 
 impl LoopControlFrame {
@@ -192,6 +225,7 @@ impl LoopControlFrame {
             stack_height,
             head_label,
             consume_fuel,
+            len_branches: 0,
         }
     }
 
@@ -226,6 +260,22 @@ impl LoopControlFrame {
     /// [`ConsumeFuel`]: enum.Instruction.html#variant.ConsumeFuel
     pub fn consume_fuel_instr(&self) -> Option<InstrLoc> {
         self.consume_fuel
+    }
+
+    pub(crate) fn bump_branches(&mut self) {
+        self.len_branches += 1;
+    }
+
+    pub fn is_branched_to(&self) -> bool {
+        self.len_branches > 0
+    }
+
+    pub fn update_consume_fuel_instr(&mut self, instr: InstrLoc) {
+        assert!(
+            self.consume_fuel.is_some(),
+            "can only update the consumption fuel instruction if it existed before"
+        );
+        self.consume_fuel = Some(instr);
     }
 }
 
@@ -267,6 +317,8 @@ pub struct IfControlFrame {
     ///
     /// [`ConsumeFuel`]: enum.Instruction.html#variant.ConsumeFuel
     consume_fuel: Option<InstrLoc>,
+
+    len_branches: usize,
 }
 
 impl IfControlFrame {
@@ -289,6 +341,7 @@ impl IfControlFrame {
             else_label,
             end_of_then_is_reachable: None,
             consume_fuel,
+            len_branches: 0,
         }
     }
 
@@ -369,6 +422,14 @@ impl IfControlFrame {
             "can only update the consumption fuel instruction if it existed before"
         );
         self.consume_fuel = Some(instr);
+    }
+
+    pub(crate) fn bump_branches(&mut self) {
+        self.len_branches += 1;
+    }
+
+    pub fn is_branched_to(&self) -> bool {
+        self.len_branches > 0
     }
 }
 
@@ -530,6 +591,37 @@ impl ControlFrame {
             ControlFrame::Loop(frame) => frame.consume_fuel_instr(),
             ControlFrame::If(frame) => frame.consume_fuel_instr(),
             ControlFrame::Unreachable(_) => None,
+        }
+    }
+
+    pub fn bump_branches(&mut self) {
+        match self {
+            ControlFrame::Block(frame) => frame.bump_branches(),
+            ControlFrame::Loop(frame) => frame.bump_branches(),
+            ControlFrame::If(frame) => frame.bump_branches(),
+            Self::Unreachable(frame) => {
+                panic!("tried to `bump_branches` on an unreachable control frame: {frame:?}")
+            }
+        }
+    }
+
+    pub fn is_branched_to(&self) -> bool {
+        match self {
+            Self::Block(frame) => frame.is_branched_to(),
+            Self::Loop(frame) => frame.is_branched_to(),
+            Self::If(frame) => frame.is_branched_to(),
+            Self::Unreachable(frame) => false,
+        }
+    }
+
+    pub fn update_consume_fuel_instr(&mut self, instr: InstrLoc) {
+        match self {
+            Self::Block(frame) => frame.update_consume_fuel_instr(instr),
+            Self::Loop(frame) => frame.update_consume_fuel_instr(instr),
+            Self::If(frame) => frame.update_consume_fuel_instr(instr),
+            Self::Unreachable(frame) => unreachable!(
+                "tried to `update_consume_fuel_instr` on an unreachable control frame: {frame:?}"
+            ),
         }
     }
 }

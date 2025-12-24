@@ -1,8 +1,11 @@
 mod engine;
 
+#[cfg(test)]
+pub use crate::wasmtime::engine::wasmtime_new_engine_with_linker;
 use crate::{
-    wasmtime::engine::wasmtime_engine, Caller, CompilationConfig, FuelConfig, ImportLinker, Store,
-    SyscallHandler, TrapCode, TypedCaller, UntypedValue, ValType, Value, F32, F64,
+    wasmtime::engine::wasmtime_engine_with_linker, Caller, CompilationConfig, ExternRef,
+    FuelConfig, FuncRef, ImportLinker, Store, SyscallHandler, TrapCode, TypedCaller, UntypedValue,
+    ValType, Value, F32, F64,
 };
 use futures::{channel::oneshot, future::Either, task::noop_waker};
 use smallvec::SmallVec;
@@ -14,7 +17,10 @@ use std::{
     task::{Context, Poll},
     time::Instant,
 };
-use wasmtime::{AsContext, AsContextMut, StoreLimits, StoreLimitsBuilder};
+use wasmtime::{
+    AsContext, AsContextMut, Extern, Global, GlobalType, StoreLimits, StoreLimitsBuilder,
+    WasmParams,
+};
 
 pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<T>;
@@ -73,7 +79,7 @@ pub struct WasmtimeStore<T: 'static + Send + Sync> {
     pub instance_pre: wasmtime::InstancePre<WrappedContext<T>>,
     pub fut: Option<ExecFuture<T>>,
     pub shared_control_state: Arc<RwLock<SharedControlState<T>>>,
-    pub instance: Option<wasmtime::Instance>,
+    pub instance: wasmtime::Instance,
 }
 
 impl<T: 'static + Send + Sync> WasmtimeStore<T> {
@@ -104,22 +110,52 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
                 store.data_mut().fuel = Some(fuel);
             }
         }
-        let linker = wasmtime_import_linker(module.engine(), import_linker);
+        let mut linker = wasmtime_import_linker(module.engine(), import_linker);
+        let global = Extern::Global(
+            Global::new(
+                store.as_context_mut(),
+                GlobalType::new(wasmtime::ValType::I32, wasmtime::Mutability::Const),
+                wasmtime::Val::I32(666),
+            )
+            .unwrap(),
+        );
+        linker
+            .define(store.as_context_mut(), "spectest", "global_i32", global)
+            .unwrap();
+
+        let global = Extern::Global(
+            Global::new(
+                store.as_context_mut(),
+                GlobalType::new(wasmtime::ValType::I64, wasmtime::Mutability::Const),
+                wasmtime::Val::I64(666),
+            )
+            .unwrap(),
+        );
+        linker
+            .define(store.as_context_mut(), "spectest", "global_i64", global)
+            .unwrap();
+
         let instance_pre = linker
             .instantiate_pre(&module)
             .unwrap_or_else(|err| panic!("wasmtime: can't pre-instantiate module: {}", err));
+        let instance = futures::executor::block_on(async {
+            instance_pre
+                .instantiate_async(store.as_context_mut())
+                .await
+                .unwrap_or_else(|err| panic!("wasmtime: can't instantiate module: {}", err))
+        });
         Self {
             store: Some(store),
             instance_pre,
             fut: None,
             shared_control_state,
-            instance: None,
+            instance,
         }
     }
 
     pub fn execute(
         &mut self,
-        func_name: &'static str,
+        func_name: &str,
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
@@ -137,18 +173,14 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         debug_assert!(shared_control_state.interrupt_channel.is_none());
         drop(shared_control_state);
 
-        let (instance, entrypoint) = futures::executor::block_on(async {
-            let instance = self
-                .instance_pre
-                .instantiate_async(store.as_context_mut())
-                .await
-                .unwrap_or_else(|err| panic!("wasmtime: can't instantiate module: {}", err));
-            let entrypoint = instance
-                .get_func(store.as_context_mut(), func_name)
-                .unwrap_or_else(|| unreachable!("wasmtime: missing entrypoint: {}", func_name));
-            (instance, entrypoint)
-        });
-        self.instance = Some(instance);
+        let before_init = store.get_fuel();
+
+        let entrypoint = self
+            .instance
+            .get_func(store.as_context_mut(), func_name)
+            .unwrap_or_else(|| unreachable!("wasmtime: missing entrypoint: {}", func_name));
+
+        let after_init = store.get_fuel();
 
         let mut buffer = Vec::<wasmtime::Val>::default();
         for (i, value) in params.iter().enumerate() {
@@ -157,6 +189,22 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
                 Value::I64(value) => wasmtime::Val::I64(*value),
                 Value::F32(value) => wasmtime::Val::F32(value.to_bits()),
                 Value::F64(value) => wasmtime::Val::F64(value.to_bits()),
+                #[cfg(feature = "e2e")]
+                Value::FuncRef(value) => wasmtime::Val::FuncRef(None),
+                #[cfg(feature = "e2e")]
+                Value::ExternRef(value) => {
+                    let func_idx = value.0;
+                    if func_idx == 0 {
+                        wasmtime::Val::ExternRef(None)
+                    } else {
+                        let extern_ref = futures::executor::block_on(async {
+                            wasmtime::ExternRef::new_async(&mut store, func_idx)
+                                .await
+                                .ok()
+                        });
+                        wasmtime::Val::ExternRef(extern_ref)
+                    }
+                }
                 // this should never happen because rWasm rejects such binaries during compilation
                 _ => unreachable!("wasmtime: not supported type: {:?}", value),
             };
@@ -227,6 +275,17 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
                         wasmtime::Val::I64(value) => Value::I64(value),
                         wasmtime::Val::F32(value) => Value::F32(F32::from_bits(value)),
                         wasmtime::Val::F64(value) => Value::F64(F64::from_bits(value)),
+                        #[cfg(feature = "e2e")]
+                        wasmtime::Val::FuncRef(value) => Value::FuncRef(FuncRef::new(0)),
+                        #[cfg(feature = "e2e")]
+                        wasmtime::Val::ExternRef(value) => {
+                            let value: Option<&u32> = value
+                                .and_then(|ext_ref| {
+                                    ext_ref.data(self.store.as_mut().unwrap()).ok().flatten()
+                                })
+                                .and_then(|v| v.downcast_ref());
+                            Value::ExternRef(ExternRef::new(value.map(|v| *v).unwrap_or_default()))
+                        }
                         _ => unreachable!("wasmtime: not supported type: {:?}", x),
                     };
                 }
@@ -257,7 +316,7 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
 
 impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        let instance = self.instance.clone().unwrap();
+        let instance = self.instance.clone();
         self.with_store_mut(|store| {
             let global_memory = instance
                 .get_export(store.as_context_mut(), "memory")
@@ -286,7 +345,7 @@ impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
                 });
             return Ok(());
         }
-        let instance = self.instance.clone().unwrap();
+        let instance = self.instance.clone();
         self.with_store_mut(|store| {
             let global_memory = instance
                 .get_export(store.as_context_mut(), "memory")
@@ -360,24 +419,30 @@ impl<T: Send + Sync> Store<T> for WasmtimeStore<T> {
 }
 
 pub fn deserialize_wasmtime_module(
-    _compilation_config: CompilationConfig,
+    compilation_config: CompilationConfig,
     wasmtime_binary: impl AsRef<[u8]>,
 ) -> anyhow::Result<WasmtimeModule> {
     print!("parsing wasmtime module... ");
     let start = Instant::now();
-    let engine = wasmtime_engine();
+    let engine = wasmtime_engine_with_linker(
+        compilation_config.import_linker,
+        compilation_config.consume_fuel,
+    );
     let module = unsafe { wasmtime::Module::deserialize(&engine, wasmtime_binary) };
     println!("{:?}", start.elapsed());
     module
 }
 
 pub fn compile_wasmtime_module(
-    _compilation_config: CompilationConfig,
+    compilation_config: CompilationConfig,
     wasm_binary: impl AsRef<[u8]>,
 ) -> anyhow::Result<WasmtimeModule> {
     print!("compiling wasmtime module... ");
     let start = Instant::now();
-    let engine = wasmtime_engine();
+    let engine = wasmtime_engine_with_linker(
+        compilation_config.import_linker,
+        compilation_config.consume_fuel,
+    );
     let module = wasmtime::Module::new(&engine, wasm_binary);
     println!("{:?}", start.elapsed());
     module
@@ -396,6 +461,16 @@ async fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
         wasmtime::Val::I64(value) => Value::I64(*value),
         wasmtime::Val::F32(value) => Value::F32(F32::from_bits(*value)),
         wasmtime::Val::F64(value) => Value::F64(F64::from_bits(*value)),
+        // wasmtime::Val::FuncRef(value) => Value::FuncRef(FuncRef::new(
+        //     value
+        //         .map(|r| r.vmgcref_pointing_to_object_count())
+        //         .unwrap_or_default(),
+        // )),
+        // wasmtime::Val::ExternRef(value) => Value::ExternRef(ExternRef::new(
+        //     value
+        //         .map(|r| unsafe { r.to_raw(&mut store).unwrap_or_default() })
+        //         .unwrap_or_default(),
+        // )),
         _ => unreachable!("wasmtime: not supported type: {:?}", x),
     }));
     buffer.extend(std::iter::repeat(Value::I32(0)).take(result.len()));
@@ -558,7 +633,7 @@ pub fn map_anyhow_error(err: anyhow::Error) -> TrapCode {
             Trap::CastFailure => TrapCode::BadConversionToInteger,
             Trap::CannotEnterComponent => unreachable!("component-model is not supported"),
             Trap::NoAsyncResult => unreachable!("async mode must be disabled"),
-            _ => unreachable!("unknown trap wasmtime code"),
+            trap => unreachable!("unknown trap wasmtime code {:?}", trap),
         }
     } else if let Some(trap) = err.downcast_ref::<TrapCode>() {
         // if our trap code is initiated, then just return the trap code
@@ -661,5 +736,149 @@ impl<'a, T: 'static + Send + Sync> Caller<T> for WasmtimeCaller<'a, T> {
 
     fn stack_push(&mut self, _value: UntypedValue) {
         unimplemented!("wasmtime: not allowed in wasmtime mode")
+    }
+
+    fn consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
+        self.try_consume_fuel(fuel)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        compile_wasmtime_module, CompilationConfig, FuelConfig, ImportLinker, ImportName,
+        LinearFuelParams, QuadraticFuelParams, SyscallFuelParams, TrapCode, WasmtimeStore,
+    };
+    use std::sync::Arc;
+    use wasmtime::Module;
+
+    const DIVISOR: u64 = 10;
+    const WORD_COST: u64 = 0;
+
+    fn get_test_wasmtime_module() -> (Module, Arc<ImportLinker>) {
+        let wasm_binary = wat::parse_str(
+            r#"
+            (module
+              (func $default_call (import "call" "linear") (param i32))
+              (func $quadratic_call (import "call" "quadratic") (param i32))
+              (func (export "main")
+                (i32.const 300)
+                (call $default_call)
+              )
+              (func (export "main_with_quadratic")
+                (i32.const 300)
+                (call $quadratic_call)
+              )
+              (func (export "main_with_overflow")
+                (i32.const 134_217_729)
+                (call $default_call)
+              )
+              (func (export "main_quadratic_with_overflow")
+                (i32.const 1_310_721)
+                (call $quadratic_call)
+              )
+            )
+            "#,
+        )
+        .unwrap();
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("call", "quadratic"),
+            0xdd,
+            SyscallFuelParams::QuadraticFuel(QuadraticFuelParams {
+                param_index: 1,
+                word_cost: WORD_COST,
+                divisor: DIVISOR,
+                max_quadratic: 1_310_720,
+                fuel_denom_rate: 1,
+            }),
+            &[wasmparser::ValType::I32],
+            &[],
+        );
+
+        import_linker.insert_function(
+            ImportName::new("call", "linear"),
+            0xee,
+            SyscallFuelParams::LinearFuel(LinearFuelParams {
+                base_fuel: 7,
+                param_index: 1,
+                word_cost: 5,
+                max_linear: 134_217_728,
+            }),
+            &[wasmparser::ValType::I32],
+            &[],
+        );
+
+        let import_linker = Arc::new(import_linker);
+        // run with wasmtime
+        let compilation_config = CompilationConfig::default()
+            .with_consume_fuel(true)
+            .with_builtins_consume_fuel(true)
+            .with_import_linker(import_linker.clone());
+
+        (
+            compile_wasmtime_module(compilation_config, wasm_binary).unwrap(),
+            import_linker,
+        )
+    }
+
+    #[test]
+    fn test_call_with_charging_quadratic_wasmtime() {
+        let (module, import_linker) = get_test_wasmtime_module();
+        let mut wasmtime_worker = WasmtimeStore::new(
+            module,
+            import_linker.clone(),
+            (),
+            |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
+            FuelConfig::default().with_fuel_limit(100_000),
+        );
+
+        wasmtime_worker
+            .execute("main_with_quadratic", &[], &mut [])
+            .unwrap();
+        let words = (300 + 31) / 32;
+        assert_eq!(
+            wasmtime_worker.store.unwrap().get_fuel().unwrap(),
+            100_000 - (3 + WORD_COST * words + words * words / DIVISOR)
+        );
+    }
+
+    #[test]
+    fn test_call_with_charging_linear_wasmtime() {
+        let (module, import_linker) = get_test_wasmtime_module();
+        let mut wasmtime_worker = WasmtimeStore::new(
+            module,
+            import_linker.clone(),
+            (),
+            |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
+            FuelConfig::default().with_fuel_limit(100_000),
+        );
+
+        wasmtime_worker.execute("main", &[], &mut []).unwrap();
+        assert_eq!(
+            wasmtime_worker.store.unwrap().get_fuel().unwrap(),
+            100_000 - (3 + 10 * 5 + 7)
+        );
+    }
+
+    #[test]
+    fn test_call_with_charging_param_overflow_wasmtime() {
+        let (module, import_linker) = get_test_wasmtime_module();
+        let mut wasmtime_worker = WasmtimeStore::new(
+            module,
+            import_linker.clone(),
+            (),
+            |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
+            FuelConfig::default().with_fuel_limit(100_000),
+        );
+
+        let err = wasmtime_worker
+            .execute("main_with_overflow", &[], &mut [])
+            .unwrap_err();
+        assert_eq!(err, TrapCode::IntegerOverflow);
+        let err = wasmtime_worker
+            .execute("main_quadratic_with_overflow", &[], &mut [])
+            .unwrap_err();
+        assert_eq!(err, TrapCode::IntegerOverflow);
     }
 }

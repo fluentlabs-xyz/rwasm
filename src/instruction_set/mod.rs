@@ -34,7 +34,7 @@ use core::ops::{Deref, DerefMut};
 /// The layout is stable and indexable to allow cheap jumps and metadata lookups.
 pub struct InstructionSet {
     /// Backing storage for encoded opcodes in program order.
-    instr: Vec<Opcode>,
+    pub instr: Vec<Opcode>,
 }
 
 impl Deref for InstructionSet {

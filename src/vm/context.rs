@@ -32,8 +32,7 @@ impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
         self.store.global_memory.write(offset, buffer)?;
         #[cfg(feature = "tracing")]
-        self.vm
-            .store
+        self.store
             .tracer
             .memory_change(offset as u32, buffer.len() as u32, buffer);
         Ok(())
@@ -63,5 +62,10 @@ impl<'a, T: 'static + Send + Sync> Caller<T> for RwasmCaller<'a, T> {
 
     fn stack_push(&mut self, value: UntypedValue) {
         self.sp.push(value);
+    }
+
+    fn consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
+        //Not needed to consume fuel for rwasm
+        Ok(())
     }
 }

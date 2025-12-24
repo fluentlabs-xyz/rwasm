@@ -5,9 +5,10 @@ use crate::{
         snippets::Snippet,
         translator::{InstructionTranslator, ReusableAllocations},
     },
-    CompilationConfig, CompilationError, ConstructorParams, DataSegmentIdx, ElementSegmentIdx,
-    FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName, Opcode, RwasmModule, RwasmModuleInner,
-    TableIdx, DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
+    instruction_set, BranchOffset, CompilationConfig, CompilationError, ConstructorParams,
+    DataSegmentIdx, ElementSegmentIdx, FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName,
+    LocalDepth, Opcode, RwasmModule, RwasmModuleInner, SyscallFuelParams, TableIdx, TrapCode,
+    UntypedValue, DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::{
@@ -466,11 +467,114 @@ impl ModuleParser {
                 .func_type_registry
                 .resolve_func_type_signature(func_type_index);
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
+
             if self.config.builtins_consume_fuel {
-                for instr in import_linker_entity.block_fuel.iter() {
-                    translator.alloc.instruction_set.push(instr.clone());
+                match import_linker_entity.syscall_fuel_param {
+                    SyscallFuelParams::None => {}
+                    SyscallFuelParams::Const(base) => translator
+                        .alloc
+                        .instruction_set
+                        .op_consume_fuel(base as u32),
+                    SyscallFuelParams::LinearFuel(fuel_params) => {
+                        translator
+                            .alloc
+                            .instruction_set
+                            .op_local_get(LocalDepth::from(fuel_params.param_index as u32));
+                        translator
+                            .alloc
+                            .instruction_set
+                            .op_i32_const(UntypedValue::from(fuel_params.max_linear));
+                        translator.alloc.instruction_set.op_i32_gt_u();
+                        translator
+                            .alloc
+                            .instruction_set
+                            .op_br_if_eqz(BranchOffset::from(2));
+                        translator
+                            .alloc
+                            .instruction_set
+                            .op_trap(TrapCode::IntegerOverflow);
+
+                        translator
+                            .alloc
+                            .instruction_set
+                            .op_local_get(LocalDepth::from(fuel_params.param_index as u32));
+                        translator
+                            .alloc
+                            .instruction_set
+                            .op_i32_const(UntypedValue::from(31));
+                        translator.alloc.instruction_set.op_i32_add();
+                        translator
+                            .alloc
+                            .instruction_set
+                            .op_i32_const(UntypedValue::from(32));
+                        translator.alloc.instruction_set.op_i32_div_u();
+                        translator
+                            .alloc
+                            .instruction_set
+                            .op_i32_const(UntypedValue::from(fuel_params.word_cost));
+                        translator.alloc.instruction_set.op_i32_mul();
+                        if fuel_params.base_fuel != 0 {
+                            translator
+                                .alloc
+                                .instruction_set
+                                .op_i32_const(UntypedValue::from(fuel_params.base_fuel));
+                            translator.alloc.instruction_set.op_i32_add();
+                        }
+                        translator.alloc.instruction_set.op_consume_fuel_stack()
+                    }
+                    SyscallFuelParams::QuadraticFuel(fuel_params) => {
+                        let mut ixs = instruction_set! {
+                             // Runtime overflow check
+                            LocalGet(fuel_params.param_index)
+                            I32Const(fuel_params.max_quadratic)
+                            I32GtU
+                            BrIfEqz(2)
+                            Trap(TrapCode::IntegerOverflow)
+
+                            // Linear part: word_cost × words
+                            LocalGet(fuel_params.param_index)
+                            I32Const(31)
+                            I32Add
+                            I32Const(32)
+                            I32DivU
+                            I32Const(fuel_params.word_cost)
+                            I32Mul
+
+                            // Quadratic part: words² / divisor
+                            LocalGet(fuel_params.param_index + 1) // linear part left words on stack
+                            I32Const(31)
+                            I32Add
+                            I32Const(32)
+                            I32DivU
+
+                            LocalGet(fuel_params.param_index + 2) // linear and first words on stack
+                            I32Const(31)
+                            I32Add
+                            I32Const(32)
+                            I32DivU
+
+                            I32Mul
+                            I32Const(fuel_params.divisor)
+                            I32DivU
+
+                            // Sum: linear + quadratic
+                            I32Add
+
+                            // Convert gas -> fuel
+                            I32Const(fuel_params.fuel_denom_rate as u32)
+                            I32Mul
+
+                            ConsumeFuelStack
+                        };
+                        translator
+                            .alloc
+                            .instruction_set
+                            .instr
+                            .append(&mut ixs.instr)
+                    }
                 }
             }
+
             translator
                 .alloc
                 .instruction_set

@@ -8,6 +8,7 @@ pub const FUNC_PRINT_F32: u32 = 103;
 pub const FUNC_PRINT_F64: u32 = 104;
 pub const FUNC_PRINT_I32_F32: u32 = 105;
 pub const FUNC_PRINT_I64_F64: u32 = 106;
+pub const FUNC_GLOBAL_I32: u32 = 107;
 
 #[derive(Default)]
 pub struct TestingContext {
@@ -49,13 +50,13 @@ pub(crate) fn testing_context_syscall_handler(
         FUNC_PRINT_I32_F32 => {
             let v0 = params[0].i32().unwrap();
             let v1 = params[1].f32().unwrap();
-            println!("print: {:?} {:?}", i32::from(v0), f32::from(v1));
+            println!("print: {:?} {:?}", v0, f32::from(v1));
             Ok(())
         }
         FUNC_PRINT_I64_F64 => {
             let v0 = params[0].i64().unwrap();
             let v1 = params[1].f64().unwrap();
-            println!("print: {:?} {:?}", i64::from(v0), f64::from(v1));
+            println!("print: {:?} {:?}", v0, f64::from(v1));
             Ok(())
         }
         FUNC_ENTRYPOINT => {
@@ -67,6 +68,10 @@ pub(crate) fn testing_context_syscall_handler(
             // push state value into the stack
             let state = caller.context(|ctx| ctx.state);
             caller.stack_push(state.into());
+            Ok(())
+        }
+        FUNC_GLOBAL_I32 => {
+            caller.stack_push(666.into());
             Ok(())
         }
         _ => todo!("not implemented syscall handler"),

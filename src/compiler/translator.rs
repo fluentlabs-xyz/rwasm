@@ -228,7 +228,7 @@ impl InstructionTranslator {
         }
         let consume_fuel = self
             .is_fuel_metering_enabled()
-            .then(|| self.push_consume_fuel_base());
+            .then(|| self.push_consume_fuel_empty());
         let block_frame = BlockControlFrame::new(block_type, end_label, 0, consume_fuel);
         self.alloc.control_frames.push_frame(block_frame);
         let original_func_types = self
@@ -273,6 +273,12 @@ impl InstructionTranslator {
     pub fn push_consume_fuel_base(&mut self) -> InstrLoc {
         let instr_loc = self.alloc.instruction_set.loc();
         self.alloc.instruction_set.op_consume_fuel(BASE_FUEL_COST);
+        instr_loc as InstrLoc
+    }
+
+    pub fn push_consume_fuel_empty(&mut self) -> InstrLoc {
+        let instr_loc = self.alloc.instruction_set.loc();
+        self.alloc.instruction_set.op_consume_fuel(0);
         instr_loc as InstrLoc
     }
 
@@ -419,6 +425,17 @@ impl InstructionTranslator {
 
     pub(crate) fn resolve_table_type(&self, table_index: u32) -> &TableType {
         self.alloc.tables.get(table_index as usize).unwrap()
+    }
+
+    fn add_branch(&mut self, relative_depth: u32) {
+        match self.alloc.control_frames.nth_back_mut(relative_depth) {
+            ControlFrame::Block(frame) => frame.bump_branches(),
+            ControlFrame::Loop(frame) => frame.bump_branches(),
+            ControlFrame::If(frame) => frame.bump_branches(),
+            ControlFrame::Unreachable(frame) => {
+                panic!("tried to `bump_branches` on an unreachable control frame: {frame:?}")
+            }
+        }
     }
 
     /// Returns the target at the given `depth` together with its [`DropKeep`].
@@ -630,7 +647,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_unreachable(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.instruction_set.op_unreachable();
             builder.reachable = false;
             Ok(())
@@ -673,7 +689,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             self.pin_label(header);
             let consume_fuel = self
                 .is_fuel_metering_enabled()
-                .then(|| self.push_consume_fuel_base());
+                .then(|| self.push_consume_fuel_empty());
             self.alloc.control_frames.push_frame(LoopControlFrame::new(
                 block_type,
                 header,
@@ -699,11 +715,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let else_label = self.alloc.labels.new_label();
             let end_label = self.alloc.labels.new_label();
             self.bump_fuel_consumption(|| FuelCosts::BASE)?;
+
             let branch_offset = self.branch_offset(else_label)?;
             self.alloc.instruction_set.op_br_if_eqz(branch_offset);
             let consume_fuel = self
                 .is_fuel_metering_enabled()
-                .then(|| self.push_consume_fuel_base());
+                .then(|| self.push_consume_fuel_empty());
             self.alloc.control_frames.push_frame(IfControlFrame::new(
                 block_type,
                 end_label,
@@ -748,7 +765,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         // Create the jump from the end of the `then` block to the `if`
         // block's end label in case the end of `then` is reachable.
         if reachable {
-            self.bump_fuel_consumption(|| FuelCosts::BASE)?;
             let offset = self.branch_offset(if_frame.end_label())?;
             self.alloc.instruction_set.op_br(offset);
         }
@@ -759,7 +775,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         // since the `ConsumeFuel` instruction for the `then` block is no longer
         // used from this point on.
         self.is_fuel_metering_enabled().then(|| {
-            let consume_fuel = self.push_consume_fuel_base();
+            let consume_fuel = self.push_consume_fuel_empty();
             if_frame.update_consume_fuel_instr(consume_fuel);
         });
         let mut old_stack_height = self.stack_height.height();
@@ -834,9 +850,14 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .pin_label(frame.end_label(), self.current_pc())
                 .unwrap_or_else(|err| panic!("failed to pin label: {err}"));
         }
+        let is_branches = self.reachable && frame.is_branched_to();
+
         // These bindings are required because of borrowing issues.
         let frame_reachable = frame.is_reachable();
+
+        // These bindings are required because of borrowing issues.
         let frame_stack_height = frame.stack_height();
+        let block_type = frame.block_type();
         if self.alloc.control_frames.len() == 1 {
             // If the control flow frames stack is empty after this point,
             // we know that we are ending the function body `block`
@@ -885,11 +906,20 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             }
             _ => {}
         }
+        let fuel_ix = self.push_consume_fuel_empty();
+        if self.is_fuel_metering_enabled() && self.alloc.control_frames.len() != 0 {
+            let mut frame = self.alloc.control_frames.pop_frame();
+            frame.update_consume_fuel_instr(fuel_ix);
+            self.alloc.control_frames.push_frame(frame);
+        }
+
         Ok(())
     }
 
     fn visit_br(&mut self, relative_depth: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
+            builder.add_branch(relative_depth);
+
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
                     builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
@@ -897,11 +927,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                         &mut builder.alloc.instruction_set,
                         &mut builder.stack_height,
                     );
+
                     let offset = builder.branch_offset(end_label)?;
                     builder.alloc.instruction_set.op_br(offset);
                 }
                 AcquiredTarget::Return(_) => {
                     // In this case, the `br` can be directly translated as `return`.
+                    builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
                     builder.visit_return()?;
                 }
             }
@@ -914,6 +946,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         self.translate_if_reachable(|builder| {
             builder.stack_height.pop1();
             builder.alloc.stack_types.pop().unwrap();
+            builder.add_branch(relative_depth);
             match builder.acquire_target(relative_depth)? {
                 AcquiredTarget::Branch(end_label, drop_keep) => {
                     builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
@@ -921,8 +954,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                         let offset = builder.branch_offset(end_label)?;
                         builder.alloc.instruction_set.op_br_if_nez(offset);
                     } else {
-                        builder
-                            .bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
                         builder
                             .alloc
                             .instruction_set
@@ -942,6 +973,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                     }
                 }
                 AcquiredTarget::Return(drop_keep) => {
+                    builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
                     builder
                         .alloc
                         .instruction_set
@@ -959,6 +991,14 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                     builder.alloc.instruction_set.op_return();
                 }
             }
+
+            let fuel_ix = builder.push_consume_fuel_empty();
+            if builder.is_fuel_metering_enabled() {
+                let mut frame = builder.alloc.control_frames.pop_frame();
+                frame.update_consume_fuel_instr(fuel_ix);
+                builder.alloc.control_frames.push_frame(frame);
+            }
+
             Ok(())
         })
     }
@@ -993,11 +1033,19 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                     AcquiredTarget::Branch(label, drop_keep) => {
                         *max_drop_keep_fuel =
                             (*max_drop_keep_fuel).max(fuel_for_drop_keep(builder, drop_keep));
+
+                        if drop_keep.keep > 0 && *max_drop_keep_fuel == 0 {
+                            *max_drop_keep_fuel = 1;
+                        }
                         Ok(BrTableTarget::Label(label, drop_keep))
                     }
                     AcquiredTarget::Return(drop_keep) => {
                         *max_drop_keep_fuel =
                             (*max_drop_keep_fuel).max(fuel_for_drop_keep(builder, drop_keep));
+
+                        if drop_keep.keep > 0 && *max_drop_keep_fuel == 0 {
+                            *max_drop_keep_fuel = 1;
+                        }
                         Ok(BrTableTarget::Return(drop_keep))
                     }
                 }
@@ -1092,6 +1140,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let final_len = builder.alloc.instruction_set.len() + target_len;
             let mut trampoline_ixs = InstructionSet::new();
             for (n, depth) in targets.into_iter().enumerate() {
+                builder.add_branch(depth.into_u32());
                 let target = compute_instr(builder, n, depth, &mut max_drop_keep_fuel)?;
 
                 encode_br_table_target(builder, target, &mut trampoline_ixs, target_len)?;
@@ -1100,6 +1149,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // We include the default target in `len_branches`. Each branch takes up 2 instruction
             // words.
             let len_branches = builder.alloc.br_table_branches.len() / 2;
+            builder.add_branch(default.into_u32());
             let default_branch =
                 compute_instr(builder, len_branches, default, &mut max_drop_keep_fuel)?;
             let len_targets = BranchTableTargets::try_from(len_branches + 1)
@@ -1111,7 +1161,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             for branch in builder.alloc.br_table_branches.drain(..) {
                 builder.alloc.instruction_set.push(branch);
             }
-            builder.bump_fuel_consumption(|| max_drop_keep_fuel)?;
             builder.reachable = false;
             Ok(())
         })
@@ -1120,8 +1169,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_return(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
             let drop_keep = builder.drop_keep_return()?;
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
-            builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
             drop_keep.translate_drop_keep(
                 &mut builder.alloc.instruction_set,
                 &mut builder.stack_height,
@@ -1177,7 +1224,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .resolve_func_type(func_type_idx);
             let drop_keep = builder.drop_keep_return_call(&func_type)?;
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
-            builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
             drop_keep.translate_drop_keep(
                 &mut builder.alloc.instruction_set,
                 &mut builder.stack_height,
@@ -1206,7 +1252,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // TODO(dmitry123): "why? is there a bug in [drop_keep_return_call]?"
             drop_keep.keep += 1;
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
-            builder.bump_fuel_consumption(|| FuelCosts::fuel_for_drop_keep(drop_keep))?;
             drop_keep.translate_drop_keep(
                 &mut builder.alloc.instruction_set,
                 &mut builder.stack_height,
@@ -1235,7 +1280,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_drop(&mut self) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.stack_height.pop1();
             let item_type = builder.alloc.stack_types.pop().unwrap();
             builder.alloc.instruction_set.op_drop();
@@ -1540,7 +1584,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder
                 .alloc
                 .instruction_set
-                .op_memory_grow_checked(Some(max_pages), builder.is_fuel_metering_enabled());
+                .op_memory_grow_checked(Some(max_pages), false);
             // make sure types are correct
             let popped_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(popped_type, ValType::I32);
@@ -2351,12 +2395,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop2();
             builder.stack_height.pop3();
             // since we store all data sections in the one segment, then the index is always 0
-            ib.op_memory_init_checked(
-                Some(offset),
-                Some(length),
-                data_segment_index + 1,
-                is_fuel_metering_enabled,
-            );
+            ib.op_memory_init_checked(Some(offset), Some(length), data_segment_index + 1, false);
             Ok(())
         })
     }
@@ -2382,10 +2421,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder
-                .alloc
-                .instruction_set
-                .op_memory_copy_checked(builder.is_fuel_metering_enabled());
+            builder.alloc.instruction_set.op_memory_copy_checked(false);
             Ok(())
         })
     }
@@ -2400,10 +2436,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder
-                .alloc
-                .instruction_set
-                .op_memory_fill_checked(builder.is_fuel_metering_enabled());
+            builder.alloc.instruction_set.op_memory_fill_checked(false);
             Ok(())
         })
     }
@@ -2430,7 +2463,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 TableIdx::try_from(table_index).unwrap(),
                 length,
                 offset,
-                is_fuel_metering_enabled,
+                false,
             );
             builder
                 .stack_height
@@ -2471,7 +2504,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.instruction_set.op_table_copy_checked(
                 TableIdx::try_from(dst_table).unwrap(),
                 TableIdx::try_from(src_table).unwrap(),
-                is_fuel_metering_enabled,
+                false,
             );
             Ok(())
         })
@@ -2491,10 +2524,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.instruction_set.op_table_fill_checked(
-                TableIdx::try_from(table_index).unwrap(),
-                is_fuel_metering_enabled,
-            );
+            builder
+                .alloc
+                .instruction_set
+                .op_table_fill_checked(TableIdx::try_from(table_index).unwrap(), false);
             Ok(())
         })
     }
@@ -2540,7 +2573,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             ib.op_table_grow_checked(
                 TableIdx::try_from(table_index).unwrap(),
                 Some(max_table_elements),
-                is_fuel_metering_enabled,
+                false,
             );
             builder
                 .stack_height
@@ -3947,6 +3980,7 @@ impl InstructionTranslator {
         self.translate_if_reachable(|builder| {
             let lhs_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(lhs_type, input_type);
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder.alloc.stack_types.push(output_type);
             // calc stack height
             builder.stack_height.pop_type(input_type);
