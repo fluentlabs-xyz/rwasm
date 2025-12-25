@@ -321,6 +321,7 @@ impl Tracer {
                 let stack_fuel_record = self.mr(sp);
                 opcode_state.memory_access.arg2_record =
                     Some(MemoryRecordEnum::Read(stack_fuel_record));
+                opcode_state.memory_access.arg2_addr = Some(TypedAddress::from_stack_vaddr(sp));
             }
         }
 
