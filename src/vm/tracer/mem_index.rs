@@ -24,7 +24,7 @@ pub const SP_START: u32 = N_MAX_STACK_SIZE as u32 * UNIT + SP_END;
 /// We add 32 to prevent writes to the SP1 registers
 pub const SP_END: u32 = 32 + UNIT;
 /// a special memory addresss reserved for saving the signature id of last call indirect op
-pub const RESERVED_ADDR_START: u32 = SP_END + UNIT;
+pub const RESERVED_ADDR_START: u32 = SP_START+ UNIT;
 pub const RESERVED_ADDR_END: u32 = RESERVED_ADDR_START + 1024 * UNIT;
 pub const LAST_SIG_ADDR: u32 = SP_START + UNIT;
 pub const FUNC_FRAME_SIZE: u32 = UNIT; // TODO (dmitry123): "it looks like the call stack only save the returning pc right?, Yes(Yao)"
@@ -49,8 +49,6 @@ pub const GLOBAL_MEM_END: u32 = GLOBAL_MEM_START + (1 << 8) << 20;
 #[derive(Debug, Clone, Copy)]
 pub enum ReservedAddrEnum {
     LastSig = 0,
-    FuelLimitHi = 1,
-    FuelLimitLow = 2,
     ConsumedFuelLow = 3,
     ConsumedFuelHi = 4,
 }

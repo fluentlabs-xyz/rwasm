@@ -346,25 +346,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             None => (u32::MAX, u32::MAX),
         };
 
-        let fuel_low_record = MemoryRecord {
-            shard: 0,
-            timestamp: 0,
-            value: fuel_low,
-        };
-        let fuel_hi_record = MemoryRecord {
-            shard: 0,
-            timestamp: 0,
-            value: fuel_hi,
-        };
-
-        self.store.tracer.memory_records.insert(
-            TypedAddress::from_reserved_addr(ReservedAddrEnum::FuelLimitLow).to_virtual_addr(),
-            fuel_low_record,
-        );
-        self.store.tracer.memory_records.insert(
-            TypedAddress::from_reserved_addr(ReservedAddrEnum::FuelLimitHi).to_virtual_addr(),
-            fuel_hi_record,
-        );
+       
         let consumed_fuel_low_record = MemoryRecord {
             shard: 0,
             timestamp: 0,
