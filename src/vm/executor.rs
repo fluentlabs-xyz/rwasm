@@ -671,19 +671,21 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                     if sys_func_idx == 13 {
                         use crate::mem_index::{ReservedAddrEnum, TypedAddress};
 
-                        let fuel_limit_addr =
-                            TypedAddress::from_reserved_addr(ReservedAddrEnum::FuelLimitHi)
-                                .to_virtual_addr();
-                        let record = self
-                            .store
-                            .tracer
-                            .mr_with_local_access(fuel_limit_addr, Some(&mut local_memory_access));
-                        sys_call_data.memory_read_access.push(record);
-                        let consumed_fuel_addr =
+                        
+                       
+                        let consumed_fuel_low_addr =
                             TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuelLow)
                                 .to_virtual_addr();
                         let record = self.store.tracer.mr_with_local_access(
-                            consumed_fuel_addr,
+                            consumed_fuel_low_addr,
+                            Some(&mut local_memory_access),
+                        );
+                        sys_call_data.memory_read_access.push(record);
+                        let consumed_fuel_hi_addr =
+                            TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuelHi)
+                                .to_virtual_addr();
+                        let record = self.store.tracer.mr_with_local_access(
+                            consumed_fuel_hi_addr,
                             Some(&mut local_memory_access),
                         );
                         sys_call_data.memory_read_access.push(record);
