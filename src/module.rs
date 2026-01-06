@@ -48,7 +48,6 @@ impl<'de> serde::Deserialize<'de> for RwasmModule {
     }
 }
 
-
 fn _check() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<RwasmModule>();

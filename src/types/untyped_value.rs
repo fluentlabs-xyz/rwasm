@@ -1,18 +1,6 @@
 use crate::{
-    ArithmeticOps,
-    ExtendInto,
-    Float,
-    Integer,
-    LittleEndianConvert,
-    LoadInto,
-    SignExtendFrom,
-    StoreFrom,
-    TrapCode,
-    TruncateSaturateInto,
-    TryTruncateInto,
-    WrapInto,
-    F32,
-    F64,
+    ArithmeticOps, ExtendInto, Float, Integer, LittleEndianConvert, LoadInto, SignExtendFrom,
+    StoreFrom, TrapCode, TruncateSaturateInto, TryTruncateInto, WrapInto, F32, F64,
 };
 use bincode::{Decode, Encode};
 use core::{
