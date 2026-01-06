@@ -1,7 +1,7 @@
 use super::ValueStackPtr;
 use crate::{
     event::{FatOpEvent, TableGrowEvent, TableInitEvent},
-    mem_index::{TypedAddress, LAST_SIG_ADDR, UNIT},
+    mem_index::{ReservedAddrEnum, TypedAddress, LAST_SIG_ADDR, UNIT},
     types::Opcode,
     vm::tracer::{
         mem::{
@@ -10,7 +10,7 @@ use crate::{
         },
         state::VMState,
     },
-    UntypedValue,
+    SysFuncIdx, UntypedValue,
 };
 use alloc::{string::String, vec::Vec};
 use core::{
@@ -54,7 +54,7 @@ pub enum CallType {
     Return,
 }
 #[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct TraceCallData {
     pub calltype: CallType,
     pub table_id: u32,
@@ -62,8 +62,20 @@ pub struct TraceCallData {
     pub func_ref: u32,
     pub signature_id: u32,
     pub table_access: Option<MemoryReadRecord>,
+    pub syscall_data: Option<SysCallData>,
 }
 
+#[cfg_attr(feature = "tracing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Default)]
+pub struct SysCallData {
+    pub sys_call_id: SysFuncIdx,
+    pub params: Vec<u32>,
+    pub result: Vec<u32>,
+    pub memory_read_access: Vec<MemoryReadRecord>,
+    pub memory_write_access: Vec<MemoryWriteRecord>,
+    pub local_mem_access: Vec<MemoryLocalEvent>,
+    pub local_mem_access_addr: Vec<u32>,
+}
 #[derive(Debug, Clone)]
 pub struct TracerInstrState {
     pub clk: u32,
@@ -179,7 +191,6 @@ impl Tracer {
             fat_op: None,
         };
         let mut memory_access = self.record_mr(opcode, sp);
-
         if let Some(memory_read_record) = memory_access.arg1_record {
             opcode_state.arg1 = memory_read_record.value();
         }
@@ -193,7 +204,8 @@ impl Tracer {
 
         if let Opcode::SignatureCheck(_) = opcode {
             let record = self.mr(LAST_SIG_ADDR);
-            memory_access.arg1_addr = Some(TypedAddress::LastSig);
+            memory_access.arg1_addr =
+                TypedAddress::from_reserved_addr(ReservedAddrEnum::LastSig).into();
             memory_access.arg1_record = Some(MemoryRecordEnum::Read(record));
         }
 
@@ -216,6 +228,7 @@ impl Tracer {
                 func_ref: 0,
                 signature_id: 0,
                 table_access: None,
+                syscall_data: None,
             };
             opcode_state.call_state = Some(call_state);
             opcode_state.next_call_sp = self.state.call_sp - 1;
@@ -291,6 +304,27 @@ impl Tracer {
             }
         }
 
+        if matches!(opcode, Opcode::ConsumeFuel(_) | Opcode::ConsumeFuelStack) {
+            let consumed_fuel_record_low = self.mr(TypedAddress::from_reserved_addr(
+                ReservedAddrEnum::ConsumedFuelLow,
+            )
+            .to_virtual_addr());
+            opcode_state.memory_access.arg1_record =
+                Some(MemoryRecordEnum::Read(consumed_fuel_record_low));
+            let consumed_fuel_record_hi = self.mr(TypedAddress::from_reserved_addr(
+                ReservedAddrEnum::ConsumedFuelHi,
+            )
+            .to_virtual_addr());
+            opcode_state.memory_access.arg1_hi_record =
+                Some(MemoryRecordEnum::Read(consumed_fuel_record_hi));
+            if opcode == Opcode::ConsumeFuelStack {
+                let stack_fuel_record = self.mr(sp);
+                opcode_state.memory_access.arg2_record =
+                    Some(MemoryRecordEnum::Read(stack_fuel_record));
+                opcode_state.memory_access.arg2_addr = Some(TypedAddress::from_stack_vaddr(sp));
+            }
+        }
+
         self.logs.push(opcode_state);
     }
 
@@ -358,6 +392,7 @@ impl Tracer {
                     func_ref: opcode.aux_value(),
                     signature_id: 0,
                     table_access: None,
+                    syscall_data: None,
                 });
                 self.logs.last_mut().unwrap().next_call_sp = new_call_sp;
                 self.state.call_sp = new_call_sp;
@@ -409,9 +444,59 @@ impl Tracer {
                 self.logs.last_mut().unwrap().memory_access.res_hi_addr =
                     Some(TypedAddress::from_stack_vaddr(new_sp));
             }
+            Opcode::ConsumeFuel(_) | Opcode::ConsumeFuelStack => {
+                let fuel = match opcode {
+                    Opcode::ConsumeFuel(fuel) => fuel,
+                    Opcode::ConsumeFuelStack => self
+                        .logs
+                        .last_mut()
+                        .unwrap()
+                        .memory_access
+                        .arg2_record
+                        .unwrap()
+                        .value(),
+                    _ => unreachable!(),
+                };
+                let conusmed_fuel_low = self
+                    .logs
+                    .last_mut()
+                    .unwrap()
+                    .memory_access
+                    .arg1_record
+                    .unwrap()
+                    .value();
+                let conusmed_fuel_hi = self
+                    .logs
+                    .last_mut()
+                    .unwrap()
+                    .memory_access
+                    .arg1_hi_record
+                    .unwrap()
+                    .value();
+                let consumed_fuel = ((conusmed_fuel_hi as u64) << 32) | (conusmed_fuel_low as u64);
+                let new_consumed_fuel = consumed_fuel.wrapping_add(fuel as u64);
+                let new_consumed_fuel_low = (new_consumed_fuel & 0xFFFFFFFF) as u32;
+                let new_consumed_fuel_hi = (new_consumed_fuel >> 32) as u32;
+                let consumed_fuel_low_record = self.mw(
+                    TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuelLow)
+                        .to_virtual_addr(),
+                    new_consumed_fuel_low,
+                );
+                let consumed_fuel_hi_record = self.mw(
+                    TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuelHi)
+                        .to_virtual_addr(),
+                    new_consumed_fuel_hi,
+                );
+                self.logs.last_mut().unwrap().memory_access.res_record =
+                    Some(MemoryRecordEnum::Write(consumed_fuel_low_record));
+                self.logs.last_mut().unwrap().memory_access.res_hi_record =
+                    Some(MemoryRecordEnum::Write(consumed_fuel_hi_record));
+                self.logs.last_mut().unwrap().res = new_consumed_fuel_low;
+            }
             _ => self.record_sw(opcode, new_sp, stack),
         }
-
+        // Update the next pc and sp
+        //Advace the cycle for next instruction
         self.state.sp = new_sp;
         self.state.next_cycle();
 

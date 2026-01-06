@@ -241,6 +241,7 @@ pub struct MemoryLocalEvent {
 pub struct MemoryAccessRecord {
     /// The memory access of the `a` register.
     pub arg1_record: Option<MemoryRecordEnum>,
+    pub arg1_hi_record: Option<MemoryRecordEnum>,
     /// The memory access of the `b` register.
     pub arg2_record: Option<MemoryRecordEnum>,
     /// The memory access of the `c` register.

@@ -157,7 +157,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         {
             use crate::{
                 mem::MemoryRecordEnum,
-                mem_index::{TypedAddress, LAST_SIG_ADDR},
+                mem_index::{ReservedAddrEnum, TypedAddress, LAST_SIG_ADDR},
                 TraceCallData, N_MAX_TABLE_SIZE,
             };
 
@@ -171,6 +171,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 func_ref: instr_ref,
                 signature_id: signature_idx,
                 table_access: Some(table_read_record),
+                syscall_data: None,
             };
 
             self.store.tracer.logs.last_mut().unwrap().call_state = Some(call_state);
@@ -189,7 +190,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 .last_mut()
                 .unwrap()
                 .memory_access
-                .res_addr = Some(TypedAddress::LastSig);
+                .res_addr = Some(TypedAddress::from_reserved_addr(ReservedAddrEnum::LastSig));
         }
         // call func
         self.ip.add(2);

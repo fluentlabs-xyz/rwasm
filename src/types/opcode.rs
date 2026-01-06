@@ -454,8 +454,6 @@ impl Opcode {
             Opcode::MemoryCopy
             | Opcode::MemoryGrow
             | Opcode::MemorySize
-            | Opcode::ConsumeFuel(_)
-            | Opcode::ConsumeFuelStack
             | Opcode::SignatureCheck(_) => true,
             _ => false,
         }
@@ -484,6 +482,13 @@ impl Opcode {
     pub fn is_64b_op(self) -> bool {
         match self {
             Opcode::I32Add64 | Opcode::I32Mul64 => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_fuel_instruction(&self) -> bool {
+        match self {
+            Opcode::ConsumeFuel(_) | Opcode::ConsumeFuelStack => true,
             _ => false,
         }
     }

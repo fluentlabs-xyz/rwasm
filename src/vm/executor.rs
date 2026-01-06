@@ -307,7 +307,10 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
     #[cfg(feature = "tracing")]
     pub fn prepare_memory_record(&mut self) {
-        use crate::{mem::MemoryRecord, mem_index::TypedAddress};
+        use crate::{
+            mem::MemoryRecord,
+            mem_index::{ReservedAddrEnum, TypedAddress},
+        };
 
         for item in self.module.data_section.windows(4).enumerate() {
             let (addr, data) = item;
@@ -336,12 +339,38 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
             self.store.tracer.memory_records.insert(v_addr, record);
         }
-    }
 
-    #[cfg(feature = "tracing")]
+        let fuel = self.store.fuel_config.fuel_limit;
+        let (fuel_low, fuel_hi) = match fuel {
+            Some(f) => ((f & 0xFFFFFFFF) as u32, (f >> 32) as u32),
+            None => (u32::MAX, u32::MAX),
+        };
+
+       
+        let consumed_fuel_low_record = MemoryRecord {
+            shard: 0,
+            timestamp: 0,
+            value: 0,
+        };
+        self.store.tracer.memory_records.insert(
+            TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuelLow).to_virtual_addr(),
+            consumed_fuel_low_record,
+        );
+        let consumed_fuel_hi_record = MemoryRecord {
+            shard: 0,
+            timestamp: 0,
+            value: 0,
+        };
+        self.store.tracer.memory_records.insert(
+            TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuelHi).to_virtual_addr(),
+            consumed_fuel_hi_record,
+        );
+    }
     fn trace_instr_pre(&mut self, instr: &Opcode) {
         let pc = self.program_counter();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
+        //  Advance the cycle for memoery write phase.
+        //  For TableGrow/TableInit/CallIndirect, the cycle is advanced in their implementations.
         match instr {
             Opcode::TableGrow(_) | Opcode::TableInit(_) | Opcode::CallIndirect(_) => (),
             _ => {
@@ -542,11 +571,145 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let (params, result) = buffer.split_at_mut(params.len());
         let syscall_handler = self.store.syscall_handler;
         let mut caller = self.caller();
+
         match syscall_handler(&mut caller, sys_func_idx, params, result) {
             Ok(_) => {
                 // TODO(dmitry123): "resync SP, only for e2e testing suite"
                 self.sp = caller.as_rwasm_ref().sp();
                 // if execution succeeded, then copy output params back to the stack
+
+                #[cfg(feature = "tracing")]
+                {
+                    use crate::{SysCallData, TraceCallData};
+                    use hashbrown::HashMap;
+                    let mut sys_call_data = SysCallData::default();
+                    sys_call_data.sys_call_id = sys_func_idx;
+                    let mut local_memory_access = HashMap::default();
+
+                    let mut sp = self.sp.to_relative_address();
+                    use crate::mem_index::UNIT;
+                    // params are poped from stack, so we have to record them in reverse order to calculate sp
+                    for item in params.iter().rev() {
+                        match item {
+                            Value::I64(_) | Value::F64(_) => {
+                                let (lo, hi) = item.to_u32();
+
+                                sp += UNIT;
+                                sys_call_data.params.push(lo);
+
+                                let record = self
+                                    .store
+                                    .tracer
+                                    .mr_with_local_access(sp, Some(&mut local_memory_access));
+                                sys_call_data.memory_read_access.push(record);
+
+                                sp += UNIT;
+                                sys_call_data.params.push(hi.unwrap());
+                                let record = self
+                                    .store
+                                    .tracer
+                                    .mr_with_local_access(sp, Some(&mut local_memory_access));
+                                sys_call_data.memory_read_access.push(record);
+                            }
+                            _ => {
+                                let value = item.to_u32().0;
+                                sp += UNIT;
+                                sys_call_data.params.push(value);
+
+                                let record = self
+                                    .store
+                                    .tracer
+                                    .mr_with_local_access(sp, Some(&mut local_memory_access));
+                                sys_call_data.memory_read_access.push(record);
+                            }
+                        }
+                    }
+
+                    self.store.tracer.state.next_cycle();
+
+                    let mut sp = self.sp.to_relative_address();
+                    for item in result.iter() {
+                        match item {
+                            Value::I64(_) | Value::F64(_) => {
+                                let (lo, hi) = item.to_u32();
+
+                                sp -= UNIT;
+                                sys_call_data.params.push(lo);
+
+                                let record = self.store.tracer.mw_with_local_access(
+                                    sp,
+                                    lo,
+                                    Some(&mut local_memory_access),
+                                );
+                                sys_call_data.memory_write_access.push(record);
+
+                                sp -= UNIT;
+                                sys_call_data.params.push(hi.unwrap());
+                                let record = self.store.tracer.mw_with_local_access(
+                                    sp,
+                                    lo,
+                                    Some(&mut local_memory_access),
+                                );
+                                sys_call_data.memory_write_access.push(record);
+                            }
+                            _ => {
+                                let (value, _) = item.to_u32();
+
+                                sp -= UNIT;
+                                sys_call_data.params.push(value);
+
+                                let record = self.store.tracer.mw_with_local_access(
+                                    sp,
+                                    value,
+                                    Some(&mut local_memory_access),
+                                );
+                                sys_call_data.memory_write_access.push(record);
+                            }
+                        }
+                    }
+                    //13 is the sysfunc index for fuel op.
+                    if sys_func_idx == 13 {
+                        use crate::mem_index::{ReservedAddrEnum, TypedAddress};
+
+                        
+                       
+                        let consumed_fuel_low_addr =
+                            TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuelLow)
+                                .to_virtual_addr();
+                        let record = self.store.tracer.mr_with_local_access(
+                            consumed_fuel_low_addr,
+                            Some(&mut local_memory_access),
+                        );
+                        sys_call_data.memory_read_access.push(record);
+                        let consumed_fuel_hi_addr =
+                            TypedAddress::from_reserved_addr(ReservedAddrEnum::ConsumedFuelHi)
+                                .to_virtual_addr();
+                        let record = self.store.tracer.mr_with_local_access(
+                            consumed_fuel_hi_addr,
+                            Some(&mut local_memory_access),
+                        );
+                        sys_call_data.memory_read_access.push(record);
+                    }
+                    let last = self.store.tracer.logs.last_mut().unwrap();
+                    sys_call_data.local_mem_access =
+                        local_memory_access.iter().map(|(_, v)| *v).collect();
+                    sys_call_data.local_mem_access_addr =
+                        local_memory_access.keys().cloned().collect();
+                    sys_call_data.params = params.iter().map(|v| v.to_u32().0).collect();
+
+                    let mut call_state = TraceCallData {
+                        calltype: crate::CallType::Call,
+                        table_id: 0,
+                        table_idx: 0,
+                        func_ref: 0,
+                        signature_id: 0,
+                        table_access: None,
+                        syscall_data: None,
+                    };
+                    call_state.syscall_data = Some(sys_call_data);
+
+                    last.call_state = Some(call_state);
+                }
                 for x in result {
                     self.sp.push_value(x)
                 }
