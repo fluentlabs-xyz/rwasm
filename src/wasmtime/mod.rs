@@ -1,7 +1,5 @@
 mod engine;
 
-#[cfg(test)]
-pub use crate::wasmtime::engine::wasmtime_new_engine_with_linker;
 use crate::{
     wasmtime::engine::wasmtime_engine_with_linker, Caller, CompilationConfig, ExternRef,
     FuelConfig, FuncRef, ImportLinker, Store, SyscallHandler, TrapCode, TypedCaller, UntypedValue,
@@ -19,7 +17,6 @@ use std::{
 };
 use wasmtime::{
     AsContext, AsContextMut, Extern, Global, GlobalType, StoreLimits, StoreLimitsBuilder,
-    WasmParams,
 };
 
 pub type WasmtimeModule = wasmtime::Module;

@@ -26,9 +26,6 @@ pub enum TrapCode {
     // this trap code is only used for external calls to terminate the execution,
     // but this error can't be returned from an execution cycle
     ExecutionHalted = 0xff,
-
-    CopyOutOfBounds = 0x10,
-    ElementSegmentDoesNotFit = 0x11,
 }
 
 impl core::fmt::Display for TrapCode {
@@ -51,8 +48,6 @@ impl core::fmt::Display for TrapCode {
             TrapCode::IllegalOpcode => write!(f, "illegal opcode"),
             TrapCode::InterruptionCalled => write!(f, "interruption called"),
             TrapCode::ExecutionHalted => write!(f, "execution halted"),
-            TrapCode::CopyOutOfBounds => write!(f, "out of bounds table access"),
-            TrapCode::ElementSegmentDoesNotFit => write!(f, "out of bounds table access"),
         }
     }
 }
