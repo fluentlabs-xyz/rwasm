@@ -27,6 +27,27 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             }
         }
         self.ip.add(1);
+
+        #[cfg(feature = "tracing")]
+        {
+            use crate::{
+                mem::MemoryRecordEnum, mem_index::LAST_SIG_ADDR, InstrStateExtension,
+                SignatureCheckStateExtension,
+            };
+
+            let mut instr_state = self.store.tracer.logs.pop().unwrap();
+
+            let record = self.store.tracer.mr(LAST_SIG_ADDR);
+
+            let state_extension = SignatureCheckStateExtension {
+                last_signature_check_read: MemoryRecordEnum::Read(record),
+            };
+
+            instr_state.extension = Some(InstrStateExtension::SignatureCheck(state_extension));
+
+            self.store.tracer.logs.push(instr_state);
+        }
+
         Ok(())
     }
 

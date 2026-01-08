@@ -69,6 +69,10 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let (lhs, rhs) = self.sp.pop2();
         let res = lhs.as_i64().wrapping_mul(rhs.as_i64());
         self.sp.push_i64(res);
+
+        #[cfg(feature = "tracing")]
+        self.build_64_trace(res as u32);
+
         self.ip.add(1);
     }
 
@@ -76,7 +80,30 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let (lhs, rhs) = self.sp.pop2();
         let res = lhs.as_i64().wrapping_add(rhs.as_i64());
         self.sp.push_i64(res);
+
+        #[cfg(feature = "tracing")]
+        self.build_64_trace(res as u32);
+
         self.ip.add(1);
+    }
+
+    #[cfg(feature = "tracing")]
+    fn build_64_trace(&mut self, lo: u32) {
+        use crate::{mem_index::UNIT, I64AluStateExtension, InstrStateExtension};
+
+        let mut instr_state = self.store.tracer.logs.pop().unwrap();
+
+        let lo_address = instr_state.sp + UNIT;
+
+        self.store.tracer.state.next_cycle();
+
+        let res_lo_write = self.store.tracer.mw(lo_address, lo);
+
+        let state_extension = I64AluStateExtension { res_lo_write };
+
+        instr_state.extension = Some(InstrStateExtension::I64Alu(state_extension));
+
+        self.store.tracer.logs.push(instr_state);
     }
 }
 

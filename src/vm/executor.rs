@@ -322,7 +322,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 timestamp: 0,
                 value: word,
             };
-            println!("addr:{:?}drecord:{:?}", addr, record);
 
             self.store.tracer.memory_records.insert(v_addr, record);
         }
@@ -369,14 +368,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     fn trace_instr_pre(&mut self, instr: &Opcode) {
         let pc = self.program_counter();
         self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
-        //  Advance the cycle for memoery write phase.
-        //  For TableGrow/TableInit/CallIndirect, the cycle is advanced in their implementations.
-        match instr {
-            Opcode::TableGrow(_) | Opcode::TableInit(_) | Opcode::CallIndirect(_) => (),
-            _ => {
-                self.store.tracer.state.next_cycle();
-            }
-        }
     }
 
     #[cfg(feature = "tracing")]
@@ -391,7 +382,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         let opcode = op_state.opcode;
         self.store.tracer.post_opcode_state(pc, sp, *instr, stack);
 
-        println!("op_state:{:?}", self.store.tracer.logs.last());
         // TODO(wangyao): "track trap codes"
     }
 
@@ -446,8 +436,48 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         self.sp.try_eval_top(|address| {
             let memory = self.store.global_memory.data();
             let value = load_extend(memory, address, offset)?;
+
+            #[cfg(feature = "tracing")]
+            {
+                use crate::{
+                    align, is_multi_align, mem::MemoryRecordEnum, mem_index::TypedAddress,
+                    InstrStateExtension, MemExtension,
+                };
+
+                let opcode = self.ip.get();
+
+                let mut instr_state = self.store.tracer.logs.pop().unwrap();
+
+                let raw_address = u32::from(address);
+                let shifted_address = raw_address.wrapping_add(offset);
+                let aligned_addr = align(shifted_address);
+                let typed_addr = TypedAddress::GlobalMemory(aligned_addr);
+                let low_record = self.store.tracer.mr(typed_addr.to_virtual_addr());
+
+                let mut upper_record = None;
+
+                if is_multi_align(opcode, shifted_address) {
+                    use crate::mem_index::UNIT;
+
+                    let aligned_addr_hi = aligned_addr + UNIT;
+                    let typed_addr_hi = TypedAddress::GlobalMemory(aligned_addr_hi.into());
+
+                    upper_record = Some(self.store.tracer.mr(typed_addr_hi.to_virtual_addr()));
+                }
+
+                let state_extension = MemExtension {
+                    low_record: MemoryRecordEnum::Read(low_record),
+                    upper_record: upper_record.map(MemoryRecordEnum::Read),
+                };
+
+                instr_state.extension = Some(InstrStateExtension::Memory(state_extension));
+
+                self.store.tracer.logs.push(instr_state);
+            }
+
             Ok(value)
         })?;
+
         self.ip.add(1);
         Ok(())
     }
@@ -476,72 +506,62 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 align, is_multi_align,
                 mem::MemoryRecordEnum,
                 mem_index::{TypedAddress, UNIT},
+                InstrStateExtension, MemExtension,
             };
             let (address, value) = self.sp.pop2();
             let addr = address.to_bits() + offset;
-            let aligned_addr: u32 = align(addr);
-            println!("base_addrss:{},value:{}", address, value);
-            let old_val = match self.store.tracer.memory_records.get(&aligned_addr).clone() {
-                Some(record) => record.value,
-                None => 0,
-            };
-            let opcode = self.ip.get();
-            let (new_val, new_val_hi) = {
-                let memory = self.store.global_memory.data_mut();
-                store_wrap(memory, address, offset, value)?;
-                let new_val = u32::from_le_bytes(
-                    memory[aligned_addr as usize..(aligned_addr + UNIT) as usize]
-                        .try_into()
-                        .unwrap(),
-                );
+            let aligned_addr = align(addr);
 
-                let new_val_hi = if is_multi_align(opcode, addr) {
-                    let aligned_addr_hi = aligned_addr + UNIT;
-                    u32::from_le_bytes(
-                        memory[(aligned_addr_hi) as usize..(aligned_addr_hi + UNIT) as usize]
-                            .try_into()
-                            .unwrap(),
-                    )
-                } else {
-                    0
-                };
-                (new_val, new_val_hi)
-            };
+            self.store.tracer.state.next_cycle();
+
+            let opcode = self.ip.get();
+
+            let memory = self.store.global_memory.data_mut();
+
+            store_wrap(memory, address, offset, value)?;
+
+            let mut instr_state = self.store.tracer.logs.pop().unwrap();
+
+            let val = u32::from_le_bytes(
+                memory[aligned_addr as usize..(aligned_addr + UNIT) as usize]
+                    .try_into()
+                    .unwrap(),
+            );
 
             let typed_addr = TypedAddress::GlobalMemory(aligned_addr.into());
 
-            println!("rawaddr store:{}", aligned_addr);
-            println!("virtual_addr:{}", typed_addr.to_virtual_addr());
-            let res_memory_record = self
+            let low_record = self
                 .store
                 .tracer
-                .mw(typed_addr.to_virtual_addr(), new_val.into());
+                .mw(typed_addr.to_virtual_addr(), val.into());
 
-            self.store
-                .tracer
-                .logs
-                .last_mut()
-                .unwrap()
-                .memory_access
-                .memory = Some(MemoryRecordEnum::Write(res_memory_record));
-
-            self.store.tracer.logs.last_mut().unwrap().res = value.into();
+            let mut upper_record = None;
 
             if is_multi_align(opcode, addr) {
                 let aligned_addr_hi = aligned_addr + UNIT;
                 let typed_addr_hi = TypedAddress::GlobalMemory(aligned_addr_hi.into());
-                let res_record_hi = self
-                    .store
-                    .tracer
-                    .mw(typed_addr_hi.to_virtual_addr(), new_val_hi);
-                self.store
-                    .tracer
-                    .logs
-                    .last_mut()
-                    .unwrap()
-                    .memory_access
-                    .memory_hi = Some(MemoryRecordEnum::Write(res_record_hi));
+
+                let val_hi = u32::from_le_bytes(
+                    memory[(aligned_addr_hi) as usize..(aligned_addr_hi + UNIT) as usize]
+                        .try_into()
+                        .unwrap(),
+                );
+
+                upper_record = Some(
+                    self.store
+                        .tracer
+                        .mw(typed_addr_hi.to_virtual_addr(), val_hi),
+                );
             }
+
+            let state_extension = MemExtension {
+                low_record: MemoryRecordEnum::Write(low_record),
+                upper_record: upper_record.map(MemoryRecordEnum::Write),
+            };
+
+            instr_state.extension = Some(InstrStateExtension::Memory(state_extension));
+
+            self.store.tracer.logs.push(instr_state);
         }
         self.ip.add(1);
         Ok(())

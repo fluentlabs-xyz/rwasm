@@ -1,4 +1,3 @@
-use crate::mem_index::TypedAddress;
 #[cfg(feature = "tracing")]
 use serde::{Deserialize, Serialize};
 
@@ -126,14 +125,21 @@ pub struct MemoryInitializeFinalizeEvent {
 impl MemoryReadRecord {
     /// Creates a new [``MemoryReadRecord``].
     #[must_use]
-    pub const fn new(
+    pub fn new(
         value: u32,
         shard: u32,
         timestamp: u32,
         prev_shard: u32,
         prev_timestamp: u32,
     ) -> Self {
-        assert!(shard > prev_shard || ((shard == prev_shard) && (timestamp > prev_timestamp)));
+        assert!(
+            shard > prev_shard || ((shard == prev_shard) && (timestamp > prev_timestamp)),
+            "shard not in prev shard: shard={} prev_shared={} timestamp={} prev_timestamp={}",
+            shard,
+            prev_shard,
+            timestamp,
+            prev_timestamp
+        );
         Self {
             value,
             shard,
@@ -246,21 +252,19 @@ pub struct MemoryAccessRecord {
     pub arg2_record: Option<MemoryRecordEnum>,
     /// The memory access of the `c` register.
     pub res_record: Option<MemoryRecordEnum>,
-
-    pub res_hi_record: Option<MemoryRecordEnum>,
+    // pub res_hi_record: Option<MemoryRecordEnum>,
     /// The memory access of the `memory` register.
     pub memory: Option<MemoryRecordEnum>,
+    // The high memory access of memory op. This is only valid when the memory op is not aligned.
+    // pub memory_hi: Option<MemoryRecordEnum>,
 
-    /// The high memory access of memory op. This is only valid when the memory op is not aligned.
-    pub memory_hi: Option<MemoryRecordEnum>,
+    // pub call_sp_access: Option<MemoryRecordEnum>,
 
-    pub call_sp_access: Option<MemoryRecordEnum>,
-
-    pub arg1_addr: Option<TypedAddress>,
-    pub arg2_addr: Option<TypedAddress>,
-    pub res_addr: Option<TypedAddress>,
-    pub res_hi_addr: Option<TypedAddress>,
-    pub memory_addr: Option<TypedAddress>,
-    pub memory_hi_addr: Option<TypedAddress>,
-    pub call_sp_addr: Option<TypedAddress>,
+    // pub arg1_addr: Option<TypedAddress>,
+    // pub arg2_addr: Option<TypedAddress>,
+    // pub res_addr: Option<TypedAddress>,
+    // pub res_hi_addr: Option<TypedAddress>,
+    // pub memory_addr: Option<TypedAddress>,
+    // pub memory_hi_addr: Option<TypedAddress>,
+    // pub call_sp_addr: Option<TypedAddress>,
 }

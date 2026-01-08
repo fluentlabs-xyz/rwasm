@@ -5,59 +5,82 @@ use crate::{
 
 impl Opcode {
     pub fn opcode_stack_read(self) -> u32 {
-        if self.is_binary_instruction() {
-            return 2;
-        } else if self.is_unary_instruction() {
-            return 1;
-        } else if self.is_nullary() {
+        if self.is_nullary()
+            || matches!(
+                self,
+                Opcode::LocalGet(_)
+                    | Opcode::GlobalGet(_)
+                    | Opcode::MemorySize
+                    | Opcode::TableSize(_)
+            )
+        {
             return 0;
-        } else if self.is_memory_load_instruction() {
-            return 1;
-        } else if self.is_memory_store_instruction() {
-            return 2;
-        } else if let Opcode::LocalTee(_) = self {
-            return 1;
-        } else if let Opcode::LocalSet(_) = self {
-            return 1;
-        } else if self.is_branch_instruction() {
-            if let Opcode::BrIfEqz(_) = self {
-                return 1;
-            } else if let Opcode::BrIfNez(_) = self {
-                return 1;
-            } else if let Opcode::BrTable(_) = self {
-                return 1;
-            }
         }
-        if self.is_64b_op() {
-            return 2;
-        } else if self.is_table_instruction() {
-            // if let Opcode::TableGrow(_) = self {
-            //     return 2;
-            // }
-            return 0;
-        } else if let Opcode::CallIndirect(_) = self {
+
+        if self.is_unary_instruction()
+            || self.is_memory_load_instruction()
+            || matches!(
+                self,
+                Opcode::LocalSet(_)
+                    | Opcode::LocalTee(_)
+                    | Opcode::GlobalSet(_)
+                    | Opcode::Drop
+                    | Opcode::CallIndirect(_)
+                    | Opcode::ReturnCallIndirect(_)
+                    | Opcode::ConsumeFuelStack
+                    | Opcode::StackCheck(_)
+                    | Opcode::MemoryGrow
+                    | Opcode::TableGet(_)
+                    | Opcode::BrIfEqz(_)
+                    | Opcode::BrIfNez(_)
+                    | Opcode::BrTable(_)
+            )
+        {
             return 1;
+        }
+
+        if self.is_binary_instruction()
+            || self.is_memory_store_instruction()
+            || self.is_64b_op()
+            || matches!(self, Opcode::TableSet(_) | Opcode::TableGrow(_))
+        {
+            return 2;
+        }
+
+        if matches!(
+            self,
+            Opcode::Select
+                | Opcode::MemoryFill
+                | Opcode::MemoryCopy
+                | Opcode::MemoryInit(_)
+                | Opcode::TableFill(_)
+                | Opcode::TableCopy(_, _)
+                | Opcode::TableInit(_)
+        ) {
+            return 3;
         }
 
         0
     }
+
     pub fn opcode_stack_write(self) -> bool {
-        if self.is_binary_instruction() || self.is_unary_instruction() | self.is_const_instruction()
-        {
-            return true;
-        }
-        if self.is_binary_instruction() {
-            return false;
-        }
-        if self.is_memory_instruction() {
-            self.is_memory_load_instruction()
-        } else if let Opcode::LocalGet(_) = self {
-            true
-        // } else if let Opcode::TableGrow(_) = self {
-        //     true
-        } else {
-            false
-        }
+        self.is_binary_instruction()
+            || self.is_unary_instruction()
+            || self.is_const_instruction()
+            || self.is_memory_load_instruction()
+            || self.is_64b_op()
+            || matches!(
+                self,
+                Opcode::LocalGet(_)
+                    | Opcode::LocalTee(_)
+                    | Opcode::GlobalGet(_)
+                    | Opcode::Select
+                    | Opcode::MemorySize
+                    | Opcode::MemoryGrow
+                    | Opcode::TableSize(_)
+                    | Opcode::TableGet(_)
+                    | Opcode::TableGrow(_)
+            )
     }
 }
 
