@@ -1,7 +1,7 @@
 use super::ValueStackPtr;
 use crate::{
     event::FatOpEvent,
-    mem_index::{TypedAddress, UNIT},
+    mem_index::UNIT,
     types::Opcode,
     vm::tracer::{
         mem::{
@@ -109,6 +109,7 @@ pub struct CallStateExtension {
     pub table_read: Option<MemoryReadRecord>,
     pub call_stack_access: MemoryRecordEnum,
     pub call_stack_address: u32,
+    pub signature_write: Option<MemoryWriteRecord>,
 }
 
 #[derive(Debug, Clone)]
@@ -123,7 +124,7 @@ pub struct LocalStateExtension {
 
 #[derive(Debug, Clone)]
 pub struct SignatureCheckStateExtension {
-    pub last_signature_check_read: MemoryRecordEnum,
+    pub last_signature_check_read: MemoryReadRecord,
 }
 
 #[derive(Debug, Clone)]
@@ -269,7 +270,7 @@ impl Tracer {
             self.state.next_cycle();
         }
 
-        self.record_sw(opcode, new_sp, stack);
+        self.record_sw(opcode, new_sp + UNIT, stack);
 
         self.state.sp = new_sp;
 
@@ -349,12 +350,14 @@ impl Tracer {
 
     pub fn record_mr(&mut self, ins: Opcode, sp: u32) -> MemoryAccessRecord {
         let length = ins.opcode_stack_read();
+
         let mut memory_access = MemoryAccessRecord::default();
 
         // Handle the top of the stack (idx 0).
         // If length is > 0, we always read from `sp`.
         if length > 0 {
-            let addr = sp;
+            let addr = sp + UNIT;
+
             let rec = MemoryRecordEnum::Read(self.mr(addr));
 
             if length == 1 {
@@ -370,7 +373,8 @@ impl Tracer {
         // Handle the second element on the stack (idx 1).
         // This is read only if the instruction consumes 2 (or more) arguments.
         if length >= 2 {
-            let addr = sp + UNIT; // Equivalent to sp + 1 * UNIT
+            let addr = sp + 2 * UNIT; // Equivalent to sp + 2 * UNIT
+
             let rec = MemoryRecordEnum::Read(self.mr(addr));
 
             memory_access.arg1_record = Some(rec);
@@ -441,7 +445,6 @@ impl Tracer {
         local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
     ) -> MemoryWriteRecord {
         let record = self.memory_records.entry(addr).or_default();
-        // println!("memory write addr: {}record:{:?} clk:{}", addr, record, self.state.clk);
         let prev_record = *record;
         record.shard = self.state.shard;
         record.timestamp = self.state.clk;

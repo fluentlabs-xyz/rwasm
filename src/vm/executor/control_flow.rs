@@ -62,10 +62,10 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
                     let mut instr_state = self.store.tracer.logs.pop().unwrap();
 
+                    self.store.tracer.state.call_sp -= 1;
+
                     let call_stack_address =
                         TypedAddress::FuncFrame(self.store.tracer.state.call_sp).to_virtual_addr();
-
-                    self.store.tracer.state.call_sp -= 1;
 
                     let state_extension = CallStateExtension {
                         call_stack_access: MemoryRecordEnum::Read(
@@ -75,6 +75,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                         table_size_read: None,
                         table_read: None,
                         call_stack_address,
+                        signature_write: None,
                     };
 
                     instr_state.extension = Some(InstrStateExtension::Call(state_extension));
@@ -174,6 +175,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                 table_size_read: None,
                 table_read: None,
                 call_stack_address,
+                signature_write: None,
             };
 
             instr_state.extension = Some(InstrStateExtension::Call(state_extension));
@@ -228,16 +230,17 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         #[cfg(feature = "tracing")]
         {
             use crate::{
-                mem::MemoryRecordEnum, mem_index::TypedAddress, CallStateExtension,
-                InstrStateExtension, N_MAX_TABLE_SIZE,
+                mem::MemoryRecordEnum,
+                mem_index::{TypedAddress, LAST_SIG_ADDR},
+                CallStateExtension, InstrStateExtension, N_MAX_TABLE_SIZE,
             };
 
             let mut instr_state = self.store.tracer.logs.pop().unwrap();
 
-            let table_size_read = self
-                .store
-                .tracer
-                .mr(TypedAddress::TableSize(table_idx as u32).to_virtual_addr());
+            // let table_size_read = self
+            //     .store
+            //     .tracer
+            //     .mr(TypedAddress::TableSize(table_idx as u32).to_virtual_addr());
 
             let addr = TypedAddress::Table(table_idx as u32 * N_MAX_TABLE_SIZE + func_index);
             let table_read = self.store.tracer.mr(addr.to_virtual_addr());
@@ -251,12 +254,15 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
             let call_stack_write = self.store.tracer.mw(call_stack_address, instr_state.pc + 2);
 
+            let signature_write = Some(self.store.tracer.mw(LAST_SIG_ADDR, signature_idx));
+
             let state_extension = CallStateExtension {
                 call_stack_access: MemoryRecordEnum::Write(call_stack_write),
-                table_idx: 0,
+                table_idx: table_idx as u32,
                 table_size_read: None,
-                table_read: None,
+                table_read: Some(table_read),
                 call_stack_address,
+                signature_write,
             };
 
             instr_state.extension = Some(InstrStateExtension::Call(state_extension));

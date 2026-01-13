@@ -666,12 +666,12 @@ impl Opcode {
             | Opcode::I32Const(_)
             | Opcode::MemorySize
             | Opcode::TableSize(_)
+            | Opcode::TableGrow(_)
             | Opcode::RefFunc(_)
 
             // ----------------------------------------------------------------
             // WITH ONE PARAM WITH RESULT (Stack: [val] -> [res])
             // ----------------------------------------------------------------
-            | Opcode::LocalTee(_)
             | Opcode::MemoryGrow
             | Opcode::I32Load(_)
             | Opcode::I32Load8S(_)

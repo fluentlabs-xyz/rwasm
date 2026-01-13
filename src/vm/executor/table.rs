@@ -200,7 +200,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
             let mut instr_state = self.store.tracer.logs.pop().unwrap();
 
-            let dst_address = instr_state.sp + 2 * UNIT;
+            let dst_address = instr_state.sp + 3 * UNIT;
 
             let mut state_extension = TableInitStateExtension {
                 dst_index_record: self.store.tracer.mr(dst_address),

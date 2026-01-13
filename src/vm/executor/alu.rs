@@ -93,7 +93,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
 
         let mut instr_state = self.store.tracer.logs.pop().unwrap();
 
-        let lo_address = instr_state.sp + UNIT;
+        let lo_address = instr_state.sp + 2 * UNIT;
 
         self.store.tracer.state.next_cycle();
 
