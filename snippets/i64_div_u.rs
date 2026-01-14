@@ -16,7 +16,7 @@ pub(crate) fn i64_div_u_impl(
     }
 
     // fast path: divisor fits in one limb and below 1 << 31 to prevent reminder overflow
-    if d_hi == 0 && d_lo < 1 << 31 {
+    if d_hi == 0 && d_lo < 1u32 << 31 {
         // divide (n_hi<<32 | n_lo) by 32-bit d_lo using two 32-bit loops
         #[inline(always)]
         fn div_mod_64_by_32(hi: u32, lo: u32, d: u32) -> (u32, u32) {

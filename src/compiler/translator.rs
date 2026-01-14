@@ -16,10 +16,10 @@ use crate::{
         utils::RelativeDepth,
         value_stack::ValueStackHeight,
     },
-    AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
-    ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
-    Opcode, TableIdx, BASE_FUEL_COST, DEFAULT_MEMORY_INDEX, N_MAX_MEMORY_PAGES, N_MAX_TABLE_SIZE,
-    SNIPPET_FUNC_IDX_UNRESOLVED,
+    AddressOffset, BranchOffset, BranchTableTargets, CompilationConfig, ConstructorParams,
+    DataSegmentIdx, ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc,
+    InstructionSet, LabelRef, Opcode, TableIdx, BASE_FUEL_COST, DEFAULT_MEMORY_INDEX,
+    N_MAX_MEMORY_PAGES, N_MAX_TABLE_SIZE, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec, vec::Vec};
 use bitvec::macros::internal::funty::Fundamental;
@@ -186,16 +186,23 @@ pub struct InstructionTranslator {
     pub(crate) with_consume_fuel: bool,
     /// Stores and resolves local variable types.
     pub(crate) locals: LocalsRegistry,
+    /// Enable translation with optimized code snippets
+    pub(crate) with_code_snippets: bool,
 }
 
 impl InstructionTranslator {
-    pub fn new(alloc: FuncTranslatorAllocations, with_consume_fuel: bool) -> Self {
+    pub fn new(
+        alloc: FuncTranslatorAllocations,
+        with_consume_fuel: bool,
+        with_code_snippets: bool,
+    ) -> Self {
         Self {
             reachable: true,
             alloc,
             stack_height: Default::default(),
             with_consume_fuel,
             locals: Default::default(),
+            with_code_snippets,
         }
     }
 
@@ -4018,6 +4025,9 @@ impl InstructionTranslator {
     }
 
     fn translate_to_snippet_call(&mut self, snippet: Snippet) -> Result<(), CompilationError> {
+        if !self.with_code_snippets {
+            return Ok(());
+        };
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder

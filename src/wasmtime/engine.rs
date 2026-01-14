@@ -1,9 +1,9 @@
 use crate::{ImportLinker, N_MAX_STACK_SIZE};
-use alloc::rc::Rc;
-
-use std::collections::HashMap;
-use std::mem::size_of;
-use std::sync::{Arc, OnceLock};
+use std::{
+    collections::HashMap,
+    mem::size_of,
+    sync::{Arc, OnceLock},
+};
 use wasmtime::{
     Config, Engine, LinearFuelParams, OptLevel, QuadraticFuelParams, Strategy, SyscallFuelParams,
     SyscallName,
