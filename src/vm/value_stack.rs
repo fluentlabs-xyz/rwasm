@@ -455,7 +455,9 @@ impl ValueStackPtr {
         //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.sub(delta) };
-        debug_assert!(self.ptr >= self.src, "stack underflow");
+        if self.ptr < self.src {
+            debug_assert!(self.ptr >= self.src, "stack underflow");
+        }
     }
 
     /// convert stack pointer to the address number

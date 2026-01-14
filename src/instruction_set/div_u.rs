@@ -1,7 +1,7 @@
 use crate::{InstructionSet, TrapCode};
 
 impl InstructionSet {
-    pub const MSH_I64_DIV_U: u32 = 15;
+    pub const MSH_I64_DIV_U: u32 = 14;
 
     /// Performs an unsigned 64-bit division using only 32-bit arithmetic,
     /// returning the 64-bit quotient as two `u32` limbs (low, high).
@@ -33,7 +33,7 @@ impl InstructionSet {
     /// The input/output layout matches WebAssembly’s typical two-limb calling convention
     /// for 64-bit arithmetic implemented on 32-bit platforms.
     ///
-    /// Max stack height: 15
+    /// Max stack height: 14
     pub fn op_i64_div_u(&mut self) {
         self.op_i32_const(0);
         self.op_i32_const(0);
@@ -44,11 +44,14 @@ impl InstructionSet {
         self.op_i32_const(0);
         self.op_local_get(8);
         self.op_br_if_nez(25);
+
         self.op_local_get(9);
         self.op_i32_eqz();
         self.op_br_if_nez(32);
+
         self.op_local_get(10);
         self.op_br_if_nez(11);
+
         self.op_i32_const(0);
         self.op_local_set(7);
         self.op_i32_const(0);
@@ -57,21 +60,27 @@ impl InstructionSet {
         self.op_local_get(10);
         self.op_i32_lt_u();
         self.op_br_if_nez(284);
+
         self.op_local_get(9);
         self.op_i32_const(2147483649u32 as i32);
         self.op_i32_lt_u();
         self.op_br_if_nez(16);
+
         self.op_br(180);
+
         self.op_i32_const(0);
         self.op_local_set(7);
         self.op_local_get(10);
         self.op_local_get(9);
         self.op_i32_ge_u();
         self.op_br_if_nez(160);
+
         self.op_i32_const(0);
         self.op_local_set(6);
         self.op_br(265);
+
         self.op_trap(TrapCode::IntegerDivisionByZero);
+
         self.op_i32_const(0);
         self.op_local_set(7);
         self.op_i32_const(95);
@@ -89,6 +98,7 @@ impl InstructionSet {
         self.op_i32_const(32);
         self.op_i32_gt_u();
         self.op_br_if_nez(28);
+
         self.op_local_get(10);
         self.op_local_get(7);
         self.op_i32_const(4294967264u32 as i32);
@@ -103,6 +113,7 @@ impl InstructionSet {
         self.op_local_get(10);
         self.op_i32_lt_u();
         self.op_br_if_nez(29);
+
         self.op_local_get(5);
         self.op_local_get(10);
         self.op_i32_sub();
@@ -114,10 +125,12 @@ impl InstructionSet {
         self.op_i32_or();
         self.op_local_set(7);
         self.op_br(17);
+
         self.op_local_get(5);
         self.op_local_get(10);
         self.op_i32_lt_u();
         self.op_br_if_nez(12);
+
         self.op_local_get(5);
         self.op_local_get(10);
         self.op_i32_sub();
@@ -128,6 +141,7 @@ impl InstructionSet {
         self.op_local_get(8);
         self.op_i32_or();
         self.op_local_set(7);
+
         self.op_local_get(6);
         self.op_i32_const(4294967295u32 as i32);
         self.op_i32_add();
@@ -136,6 +150,7 @@ impl InstructionSet {
         self.op_i32_const(1);
         self.op_i32_gt_u();
         self.op_br_if_nez(-62);
+
         self.op_i32_const(0);
         self.op_local_set(6);
         self.op_i32_const(95);
@@ -153,6 +168,7 @@ impl InstructionSet {
         self.op_i32_const(32);
         self.op_i32_gt_u();
         self.op_br_if_nez(28);
+
         self.op_local_get(11);
         self.op_local_get(11);
         self.op_i32_const(4294967264u32 as i32);
@@ -167,6 +183,7 @@ impl InstructionSet {
         self.op_local_get(10);
         self.op_i32_lt_u();
         self.op_br_if_nez(38);
+
         self.op_local_get(4);
         self.op_local_get(10);
         self.op_i32_sub();
@@ -178,6 +195,7 @@ impl InstructionSet {
         self.op_i32_or();
         self.op_local_set(6);
         self.op_br(26);
+
         self.op_local_get(5);
         self.op_local_get(11);
         self.op_i32_shr_u();
@@ -189,6 +207,7 @@ impl InstructionSet {
         self.op_local_get(10);
         self.op_i32_lt_u();
         self.op_br_if_nez(14);
+
         self.op_local_get(4);
         self.op_local_get(10);
         self.op_i32_sub();
@@ -201,6 +220,7 @@ impl InstructionSet {
         self.op_local_get(7);
         self.op_i32_or();
         self.op_local_set(6);
+
         self.op_local_get(10);
         self.op_i32_const(4294967295u32 as i32);
         self.op_i32_add();
@@ -209,17 +229,21 @@ impl InstructionSet {
         self.op_i32_const(1);
         self.op_i32_gt_u();
         self.op_br_if_nez(-71);
+
         self.op_br(111);
+
         self.op_local_get(11);
         self.op_local_get(10);
         self.op_i32_ge_u();
         self.op_br_if_nez(9);
+
         self.op_i32_const(0);
         self.op_local_set(6);
         self.op_local_get(10);
         self.op_local_get(9);
         self.op_i32_eq();
         self.op_br_if_nez(98);
+
         self.op_i32_const(0);
         self.op_local_set(5);
         self.op_i32_const(64);
@@ -249,19 +273,23 @@ impl InstructionSet {
         self.op_local_get(9);
         self.op_i32_gt_u();
         self.op_br_if_nez(18);
+
         self.op_i32_const(0);
         self.op_local_set(1);
         self.op_local_get(5);
         self.op_local_get(9);
         self.op_i32_ne();
         self.op_br_if_nez(7);
+
         self.op_local_get(4);
         self.op_local_get(10);
         self.op_i32_ge_u();
         self.op_br_if_nez(6);
+
         self.op_local_get(4);
         self.op_local_set(3);
         self.op_br(16);
+
         self.op_local_get(5);
         self.op_local_get(9);
         self.op_i32_sub();
@@ -276,6 +304,7 @@ impl InstructionSet {
         self.op_local_set(3);
         self.op_i32_const(1);
         self.op_local_set(1);
+
         self.op_local_get(10);
         self.op_i32_const(1);
         self.op_i32_shl();
@@ -307,6 +336,7 @@ impl InstructionSet {
         self.op_i32_add();
         self.op_local_tee(3);
         self.op_br_if_nez(-82);
+
         self.op_local_get(7);
         self.op_i32_const(0);
         self.op_i32_const(32);
@@ -332,6 +362,7 @@ impl InstructionSet {
         self.op_drop();
         self.op_drop();
         self.op_drop();
+        self.op_return();
 
         // self.op_i32_const(0);
         // self.op_i32_const(0);
