@@ -307,7 +307,7 @@ impl InstructionSet {
 
         self.op_local_get(10);
         self.op_i32_const(1);
-        self.op_i32_shl();
+        self.op_i32_shl(); //
         self.op_local_get(12);
         self.op_i32_const(31);
         self.op_i32_shr_u();
@@ -362,7 +362,6 @@ impl InstructionSet {
         self.op_drop();
         self.op_drop();
         self.op_drop();
-        self.op_return();
 
         // self.op_i32_const(0);
         // self.op_i32_const(0);
