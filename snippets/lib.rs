@@ -8,18 +8,18 @@
 
 #[cfg(test)]
 mod extractor;
-// #[cfg(test)]
-// mod fuzz;
-// mod i64_add;
-// mod i64_div_s;
+#[cfg(test)]
+mod fuzz;
+mod i64_add;
+mod i64_div_s;
 mod i64_div_u;
-// mod i64_mul;
-// mod i64_ne;
-// mod i64_rem_s;
-// mod i64_rem_u;
-// mod i64_rotl;
-// mod i64_rotr;
-// mod i64_shl;
-// mod i64_shr_s;
-// mod i64_shr_u;
-// mod i64_sub;
+mod i64_mul;
+mod i64_ne;
+mod i64_rem_s;
+mod i64_rem_u;
+mod i64_rotl;
+mod i64_rotr;
+mod i64_shl;
+mod i64_shr_s;
+mod i64_shr_u;
+mod i64_sub;
