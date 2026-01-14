@@ -15,8 +15,8 @@ pub(crate) fn i64_div_u_impl(
         return (0, 0); // quotient = 0 (the remainder is n, caller doesn’t need it)
     }
 
-    // ---------- fast path: divisor fits in one limb -----------------------
-    if d_hi == 0 {
+    // fast path: divisor fits in one limb and below 1 << 31 to prevent reminder overflow
+    if d_hi == 0 && d_lo < 1 << 31 {
         // divide (n_hi<<32 | n_lo) by 32-bit d_lo using two 32-bit loops
         #[inline(always)]
         fn div_mod_64_by_32(hi: u32, lo: u32, d: u32) -> (u32, u32) {
@@ -88,4 +88,28 @@ pub(crate) fn i64_div_u_impl(
 pub fn i64_div_u(n_lo: u32, n_hi: u32, d_lo: u32, d_hi: u32) -> u64 {
     let (q_lo, q_hi) = i64_div_u_impl(n_lo, n_hi, d_lo, d_hi);
     ((q_hi as u64) << 32) | q_lo as u64
+}
+
+/// Special case for 'fast path' highlighting problem with causing data loss in case of
+/// divisible overflow (causing MSb loss when shifting left) in case of divisor GE 1<<31
+#[test]
+fn test_i64_div_u_divisible_overflow() {
+    let test_case = |a: u64, b: u64| {
+        let c = a.wrapping_div(b);
+        let (r_lo, r_hi) = i64_div_u_impl(a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32);
+        let r = (r_hi as u64) << 32 | r_lo as u64;
+        assert_eq!(c, r);
+    };
+    // divisor much greater max (slow path)
+    let a: u64 = 9223372036854775807;
+    let b: u64 = 3707827967; // 0b11011101000000001111011011111111
+    test_case(a, b);
+    // divisor equals max (slow path)
+    let a: u64 = 9223372036854775807;
+    let b: u64 = 1 << 31;
+    test_case(a, b);
+    // divisor below max by 1 (fast path)
+    let a: u64 = 9223372036854775807;
+    let b: u64 = (1 << 31) - 1;
+    test_case(a, b);
 }

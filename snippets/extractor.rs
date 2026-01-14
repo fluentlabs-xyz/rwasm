@@ -43,10 +43,10 @@ fn test_extract_rwasm_bytecode() {
     let wasm_binary = include_bytes!("./lib.wasm");
     let (module, _) = RwasmModule::compile(
         CompilationConfig::default()
-            .with_entrypoint_name("i64_rotr".into())
+            .with_entrypoint_name("i64_div_u".into())
             .with_consume_fuel(false),
         wasm_binary,
     )
-    .unwrap();
+        .unwrap();
     println!("{}", module);
 }
