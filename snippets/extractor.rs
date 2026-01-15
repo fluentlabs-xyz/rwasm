@@ -1,4 +1,4 @@
-use rwasm::{CompilationConfig, RwasmModule};
+use rwasm::{CompilationConfig, RwasmModule, StateRouterConfig};
 use walrus::ir::InstrSeq;
 
 fn extract_wasm_snippet(wasm_binary: &[u8]) {
