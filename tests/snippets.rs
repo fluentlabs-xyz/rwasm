@@ -422,26 +422,26 @@ fn test_i64_div_u() {
         );
     };
 
+    test_case_i64_trap(0u64, 0u64, TrapCode::IntegerDivisionByZero);
+    test_case_i64_trap(1, 0, TrapCode::IntegerDivisionByZero);
+    test_case_i64_trap(u64::MAX, 0, TrapCode::IntegerDivisionByZero);
+    test_case_i64(0, 1);
+    test_case_i64(1, 1);
+    test_case_i64(1, u64::MAX);
+    test_case_i64(u64::MAX, 1);
+    test_case_i64(u64::MAX, u64::MAX);
+    test_case_i64(u64::MAX - 1, u64::MAX);
+    test_case_i64(u64::MAX, 2);
+    test_case_i64(2, u64::MAX);
+    test_case_i64(2, 1);
+    test_case_i64(12345678901234567890, 1234567890);
+    test_case_i64(100, 10);
+    test_case_i64(10, 100);
+    test_case_i64(0xFFFF_FFFF_0000_0000, 0xFFFF_FFFF);
+    test_case_i64(0x8000_0000_0000_0000, 2);
+    test_case_i64(0x0000_0001_0000_0000, 0x100);
     test_case_i64(9223372036854775807, 3707827967);
-    // test_case_i64(15602808788219557311, 9181438499313657906);
-    // test_case_i64_trap(0u64, 0u64, TrapCode::IntegerDivisionByZero);
-    // test_case_i64_trap(1, 0, TrapCode::IntegerDivisionByZero);
-    // test_case_i64_trap(u64::MAX, 0, TrapCode::IntegerDivisionByZero);
-    // test_case_i64(0, 1);
-    // test_case_i64(1, 1);
-    // test_case_i64(1, u64::MAX);
-    // test_case_i64(u64::MAX, 1);
-    // test_case_i64(u64::MAX, u64::MAX);
-    // test_case_i64(u64::MAX - 1, u64::MAX);
-    // test_case_i64(u64::MAX, 2);
-    // test_case_i64(2, u64::MAX);
-    // test_case_i64(2, 1);
-    // test_case_i64(12345678901234567890, 1234567890);
-    // test_case_i64(100, 10);
-    // test_case_i64(10, 100);
-    // test_case_i64(0xFFFF_FFFF_0000_0000, 0xFFFF_FFFF);
-    // test_case_i64(0x8000_0000_0000_0000, 2);
-    // test_case_i64(0x0000_0001_0000_0000, 0x100);
+    test_case_i64(15602808788219557311, 9181438499313657906);
 }
 
 #[test]

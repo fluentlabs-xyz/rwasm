@@ -78,6 +78,10 @@ impl Snippet {
         }
     }
 
+    pub fn emitter(&self) -> fn(&mut InstructionSet) {
+        self.definition().emitter
+    }
+
     pub fn emit(&self, instruction_set: &mut InstructionSet) {
         (self.definition().emitter)(instruction_set);
     }
