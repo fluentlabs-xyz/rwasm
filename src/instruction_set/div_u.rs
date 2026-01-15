@@ -441,7 +441,6 @@ impl InstructionSet {
         self.op_drop();
         self.op_drop();
         self.op_drop();
-        self.op_drop();
 
         // self.op_i32_const(0);
         // self.op_i32_const(0);
