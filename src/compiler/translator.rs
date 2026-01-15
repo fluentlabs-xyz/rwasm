@@ -4025,33 +4025,35 @@ impl InstructionTranslator {
     }
 
     fn translate_to_snippet_call(&mut self, snippet: Snippet) -> Result<(), CompilationError> {
-        if !self.with_code_snippets {
-            return Ok(());
-        };
+        let with_code_snippets = self.with_code_snippets;
         self.translate_if_reachable(|builder| {
-            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
-            builder
-                .stack_height
-                .pop_n(snippet.func_type().params().len() as u32);
-            builder
-                .stack_height
-                .push_n(snippet.func_type().results().len() as u32);
-            for func_type in snippet.orig_func_type().params().iter().rev() {
-                let popped_type = builder.alloc.stack_types.pop().unwrap();
-                assert_eq!(*func_type, popped_type)
-            }
-            for result in snippet.orig_func_type().results() {
-                builder.alloc.stack_types.push(*result);
-            }
-            let loc = builder.alloc.instruction_set.loc();
-            builder
-                .alloc
-                .instruction_set
-                .op_call_internal(SNIPPET_FUNC_IDX_UNRESOLVED);
-            builder
-                .alloc
-                .snippet_calls
-                .push(SnippetCall { loc, snippet });
+            if with_code_snippets {
+                builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+                builder
+                    .stack_height
+                    .pop_n(snippet.func_type().params().len() as u32);
+                builder
+                    .stack_height
+                    .push_n(snippet.func_type().results().len() as u32);
+                for func_type in snippet.orig_func_type().params().iter().rev() {
+                    let popped_type = builder.alloc.stack_types.pop().unwrap();
+                    assert_eq!(*func_type, popped_type)
+                }
+                for result in snippet.orig_func_type().results() {
+                    builder.alloc.stack_types.push(*result);
+                }
+                let loc = builder.alloc.instruction_set.loc();
+                builder
+                    .alloc
+                    .instruction_set
+                    .op_call_internal(SNIPPET_FUNC_IDX_UNRESOLVED);
+                builder
+                    .alloc
+                    .snippet_calls
+                    .push(SnippetCall { loc, snippet });
+            } else {
+                snippet.emit(&mut builder.alloc.instruction_set);
+            };
             Ok(())
         })
     }
