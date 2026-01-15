@@ -95,7 +95,7 @@ fn run_binary_test_case(
         is.clone(),
         vec![a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32],
     )?;
-    assert_eq!(output.len(), 2);
+    assert_eq!(output.len(), 3);
     let r = (output[1] as u64) << 32 | output[0] as u64;
     assert_eq!(c, r, "f({a}, {b})={r}, but expected {c}");
     assert!(
@@ -509,23 +509,23 @@ fn test_i64_rem_u() {
     };
 
     test_case_i64(9223372036854775807, 3707827967);
-    // test_case_i64(0u64, 1u64);
-    // test_case_i64(1, 1);
-    // test_case_i64(1, u64::MAX);
-    // test_case_i64(u64::MAX, 1);
-    // test_case_i64(u64::MAX, u64::MAX);
-    // test_case_i64(u64::MAX - 1, u64::MAX);
-    // test_case_i64(12345678901234567890, 1234567890);
-    // test_case_i64(100, 10);
-    // test_case_i64(101, 10);
-    // test_case_i64(10, 100);
-    // test_case_i64(0xFFFF_FFFF_0000_0000, 0xFFFF_FFFF);
-    // test_case_i64(0x8000_0000_0000_0000, 2);
-    // test_case_i64(0x8000_0000_0000_0001, 2);
-    // test_case_i64(0x0000_0001_0000_0000, 0x100);
-    // test_case_i64_trap(0, 0, TrapCode::IntegerDivisionByZero);
-    // test_case_i64_trap(1, 0, TrapCode::IntegerDivisionByZero);
-    // test_case_i64_trap(u64::MAX, 0, TrapCode::IntegerDivisionByZero);
+    test_case_i64(0u64, 1u64);
+    test_case_i64(1, 1);
+    test_case_i64(1, u64::MAX);
+    test_case_i64(u64::MAX, 1);
+    test_case_i64(u64::MAX, u64::MAX);
+    test_case_i64(u64::MAX - 1, u64::MAX);
+    test_case_i64(12345678901234567890, 1234567890);
+    test_case_i64(100, 10);
+    test_case_i64(101, 10);
+    test_case_i64(10, 100);
+    test_case_i64(0xFFFF_FFFF_0000_0000, 0xFFFF_FFFF);
+    test_case_i64(0x8000_0000_0000_0000, 2);
+    test_case_i64(0x8000_0000_0000_0001, 2);
+    test_case_i64(0x0000_0001_0000_0000, 0x100);
+    test_case_i64_trap(0, 0, TrapCode::IntegerDivisionByZero);
+    test_case_i64_trap(1, 0, TrapCode::IntegerDivisionByZero);
+    test_case_i64_trap(u64::MAX, 0, TrapCode::IntegerDivisionByZero);
 }
 
 #[test]
