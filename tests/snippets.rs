@@ -95,7 +95,7 @@ fn run_binary_test_case(
         is.clone(),
         vec![a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32],
     )?;
-    assert_eq!(output.len(), 3);
+    assert_eq!(output.len(), 2);
     let r = (output[1] as u64) << 32 | output[0] as u64;
     assert_eq!(c, r, "f({a}, {b})={r}, but expected {c}");
     assert!(

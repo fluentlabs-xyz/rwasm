@@ -439,5 +439,6 @@ impl InstructionSet {
         self.op_drop();
         self.op_drop();
         self.op_drop();
+        self.op_drop();
     }
 }
