@@ -184,17 +184,24 @@ pub struct InstructionTranslator {
     pub(crate) stack_height: ValueStackHeight,
     /// Do we need to emit consume fuel related opcodes
     pub(crate) with_consume_fuel: bool,
+    /// Do we need to emit consume fuel for locals params
+    pub(crate) with_consume_fuel_for_locals: bool,
     /// Stores and resolves local variable types.
     pub(crate) locals: LocalsRegistry,
 }
 
 impl InstructionTranslator {
-    pub fn new(alloc: FuncTranslatorAllocations, with_consume_fuel: bool) -> Self {
+    pub fn new(
+        alloc: FuncTranslatorAllocations,
+        with_consume_fuel: bool,
+        with_consume_fuel_for_locals: bool,
+    ) -> Self {
         Self {
             reachable: true,
             alloc,
             stack_height: Default::default(),
             with_consume_fuel,
+            with_consume_fuel_for_locals,
             locals: Default::default(),
         }
     }
@@ -244,7 +251,7 @@ impl InstructionTranslator {
         debug_assert_eq!(self.stack_height.max_stack_height(), 0);
         let func_params_len = func_type.params().len();
         self.locals.register_locals(func_params_len as u32);
-        if self.with_consume_fuel {
+        if self.with_consume_fuel_for_locals {
             let locals_count = self.locals.len_registered();
             self.bump_fuel_consumption(|| FuelCosts::fuel_for_locals(locals_count))
                 .unwrap_or_else(|_| panic!("failed to add fuel charging for locals"));

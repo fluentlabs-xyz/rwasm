@@ -459,8 +459,11 @@ impl ModuleParser {
             }
 
             let allocations = take(&mut self.allocations);
-            let mut translator =
-                InstructionTranslator::new(allocations.translation, self.config.consume_fuel);
+            let mut translator = InstructionTranslator::new(
+                allocations.translation,
+                self.config.consume_fuel,
+                self.config.consume_fuel_for_locals,
+            );
             translator.prepare(func_idx)?;
             let signature_index = translator
                 .alloc
@@ -963,6 +966,7 @@ impl ModuleParser {
             func_idx,
             allocations.translation,
             self.config.consume_fuel,
+            self.config.consume_fuel_for_locals,
         )
         .translate()?;
         let _ = replace(&mut self.allocations, allocations);

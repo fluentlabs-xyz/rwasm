@@ -21,12 +21,17 @@ impl<'a> FuncBuilder<'a> {
         func_idx: FuncIdx,
         allocations: FuncTranslatorAllocations,
         with_consume_fuel: bool,
+        with_consume_fuel_for_locals: bool,
     ) -> Self {
         Self {
             func_body,
             validator,
             func_idx,
-            translator: InstructionTranslator::new(allocations, with_consume_fuel),
+            translator: InstructionTranslator::new(
+                allocations,
+                with_consume_fuel,
+                with_consume_fuel_for_locals,
+            ),
             pos: 0,
         }
     }
