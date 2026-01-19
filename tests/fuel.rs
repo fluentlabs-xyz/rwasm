@@ -1,6 +1,4 @@
-use rwasm::{
-    CompilationConfig, ExecutionEngine, FuelCosts, RwasmModule, RwasmStore, Store, Value,
-};
+use rwasm::{CompilationConfig, ExecutionEngine, FuelCosts, RwasmModule, RwasmStore, Store, Value};
 
 #[test]
 fn test_locals_consume_fuel() {
@@ -56,4 +54,4 @@ fn test_locals_consume_fuel() {
         );
         assert_eq!(result[0].i32().unwrap(), 111);
     }
-}A
+}
