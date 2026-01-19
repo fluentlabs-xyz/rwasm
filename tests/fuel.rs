@@ -1,8 +1,6 @@
 use rwasm::{
-    always_failing_syscall_handler, CompilationConfig, ExecutionEngine, FuelConfig, FuelCosts,
-    ImportLinker, RwasmModule, RwasmStore, Store, Value,
+    CompilationConfig, ExecutionEngine, FuelCosts, RwasmModule, RwasmStore, Store, Value,
 };
-use std::time::Instant;
 
 #[test]
 fn test_locals_consume_fuel() {
