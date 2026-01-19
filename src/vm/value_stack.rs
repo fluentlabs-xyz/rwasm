@@ -25,7 +25,7 @@ pub struct ValueStack {
     ///
     /// Extending the value stack beyond this limit during execution
     /// will cause a stack overflow trap.
-    maximum_len: usize,
+    pub maximum_len: usize,
     /// The maximum stack height
     max_stack_height: usize,
 }
@@ -167,7 +167,8 @@ impl ValueStack {
             initial_len <= maximum_len,
             "the initial value stack length is greater than the maximum value stack length",
         );
-        let entries = smallvec![UntypedValue::default(); initial_len];
+        // use maximum_len to prevent reallocations (which cause base_ptr change)
+        let entries = smallvec![UntypedValue::default(); maximum_len];
         Self {
             entries,
             stack_ptr: 0,
