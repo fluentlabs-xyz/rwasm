@@ -186,16 +186,23 @@ pub struct InstructionTranslator {
     pub(crate) with_consume_fuel: bool,
     /// Stores and resolves local variable types.
     pub(crate) locals: LocalsRegistry,
+    /// Enable translation with optimized code snippets
+    pub(crate) with_code_snippets: bool,
 }
 
 impl InstructionTranslator {
-    pub fn new(alloc: FuncTranslatorAllocations, with_consume_fuel: bool) -> Self {
+    pub fn new(
+        alloc: FuncTranslatorAllocations,
+        with_consume_fuel: bool,
+        with_code_snippets: bool,
+    ) -> Self {
         Self {
             reachable: true,
             alloc,
             stack_height: Default::default(),
             with_consume_fuel,
             locals: Default::default(),
+            with_code_snippets,
         }
     }
 
@@ -906,8 +913,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             }
             _ => {}
         }
-        let fuel_ix = self.push_consume_fuel_empty();
         if self.is_fuel_metering_enabled() && self.alloc.control_frames.len() != 0 {
+            let fuel_ix = self.push_consume_fuel_empty();
             let mut frame = self.alloc.control_frames.pop_frame();
             frame.update_consume_fuel_instr(fuel_ix);
             self.alloc.control_frames.push_frame(frame);
@@ -992,8 +999,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 }
             }
 
-            let fuel_ix = builder.push_consume_fuel_empty();
             if builder.is_fuel_metering_enabled() {
+                let fuel_ix = builder.push_consume_fuel_empty();
                 let mut frame = builder.alloc.control_frames.pop_frame();
                 frame.update_consume_fuel_instr(fuel_ix);
                 builder.alloc.control_frames.push_frame(frame);
@@ -4018,6 +4025,10 @@ impl InstructionTranslator {
     }
 
     fn translate_to_snippet_call(&mut self, snippet: Snippet) -> Result<(), CompilationError> {
+        if !self.with_code_snippets {
+            return self.translate_binary(snippet.emitter(), snippet.max_stack_height());
+        }
+
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder
