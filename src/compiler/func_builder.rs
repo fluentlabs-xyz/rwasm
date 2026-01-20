@@ -21,6 +21,7 @@ impl<'a> FuncBuilder<'a> {
         func_idx: FuncIdx,
         allocations: FuncTranslatorAllocations,
         with_consume_fuel: bool,
+        with_code_snippets: bool,
         with_consume_fuel_for_locals: bool,
     ) -> Self {
         Self {
@@ -30,6 +31,7 @@ impl<'a> FuncBuilder<'a> {
             translator: InstructionTranslator::new(
                 allocations,
                 with_consume_fuel,
+                with_code_snippets,
                 with_consume_fuel_for_locals,
             ),
             pos: 0,

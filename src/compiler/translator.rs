@@ -188,12 +188,15 @@ pub struct InstructionTranslator {
     pub(crate) with_consume_fuel_for_locals: bool,
     /// Stores and resolves local variable types.
     pub(crate) locals: LocalsRegistry,
+    /// Enable translation with optimized code snippets
+    pub(crate) with_code_snippets: bool,
 }
 
 impl InstructionTranslator {
     pub fn new(
         alloc: FuncTranslatorAllocations,
         with_consume_fuel: bool,
+        with_code_snippets: bool,
         with_consume_fuel_for_locals: bool,
     ) -> Self {
         Self {
@@ -201,8 +204,9 @@ impl InstructionTranslator {
             alloc,
             stack_height: Default::default(),
             with_consume_fuel,
-            with_consume_fuel_for_locals,
             locals: Default::default(),
+            with_code_snippets,
+            with_consume_fuel_for_locals,
         }
     }
 

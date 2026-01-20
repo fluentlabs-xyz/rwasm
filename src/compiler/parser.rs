@@ -246,6 +246,9 @@ impl ModuleParser {
     }
 
     pub fn emit_snippets(&mut self) {
+        if !self.config.code_snippets {
+            return;
+        }
         let mut emitted_snippets: HashMap<Snippet, FuncIdx> = HashMap::new();
 
         let snippet_calls = self.allocations.translation.snippet_calls.clone();
@@ -462,6 +465,7 @@ impl ModuleParser {
             let mut translator = InstructionTranslator::new(
                 allocations.translation,
                 self.config.consume_fuel,
+                self.config.code_snippets,
                 self.config.consume_fuel_for_locals,
             );
             translator.prepare(func_idx)?;
@@ -966,6 +970,7 @@ impl ModuleParser {
             func_idx,
             allocations.translation,
             self.config.consume_fuel,
+            self.config.code_snippets,
             self.config.consume_fuel_for_locals,
         )
         .translate()?;
