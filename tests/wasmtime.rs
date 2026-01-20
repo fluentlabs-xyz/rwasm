@@ -1,9 +1,8 @@
 use rwasm::{
-    always_failing_syscall_handler, compile_wasmtime_module, CompilationConfig, ExecutionEngine,
-    FuelConfig, ImportLinker, RwasmModule, RwasmStore, Strategy, TrapCode, Value, WasmtimeStore,
+    always_failing_syscall_handler, compile_wasmtime_module, CompilationConfig, FuelConfig,
+    ImportLinker, Strategy, Value,
 };
 use std::sync::Arc;
-use wasmtime::Engine;
 
 #[test]
 fn test_10001_instances_in_a_row() {

@@ -6,9 +6,11 @@ use crate::{
 use alloc::{sync::Arc, vec::Vec};
 use num_traits::FromPrimitive;
 use smallvec::SmallVec;
-use wasmi::core::{TableError, UntypedVal};
-use wasmi::errors::{ErrorKind, InstantiationError};
-use wasmi::{AsContext, AsContextMut, Global, Mutability, StackLimits, Val};
+use wasmi::{
+    core::{TableError, UntypedVal},
+    errors::{ErrorKind, InstantiationError},
+    AsContext, AsContextMut, Global, Mutability, StackLimits, Val,
+};
 use wasmparser::ValType;
 
 pub type WasmiModule = wasmi::Module;
@@ -286,6 +288,7 @@ impl<T: 'static + Send + Sync> WasmiStore<T> {
                     wasmi::Val::ExternRef(wasmi::ExternRef::from(UntypedVal::from(value.0)))
                 }
                 // this should never happen because rWasm rejects such binaries during compilation
+                #[allow(unreachable_patterns)]
                 _ => unreachable!("not supported type: {:?}", value),
             };
             buffer.push(value);

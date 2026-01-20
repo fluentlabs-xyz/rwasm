@@ -3,9 +3,9 @@ mod engine;
 #[cfg(test)]
 pub use crate::wasmtime::engine::wasmtime_new_engine_with_linker;
 use crate::{
-    wasmtime::engine::wasmtime_engine_with_linker, Caller, CompilationConfig, ExternRef,
-    FuelConfig, FuncRef, ImportLinker, Store, SyscallHandler, TrapCode, TypedCaller, UntypedValue,
-    ValType, Value, F32, F64,
+    wasmtime::engine::wasmtime_engine_with_linker, Caller, CompilationConfig, FuelConfig,
+    ImportLinker, Store, SyscallHandler, TrapCode, TypedCaller, UntypedValue, ValType, Value, F32,
+    F64,
 };
 use futures::{channel::oneshot, future::Either, task::noop_waker};
 use smallvec::SmallVec;
@@ -19,7 +19,6 @@ use std::{
 };
 use wasmtime::{
     AsContext, AsContextMut, Extern, Global, GlobalType, StoreLimits, StoreLimitsBuilder,
-    WasmParams,
 };
 
 pub type WasmtimeModule = wasmtime::Module;
@@ -206,6 +205,7 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
                     }
                 }
                 // this should never happen because rWasm rejects such binaries during compilation
+                #[allow(unreachable_patterns)]
                 _ => unreachable!("wasmtime: not supported type: {:?}", value),
             };
             buffer.push(value);
@@ -276,7 +276,7 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
                         wasmtime::Val::F32(value) => Value::F32(F32::from_bits(value)),
                         wasmtime::Val::F64(value) => Value::F64(F64::from_bits(value)),
                         #[cfg(feature = "e2e")]
-                        wasmtime::Val::FuncRef(value) => Value::FuncRef(FuncRef::new(0)),
+                        wasmtime::Val::FuncRef(value) => Value::FuncRef(crate::FuncRef::new(0)),
                         #[cfg(feature = "e2e")]
                         wasmtime::Val::ExternRef(value) => {
                             let value: Option<&u32> = value
@@ -284,7 +284,9 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
                                     ext_ref.data(self.store.as_mut().unwrap()).ok().flatten()
                                 })
                                 .and_then(|v| v.downcast_ref());
-                            Value::ExternRef(ExternRef::new(value.map(|v| *v).unwrap_or_default()))
+                            Value::ExternRef(crate::ExternRef::new(
+                                value.map(|v| *v).unwrap_or_default(),
+                            ))
                         }
                         _ => unreachable!("wasmtime: not supported type: {:?}", x),
                     };

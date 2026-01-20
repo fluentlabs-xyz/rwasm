@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(unused_crate_dependencies)]
-#![allow(unused_variables)]
+#![allow(unused_variables, dead_code)]
 #![recursion_limit = "750"]
 
 mod compiler;
