@@ -12,7 +12,8 @@ fn test_locals_consume_fuel() {
         (16, 0),
         (32, 0),
         (1000, 0),
-        // (1001, 0), //function params size is out of bounds (RwasmModule::compile fails)
+        // locals_count>1000 -> 'function params size is out of bounds' (RwasmModule::compile fails)
+        // (1001, 0),
     ];
     test_cases
         .iter_mut()

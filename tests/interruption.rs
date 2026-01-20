@@ -87,6 +87,7 @@ fn test_interrupted_call_rwasm_with_syscall() {
     let (rwasm_module, _) = RwasmModule::compile(
         CompilationConfig::default()
             .with_builtins_consume_fuel(true)
+            .with_consume_fuel_for_locals(false)
             .with_import_linker(import_linker.clone())
             .with_entrypoint_name("main".into()),
         &wasm_binary,
@@ -103,7 +104,7 @@ fn test_interrupted_call_rwasm_with_syscall() {
     engine
         .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap();
-    assert_eq!(store.fuel_consumed(), 1 + 2 + 10 * 5 + 7 + 1);
+    assert_eq!(store.fuel_consumed(), 1 + 2 + 10 * 5 + 7);
 }
 
 #[test]
