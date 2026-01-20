@@ -25,7 +25,7 @@ pub struct ValueStack {
     ///
     /// Extending the value stack beyond this limit during execution
     /// will cause a stack overflow trap.
-    pub maximum_len: usize,
+    maximum_len: usize,
     /// The maximum stack height
     max_stack_height: usize,
 }

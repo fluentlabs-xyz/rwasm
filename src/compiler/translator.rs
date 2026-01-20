@@ -4034,6 +4034,10 @@ impl InstructionTranslator {
     }
 
     fn translate_to_snippet_call(&mut self, snippet: Snippet) -> Result<(), CompilationError> {
+        if !self.with_code_snippets {
+            return self.translate_binary(snippet.emitter(), snippet.max_stack_height());
+        }
+
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
             builder
