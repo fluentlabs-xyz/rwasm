@@ -283,7 +283,7 @@ impl TestContext<'_> {
                 opcode: Some(Opcode::Call(u32::MAX)),
             })
             .with_consume_fuel(true)
-            .with_consume_fuel_for_locals(false);
+            .with_consume_fuel_for_params_and_locals(false);
 
         let strategy = match mode {
             EngineMode::Rwasm => {

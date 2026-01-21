@@ -22,7 +22,7 @@ impl<'a> FuncBuilder<'a> {
         allocations: FuncTranslatorAllocations,
         with_consume_fuel: bool,
         with_code_snippets: bool,
-        with_consume_fuel_for_locals: bool,
+        consume_fuel_for_params_and_locals: bool,
     ) -> Self {
         Self {
             func_body,
@@ -32,7 +32,7 @@ impl<'a> FuncBuilder<'a> {
                 allocations,
                 with_consume_fuel,
                 with_code_snippets,
-                with_consume_fuel_for_locals,
+                consume_fuel_for_params_and_locals,
             ),
             pos: 0,
         }
@@ -54,6 +54,18 @@ impl<'a> FuncBuilder<'a> {
     }
 
     fn translate_locals(&mut self) -> Result<(), CompilationError> {
+        if self.translator.consume_fuel_for_params_and_locals {
+            let mut locals_reader = self.func_body.get_locals_reader()?;
+            let mut total_body_locals: u32 = 0;
+            for _ in 0..locals_reader.get_count() {
+                let (amount, _) = locals_reader.read()?;
+                total_body_locals = total_body_locals.saturating_add(amount);
+            }
+            let cost = FuelCosts::fuel_for_locals(total_body_locals);
+            if cost > 0 {
+                self.translator.bump_fuel_consumption(|| cost)?;
+            }
+        }
         // translate locals
         let mut locals_reader = self.func_body.get_locals_reader()?;
         let locals_count = locals_reader.get_count() as usize;
