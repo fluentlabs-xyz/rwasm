@@ -341,6 +341,10 @@ impl Opcode {
         }
     }
 
+    pub fn is_ecall_instruction(self) -> bool {
+        false
+    }
+
     pub fn is_branch_instruction(self) -> bool {
         match self {
             Opcode::Br(_) | Opcode::BrIfEqz(_) | Opcode::BrIfNez(_) | Opcode::BrTable(_) => true,
