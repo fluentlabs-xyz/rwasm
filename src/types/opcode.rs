@@ -354,6 +354,13 @@ impl Opcode {
         }
     }
 
+    pub fn is_fuel_instruction(self) -> bool {
+        match self {
+            Opcode::ConsumeFuel(_) | Opcode::ConsumeFuelStack => true,
+            _ => false,
+        }
+    }
+
     pub fn is_halt(self) -> bool {
         match self {
             _ => false,
@@ -544,6 +551,7 @@ impl Opcode {
     pub fn is_with_zero_params(&self) -> bool {
         match self {
             Opcode::Drop
+            | Opcode::ConsumeFuel(_)
             | Opcode::LocalGet(_)
             | Opcode::GlobalGet(_)
             | Opcode::I32Const(_)
@@ -574,7 +582,6 @@ impl Opcode {
             | Opcode::ReturnCallIndirect(_)
             | Opcode::DataDrop(_)
             | Opcode::ElemDrop(_)
-            | Opcode::ConsumeFuel(_)
             | Opcode::ConsumeFuelStack
             | Opcode::StackCheck(_)
             | Opcode::LocalTee(_)

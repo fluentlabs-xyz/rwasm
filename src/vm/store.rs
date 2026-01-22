@@ -123,6 +123,11 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         }
     }
 
+    pub fn with_fuel_config(mut self, fuel_config: FuelConfig) -> Self {
+        self.fuel_config = fuel_config;
+        self
+    }
+
     /// Resets the state of the current execution context.
     pub fn reset(&mut self, keep_flags: bool) {
         // reset consumed fuel to 0
@@ -154,6 +159,10 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
 
     pub fn fuel_consumed(&self) -> u64 {
         self.consumed_fuel
+    }
+
+    pub fn fuel_limit(&self) -> u64 {
+        self.fuel_config.fuel_limit.unwrap_or(u64::MAX)
     }
 
     pub fn set_syscall_handler(&mut self, handler: SyscallHandler<T>) {
