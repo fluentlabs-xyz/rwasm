@@ -304,9 +304,7 @@ impl Opcode {
             | Opcode::I32ShrS
             | Opcode::I32ShrU
             | Opcode::I32Rotl
-            | Opcode::I32Rotr
-            | Opcode::I32Extend8S
-            | Opcode::I32Extend16S => true,
+            | Opcode::I32Rotr => true,
             _ => false,
         }
     }
@@ -339,16 +337,6 @@ impl Opcode {
     pub fn is_memory_store_instruction(self) -> bool {
         match self {
             Opcode::I32Store8(_) | Opcode::I32Store16(_) | Opcode::I32Store(_) => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_ecall_instruction(self) -> bool {
-        match self {
-            Opcode::Call(_)
-            | Opcode::ReturnCall(_)
-            | Opcode::TableInit(_)
-            | Opcode::TableGrow(_) => true,
             _ => false,
         }
     }
@@ -417,7 +405,7 @@ impl Opcode {
 
     pub fn is_nullary(&self) -> bool {
         match self {
-            Opcode::Br(_) | Opcode::I32Const(_) => true,
+            Opcode::Br(_) | Opcode::I32Const(_) | Opcode::Drop => true,
             _ => false,
         }
     }
@@ -493,6 +481,13 @@ impl Opcode {
         }
     }
 
+    pub fn is_extend_instruction(self) -> bool {
+        match self {
+            Opcode::I32Extend16S | Opcode::I32Extend8S => true,
+            _ => false,
+        }
+    }
+
     #[inline]
     pub fn aux_value(&self) -> u32 {
         match self {
@@ -544,6 +539,181 @@ impl Opcode {
     pub fn code(&self) -> u32 {
         // TODO(wangyao): "is it safe?"
         unsafe { *<*const _>::from(self).cast::<u16>() as u32 }
+    }
+
+    pub fn is_with_zero_params(&self) -> bool {
+        match self {
+            Opcode::Drop
+            | Opcode::LocalGet(_)
+            | Opcode::GlobalGet(_)
+            | Opcode::I32Const(_)
+            | Opcode::MemorySize
+            | Opcode::TableSize(_)
+            | Opcode::RefFunc(_)
+            | Opcode::Br(_)
+            | Opcode::Unreachable
+            | Opcode::Trap(_)
+            | Opcode::SignatureCheck(_)
+            | Opcode::Return
+            | Opcode::Call(_)
+            | Opcode::CallInternal(_)
+            | Opcode::ReturnCall(_)
+            | Opcode::ReturnCallInternal(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_with_one_param(&self) -> bool {
+        match self {
+            Opcode::LocalSet(_)
+            | Opcode::GlobalSet(_)
+            | Opcode::BrIfEqz(_)
+            | Opcode::BrIfNez(_)
+            | Opcode::BrTable(_)
+            | Opcode::CallIndirect(_)
+            | Opcode::ReturnCallIndirect(_)
+            | Opcode::DataDrop(_)
+            | Opcode::ElemDrop(_)
+            | Opcode::ConsumeFuel(_)
+            | Opcode::ConsumeFuelStack
+            | Opcode::StackCheck(_)
+            | Opcode::LocalTee(_)
+            | Opcode::MemoryGrow
+            | Opcode::I32Load(_)
+            | Opcode::I32Load8S(_)
+            | Opcode::I32Load8U(_)
+            | Opcode::I32Load16S(_)
+            | Opcode::I32Load16U(_)
+            | Opcode::TableGet(_)
+            | Opcode::I32Eqz
+            | Opcode::I32Clz
+            | Opcode::I32Ctz
+            | Opcode::I32Popcnt
+            | Opcode::I32WrapI64
+            | Opcode::I32Extend8S
+            | Opcode::I32Extend16S => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_with_two_params(&self) -> bool {
+        match self {
+            Opcode::I32Store(_)
+            | Opcode::I32Store8(_)
+            | Opcode::I32Store16(_)
+            | Opcode::TableSet(_)
+            | Opcode::TableGrow(_)
+            | Opcode::I32Eq
+            | Opcode::I32Ne
+            | Opcode::I32LtS
+            | Opcode::I32LtU
+            | Opcode::I32GtS
+            | Opcode::I32GtU
+            | Opcode::I32LeS
+            | Opcode::I32LeU
+            | Opcode::I32GeS
+            | Opcode::I32GeU
+            | Opcode::I32Add
+            | Opcode::I32Sub
+            | Opcode::I32Mul
+            | Opcode::I32DivS
+            | Opcode::I32DivU
+            | Opcode::I32RemS
+            | Opcode::I32RemU
+            | Opcode::I32And
+            | Opcode::I32Or
+            | Opcode::I32Xor
+            | Opcode::I32Shl
+            | Opcode::I32ShrS
+            | Opcode::I32ShrU
+            | Opcode::I32Rotl
+            | Opcode::I32Rotr
+            | Opcode::I32Mul64
+            | Opcode::I32Add64 => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_with_three_params(&self) -> bool {
+        match self {
+            Opcode::MemoryCopy
+            | Opcode::MemoryFill
+            | Opcode::MemoryInit(_)
+            | Opcode::TableCopy(_, _)
+            | Opcode::TableInit(_)
+            | Opcode::Select => true,
+            _ => false,
+        }
+    }
+
+    pub fn has_result(&self) -> bool {
+        match self {
+            // ----------------------------------------------------------------
+            // WITH ZERO PARAMS WITH RESULT (Stack: [] -> [val])
+            // ----------------------------------------------------------------
+            Opcode::LocalGet(_)
+            | Opcode::GlobalGet(_)
+            | Opcode::I32Const(_)
+            | Opcode::MemorySize
+            | Opcode::TableSize(_)
+            | Opcode::TableGrow(_)
+            | Opcode::RefFunc(_)
+
+            // ----------------------------------------------------------------
+            // WITH ONE PARAM WITH RESULT (Stack: [val] -> [res])
+            // ----------------------------------------------------------------
+            | Opcode::MemoryGrow
+            | Opcode::I32Load(_)
+            | Opcode::I32Load8S(_)
+            | Opcode::I32Load8U(_)
+            | Opcode::I32Load16S(_)
+            | Opcode::I32Load16U(_)
+            | Opcode::TableGet(_)
+            | Opcode::I32Eqz
+            | Opcode::I32Clz
+            | Opcode::I32Ctz
+            | Opcode::I32Popcnt
+            | Opcode::I32WrapI64
+            | Opcode::I32Extend8S
+            | Opcode::I32Extend16S
+
+            // ----------------------------------------------------------------
+            // WITH TWO PARAMS WITH RESULT (Stack: [val1, val2] -> [res])
+            // ----------------------------------------------------------------
+            | Opcode::I32Eq
+            | Opcode::I32Ne
+            | Opcode::I32LtS
+            | Opcode::I32LtU
+            | Opcode::I32GtS
+            | Opcode::I32GtU
+            | Opcode::I32LeS
+            | Opcode::I32LeU
+            | Opcode::I32GeS
+            | Opcode::I32GeU
+            | Opcode::I32Add
+            | Opcode::I32Sub
+            | Opcode::I32Mul
+            | Opcode::I32DivS
+            | Opcode::I32DivU
+            | Opcode::I32RemS
+            | Opcode::I32RemU
+            | Opcode::I32And
+            | Opcode::I32Or
+            | Opcode::I32Xor
+            | Opcode::I32Shl
+            | Opcode::I32ShrS
+            | Opcode::I32ShrU
+            | Opcode::I32Rotl
+            | Opcode::I32Rotr
+            | Opcode::I32Mul64
+            | Opcode::I32Add64
+
+            // ----------------------------------------------------------------
+            // WITH THREE PARAMS WITH RESULT (Stack: [a, b, c] -> [res])
+            // ----------------------------------------------------------------
+            | Opcode::Select => true,
+            _ => false,
+        }
     }
 }
 

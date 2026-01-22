@@ -5,59 +5,20 @@ use crate::{
 
 impl Opcode {
     pub fn opcode_stack_read(self) -> u32 {
-        if self.is_binary_instruction() {
-            return 2;
-        } else if self.is_unary_instruction() {
-            return 1;
-        } else if self.is_nullary() {
-            return 0;
-        } else if self.is_memory_load_instruction() {
-            return 1;
-        } else if self.is_memory_store_instruction() {
-            return 2;
-        } else if let Opcode::LocalTee(_) = self {
-            return 1;
-        } else if let Opcode::LocalSet(_) = self {
-            return 1;
-        } else if self.is_branch_instruction() {
-            if let Opcode::BrIfEqz(_) = self {
-                return 1;
-            } else if let Opcode::BrIfNez(_) = self {
-                return 1;
-            } else if let Opcode::BrTable(_) = self {
-                return 1;
-            }
-        }
-        if self.is_64b_op() {
-            return 2;
-        } else if self.is_table_instruction() {
-            // if let Opcode::TableGrow(_) = self {
-            //     return 2;
-            // }
-            return 0;
-        } else if let Opcode::CallIndirect(_) = self {
-            return 1;
-        }
-
-        0
-    }
-    pub fn opcode_stack_write(self) -> bool {
-        if self.is_binary_instruction() || self.is_unary_instruction() | self.is_const_instruction()
-        {
-            return true;
-        }
-        if self.is_binary_instruction() {
-            return false;
-        }
-        if self.is_memory_instruction() {
-            self.is_memory_load_instruction()
-        } else if let Opcode::LocalGet(_) = self {
-            true
-        // } else if let Opcode::TableGrow(_) = self {
-        //     true
+        if self.is_with_zero_params() {
+            0
+        } else if self.is_with_one_param() {
+            1
+        } else if self.is_with_two_params() {
+            2
         } else {
-            false
+            // In the case of three parameters, we read two in the general read and the third separately.
+            2
         }
+    }
+
+    pub fn opcode_stack_write(self) -> bool {
+        self.has_result()
     }
 }
 

@@ -24,85 +24,54 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             .or_insert_with(TableEntity::new);
         let result = table.grow_untyped(delta, init);
         self.sp.push_as(result);
+
         #[cfg(feature = "tracing")]
         {
             use crate::{
-                event::FatOpEvent, mem::MemoryLocalEvent, mem_index::TypedAddress, N_MAX_TABLE_SIZE,
+                mem_index::{TypedAddress, UNIT},
+                InstrStateExtension, TableGrowStateExtension, N_MAX_TABLE_SIZE,
             };
-            use hashbrown::HashMap;
 
-            let fat_op = self
+            let mut instr_state = self.store.tracer.logs.pop().unwrap();
+
+            let dst_address = instr_state.sp + 2 * UNIT;
+
+            let table_size_read_record = self
                 .store
                 .tracer
-                .logs
-                .last()
-                .unwrap()
-                .fat_op
-                .clone()
-                .unwrap();
+                .mr(TypedAddress::TableSize(table_idx as u32).to_virtual_addr());
 
-            match fat_op {
-                FatOpEvent::TableGrow(mut table_grow_event) => {
-                    table_grow_event.init = init.into();
-                    table_grow_event.delta = delta.into();
-                    let mut local_memory_access: HashMap<u32, MemoryLocalEvent> =
-                        HashMap::default();
+            let mut state_extension = TableGrowStateExtension {
+                dst_write_records: Vec::with_capacity(delta as usize),
+                table_size_read_record,
+                table_size_write_record: None,
+            };
 
-                    for idx in 0..table_grow_event.local_mem_access.len() {
-                        local_memory_access.insert(
-                            table_grow_event.local_mem_access_addr[idx],
-                            table_grow_event.local_mem_access[idx],
+            self.store.tracer.state.next_cycle();
+
+            if delta != 0 {
+                if result != u32::MAX {
+                    state_extension.table_size_write_record = Some(self.store.tracer.mw(
+                        TypedAddress::TableSize(table_idx as u32).to_virtual_addr(),
+                        result + delta,
+                    ));
+
+                    for offset in 0..delta {
+                        let dst_addr = TypedAddress::Table(
+                            table_idx as u32 * N_MAX_TABLE_SIZE + result + offset,
                         );
+                        let write_record = self
+                            .store
+                            .tracer
+                            .mw(dst_addr.to_virtual_addr(), init.into());
+                        state_extension.dst_write_records.push(write_record);
                     }
-
-                    table_grow_event.table_size_read_acess =
-                        self.store.tracer.mr_with_local_access(
-                            TypedAddress::TableSize(table_idx as u32).to_virtual_addr(),
-                            Some(&mut local_memory_access),
-                        );
-
-                    self.store.tracer.state.next_cycle();
-
-                    if delta != 0 {
-                        table_grow_event.result_write_access =
-                            self.store.tracer.mw_with_local_access(
-                                table_grow_event.sp,
-                                result,
-                                Some(&mut local_memory_access),
-                            );
-
-                        if result != u32::MAX {
-                            table_grow_event.table_size_write_acess =
-                                self.store.tracer.mw_with_local_access(
-                                    TypedAddress::TableSize(table_idx as u32).to_virtual_addr(),
-                                    result + delta,
-                                    Some(&mut local_memory_access),
-                                );
-
-                            for offset in 0..delta {
-                                let dst_addr = TypedAddress::Table(
-                                    table_idx as u32 * N_MAX_TABLE_SIZE + result + offset,
-                                );
-                                let write_record = self.store.tracer.mw_with_local_access(
-                                    dst_addr.to_virtual_addr(),
-                                    init.into(),
-                                    Some(&mut local_memory_access),
-                                );
-                                table_grow_event.memory_write_acess.push(write_record);
-                            }
-                        }
-                    }
-
-                    table_grow_event.table_idx = table_idx as u32;
-                    table_grow_event.local_mem_access =
-                        local_memory_access.iter().map(|(_, v)| (*v)).collect();
-                    table_grow_event.local_mem_access_addr =
-                        local_memory_access.iter().map(|(k, v)| (*k)).collect();
-                    self.store.tracer.logs.last_mut().unwrap().fat_op =
-                        Some(FatOpEvent::TableGrow(table_grow_event));
                 }
-                _ => unreachable!(),
             }
+
+            instr_state.extension = Some(InstrStateExtension::TableGrow(state_extension));
+
+            self.store.tracer.logs.push(instr_state);
         }
         self.ip.add(1);
         Ok(())
@@ -225,69 +194,41 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         #[cfg(feature = "tracing")]
         {
             use crate::{
-                event::FatOpEvent, mem::MemoryLocalEvent, mem_index::TypedAddress, N_MAX_TABLE_SIZE,
+                mem_index::{TypedAddress, UNIT},
+                InstrStateExtension, TableInitStateExtension, N_MAX_TABLE_SIZE,
             };
-            use hashbrown::HashMap;
 
-            let fat_op = self
-                .store
-                .tracer
-                .logs
-                .last()
-                .unwrap()
-                .fat_op
-                .clone()
-                .unwrap();
+            let mut instr_state = self.store.tracer.logs.pop().unwrap();
 
-            match fat_op {
-                FatOpEvent::TableInit(mut table_init_event) => {
-                    table_init_event.s = s.into();
-                    table_init_event.d = d.into();
-                    table_init_event.n = n.into();
-                    let mut local_memory_access: HashMap<u32, MemoryLocalEvent> =
-                        HashMap::default();
-                    for idx in 0..table_init_event.local_mem_access.len() {
-                        local_memory_access.insert(
-                            table_init_event.local_mem_access_addr[idx],
-                            table_init_event.local_mem_access[idx],
-                        );
-                    }
-                    for offset in 0..len {
-                        let src_addr = TypedAddress::Element(src_index + offset);
+            let dst_address = instr_state.sp + 3 * UNIT;
 
-                        let read_record = self.store.tracer.mr_with_local_access(
-                            src_addr.to_virtual_addr(),
-                            Some(&mut local_memory_access),
-                        );
-                        let value = read_record.value;
-                        table_init_event.memory_read_access.push(read_record);
-                    }
-                    self.store.tracer.state.next_cycle();
-                    for offset in 0..len {
-                        let value = table_init_event.memory_read_access[offset as usize].value;
-                        let dst_addr = TypedAddress::Table(
-                            table_idx as u32 * N_MAX_TABLE_SIZE + dst_index + offset,
-                        );
-                        let write_record = self.store.tracer.mw_with_local_access(
-                            dst_addr.to_virtual_addr(),
-                            value,
-                            Some(&mut local_memory_access),
-                        );
-                        table_init_event.memory_write_acess.push(write_record);
-                    }
+            let mut state_extension = TableInitStateExtension {
+                dst_index_record: self.store.tracer.mr(dst_address),
+                table_idx: table_idx as u32,
+                element_segment_idx,
+                src_read_records: Vec::new(),
+                dst_write_records: Vec::new(),
+            };
 
-                    table_init_event.table_idx = table_idx as u32;
-                    table_init_event.local_mem_access =
-                        local_memory_access.iter().map(|(_, v)| (*v)).collect();
-                    table_init_event.local_mem_access_addr =
-                        local_memory_access.iter().map(|(k, v)| (*k)).collect();
-                    self.store.tracer.logs.last_mut().unwrap().fat_op =
-                        Some(FatOpEvent::TableInit(table_init_event));
-                }
-                _ => {
-                    unreachable!();
-                }
+            for offset in 0..len {
+                let src_addr = TypedAddress::Element(src_index + offset);
+
+                let read_record = self.store.tracer.mr(src_addr.to_virtual_addr());
+                state_extension.src_read_records.push(read_record);
             }
+            self.store.tracer.state.next_cycle();
+            for offset in 0..len {
+                let value = state_extension.src_read_records[offset as usize].value;
+
+                let dst_addr =
+                    TypedAddress::Table(table_idx as u32 * N_MAX_TABLE_SIZE + dst_index + offset);
+                let write_record = self.store.tracer.mw(dst_addr.to_virtual_addr(), value);
+                state_extension.dst_write_records.push(write_record);
+            }
+
+            instr_state.extension = Some(InstrStateExtension::TableInit(state_extension));
+
+            self.store.tracer.logs.push(instr_state);
         }
 
         self.ip.add(2);
