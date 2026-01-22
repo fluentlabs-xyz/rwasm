@@ -804,7 +804,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 let func_type = self
                     .alloc
                     .func_type_registry
-                    .resolve_func_type(func_type_idx);
+                    .resolve_original_func_type(func_type_idx);
                 func_type.params().iter().for_each(|param| {
                     if *param == ValType::I64 || *param == ValType::F64 {
                         self.stack_height.push_n(2);
