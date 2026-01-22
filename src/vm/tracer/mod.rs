@@ -234,27 +234,6 @@ impl Tracer {
         };
         opcode_state.memory_access = self.record_mr(opcode, sp);
 
-        if matches!(opcode, Opcode::ConsumeFuel(_) | Opcode::ConsumeFuelStack) {
-            let consumed_fuel_record_low = self.mr(TypedAddress::from_reserved_addr(
-                ReservedAddrEnum::ConsumedFuelLow,
-            )
-            .to_virtual_addr());
-            opcode_state.memory_access.arg1_record =
-                Some(MemoryRecordEnum::Read(consumed_fuel_record_low));
-            let consumed_fuel_record_hi = self.mr(TypedAddress::from_reserved_addr(
-                ReservedAddrEnum::ConsumedFuelHi,
-            )
-            .to_virtual_addr());
-            opcode_state.memory_access.arg1_hi_record =
-                Some(MemoryRecordEnum::Read(consumed_fuel_record_hi));
-            if opcode == Opcode::ConsumeFuelStack {
-                let stack_fuel_record = self.mr(sp);
-                opcode_state.memory_access.arg2_record =
-                    Some(MemoryRecordEnum::Read(stack_fuel_record));
-                opcode_state.memory_access.arg2_addr = Some(TypedAddress::from_stack_vaddr(sp));
-            }
-        }
-
         self.logs.push(opcode_state);
     }
 
