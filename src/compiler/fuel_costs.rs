@@ -22,7 +22,9 @@ impl FuelCosts {
             return 0;
         }
         NonZeroU32::new(items_per_fuel)
-            .map(|items_per_fuel_nz| (len_items + items_per_fuel - 1) / items_per_fuel_nz)
+            .map(|items_per_fuel_nz| {
+                (len_items.saturating_add(items_per_fuel) - 1) / items_per_fuel_nz
+            })
             .unwrap_or(0)
     }
 
