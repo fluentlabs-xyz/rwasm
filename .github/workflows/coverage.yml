@@ -43,7 +43,7 @@ jobs:
           cargo install cargo-llvm-cov grcov
           make coverage
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v5.5.1
+        uses: codecov/codecov-action@v5.5.2
         with:
           files: ./lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
