@@ -1,13 +1,6 @@
 use crate::{
-    compiler::drop_keep::DropKeep,
-    BASE_FUEL_COST,
-    CALL_FUEL_COST,
-    DROP_KEEP_PER_FUEL,
-    ENTITY_FUEL_COST,
-    LOAD_FUEL_COST,
-    LOCALS_PER_FUEL,
-    MEMORY_BYTES_PER_FUEL,
-    STORE_FUEL_COST,
+    compiler::drop_keep::DropKeep, BASE_FUEL_COST, CALL_FUEL_COST, DROP_KEEP_PER_FUEL,
+    ENTITY_FUEL_COST, LOAD_FUEL_COST, LOCALS_PER_FUEL, MEMORY_BYTES_PER_FUEL, STORE_FUEL_COST,
     TABLE_ELEMS_PER_FUEL,
 };
 use core::num::NonZeroU32;
@@ -25,8 +18,11 @@ impl FuelCosts {
 
     /// Returns the fuel consumption of the number of items with costs per items.
     pub fn costs_per(len_items: u32, items_per_fuel: u32) -> u32 {
+        if len_items == 0 {
+            return 0;
+        }
         NonZeroU32::new(items_per_fuel)
-            .map(|items_per_fuel| len_items / items_per_fuel)
+            .map(|items_per_fuel_nz| (len_items + items_per_fuel - 1) / items_per_fuel_nz)
             .unwrap_or(0)
     }
 
