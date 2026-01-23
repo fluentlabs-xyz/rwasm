@@ -427,14 +427,12 @@ fn map_wasmi_error(err: wasmi::Error) -> TrapCode {
             .unwrap_or_else(|| unreachable!("an impossible wasmi error happened: {:?}", err))
     } else if let ErrorKind::Table(table_err) = err.kind() {
         match table_err {
-            TableError::CopyOutOfBounds => TrapCode::CopyOutOfBounds,
+            TableError::CopyOutOfBounds => TrapCode::MemoryOutOfBounds,
             err => unreachable!("an impossible wasmi error happened: {:?}", err),
         }
     } else if let ErrorKind::Instantiation(instantiation_err) = err.kind() {
         match instantiation_err {
-            InstantiationError::ElementSegmentDoesNotFit { .. } => {
-                TrapCode::ElementSegmentDoesNotFit
-            }
+            InstantiationError::ElementSegmentDoesNotFit { .. } => TrapCode::TableOutOfBounds,
             err => unreachable!("an impossible wasmi error happened: {:?}", err),
         }
     } else {

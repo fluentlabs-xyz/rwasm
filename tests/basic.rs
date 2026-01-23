@@ -140,3 +140,43 @@ fn test_bulk_bench() {
 
 #[test]
 fn test_reduce_binary() {}
+
+#[test]
+fn test_multi_value_params() {
+    let wasm_binary = wat::parse_str(
+        r#"
+(module
+  (type (;0;) (func (result i64 i64)))
+  (global (;0;) (mut i32) i32.const 1000)
+  (export "\u{a}++" (func 0))
+  (func (export "main") (;0;) (type 0) (result i64 i64)
+    global.get 0
+    i32.eqz
+    if ;; label = @1
+      unreachable
+    end
+    global.get 0
+    i32.const 1
+    i32.sub
+    global.set 0
+    i64.const 2251799813685248
+    i64.const 0
+  )
+)
+"#,
+    )
+    .unwrap();
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("main".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+    println!("{}", rwasm_module);
+    let mut store = RwasmStore::<()>::default();
+    let engine = ExecutionEngine::new();
+    let mut result = [Value::I64(0), Value::I64(0)];
+    engine
+        .execute(&mut store, &rwasm_module, &[Value::I32(0)], &mut result)
+        .unwrap();
+    assert_eq!(result[0].i64().unwrap(), 2251799813685248);
+    assert_eq!(result[1].i64().unwrap(), 0);
+}
