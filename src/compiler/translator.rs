@@ -804,7 +804,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 let func_type = self
                     .alloc
                     .func_type_registry
-                    .resolve_func_type(func_type_idx);
+                    .resolve_original_func_type(func_type_idx);
                 func_type.params().iter().for_each(|param| {
                     if *param == ValType::I64 || *param == ValType::F64 {
                         self.stack_height.push_n(2);
@@ -1648,11 +1648,23 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
         })
     }
 
-    fn visit_ref_null(&mut self, _ty: ValType) -> Self::Output {
-        // Since `rwasm` bytecode is untyped, we have no special `null` instructions
-        // but simply reuse the `constant` instruction with an immediate value of 0.
-        // Note that `FuncRef` and `ExternRef` are encoded as 64-bit values in `rwasm`.
-        self.visit_i32_const(0i32)
+    fn visit_ref_null(&mut self, ty: ValType) -> Self::Output {
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+            // Since `rwasm` bytecode is untyped, we have no special `null` instructions
+            // but simply reuse the `constant` instruction with an immediate value of 0.
+            // IMPORTANT: We still must track the correct Wasm type on the emulated type stack,
+            // otherwise later type checks (e.g. for `call`) will panic.
+            match ty {
+                ValType::FuncRef | ValType::ExternRef => {
+                    builder.alloc.stack_types.push(ty);
+                    builder.stack_height.push1();
+                    builder.alloc.instruction_set.op_i32_const(0);
+                    Ok(())
+                }
+                ty => panic!("encountered an invalid value type for RefNull: {ty:?}"),
+            }
+        })
     }
 
     fn visit_ref_is_null(&mut self) -> Self::Output {

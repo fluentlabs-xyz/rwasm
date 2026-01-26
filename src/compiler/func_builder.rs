@@ -65,7 +65,7 @@ impl<'a> FuncBuilder<'a> {
                 // TODO(dmitry123): "make sure this type is not allowed with floats disabled"
                 ValType::F32 | ValType::F64 => {}
                 ValType::V128 => return Err(CompilationError::NotSupportedLocalType),
-                ValType::FuncRef => {}
+                ValType::FuncRef | ValType::ExternRef => {}
                 _ => return Err(CompilationError::NotSupportedLocalType),
             }
 
