@@ -466,6 +466,7 @@ impl ModuleParser {
                 allocations.translation,
                 self.config.consume_fuel,
                 self.config.code_snippets,
+                self.config.consume_fuel_for_params_and_locals,
             );
             translator.prepare(func_idx)?;
             let signature_index = translator
@@ -970,6 +971,7 @@ impl ModuleParser {
             allocations.translation,
             self.config.consume_fuel,
             self.config.code_snippets,
+            self.config.consume_fuel_for_params_and_locals,
         )
         .translate()?;
         let _ = replace(&mut self.allocations, allocations);

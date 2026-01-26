@@ -42,6 +42,8 @@ pub struct CompilationConfig {
     pub consume_fuel: bool,
     /// Enable replacement with optimized code snippets
     pub code_snippets: bool,
+    /// Enable fuel metering for params and locals
+    pub consume_fuel_for_params_and_locals: bool,
     /// Allow function types with funcref and externref (needed only for e2e testing suite, but
     /// practically inside a blockchain environment it's not possible)
     ///
@@ -60,6 +62,7 @@ impl Default for CompilationConfig {
             builtins_consume_fuel: false,
             default_imported_global_value: None,
             consume_fuel: true,
+            consume_fuel_for_params_and_locals: true,
             code_snippets: true,
             allow_func_ref_function_types: false,
         }
@@ -119,6 +122,11 @@ impl CompilationConfig {
 
     pub fn with_consume_fuel(mut self, consume_fuel: bool) -> Self {
         self.consume_fuel = consume_fuel;
+        self
+    }
+
+    pub fn with_consume_fuel_for_params_and_locals(mut self, v: bool) -> Self {
+        self.consume_fuel_for_params_and_locals = v;
         self
     }
 

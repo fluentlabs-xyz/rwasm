@@ -87,6 +87,7 @@ fn test_interrupted_call_rwasm_with_syscall() {
     let (rwasm_module, _) = RwasmModule::compile(
         CompilationConfig::default()
             .with_builtins_consume_fuel(true)
+            .with_consume_fuel_for_params_and_locals(false)
             .with_import_linker(import_linker.clone())
             .with_entrypoint_name("main".into()),
         &wasm_binary,
