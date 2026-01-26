@@ -22,7 +22,7 @@ jobs:
     name: Coverage
     runs-on: ubuntu-amd64-8core
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: "recursive"
       - name: Install Rust toolchain
@@ -43,13 +43,13 @@ jobs:
           cargo install cargo-llvm-cov grcov
           make coverage
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v5.5.1
+        uses: codecov/codecov-action@v5.5.2
         with:
           files: ./lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
       - name: Archive code coverage results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: code-coverage-report
           path: cobertura.xml

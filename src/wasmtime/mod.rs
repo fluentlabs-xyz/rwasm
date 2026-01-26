@@ -1,7 +1,5 @@
 mod engine;
 
-#[cfg(test)]
-pub use crate::wasmtime::engine::wasmtime_new_engine_with_linker;
 use crate::{
     wasmtime::engine::wasmtime_engine_with_linker, Caller, CompilationConfig, FuelConfig,
     ImportLinker, Store, SyscallHandler, TrapCode, TypedCaller, UntypedValue, ValType, Value, F32,

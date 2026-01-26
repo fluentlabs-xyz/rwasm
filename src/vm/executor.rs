@@ -211,7 +211,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             return Err(trap_code);
         }
         // copy output values in case of successful execution
-        for x in result {
+        for x in result.iter_mut().rev() {
             *x = self.sp.pop_value(x.ty());
         }
         self.value_stack.sync_stack_ptr(self.sp);
