@@ -5,6 +5,7 @@ fn test_compilation(wat_str: &str) -> Result<(RwasmModule, ConstructorParams), C
     let config = CompilationConfig::default();
     RwasmModule::compile(config, &wasm)
 }
+
 #[test]
 fn test_i64_type_split_into_2_x_i32_bug() {
     const WAT: &str = r#"
@@ -29,6 +30,7 @@ fn test_i64_type_split_into_2_x_i32_bug() {
     "#;
     let _ = test_compilation(WAT);
 }
+
 #[test]
 fn test_extern_ref_not_supported_as_a_local_bug() {
     const WAT: &str = r#"
@@ -52,6 +54,7 @@ fn test_extern_ref_not_supported_as_a_local_bug() {
     "#;
     let _ = test_compilation(WAT);
 }
+
 #[test]
 fn test_ref_null_tracked_as_i32_bug() {
     const WAT: &str = r#"
