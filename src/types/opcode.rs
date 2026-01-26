@@ -481,13 +481,6 @@ impl Opcode {
         }
     }
 
-    pub fn is_fuel_instruction(&self) -> bool {
-        match self {
-            Opcode::ConsumeFuel(_) | Opcode::ConsumeFuelStack => true,
-            _ => false,
-        }
-    }
-
     pub fn is_extend_instruction(self) -> bool {
         match self {
             Opcode::I32Extend16S | Opcode::I32Extend8S => true,
