@@ -48,8 +48,8 @@ fn test_intrinsic_replace() {
     engine
         .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap();
-    // 35 by consume_fuel and 4 by other opcodes
-    assert_eq!(store.fuel_consumed(), 35 + 3);
+    // 35 by consume_fuel and 12 by other opcodes
+    assert_eq!(store.fuel_consumed(), 35 + 12);
 }
 
 #[test]

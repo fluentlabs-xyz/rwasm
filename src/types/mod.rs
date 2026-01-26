@@ -107,10 +107,10 @@ pub type AddressOffset = u32;
 pub type BlockFuel = u32;
 
 pub const BASE_FUEL_COST: u32 = 1;
-pub const ENTITY_FUEL_COST: u32 = 1;
-pub const LOAD_FUEL_COST: u32 = 1;
-pub const STORE_FUEL_COST: u32 = 1;
-pub const CALL_FUEL_COST: u32 = 1;
+pub const ENTITY_FUEL_COST: u32 = 10;
+pub const LOAD_FUEL_COST: u32 = 10;
+pub const STORE_FUEL_COST: u32 = 10;
+pub const CALL_FUEL_COST: u32 = 10;
 
 pub const MEMORY_BYTES_PER_FUEL: u32 = 64;
 pub const MEMORY_BYTES_PER_FUEL_LOG2: u32 = 6;

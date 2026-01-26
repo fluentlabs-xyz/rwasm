@@ -103,7 +103,7 @@ fn test_interrupted_call_rwasm_with_syscall() {
     engine
         .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap();
-    assert_eq!(store.fuel_consumed(), 1 + 2 + 10 * 5 + 7);
+    assert_eq!(store.fuel_consumed(), 10 + 2 + 10 * 5 + 7);
 }
 
 #[test]

@@ -494,7 +494,7 @@ impl TestContext<'_> {
 
                     #[cfg(feature = "debug-print")]
                     println!(
-                        "Wasmitime before call: {:?}",
+                        "Wasmtime before call: {:?}",
                         instance.store.remaining_fuel()
                     );
                     instance.execute(func_name, args, result.as_mut())?;
