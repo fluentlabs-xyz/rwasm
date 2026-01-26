@@ -46,7 +46,7 @@ wat = "1.230.0"
 hex-literal = "1.0.0"
 
 [features]
-default = ["std", "wasmtime", "disable-fpu"]
+default = ["std", "wasmtime", "disable-fpu", "tracing"]
 std = [
     "bytes/std",
     "bincode/std",

@@ -53,6 +53,36 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         self.value_stack.sync_stack_ptr(self.sp);
         match self.call_stack.pop() {
             Some(ip) => {
+                #[cfg(feature = "tracing")]
+                {
+                    use crate::{
+                        mem::MemoryRecordEnum, mem_index::TypedAddress, CallStateExtension,
+                        InstrStateExtension,
+                    };
+
+                    let mut instr_state = self.store.tracer.logs.pop().unwrap();
+
+                    self.store.tracer.state.call_sp -= 1;
+
+                    let call_stack_address =
+                        TypedAddress::FuncFrame(self.store.tracer.state.call_sp).to_virtual_addr();
+
+                    let state_extension = CallStateExtension {
+                        call_stack_access: MemoryRecordEnum::Read(
+                            self.store.tracer.mr(call_stack_address),
+                        ),
+                        table_idx: 0,
+                        table_size_read: None,
+                        table_read: None,
+                        call_stack_address,
+                        signature_write: None,
+                    };
+
+                    instr_state.extension = Some(InstrStateExtension::Call(state_extension));
+
+                    self.store.tracer.logs.push(instr_state);
+                }
+
                 self.ip = ip;
                 false
             }
@@ -120,6 +150,39 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         self.sp = self.value_stack.stack_ptr();
         self.ip = InstructionPtr::new(self.module.code_section.as_ptr());
         self.ip.add(compiled_func as usize);
+
+        #[cfg(feature = "tracing")]
+        {
+            use crate::{
+                mem::MemoryRecordEnum, mem_index::TypedAddress, CallStateExtension,
+                InstrStateExtension,
+            };
+
+            let mut instr_state = self.store.tracer.logs.pop().unwrap();
+
+            self.store.tracer.state.next_cycle();
+
+            let call_stack_address =
+                TypedAddress::FuncFrame(self.store.tracer.state.call_sp).to_virtual_addr();
+
+            self.store.tracer.state.call_sp += 1;
+
+            let call_stack_write = self.store.tracer.mw(call_stack_address, instr_state.pc + 1);
+
+            let state_extension = CallStateExtension {
+                call_stack_access: MemoryRecordEnum::Write(call_stack_write),
+                table_idx: 0,
+                table_size_read: None,
+                table_read: None,
+                call_stack_address,
+                signature_write: None,
+            };
+
+            instr_state.extension = Some(InstrStateExtension::Call(state_extension));
+
+            self.store.tracer.logs.push(instr_state);
+        }
+
         Ok(())
     }
 
@@ -138,13 +201,13 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         signature_idx: SignatureIdx,
     ) -> Result<(), TrapCode> {
         // resolve func index
-        let table = self.fetch_table_index(1);
+        let table_idx = self.fetch_table_index(1);
         let func_index: u32 = self.sp.pop_as();
         self.store.last_signature = Some(signature_idx);
         let instr_ref = self
             .store
             .tables
-            .get(&table)
+            .get(&table_idx)
             .expect("rwasm: unresolved table index")
             .get_untyped(func_index)
             .map(|v| v.as_u32())
@@ -153,45 +216,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             return Err(TrapCode::IndirectCallToNull);
         }
 
-        #[cfg(feature = "tracing")]
-        {
-            use crate::{
-                mem::MemoryRecordEnum,
-                mem_index::{ReservedAddrEnum, TypedAddress, LAST_SIG_ADDR},
-                TraceCallData, N_MAX_TABLE_SIZE,
-            };
-
-            let addr = TypedAddress::Table(table as u32 * N_MAX_TABLE_SIZE + func_index);
-            let table_read_record = self.store.tracer.mr(addr.to_virtual_addr());
-
-            let call_state = TraceCallData {
-                calltype: crate::CallType::CallIndirect,
-                table_id: table as u32,
-                table_idx: func_index,
-                func_ref: instr_ref,
-                signature_id: signature_idx,
-                table_access: Some(table_read_record),
-                syscall_data: None,
-            };
-
-            self.store.tracer.logs.last_mut().unwrap().call_state = Some(call_state);
-            self.store.tracer.state.next_cycle();
-            let sig_id_record = self.store.tracer.mw(LAST_SIG_ADDR, signature_idx);
-            self.store
-                .tracer
-                .logs
-                .last_mut()
-                .unwrap()
-                .memory_access
-                .res_record = Some(MemoryRecordEnum::Write(sig_id_record));
-            self.store
-                .tracer
-                .logs
-                .last_mut()
-                .unwrap()
-                .memory_access
-                .res_addr = Some(TypedAddress::from_reserved_addr(ReservedAddrEnum::LastSig));
-        }
         // call func
         self.ip.add(2);
         self.value_stack.sync_stack_ptr(self.sp);
@@ -202,6 +226,50 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         self.sp = self.value_stack.stack_ptr();
         self.ip = InstructionPtr::new(self.module.code_section.as_ptr());
         self.ip.add(instr_ref as usize);
+
+        #[cfg(feature = "tracing")]
+        {
+            use crate::{
+                mem::MemoryRecordEnum,
+                mem_index::{TypedAddress, LAST_SIG_ADDR},
+                CallStateExtension, InstrStateExtension, N_MAX_TABLE_SIZE,
+            };
+
+            let mut instr_state = self.store.tracer.logs.pop().unwrap();
+
+            // let table_size_read = self
+            //     .store
+            //     .tracer
+            //     .mr(TypedAddress::TableSize(table_idx as u32).to_virtual_addr());
+
+            let addr = TypedAddress::Table(table_idx as u32 * N_MAX_TABLE_SIZE + func_index);
+            let table_read = self.store.tracer.mr(addr.to_virtual_addr());
+
+            self.store.tracer.state.next_cycle();
+
+            let call_stack_address =
+                TypedAddress::FuncFrame(self.store.tracer.state.call_sp).to_virtual_addr();
+
+            self.store.tracer.state.call_sp += 1;
+
+            let call_stack_write = self.store.tracer.mw(call_stack_address, instr_state.pc + 2);
+
+            let signature_write = Some(self.store.tracer.mw(LAST_SIG_ADDR, signature_idx));
+
+            let state_extension = CallStateExtension {
+                call_stack_access: MemoryRecordEnum::Write(call_stack_write),
+                table_idx: table_idx as u32,
+                table_size_read: None,
+                table_read: Some(table_read),
+                call_stack_address,
+                signature_write,
+            };
+
+            instr_state.extension = Some(InstrStateExtension::Call(state_extension));
+
+            self.store.tracer.logs.push(instr_state);
+        }
+
         Ok(())
     }
 }

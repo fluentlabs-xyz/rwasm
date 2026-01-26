@@ -1,5 +1,5 @@
+use crate::intrinsic::Intrinsic;
 use crate::{ImportName, InstructionSet, SyscallFuelParams};
-use crate::{intrinsic::Intrinsic};
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use wasmparser::{FuncType, ValType};
