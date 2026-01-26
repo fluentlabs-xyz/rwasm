@@ -97,12 +97,11 @@ impl ModuleParser {
         wasm_binary: &[u8],
     ) -> Result<(RwasmModule, ConstructorParams), CompilationError> {
         if let Some(start_func) = self.allocations.translation.start_func {
-            // for the start section we must always invoke even if there is a main function,
-            // otherwise it might be super misleading for devs
             self.allocations
                 .translation
                 .emit_function_call(start_func, true, false);
-        } else if let Some(entrypoint_name) = self.config.entrypoint_name.as_ref() {
+        }
+        if let Some(entrypoint_name) = self.config.entrypoint_name.as_ref() {
             let func_idx = self
                 .allocations
                 .translation

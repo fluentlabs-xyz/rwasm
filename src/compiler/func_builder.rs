@@ -80,6 +80,7 @@ impl<'a> FuncBuilder<'a> {
                 ValType::F32 | ValType::F64 => {}
                 ValType::V128 => return Err(CompilationError::NotSupportedLocalType),
                 ValType::FuncRef | ValType::ExternRef => {}
+                #[allow(unreachable_patterns)]
                 _ => return Err(CompilationError::NotSupportedLocalType),
             }
 
