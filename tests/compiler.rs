@@ -52,3 +52,38 @@ fn test_extern_ref_not_supported_as_a_local_bug() {
     "#;
     let _ = test_compilation(WAT);
 }
+#[test]
+fn test_ref_null_tracked_as_i32_bug() {
+    const WAT: &str = r#"
+        (module
+          (type (;0;) (func (param externref)))
+          (type (;1;) (func (result i32)))
+          (table (;0;) 760 763 funcref)
+          (memory (;0;) 8 9)
+          (global (;0;) (mut i32) i32.const 1000)
+          (export "" (func 0))
+          (export "1" (table 0))
+          (export "2" (memory 0))
+          (func (;0;) (type 0) (param externref)
+            global.get 0
+            i32.eqz
+            if ;; label = @1
+              unreachable
+            end
+            global.get 0
+            i32.const 1
+            i32.sub
+            global.set 0
+            table.size 0
+            ref.null extern
+            call 0
+            table.size 0
+            table.size 0
+            drop
+            drop
+            drop
+          )
+        )
+    "#;
+    let _ = test_compilation(WAT);
+}
