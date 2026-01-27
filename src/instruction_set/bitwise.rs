@@ -84,7 +84,7 @@ impl InstructionSet {
         self.op_local_set(2);
     }
 
-    /// Max stack height: 19
+    /// Max stack height: 9
     pub fn op_i64_shl(&mut self) {
         self.op_i32_const(0);
         self.op_i32_const(0);
