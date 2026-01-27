@@ -10,7 +10,6 @@ use bincode::{
     Decode, Encode,
 };
 use core::ops::Deref;
-use std::cmp::min;
 
 mod view;
 pub use view::*;
@@ -59,7 +58,7 @@ impl RwasmModule {
         let mut parser = ModuleParser::new(config);
         parser.parse(wasm_binary)?;
         let result = parser.finalize(wasm_binary)?;
-        let bytes_size_hint_max = min(
+        let bytes_size_hint_max = core::cmp::min(
             RWASM_MAX_MODULE_SIZE,
             wasm_binary.len().saturating_mul(WASM_RWASM_FACTOR_MUL) / WASM_RWASM_FACTOR_DIV,
         );
