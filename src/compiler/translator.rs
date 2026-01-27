@@ -1043,27 +1043,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 builder: &mut InstructionTranslator,
                 n: usize,
                 depth: RelativeDepth,
-                max_drop_keep_fuel: &mut u32,
             ) -> Result<BrTableTarget, CompilationError> {
                 match builder.acquire_target(depth.into_u32())? {
                     AcquiredTarget::Branch(label, drop_keep) => {
-                        *max_drop_keep_fuel =
-                            (*max_drop_keep_fuel).max(fuel_for_drop_keep(builder, drop_keep));
-
-                        if drop_keep.keep > 0 && *max_drop_keep_fuel == 0 {
-                            *max_drop_keep_fuel = 1;
-                        }
                         Ok(BrTableTarget::Label(label, drop_keep))
                     }
-                    AcquiredTarget::Return(drop_keep) => {
-                        *max_drop_keep_fuel =
-                            (*max_drop_keep_fuel).max(fuel_for_drop_keep(builder, drop_keep));
-
-                        if drop_keep.keep > 0 && *max_drop_keep_fuel == 0 {
-                            *max_drop_keep_fuel = 1;
-                        }
-                        Ok(BrTableTarget::Return(drop_keep))
-                    }
+                    AcquiredTarget::Return(drop_keep) => Ok(BrTableTarget::Return(drop_keep)),
                 }
             }
 
@@ -1144,10 +1129,6 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .map(RelativeDepth::from_u32);
 
             builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
-            // The maximum fuel costs among all `br_table` arms.
-            // We use this to charge fuel once at the entry of a `br_table`
-            // for the most expensive arm of all of its arms.
-            let mut max_drop_keep_fuel = 0u32;
             builder.stack_height.pop1();
             builder.alloc.stack_types.pop().unwrap();
 
@@ -1157,7 +1138,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let mut trampoline_ixs = InstructionSet::new();
             for (n, depth) in targets.into_iter().enumerate() {
                 builder.add_branch(depth.into_u32());
-                let target = compute_instr(builder, n, depth, &mut max_drop_keep_fuel)?;
+                let target = compute_instr(builder, n, depth)?;
 
                 encode_br_table_target(builder, target, &mut trampoline_ixs, target_len)?;
             }
@@ -1166,8 +1147,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // words.
             let len_branches = builder.alloc.br_table_branches.len() / 2;
             builder.add_branch(default.into_u32());
-            let default_branch =
-                compute_instr(builder, len_branches, default, &mut max_drop_keep_fuel)?;
+            let default_branch = compute_instr(builder, len_branches, default)?;
             let len_targets = BranchTableTargets::try_from(len_branches + 1)
                 .map_err(|_| CompilationError::BranchTableTargetsOutOfBounds)?;
             encode_br_table_target(builder, default_branch, &mut trampoline_ixs, target_len)?;
