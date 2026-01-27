@@ -1,3 +1,4 @@
+use rwasm::CompilationError::CompiledBytecodeExceedsMaxSize;
 use rwasm::{CompilationConfig, CompilationError, ConstructorParams, RwasmModule};
 
 fn test_compilation(wat_str: &str) -> Result<(RwasmModule, ConstructorParams), CompilationError> {
@@ -177,17 +178,21 @@ fn test_max_locals_single_func() {
 }
 
 #[test]
-fn test_max_locals_max_funcs() {
-    let num_funcs: &[(u32, Result<(), CompilationError>)] = &[
-        // (10, Ok(())),
-        (10, Err(CompilationError::CompiledBytecodeExceedsMaxSize)),
-        // (1000, Err(CompilationError::CompiledBytecodeExceedsMaxSize)),
+fn test_max_module_size() {
+    let num_funcs: &[(u32, usize, Result<(), CompilationError>)] = &[
+        (1, 131112, Ok(())),
+        (1, 131111, Err(CompiledBytecodeExceedsMaxSize)),
+        (9, 1179752, Ok(())),
+        (9, 1179751, Err(CompiledBytecodeExceedsMaxSize)),
+        (50, 6554033, Ok(())),
+        (50, 6554032, Err(CompiledBytecodeExceedsMaxSize)),
     ];
-    for (num_funcs, expected_compile_result) in num_funcs.iter() {
+    for (num_funcs, rwasm_max_module_size, expected_compile_result) in num_funcs.iter() {
         let wasm = build_max_locals_module(*num_funcs);
         let config = CompilationConfig::default()
             .with_entrypoint_name("main".into())
-            .with_consume_fuel(true);
+            .with_consume_fuel(true)
+            .with_max_module_size(*rwasm_max_module_size);
 
         let compile_result = RwasmModule::compile(config, &wasm);
         let (module, _) = match expected_compile_result {
@@ -197,10 +202,49 @@ fn test_max_locals_max_funcs() {
                 continue;
             }
         };
-
         let input_size = wasm.len();
         let output_size = module.serialize().len();
+        eprintln!("\n=== {} Functions × 32767 Locals ===", num_funcs);
+        eprintln!(
+            "Input:  {} bytes ({:.2} MB)",
+            input_size,
+            input_size as f64 / 1_000_000.0
+        );
+        eprintln!(
+            "Output: {} bytes ({:.2} GB)",
+            output_size,
+            output_size as f64 / 1_000_000_000.0
+        );
+    }
+}
 
+#[test]
+fn test_wasm_to_rwasm_max_factor_mul() {
+    let num_funcs: &[(u32, usize, Result<(), CompilationError>)] = &[
+        (1, 3451, Ok(())),
+        (1, 3450, Err(CompiledBytecodeExceedsMaxSize)),
+        (9, 11567, Ok(())),
+        (9, 11566, Err(CompiledBytecodeExceedsMaxSize)),
+        (50, 15207, Ok(())),
+        (50, 15206, Err(CompiledBytecodeExceedsMaxSize)),
+    ];
+    for (num_funcs, wasm_to_rwasm_max_factor_mul, expected_compile_result) in num_funcs.iter() {
+        let wasm = build_max_locals_module(*num_funcs);
+        let config = CompilationConfig::default()
+            .with_entrypoint_name("main".into())
+            .with_consume_fuel(true)
+            .with_wasm_to_rwasm_max_factor_mul(*wasm_to_rwasm_max_factor_mul);
+
+        let compile_result = RwasmModule::compile(config, &wasm);
+        let (module, _) = match expected_compile_result {
+            Ok(_) => compile_result.expect("compile OK"),
+            Err(_) => {
+                assert!(compile_result.is_err(), "expected compile error");
+                continue;
+            }
+        };
+        let input_size = wasm.len();
+        let output_size = module.serialize().len();
         eprintln!("\n=== {} Functions × 32767 Locals ===", num_funcs);
         eprintln!(
             "Input:  {} bytes ({:.2} MB)",

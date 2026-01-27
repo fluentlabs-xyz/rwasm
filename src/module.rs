@@ -55,15 +55,24 @@ impl RwasmModule {
         config: CompilationConfig,
         wasm_binary: &[u8],
     ) -> Result<(Self, ConstructorParams), CompilationError> {
+        let rwasm_max_module_size = config.max_module_size;
+        let wasm_to_rwasm_max_factor_mul = config.wasm_to_rwasm_max_factor_mul;
         let mut parser = ModuleParser::new(config);
         parser.parse(wasm_binary)?;
         let result = parser.finalize(wasm_binary)?;
-        let bytes_size_hint_max = core::cmp::min(
-            RWASM_MAX_MODULE_SIZE,
-            wasm_binary.len().saturating_mul(WASM_RWASM_FACTOR_MUL) / WASM_RWASM_FACTOR_DIV,
-        );
-        if result.0.bytes_size_hint() > bytes_size_hint_max {
-            return Err(CompilationError::CompiledBytecodeExceedsMaxSize);
+        let bytes_size_hint = result.0.bytes_size_hint();
+        if let Some(rwasm_max_module_size) = rwasm_max_module_size {
+            if bytes_size_hint > rwasm_max_module_size {
+                return Err(CompilationError::CompiledBytecodeExceedsMaxSize);
+            }
+        }
+        if let Some(wasm_to_rwasm_max_factor_mul) = wasm_to_rwasm_max_factor_mul {
+            let bytes_size_hint_max = wasm_binary
+                .len()
+                .saturating_mul(wasm_to_rwasm_max_factor_mul);
+            if bytes_size_hint > bytes_size_hint_max {
+                return Err(CompilationError::CompiledBytecodeExceedsMaxSize);
+            }
         }
         Ok(result)
     }
@@ -145,11 +154,6 @@ pub struct RwasmModuleInner {
     /// always fallback to EVM if it can't be extracted.
     pub hint_section: Vec<u8>,
 }
-
-pub const RWASM_MAX_MODULE_SIZE: usize = 12 * 1024 * 1024;
-pub const WASM_RWASM_FACTOR_MUL: usize = 100;
-pub const WASM_RWASM_FACTOR_DIV: usize = 1;
-const _: () = assert!(WASM_RWASM_FACTOR_MUL / WASM_RWASM_FACTOR_DIV > 0);
 
 /// Rwasm magic bytes 0xef52 (0x52 stands for 'R' in ASCII)
 pub const RWASM_MAGIC_BYTE_0: u8 = 0xef;
