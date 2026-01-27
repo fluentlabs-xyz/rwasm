@@ -10,6 +10,7 @@ use bincode::{
     Decode, Encode,
 };
 use core::ops::Deref;
+use std::cmp::min;
 
 mod view;
 pub use view::*;
@@ -40,13 +41,32 @@ impl RwasmModule {
         }
     }
 
+    fn bytes_size_hint(&self) -> usize {
+        let mut bytes_size_hint: usize = 0;
+        let (min_size, max_size) = self.code_section.iter().size_hint();
+        bytes_size_hint = bytes_size_hint.saturating_add(max_size.unwrap_or(min_size));
+        bytes_size_hint = bytes_size_hint.saturating_add(self.hint_section.len());
+        bytes_size_hint = bytes_size_hint.saturating_add(self.data_section.len());
+        bytes_size_hint =
+            bytes_size_hint.saturating_add(self.elem_section.len() * size_of::<u32>());
+        bytes_size_hint
+    }
+
     pub fn compile(
         config: CompilationConfig,
         wasm_binary: &[u8],
     ) -> Result<(Self, ConstructorParams), CompilationError> {
         let mut parser = ModuleParser::new(config);
         parser.parse(wasm_binary)?;
-        parser.finalize(wasm_binary)
+        let result = parser.finalize(wasm_binary)?;
+        let bytes_size_hint_max = min(
+            RWASM_MAX_MODULE_SIZE,
+            wasm_binary.len().saturating_mul(WASM_RWASM_FACTOR_MUL) / WASM_RWASM_FACTOR_DIV,
+        );
+        if result.0.bytes_size_hint() > bytes_size_hint_max {
+            return Err(CompilationError::CompiledBytecodeExceedsMaxSize);
+        }
+        Ok(result)
     }
 
     pub fn empty() -> Self {
@@ -126,6 +146,11 @@ pub struct RwasmModuleInner {
     /// always fallback to EVM if it can't be extracted.
     pub hint_section: Vec<u8>,
 }
+
+pub const RWASM_MAX_MODULE_SIZE: usize = 12 * 1024 * 1024;
+pub const WASM_RWASM_FACTOR_MUL: usize = 100;
+pub const WASM_RWASM_FACTOR_DIV: usize = 1;
+const _: () = assert!(WASM_RWASM_FACTOR_MUL / WASM_RWASM_FACTOR_DIV > 0);
 
 /// Rwasm magic bytes 0xef52 (0x52 stands for 'R' in ASCII)
 pub const RWASM_MAGIC_BYTE_0: u8 = 0xef;
