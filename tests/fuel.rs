@@ -5,7 +5,7 @@ fn test_locals_consume_fuel() {
     let fuel_limit = 9999;
     let basic_fuel_consumption = 2;
 
-    let mut test_cases: &mut [(usize, usize)] = &mut [
+    let test_cases: &mut [(usize, usize)] = &mut [
         (0, 0),
         (1, 0),
         (3, 0),
