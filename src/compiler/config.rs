@@ -52,8 +52,6 @@ pub struct CompilationConfig {
     pub allow_func_ref_function_types: bool,
     /// Max resulting module size for RwasmModule
     pub max_module_size: Option<usize>,
-    /// Multiplicator used to estimate and validate maximum wasm to rwasm translation factor
-    pub wasm_to_rwasm_max_factor_mul: Option<usize>,
 }
 
 impl Default for CompilationConfig {
@@ -70,7 +68,6 @@ impl Default for CompilationConfig {
             code_snippets: true,
             allow_func_ref_function_types: false,
             max_module_size: None,
-            wasm_to_rwasm_max_factor_mul: None,
         }
     }
 }
@@ -97,11 +94,6 @@ impl CompilationConfig {
 
     pub fn with_max_module_size(mut self, v: usize) -> Self {
         self.max_module_size = Some(v);
-        self
-    }
-
-    pub fn with_wasm_to_rwasm_max_factor_mul(mut self, v: usize) -> Self {
-        self.wasm_to_rwasm_max_factor_mul = Some(v);
         self
     }
 

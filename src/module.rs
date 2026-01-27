@@ -56,21 +56,12 @@ impl RwasmModule {
         wasm_binary: &[u8],
     ) -> Result<(Self, ConstructorParams), CompilationError> {
         let rwasm_max_module_size = config.max_module_size;
-        let wasm_to_rwasm_max_factor_mul = config.wasm_to_rwasm_max_factor_mul;
         let mut parser = ModuleParser::new(config);
         parser.parse(wasm_binary)?;
         let result = parser.finalize(wasm_binary)?;
         let bytes_size_hint = result.0.bytes_size_hint();
         if let Some(rwasm_max_module_size) = rwasm_max_module_size {
             if bytes_size_hint > rwasm_max_module_size {
-                return Err(CompilationError::CompiledBytecodeExceedsMaxSize);
-            }
-        }
-        if let Some(wasm_to_rwasm_max_factor_mul) = wasm_to_rwasm_max_factor_mul {
-            let bytes_size_hint_max = wasm_binary
-                .len()
-                .saturating_mul(wasm_to_rwasm_max_factor_mul);
-            if bytes_size_hint > bytes_size_hint_max {
                 return Err(CompilationError::CompiledBytecodeExceedsMaxSize);
             }
         }
