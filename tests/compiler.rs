@@ -1,4 +1,3 @@
-use rwasm::CompilationError::CompiledBytecodeExceedsMaxSize;
 use rwasm::{CompilationConfig, CompilationError, ConstructorParams, RwasmModule};
 
 fn test_compilation(wat_str: &str) -> Result<(RwasmModule, ConstructorParams), CompilationError> {
