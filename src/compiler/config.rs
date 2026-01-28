@@ -50,6 +50,8 @@ pub struct CompilationConfig {
     /// WARNING: the flag can be removed one funcref/externref type mapping is
     /// implemented for wasmtime
     pub allow_func_ref_function_types: bool,
+    /// Max resulting module size for RwasmModule
+    pub max_module_size: Option<usize>,
 }
 
 impl Default for CompilationConfig {
@@ -65,6 +67,7 @@ impl Default for CompilationConfig {
             consume_fuel_for_params_and_locals: true,
             code_snippets: true,
             allow_func_ref_function_types: false,
+            max_module_size: None,
         }
     }
 }
@@ -86,6 +89,11 @@ impl CompilationConfig {
 
     pub fn with_state_router(mut self, state_router: StateRouterConfig) -> Self {
         self.state_router = Some(state_router);
+        self
+    }
+
+    pub fn with_max_module_size(mut self, v: usize) -> Self {
+        self.max_module_size = Some(v);
         self
     }
 

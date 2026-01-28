@@ -40,13 +40,32 @@ impl RwasmModule {
         }
     }
 
+    fn bytes_size_hint(&self) -> usize {
+        let mut bytes_size_hint: usize = 0;
+        let (min_size, max_size) = self.code_section.iter().size_hint();
+        bytes_size_hint = bytes_size_hint.saturating_add(max_size.unwrap_or(min_size));
+        bytes_size_hint = bytes_size_hint.saturating_add(self.hint_section.len());
+        bytes_size_hint = bytes_size_hint.saturating_add(self.data_section.len());
+        bytes_size_hint =
+            bytes_size_hint.saturating_add(self.elem_section.len() * size_of::<u32>());
+        bytes_size_hint
+    }
+
     pub fn compile(
         config: CompilationConfig,
         wasm_binary: &[u8],
     ) -> Result<(Self, ConstructorParams), CompilationError> {
+        let rwasm_max_module_size = config.max_module_size;
         let mut parser = ModuleParser::new(config);
         parser.parse(wasm_binary)?;
-        parser.finalize(wasm_binary)
+        let result = parser.finalize(wasm_binary)?;
+        let bytes_size_hint = result.0.bytes_size_hint();
+        if let Some(rwasm_max_module_size) = rwasm_max_module_size {
+            if bytes_size_hint > rwasm_max_module_size {
+                return Err(CompilationError::CompiledBytecodeExceedsMaxSize);
+            }
+        }
+        Ok(result)
     }
 
     pub fn empty() -> Self {
