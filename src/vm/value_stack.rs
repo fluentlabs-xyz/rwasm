@@ -61,7 +61,7 @@ impl Extend<UntypedValue> for ValueStack {
 
 impl Default for ValueStack {
     fn default() -> Self {
-        Self::new(N_MAX_STACK_SIZE)
+        Self::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE)
     }
 }
 
@@ -153,9 +153,21 @@ impl ValueStack {
     }
 
     /// Creates a new empty [`ValueStack`].
-    pub fn new(maximum_len: usize) -> Self {
-        // use maximum_len to prevent reallocations (which cause base_ptr change)
-        let entries = smallvec![UntypedValue::default(); maximum_len];
+    ///
+    /// # Panics
+    ///
+    /// - If the `initial_len` is zero.
+    /// - If the `initial_len` is greater than `maximum_len`.
+    pub fn new(initial_len: usize, maximum_len: usize) -> Self {
+        assert!(
+            initial_len > 0,
+            "cannot initialize the value stack with zero length",
+        );
+        assert!(
+            initial_len <= maximum_len,
+            "the initial value stack length is greater than the maximum value stack length",
+        );
+        let entries = smallvec![UntypedValue::default(); initial_len];
         Self {
             entries,
             stack_ptr: 0,
