@@ -194,13 +194,11 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     }
 
     pub fn run(&mut self, params: &[Value], result: &mut [Value]) -> Result<(), TrapCode> {
+        // make sure we have enough capacity on the stack
+        self.value_stack.sync_stack_ptr(self.sp);
+        self.value_stack.reserve(params.len())?;
+        self.sp = self.value_stack.stack_ptr();
         // copy input params
-        if self.value_stack.len() < params.len() {
-            self.value_stack.sync_stack_ptr(self.sp);
-            let need_more = params.len() - self.value_stack.len();
-            self.value_stack.reserve(need_more)?;
-            self.sp = self.value_stack.stack_ptr();
-        }
         for x in params {
             self.sp.push_value(x);
         }
