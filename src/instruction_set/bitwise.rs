@@ -7,7 +7,7 @@ impl InstructionSet {
     pub const MSH_I64_AND: u32 = 1;
     pub const MSH_I64_OR: u32 = 1;
     pub const MSH_I64_XOR: u32 = 1;
-    pub const MSH_I64_SHL: u32 = 10;
+    pub const MSH_I64_SHL: u32 = 9;
     pub const MSH_I64_SHR_S: u32 = 21;
     pub const MSH_I64_SHR_U: u32 = 21;
     pub const MSH_I64_ROTL: u32 = 16;
@@ -84,7 +84,7 @@ impl InstructionSet {
         self.op_local_set(2);
     }
 
-    /// Max stack height: 19
+    /// Max stack height: 9
     pub fn op_i64_shl(&mut self) {
         self.op_i32_const(0);
         self.op_i32_const(0);
