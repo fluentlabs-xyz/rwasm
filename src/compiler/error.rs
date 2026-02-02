@@ -22,7 +22,6 @@ pub enum CompilationError {
     MalformedFuncType,
     MemoryOutOfBounds,
     TableOutOfBounds,
-    CompiledBytecodeExceedsMaxSize,
 }
 
 impl From<BinaryReaderError> for CompilationError {
@@ -59,9 +58,6 @@ impl core::fmt::Display for CompilationError {
             CompilationError::MalformedFuncType => write!(f, "malformed func type"),
             CompilationError::MemoryOutOfBounds => write!(f, "out of bounds memory access"),
             CompilationError::TableOutOfBounds => write!(f, "out of bounds table access"),
-            CompilationError::CompiledBytecodeExceedsMaxSize => {
-                write!(f, "compiled bytecode exceeds max size")
-            }
         }
     }
 }
