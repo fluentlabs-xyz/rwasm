@@ -26,7 +26,8 @@ fn test_stack_overflow_number_of_params() -> anyhow::Result<()> {
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
     let engine = ExecutionEngine::new();
-    let params = vec![Value::I32(0); 37];
+    let mut params = vec![Value::I64(0); 18];
+    params.push(Value::I32(0));
     let mut result = [Value::I64(0); 0];
     engine.execute(&mut store, &rwasm_module, &params, &mut result)?;
     Ok(())
@@ -58,7 +59,7 @@ fn test_stack_overflow_32_params() -> anyhow::Result<()> {
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
     let engine = ExecutionEngine::new();
-    let params = vec![Value::I32(0); 37];
+    let params = vec![Value::I32(0); 32];
     let mut result = [Value::I64(0); 0];
     engine.execute(&mut store, &rwasm_module, &params, &mut result)?;
     Ok(())
@@ -90,8 +91,7 @@ fn test_stack_overflow_33_params() -> anyhow::Result<()> {
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
     let engine = ExecutionEngine::new();
-    // 37 stands for x18 i64 (36) + x1 i32 (1) = 36+1=37
-    let params = vec![Value::I32(0); 37];
+    let params = vec![Value::I32(0); 33];
     let mut result = [Value::I64(0); 0];
     engine.execute(&mut store, &rwasm_module, &params, &mut result)?;
     Ok(())
