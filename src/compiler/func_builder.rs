@@ -1,7 +1,8 @@
 use crate::{
     compiler::translator::{FuncTranslatorAllocations, InstructionTranslator, ReusableAllocations},
-    CompilationError, FuelCosts, FuncIdx,
+    CompilationError, FuncIdx,
 };
+use rwasm_fuel_policy::FuelCosts;
 use wasmparser::{
     BinaryReaderError, FuncValidator, FunctionBody, ValType, ValidatorResources, VisitOperator,
 };

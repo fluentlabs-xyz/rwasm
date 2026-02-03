@@ -6,7 +6,6 @@ use crate::{
         },
         drop_keep::DropKeep,
         error::CompilationError,
-        fuel_costs::FuelCosts,
         func_type_registry::FuncTypeRegistry,
         intrinsic::{Intrinsic, IntrinsicHandler},
         labels::LabelRegistry,
@@ -18,12 +17,13 @@ use crate::{
     },
     AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
     ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
-    Opcode, TableIdx, BASE_FUEL_COST, DEFAULT_MEMORY_INDEX, N_MAX_MEMORY_PAGES, N_MAX_TABLE_SIZE,
+    Opcode, TableIdx, DEFAULT_MEMORY_INDEX, N_MAX_MEMORY_PAGES, N_MAX_TABLE_SIZE,
     SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec, vec::Vec};
 use bitvec::macros::internal::funty::Fundamental;
 use hashbrown::HashMap;
+use rwasm_fuel_policy::FuelCosts;
 use wasmparser::{
     BlockType, BrTable, FuncType, FuncValidatorAllocations, GlobalType, Ieee32, Ieee64, MemArg,
     MemoryType, TableType, ValType, VisitOperator, V128,
@@ -278,18 +278,6 @@ impl InstructionTranslator {
             .labels
             .pin_label(label, self.current_pc())
             .unwrap_or_else(|err| panic!("failed to pin label: {err}"));
-    }
-
-    /// Pushes an instruction to consume the base fuel cost into the instruction sequence.
-    ///
-    /// This method calculates the base fuel cost for the associated operation, converts it
-    /// into a format suitable for the instruction builder, and appends this instruction
-    /// to the sequence of instructions. The finalized location of this instruction in
-    /// the instruction sequence is then returned.
-    pub fn push_consume_fuel_base(&mut self) -> InstrLoc {
-        let instr_loc = self.alloc.instruction_set.loc();
-        self.alloc.instruction_set.op_consume_fuel(BASE_FUEL_COST);
-        instr_loc as InstrLoc
     }
 
     pub fn push_consume_fuel_empty(&mut self) -> InstrLoc {
@@ -1033,7 +1021,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
             fn fuel_for_drop_keep(builder: &mut InstructionTranslator, drop_keep: DropKeep) -> u32 {
                 if builder.with_consume_fuel {
-                    FuelCosts::fuel_for_drop_keep(drop_keep)
+                    FuelCosts::fuel_for_drop_keep(drop_keep.drop, drop_keep.keep)
                 } else {
                     0
                 }

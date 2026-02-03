@@ -839,7 +839,7 @@ mod tests {
         let words = (300 + 31) / 32;
         assert_eq!(
             wasmtime_worker.store.unwrap().get_fuel().unwrap(),
-            100_000 - (3 + WORD_COST * words + words * words / DIVISOR)
+            100_000 - (1 + 1 + 10 + WORD_COST * words + words * words / DIVISOR)
         );
     }
 
@@ -857,7 +857,7 @@ mod tests {
         wasmtime_worker.execute("main", &[], &mut []).unwrap();
         assert_eq!(
             wasmtime_worker.store.unwrap().get_fuel().unwrap(),
-            100_000 - (3 + 10 * 5 + 7)
+            100_000 - (1 + 1 + 10 + 10 * 5 + 7)
         );
     }
 
