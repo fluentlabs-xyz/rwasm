@@ -7,8 +7,8 @@ use crate::{
     },
     instruction_set, BranchOffset, CompilationConfig, CompilationError, ConstructorParams,
     DataSegmentIdx, ElementSegmentIdx, FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName,
-    LocalDepth, Opcode, RwasmModule, RwasmModuleInner, SyscallFuelParams, TableIdx, TrapCode,
-    UntypedValue, DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
+    LocalDepth, Opcode, RwasmModule, RwasmModuleInner, TableIdx, TrapCode, UntypedValue,
+    DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::{
@@ -16,6 +16,7 @@ use core::{
     ops::Range,
 };
 use hashbrown::HashMap;
+use rwasm_fuel_policy::{SyscallFuelParams, FUEL_MAX_LINEAR_X, FUEL_MAX_QUADRATIC_X};
 use wasmparser::{
     CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind,
     ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType, FunctionBody,
@@ -485,11 +486,11 @@ impl ModuleParser {
                         translator
                             .alloc
                             .instruction_set
-                            .op_local_get(LocalDepth::from(fuel_params.param_index as u32));
+                            .op_local_get(LocalDepth::from(fuel_params.param_index));
                         translator
                             .alloc
                             .instruction_set
-                            .op_i32_const(UntypedValue::from(fuel_params.max_linear));
+                            .op_i32_const(UntypedValue::from(FUEL_MAX_LINEAR_X));
                         translator.alloc.instruction_set.op_i32_gt_u();
                         translator
                             .alloc
@@ -531,14 +532,14 @@ impl ModuleParser {
                     SyscallFuelParams::QuadraticFuel(fuel_params) => {
                         let mut ixs = instruction_set! {
                              // Runtime overflow check
-                            LocalGet(fuel_params.param_index)
-                            I32Const(fuel_params.max_quadratic)
+                            LocalGet(fuel_params.local_depth)
+                            I32Const(FUEL_MAX_QUADRATIC_X)
                             I32GtU
                             BrIfEqz(2)
                             Trap(TrapCode::IntegerOverflow)
 
                             // Linear part: word_cost × words
-                            LocalGet(fuel_params.param_index)
+                            LocalGet(fuel_params.local_depth)
                             I32Const(31)
                             I32Add
                             I32Const(32)
@@ -547,13 +548,13 @@ impl ModuleParser {
                             I32Mul
 
                             // Quadratic part: words² / divisor
-                            LocalGet(fuel_params.param_index + 1) // linear part left words on stack
+                            LocalGet(fuel_params.local_depth + 1) // linear part left words on stack
                             I32Const(31)
                             I32Add
                             I32Const(32)
                             I32DivU
 
-                            LocalGet(fuel_params.param_index + 2) // linear and first words on stack
+                            LocalGet(fuel_params.local_depth + 2) // linear and first words on stack
                             I32Const(31)
                             I32Add
                             I32Const(32)
@@ -567,7 +568,7 @@ impl ModuleParser {
                             I32Add
 
                             // Convert gas -> fuel
-                            I32Const(fuel_params.fuel_denom_rate as u32)
+                            I32Const(fuel_params.fuel_denom_rate)
                             I32Mul
 
                             ConsumeFuelStack

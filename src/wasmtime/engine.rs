@@ -1,13 +1,11 @@
 use crate::{ImportLinker, N_MAX_STACK_SIZE};
+use rwasm_fuel_policy::SyscallName;
 use std::{
     collections::HashMap,
     mem::size_of,
     sync::{Arc, OnceLock},
 };
-use wasmtime::{
-    Config, Engine, LinearFuelParams, OptLevel, QuadraticFuelParams, Strategy, SyscallFuelParams,
-    SyscallName,
-};
+use wasmtime::{Config, Engine, OptLevel, Strategy};
 
 static ENGINE: OnceLock<Engine> = OnceLock::new();
 
@@ -81,58 +79,11 @@ fn factory_wasmtime_engine_with_linker(
     if let Some(import_linker) = import_linker {
         let mut syscall_params = HashMap::new();
         for (import_name, import_entity) in import_linker.iter() {
-            match import_entity.syscall_fuel_param {
-                crate::SyscallFuelParams::None => {}
-                crate::SyscallFuelParams::Const(base) => {
-                    syscall_params.insert(
-                        SyscallName {
-                            module: import_name.module.to_string(),
-                            name: import_name.field.to_string(),
-                        },
-                        SyscallFuelParams::Const(base),
-                    );
-                }
-                crate::SyscallFuelParams::LinearFuel(crate::LinearFuelParams {
-                    base_fuel,
-                    param_index,
-                    word_cost,
-                    max_linear,
-                }) => {
-                    syscall_params.insert(
-                        SyscallName {
-                            module: import_name.module.to_string(),
-                            name: import_name.field.to_string(),
-                        },
-                        SyscallFuelParams::LinearFuel(LinearFuelParams {
-                            base_fuel,
-                            word_cost,
-                            linear_param_index: param_index,
-                            max_linear,
-                        }),
-                    );
-                }
-                crate::SyscallFuelParams::QuadraticFuel(crate::QuadraticFuelParams {
-                    param_index,
-                    word_cost,
-                    divisor,
-                    max_quadratic,
-                    fuel_denom_rate,
-                }) => {
-                    syscall_params.insert(
-                        SyscallName {
-                            module: import_name.module.to_string(),
-                            name: import_name.field.to_string(),
-                        },
-                        SyscallFuelParams::QuadraticFuel(QuadraticFuelParams {
-                            local_depth: param_index,
-                            word_cost,
-                            divisor,
-                            max_quadratic,
-                            fuel_denom_rate,
-                        }),
-                    );
-                }
-            }
+            let syscall_name = SyscallName {
+                module: import_name.module.to_string(),
+                name: import_name.field.to_string(),
+            };
+            syscall_params.insert(syscall_name, import_entity.syscall_fuel_param);
         }
         cfg.syscall_fuel_params(syscall_params);
     }

@@ -746,9 +746,10 @@ impl<'a, T: 'static + Send + Sync> Caller<T> for WasmtimeCaller<'a, T> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        compile_wasmtime_module, CompilationConfig, FuelConfig, ImportLinker, ImportName,
-        LinearFuelParams, QuadraticFuelParams, SyscallFuelParams, TrapCode, WasmtimeStore,
+        compile_wasmtime_module, CompilationConfig, FuelConfig, ImportLinker, ImportName, TrapCode,
+        WasmtimeStore,
     };
+    use rwasm_fuel_policy::{LinearFuelParams, QuadraticFuelParams, SyscallFuelParams};
     use std::sync::Arc;
     use wasmtime::Module;
 
@@ -786,10 +787,9 @@ mod tests {
             ImportName::new("call", "quadratic"),
             0xdd,
             SyscallFuelParams::QuadraticFuel(QuadraticFuelParams {
-                param_index: 1,
-                word_cost: WORD_COST,
-                divisor: DIVISOR,
-                max_quadratic: 1_310_720,
+                local_depth: 1,
+                word_cost: WORD_COST as u32,
+                divisor: DIVISOR as u32,
                 fuel_denom_rate: 1,
             }),
             &[wasmparser::ValType::I32],
@@ -803,7 +803,6 @@ mod tests {
                 base_fuel: 7,
                 param_index: 1,
                 word_cost: 5,
-                max_linear: 134_217_728,
             }),
             &[wasmparser::ValType::I32],
             &[],
