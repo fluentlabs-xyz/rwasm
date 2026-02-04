@@ -32,7 +32,7 @@ serde = { version = "1.0.219", features = ["derive"], optional = true }
 # wasmtime
 #wasmtime = { version = "34.0.1", package = "wasmtime-rwasm", optional = true, features = ["disable-fpu", "cache"] }
 #wasmtime = { path = "../wasmtime/crates/wasmtime", optional = true, features = ["disable-fpu", "cache"] }
-wasmtime = { git = "https://github.com/fluentlabs-xyz/wasmtime", branch = "devel", optional = true, features = ["cache"] }
+wasmtime = { git = "https://github.com/fluentlabs-xyz/wasmtime", branch = "v41-patched", optional = true, features = ["cache"] }
 #wasmtime = { path = "../wasmtime/crates/wasmtime", optional = true, features = ["cache"] }
 anyhow = { version = "1.0.98", default-features = false, optional = true }
 directories = { version = "6.0.0", optional = true }
@@ -46,7 +46,7 @@ rwasm-fuel-policy = { git = "https://github.com/fluentlabs-xyz/rwasm-fuel-policy
 
 [dev-dependencies]
 rand = "0.9.1"
-wat = "1.230.0"
+wat = "1.243.0"
 hex-literal = "1.0.0"
 
 [features]
