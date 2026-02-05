@@ -1,7 +1,7 @@
 use crate::{
-    AddressOffset, DataSegmentIdx, I64ValueSplit, InstructionSet, TrapCode, MEMORY_BYTES_PER_FUEL,
-    MEMORY_BYTES_PER_FUEL_LOG2, N_BYTES_PER_MEMORY_PAGE,
+    AddressOffset, DataSegmentIdx, I64ValueSplit, InstructionSet, TrapCode, N_BYTES_PER_MEMORY_PAGE,
 };
+use rwasm_fuel_policy::{MEMORY_BYTES_PER_FUEL, MEMORY_BYTES_PER_FUEL_LOG2};
 
 impl InstructionSet {
     pub const MSH_I64_LOAD: u32 = 2;

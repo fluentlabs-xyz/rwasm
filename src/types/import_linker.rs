@@ -1,6 +1,7 @@
-use crate::{intrinsic::Intrinsic, ImportName, SyscallFuelParams};
+use crate::{intrinsic::Intrinsic, ImportName};
 use alloc::vec::Vec;
 use hashbrown::HashMap;
+use rwasm_fuel_policy::SyscallFuelParams;
 use wasmparser::{FuncType, ValType};
 
 #[derive(Debug, Default, Clone)]

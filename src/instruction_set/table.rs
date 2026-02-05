@@ -1,7 +1,5 @@
-use crate::{
-    ElementSegmentIdx, InstructionSet, TableIdx, TrapCode, TABLE_ELEMS_PER_FUEL,
-    TABLE_ELEMS_PER_FUEL_LOG2,
-};
+use crate::{ElementSegmentIdx, InstructionSet, TableIdx, TrapCode};
+use rwasm_fuel_policy::{TABLE_ELEMS_PER_FUEL, TABLE_ELEMS_PER_FUEL_LOG2};
 
 impl InstructionSet {
     pub const MSH_TABLE_INIT_CHECKED: u32 = 2;

@@ -1,4 +1,5 @@
-use rwasm::{CompilationConfig, ExecutionEngine, FuelCosts, RwasmModule, RwasmStore, Store, Value};
+use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore, Store, Value};
+use rwasm_fuel_policy::FuelCosts;
 
 #[test]
 fn test_locals_consume_fuel() {

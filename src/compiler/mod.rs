@@ -3,7 +3,6 @@ mod config;
 mod control_flow;
 mod drop_keep;
 mod error;
-mod fuel_costs;
 mod func_builder;
 mod func_type_registry;
 pub mod intrinsic;
@@ -19,7 +18,6 @@ mod value_stack;
 pub use self::{
     config::{CompilationConfig, StateRouterConfig},
     error::CompilationError,
-    fuel_costs::FuelCosts,
     parser::ModuleParser,
 };
 use crate::RwasmModule;

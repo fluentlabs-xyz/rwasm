@@ -1,9 +1,10 @@
 use hex_literal::hex;
 use rwasm::{
     compile_wasmtime_module, for_each_strategy, CompilationConfig, ExecutionEngine, FuelConfig,
-    ImportLinker, ImportName, RwasmModule, RwasmStore, Store, Strategy, SyscallFuelParams,
-    TrapCode, TypedCaller, Value,
+    ImportLinker, ImportName, RwasmModule, RwasmStore, Store, Strategy, TrapCode, TypedCaller,
+    Value,
 };
+use rwasm_fuel_policy::SyscallFuelParams;
 use std::sync::Arc;
 use wasmparser::ValType;
 

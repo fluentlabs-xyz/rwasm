@@ -1,8 +1,9 @@
 use rwasm::{
     always_failing_syscall_handler, compile_wasmtime_module, instruction_set, CompilationConfig,
-    ExecutionEngine, FuelConfig, ImportLinker, ImportName, LinearFuelParams, RwasmModule,
-    RwasmStore, Store, Strategy, SyscallFuelParams, TrapCode, TypedCaller, Value, WasmtimeStore,
+    ExecutionEngine, FuelConfig, ImportLinker, ImportName, RwasmModule, RwasmStore, Store,
+    Strategy, TrapCode, TypedCaller, Value, WasmtimeStore,
 };
+use rwasm_fuel_policy::{LinearFuelParams, SyscallFuelParams};
 use std::sync::Arc;
 use wasmparser::ValType;
 
@@ -77,7 +78,6 @@ fn test_interrupted_call_rwasm_with_syscall() {
             base_fuel: 7,
             param_index: 1,
             word_cost: 5,
-            max_linear: 134_217_728,
         }),
         &[ValType::I32],
         &[],
@@ -104,7 +104,12 @@ fn test_interrupted_call_rwasm_with_syscall() {
     engine
         .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap();
-    assert_eq!(store.fuel_consumed(), 1 + 2 + 10 * 5 + 7);
+    // 1 - function cost
+    // 1 - base cost
+    // 10 - call cost
+    // 10*5 - linear cost
+    // 7 - base cost
+    assert_eq!(store.fuel_consumed(), 1 + 1 + 10 + 10 * 5 + 7);
 }
 
 #[test]
@@ -129,7 +134,6 @@ fn test_interrupted_call_rwasm_with_overflow() {
             base_fuel: 7,
             param_index: 1,
             word_cost: 5,
-            max_linear: 134_217_728,
         }),
         &[ValType::I32],
         &[],
