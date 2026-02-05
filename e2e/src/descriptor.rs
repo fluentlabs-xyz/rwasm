@@ -37,7 +37,7 @@ impl TestDescriptor {
     }
 
     /// Creates a [`TestSpan`] which can be used to print the location within the `.wast` test file.
-    pub fn spanned(&self, span: Span) -> TestSpan {
+    pub fn spanned(&self, span: Span) -> TestSpan<'_> {
         TestSpan {
             path: self.path(),
             contents: self.file(),

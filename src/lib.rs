@@ -9,7 +9,6 @@ mod module;
 mod strategy;
 mod types;
 mod vm;
-mod wasmi;
 #[cfg(feature = "wasmtime")]
 pub mod wasmtime;
 
@@ -23,7 +22,6 @@ pub use module::*;
 pub use strategy::*;
 pub use types::*;
 pub use vm::*;
-pub use wasmi::*;
 pub use wasmparser::{FuncType, ValType};
 #[cfg(feature = "wasmtime")]
 pub use wasmtime::{
@@ -49,11 +47,6 @@ pub fn for_each_strategy<F: FnMut(Strategy) -> Result<(), StrategyError>>(
     {
         let module = compile_wasmtime_module(compilation_config.clone(), wasm_binary).unwrap();
         f(Strategy::Wasmtime { module })?;
-    }
-    // wasmi case
-    {
-        let module = compile_wasmi_module(compilation_config.clone(), wasm_binary).unwrap();
-        f(Strategy::Wasmi { module })?;
     }
     Ok(())
 }

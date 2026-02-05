@@ -1,7 +1,6 @@
 use crate::{
-    wasmi::{WasmiModule, WasmiStore},
     CompilationError, ExecutionEngine, ImportLinker, RwasmCaller, RwasmExecutor, RwasmModule,
-    RwasmStore, TrapCode, UntypedValue, Value, WasmiCaller,
+    RwasmStore, TrapCode, UntypedValue, Value,
 };
 #[cfg(feature = "wasmtime")]
 use crate::{WasmtimeCaller, WasmtimeModule, WasmtimeStore};
@@ -47,7 +46,6 @@ pub enum TypedCaller<'a, T: 'static + Send + Sync> {
     Rwasm(RwasmCaller<'a, T>),
     #[cfg(feature = "wasmtime")]
     Wasmtime(WasmtimeCaller<'a, T>),
-    Wasmi(WasmiCaller<'a, T>),
 }
 
 impl<'a, T: Send + Sync> TypedCaller<'a, T> {
@@ -98,7 +96,6 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.memory_read(offset, buffer),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.memory_read(offset, buffer),
-            TypedCaller::Wasmi(store) => store.memory_read(offset, buffer),
         }
     }
 
@@ -107,7 +104,6 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.memory_write(offset, buffer),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.memory_write(offset, buffer),
-            TypedCaller::Wasmi(store) => store.memory_write(offset, buffer),
         }
     }
 
@@ -116,7 +112,6 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.context_mut(func),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.context_mut(func),
-            TypedCaller::Wasmi(store) => store.context_mut(func),
         }
     }
 
@@ -125,7 +120,6 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.context(func),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.context(func),
-            TypedCaller::Wasmi(store) => store.context(func),
         }
     }
 
@@ -134,7 +128,6 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.try_consume_fuel(delta),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.try_consume_fuel(delta),
-            TypedCaller::Wasmi(store) => store.try_consume_fuel(delta),
         }
     }
 
@@ -143,7 +136,6 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.remaining_fuel(),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.remaining_fuel(),
-            TypedCaller::Wasmi(store) => store.remaining_fuel(),
         }
     }
 }
@@ -154,7 +146,6 @@ impl<'a, T: Send + Sync> Caller<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.program_counter(),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.program_counter(),
-            TypedCaller::Wasmi(store) => store.program_counter(),
         }
     }
 
@@ -163,7 +154,6 @@ impl<'a, T: Send + Sync> Caller<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.stack_push(value),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.stack_push(value),
-            TypedCaller::Wasmi(store) => store.stack_push(value),
         }
     }
 
@@ -172,7 +162,6 @@ impl<'a, T: Send + Sync> Caller<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(caller) => caller.consume_fuel(fuel),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(caller) => caller.consume_fuel(fuel),
-            TypedCaller::Wasmi(caller) => caller.consume_fuel(fuel),
         }
     }
 }
@@ -201,19 +190,13 @@ pub enum Strategy {
         engine: ExecutionEngine,
     },
     #[cfg(feature = "wasmtime")]
-    Wasmtime {
-        module: WasmtimeModule,
-    },
-    Wasmi {
-        module: WasmiModule,
-    },
+    Wasmtime { module: WasmtimeModule },
 }
 
 pub enum TypedStore<T: 'static + Send + Sync> {
     Rwasm(RwasmStore<T>),
     #[cfg(feature = "wasmtime")]
     Wasmtime(WasmtimeStore<T>),
-    Wasmi(WasmiStore<T>),
 }
 
 impl<T: Send + Sync> Store<T> for TypedStore<T> {
@@ -222,7 +205,6 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             TypedStore::Rwasm(store) => store.memory_read(offset, buffer),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.memory_read(offset, buffer),
-            TypedStore::Wasmi(store) => store.memory_read(offset, buffer),
         }
     }
 
@@ -231,7 +213,6 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             TypedStore::Rwasm(store) => store.memory_write(offset, buffer),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.memory_write(offset, buffer),
-            TypedStore::Wasmi(store) => store.memory_write(offset, buffer),
         }
     }
 
@@ -240,7 +221,6 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             TypedStore::Rwasm(store) => store.context_mut(func),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.context_mut(func),
-            TypedStore::Wasmi(store) => store.context_mut(func),
         }
     }
 
@@ -249,7 +229,6 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             TypedStore::Rwasm(store) => store.context(func),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.context(func),
-            TypedStore::Wasmi(store) => store.context(func),
         }
     }
 
@@ -258,7 +237,6 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             TypedStore::Rwasm(store) => store.try_consume_fuel(delta),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.try_consume_fuel(delta),
-            TypedStore::Wasmi(store) => store.try_consume_fuel(delta),
         }
     }
 
@@ -267,7 +245,6 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
             TypedStore::Rwasm(store) => store.remaining_fuel(),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.remaining_fuel(),
-            TypedStore::Wasmi(store) => store.remaining_fuel(),
         }
     }
 }
@@ -290,7 +267,6 @@ impl<T: Send + Sync> TypedStore<T> {
             TypedStore::Rwasm(store) => store.reset(keep_flags),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(_) => {}
-            TypedStore::Wasmi(_) => {}
         }
     }
 
@@ -299,7 +275,6 @@ impl<T: Send + Sync> TypedStore<T> {
             TypedStore::Rwasm(store) => store.set_fuel(Some(fuel)),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.store.as_mut().unwrap().set_fuel(fuel).unwrap(),
-            TypedStore::Wasmi(_) => {}
         }
     }
 }
@@ -336,13 +311,6 @@ impl Strategy {
                 syscall_handler,
                 fuel_config,
             )),
-            Strategy::Wasmi { module } => TypedStore::Wasmi(WasmiStore::new(
-                module,
-                import_linker,
-                context,
-                syscall_handler,
-                fuel_config,
-            )),
         }
     }
 
@@ -372,13 +340,6 @@ impl Strategy {
 
                 store.execute(func_name, params, result)
             }
-            Strategy::Wasmi { module, .. } => {
-                let store = match store {
-                    TypedStore::Wasmi(store) => store,
-                    _ => unreachable!(),
-                };
-                store.execute(func_name, params, result)
-            }
         }
     }
 
@@ -404,13 +365,6 @@ impl Strategy {
                     _ => unreachable!(),
                 };
                 store.resume(Ok(interruption_result), result)
-            }
-            Strategy::Wasmi { module, .. } => {
-                let store = match store {
-                    TypedStore::Wasmi(store) => store,
-                    _ => unreachable!(),
-                };
-                store.resume(interruption_result, result)
             }
         }
     }

@@ -38,9 +38,6 @@ anyhow = { version = "1.0.98", default-features = false, optional = true }
 directories = { version = "6.0.0", optional = true }
 futures = { version = "0.3.31", optional = true }
 
-# wasmi
-wasmi = { version = "0.47.0", default-features = false }
-
 # rwasm fuel policy
 rwasm-fuel-policy = { git = "https://github.com/fluentlabs-xyz/rwasm-fuel-policy.git", branch = "main", default-features = false }
 

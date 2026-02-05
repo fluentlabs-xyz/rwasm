@@ -6,10 +6,10 @@ use crate::handler::{
 use anyhow::Result;
 use lazy_static::lazy_static;
 use rwasm::{
-    compile_wasmi_module, compile_wasmtime_module, CallStack, CompilationConfig, FuelConfig,
-    FuncType, I64ValueSplit, ImportLinker, ImportLinkerEntity, ImportName, ModuleParser, Opcode,
-    RwasmExecutor, RwasmModule, StateRouterConfig, Store, Strategy, TrapCode, TypedExecutor,
-    TypedStore, ValType, Value, ValueStack, F64,
+    compile_wasmtime_module, CallStack, CompilationConfig, FuelConfig, FuncType, I64ValueSplit,
+    ImportLinker, ImportLinkerEntity, ImportName, ModuleParser, Opcode, RwasmExecutor, RwasmModule,
+    StateRouterConfig, Store, Strategy, TrapCode, TypedExecutor, TypedStore, ValType, Value,
+    ValueStack, F64,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use wast::token::{Id, Span};
@@ -34,7 +34,7 @@ pub struct InstanceInner {
 }
 
 impl InstanceInner {
-    fn new_executor(&mut self) -> TypedExecutor<TestingContext> {
+    fn new_executor(&mut self) -> TypedExecutor<'_, TestingContext> {
         match (&self.strategy, &mut self.store) {
             (Strategy::Rwasm { module, .. }, TypedStore::Rwasm(rwasm_store)) => {
                 TypedExecutor::RwasmExecutor(RwasmExecutor::entrypoint(
@@ -46,9 +46,6 @@ impl InstanceInner {
             }
             (Strategy::Wasmtime { .. }, TypedStore::Wasmtime(_)) => {
                 unreachable!("Wasmtime isn't supported executor")
-            }
-            (Strategy::Wasmi { .. }, TypedStore::Wasmi(_)) => {
-                unreachable!("Wasmi isn't supported executor")
             }
             _ => panic!("inconsistent types of module and store"),
         }
@@ -69,7 +66,6 @@ impl InstanceInner {
 pub enum EngineMode {
     Rwasm,
     Wasmtime,
-    Wasmi,
 }
 
 type Instance = Rc<RefCell<HashMap<EngineMode, InstanceInner>>>;
@@ -200,7 +196,7 @@ impl TestContext<'_> {
     }
 
     /// Returns the [`TestDescriptor`] of the test context.
-    pub fn spanned(&self, span: Span) -> TestSpan {
+    pub fn spanned(&self, span: Span) -> TestSpan<'_> {
         self.descriptor.spanned(span)
     }
 
@@ -306,12 +302,6 @@ impl TestContext<'_> {
                 let wasmtime_module = compile_wasmtime_module(config, wasm).unwrap();
                 Strategy::Wasmtime {
                     module: wasmtime_module,
-                }
-            }
-            EngineMode::Wasmi => {
-                let wasmi_module = compile_wasmi_module(config, wasm).unwrap();
-                Strategy::Wasmi {
-                    module: wasmi_module,
                 }
             }
         };
@@ -501,17 +491,6 @@ impl TestContext<'_> {
                     instance.execute(func_name, args, result.as_mut())?;
                     #[cfg(feature = "debug-print")]
                     println!("Wasmtime after call: {:?}", instance.store.remaining_fuel());
-                    remaining_fuel.push(instance.store.remaining_fuel());
-                    all_results.push(result)
-                }
-                Strategy::Wasmi { .. } => {
-                    let func_type = self.extern_types.get(func_name).unwrap();
-                    let mut result = vec![Value::I32(0); func_type.results().len()];
-                    #[cfg(feature = "debug-print")]
-                    println!("Wasmi before call: {:?}", instance.store.remaining_fuel());
-                    instance.execute(func_name, args, result.as_mut())?;
-                    #[cfg(feature = "debug-print")]
-                    println!("Wasmi after call: {:?}", instance.store.remaining_fuel());
                     remaining_fuel.push(instance.store.remaining_fuel());
                     all_results.push(result)
                 }
