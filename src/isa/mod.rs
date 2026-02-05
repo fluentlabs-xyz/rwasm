@@ -27,11 +27,11 @@ use bincode::{
 };
 use core::ops::{Deref, DerefMut};
 
-#[derive(Default, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Compact, linear sequence of rwasm opcodes produced by the compiler.
 /// Acts as the executable bytecode for the interpreter and supports simple editing during lowering.
-/// The layout is stable and indexable to allow cheap jumps and metadata lookups.
+/// The layout is stable and indexable to allow inexpensive jumps and metadata lookups.
+#[derive(Default, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct InstructionSet {
     /// Backing storage for encoded opcodes in program order.
     pub instr: Vec<Opcode>,

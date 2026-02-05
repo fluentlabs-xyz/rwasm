@@ -4,7 +4,7 @@
 #![recursion_limit = "750"]
 
 mod compiler;
-mod instruction_set;
+mod isa;
 mod module;
 mod strategy;
 mod types;
@@ -16,7 +16,7 @@ extern crate alloc;
 extern crate core;
 
 pub use compiler::*;
-pub use instruction_set::*;
+pub use isa::*;
 use libm as _;
 pub use module::*;
 pub use strategy::*;
