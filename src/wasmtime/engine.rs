@@ -7,20 +7,39 @@ use std::{
 };
 use wasmtime::{Config, Engine, OptLevel, Strategy};
 
-static ENGINE: OnceLock<Engine> = OnceLock::new();
+/// Returns the shared Wasmtime engine instance.
+///
+/// The engine is configured once and reused globally.
+/// Fuel metering is disabled (`consume_fuel(false)`) because fuel is accounted
+/// inside `RuntimeContext` and system runtimes are expected to self-manage.
+pub fn wasmtime_engine(consume_fuel: bool) -> &'static Engine {
+    static ENGINE: OnceLock<Engine> = OnceLock::new();
+    ENGINE.get_or_init(|| {
+        let mut cfg = Config::new();
+        cfg.strategy(Strategy::Cranelift);
+        cfg.collector(wasmtime::Collector::Null);
 
-pub fn wasmtime_engine() -> &'static Engine {
-    ENGINE.get_or_init(factory_wasmtime_engine)
-}
+        // rWasm stack size is defined in 32-bit slots; Wasmtime expects bytes.
+        cfg.max_wasm_stack(N_MAX_STACK_SIZE * size_of::<u32>());
 
-fn factory_wasmtime_engine() -> Engine {
-    factory_wasmtime_engine_with_linker(None, false)
+        cfg.async_support(false);
+        cfg.wasm_memory64(false);
+        cfg.memory_init_cow(false);
+        cfg.cranelift_opt_level(OptLevel::Speed);
+        cfg.parallel_compilation(true);
+
+        // Fuel accounting is handled externally via RuntimeContext.
+        cfg.consume_fuel(consume_fuel);
+
+        Engine::new(&cfg).unwrap()
+    })
 }
 
 pub fn wasmtime_engine_with_linker(
     import_linker: Option<Arc<ImportLinker>>,
     consume_fuel: bool,
 ) -> &'static Engine {
+    static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| factory_wasmtime_engine_with_linker(import_linker, consume_fuel))
 }
 
@@ -60,7 +79,7 @@ fn factory_wasmtime_engine_with_linker(
     cfg.strategy(Strategy::Cranelift);
     cfg.collector(wasmtime::Collector::Null);
     cfg.max_wasm_stack(N_MAX_STACK_SIZE * size_of::<u32>());
-    cfg.async_support(true);
+    cfg.async_support(false);
     // 32-bit memories are cheaper and pool better unless you truly need >4 GiB
     cfg.wasm_memory64(false);
     // Make initial memory image cheap (copy-on-write for data segments)

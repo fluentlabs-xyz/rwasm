@@ -6,18 +6,14 @@ edition = "2021"
 [dependencies]
 rwasm = { path = "..", features = ["std", "fpu", "wasmtime", "e2e"], default-features = false }
 wasmtime = { git = "https://github.com/fluentlabs-xyz/wasmtime", branch = "v41-patched", optional = true, features = ["cache"] }
-#wasmtime = { path = "../../wasmtime/crates/wasmtime", optional = true, features = ["cache"] }
-#wasmtime = { version = "34.0.1", package = "wasmtime-rwasm", optional = true, features = ["disable-fpu", "cache"] }
 anyhow = "1.0.71"
 wast = "=64.0"
 lazy_static = "1.5.0"
 
 [features]
-default = ["rwasm", "wasmtime"]
-rwasm = []
+default = ["wasmtime"]
 wasmtime = ["dep:wasmtime"]
-wasmi = []
-all-engine = ["rwasm", "wasmtime", "wasmi"]
+all-engine = ["wasmtime"]
 debug-print = ["rwasm/debug-print"]
 
 #[patch."https://github.com/fluentlabs-xyz/wasmtime"]

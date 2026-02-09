@@ -6,13 +6,7 @@ use wast::{
     lexer::Lexer,
     parser::ParseBuffer,
     token::Span,
-    QuoteWat,
-    Wast,
-    WastDirective,
-    WastExecute,
-    WastInvoke,
-    WastRet,
-    Wat,
+    QuoteWat, Wast, WastDirective, WastExecute, WastInvoke, WastRet, Wat,
 };
 
 /// Runs the Wasm test spec identified by the given name.
@@ -333,15 +327,11 @@ fn execute_wast_execute(
     execute: WastExecute,
 ) -> Result<Vec<Value>, TestError> {
     match execute {
-        WastExecute::Invoke(invoke) => {
-            execute_wast_invoke(context, span, invoke)}
+        WastExecute::Invoke(invoke) => execute_wast_invoke(context, span, invoke),
         WastExecute::Wat(Wat::Module(module)) => {
             context.compile_and_instantiate(module).map(|_| Vec::new())
         }
-        WastExecute::Wat(Wat::Component(_)) => {
-            // Wasmi currently does not support the Wasm component model.
-            Ok(vec![])
-        }
+        WastExecute::Wat(Wat::Component(_)) => Ok(vec![]),
         WastExecute::Get { module, global } => context
             .get_global(module, global)
             .map(|result| vec![result]),

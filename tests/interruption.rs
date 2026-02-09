@@ -163,6 +163,8 @@ fn test_interrupted_call_rwasm_with_overflow() {
 }
 
 #[test]
+// Note: this test can't pass, because we don't support interruptions for wasmtime anymore
+#[ignore]
 fn test_interrupted_call_wasmtime() {
     let wasm_binary = wat::parse_str(
         r#"

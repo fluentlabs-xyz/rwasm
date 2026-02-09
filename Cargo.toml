@@ -36,7 +36,6 @@ wasmtime = { git = "https://github.com/fluentlabs-xyz/wasmtime", branch = "v41-p
 #wasmtime = { path = "../wasmtime/crates/wasmtime", optional = true, features = ["cache"] }
 anyhow = { version = "1.0.98", default-features = false, optional = true }
 directories = { version = "6.0.0", optional = true }
-futures = { version = "0.3.31", optional = true }
 
 # rwasm fuel policy
 rwasm-fuel-policy = { git = "https://github.com/fluentlabs-xyz/rwasm-fuel-policy.git", branch = "main", default-features = false }
@@ -63,7 +62,7 @@ serde = [
 tracing = ["serde"]
 debug-print = []
 fpu = []
-wasmtime = ["dep:wasmtime", "dep:anyhow", "dep:futures"]
+wasmtime = ["dep:wasmtime", "dep:anyhow"]
 cache-compiled-artifacts = ["wasmtime", "dep:directories"]
 e2e = []
 pooling-allocator = []

@@ -16,10 +16,7 @@ use wast::token::{Id, Span};
 
 lazy_static! {
     static ref ENGINES: Vec<EngineMode> = vec![
-        #[cfg(feature = "rwasm")]
         EngineMode::Rwasm,
-        #[cfg(feature = "wasmi")]
-        EngineMode::Wasmi,
         #[cfg(feature = "wasmtime")]
         EngineMode::Wasmtime,
     ];
@@ -56,7 +53,7 @@ impl InstanceInner {
         func_name: &str,
         params: &[Value],
         result: &mut [Value],
-    ) -> std::result::Result<(), TrapCode> {
+    ) -> Result<(), TrapCode> {
         self.strategy
             .execute(&mut self.store, func_name, params, result)
     }
@@ -480,17 +477,9 @@ impl TestContext<'_> {
                     let func_type = self.extern_types.get(func_name).unwrap();
                     let mut result = vec![Value::I32(0); func_type.results().len()];
                     if let TypedStore::Wasmtime(store) = &mut instance.store {
-                        store.store.as_mut().unwrap().set_fuel(u64::MAX).unwrap();
+                        store.store.set_fuel(u64::MAX).unwrap();
                     }
-
-                    #[cfg(feature = "debug-print")]
-                    println!(
-                        "Wasmitime before call: {:?}",
-                        instance.store.remaining_fuel()
-                    );
                     instance.execute(func_name, args, result.as_mut())?;
-                    #[cfg(feature = "debug-print")]
-                    println!("Wasmtime after call: {:?}", instance.store.remaining_fuel());
                     remaining_fuel.push(instance.store.remaining_fuel());
                     all_results.push(result)
                 }

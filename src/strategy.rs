@@ -274,7 +274,7 @@ impl<T: Send + Sync> TypedStore<T> {
         match self {
             TypedStore::Rwasm(store) => store.set_fuel(Some(fuel)),
             #[cfg(feature = "wasmtime")]
-            TypedStore::Wasmtime(store) => store.store.as_mut().unwrap().set_fuel(fuel).unwrap(),
+            TypedStore::Wasmtime(store) => store.store.set_fuel(fuel).unwrap(),
         }
     }
 }
