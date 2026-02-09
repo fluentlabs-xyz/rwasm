@@ -1,10 +1,6 @@
-use crate::{ImportLinker, N_MAX_STACK_SIZE};
+use crate::{CompilationConfig, N_MAX_STACK_SIZE};
 use rwasm_fuel_policy::SyscallName;
-use std::{
-    collections::HashMap,
-    mem::size_of,
-    sync::{Arc, OnceLock},
-};
+use std::{collections::HashMap, mem::size_of, sync::OnceLock};
 use wasmtime::{Config, Engine, OptLevel, Strategy};
 
 /// Returns the shared Wasmtime engine instance.
@@ -12,15 +8,12 @@ use wasmtime::{Config, Engine, OptLevel, Strategy};
 /// The engine is configured once and reused globally.
 /// Fuel metering is disabled (`consume_fuel(false)`) because fuel is accounted
 /// inside `RuntimeContext` and system runtimes are expected to self-manage.
-pub fn wasmtime_shared_engine(
-    import_linker: Option<Arc<ImportLinker>>,
-    consume_fuel: bool,
-) -> &'static Engine {
+pub fn wasmtime_shared_engine(compilation_config: &CompilationConfig) -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
-    ENGINE.get_or_init(|| wasmtime_engine(import_linker, consume_fuel))
+    ENGINE.get_or_init(|| wasmtime_engine(compilation_config))
 }
 
-pub fn wasmtime_engine(import_linker: Option<Arc<ImportLinker>>, consume_fuel: bool) -> Engine {
+pub fn wasmtime_engine(compilation_config: &CompilationConfig) -> Engine {
     let mut cfg = Config::new();
     cfg.strategy(Strategy::Cranelift);
     cfg.collector(wasmtime::Collector::Null);
@@ -35,9 +28,13 @@ pub fn wasmtime_engine(import_linker: Option<Arc<ImportLinker>>, consume_fuel: b
     cfg.parallel_compilation(true);
 
     // Fuel accounting is handled externally via RuntimeContext.
-    cfg.consume_fuel(consume_fuel);
+    cfg.consume_fuel(compilation_config.consume_fuel);
 
-    if let Some(import_linker) = import_linker {
+    if let Some(import_linker) = compilation_config
+        .import_linker
+        .as_ref()
+        .filter(|_| compilation_config.builtins_consume_fuel)
+    {
         let mut syscall_params = HashMap::new();
         for (import_name, import_entity) in import_linker.iter() {
             let syscall_name = SyscallName {

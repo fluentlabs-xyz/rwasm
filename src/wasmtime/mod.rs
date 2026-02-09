@@ -27,10 +27,7 @@ pub fn deserialize_wasmtime_module(
 ) -> anyhow::Result<WasmtimeModule> {
     print!("parsing wasmtime module... ");
     let start = Instant::now();
-    let engine = wasmtime_engine(
-        compilation_config.import_linker,
-        compilation_config.consume_fuel,
-    );
+    let engine = wasmtime_engine(&compilation_config);
     let module = unsafe { wasmtime::Module::deserialize(&engine, wasmtime_binary) };
     println!("{:?}", start.elapsed());
     module
@@ -42,10 +39,7 @@ pub fn compile_wasmtime_module(
 ) -> anyhow::Result<WasmtimeModule> {
     print!("compiling wasmtime module... ");
     let start = Instant::now();
-    let engine = wasmtime_engine(
-        compilation_config.import_linker,
-        compilation_config.consume_fuel,
-    );
+    let engine = wasmtime_engine(&compilation_config);
     let module = wasmtime::Module::new(&engine, wasm_binary);
     println!("{:?}", start.elapsed());
     module
