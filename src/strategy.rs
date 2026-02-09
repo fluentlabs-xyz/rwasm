@@ -187,7 +187,7 @@ impl<'a, T: Send + Sync + 'static> TypedExecutor<'a, T> {
     }
 }
 
-pub enum Strategy {
+pub enum TypedModule {
     Rwasm {
         module: RwasmModule,
         engine: ExecutionEngine,
@@ -196,7 +196,10 @@ pub enum Strategy {
     Wasmtime { module: WasmtimeModule },
 }
 
-impl Strategy {
+#[deprecated(note = "use `TypedModule` type instead of `Strategy`")]
+pub type Strategy = TypedModule;
+
+impl TypedModule {
     pub fn new(
         compilation_config: CompilationConfig,
         wasm_binary: impl AsRef<[u8]>,
@@ -310,7 +313,7 @@ impl<T: Send + Sync> TypedStore<T> {
     }
 }
 
-impl Strategy {
+impl TypedModule {
     pub fn empty_store(&self) -> TypedStore<()> {
         self.create_store::<()>(
             Arc::new(ImportLinker::default()),
@@ -328,14 +331,14 @@ impl Strategy {
         fuel_config: FuelConfig,
     ) -> TypedStore<T> {
         match self {
-            Strategy::Rwasm { engine, .. } => TypedStore::Rwasm(RwasmStore::new(
+            TypedModule::Rwasm { engine, .. } => TypedStore::Rwasm(RwasmStore::new(
                 import_linker,
                 context,
                 syscall_handler,
                 fuel_config,
             )),
             #[cfg(feature = "wasmtime")]
-            Strategy::Wasmtime { module, .. } => TypedStore::Wasmtime(WasmtimeStore::new(
+            TypedModule::Wasmtime { module, .. } => TypedStore::Wasmtime(WasmtimeStore::new(
                 module.clone(),
                 import_linker,
                 context,
@@ -353,7 +356,7 @@ impl Strategy {
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
         match self {
-            Strategy::Rwasm { module, engine } => {
+            TypedModule::Rwasm { module, engine } => {
                 let store = match store {
                     TypedStore::Rwasm(store) => store,
                     #[allow(unreachable_patterns)]
@@ -363,7 +366,7 @@ impl Strategy {
                 engine.execute(store, &module, params, result)
             }
             #[cfg(feature = "wasmtime")]
-            Strategy::Wasmtime { .. } => {
+            TypedModule::Wasmtime { .. } => {
                 let store = match store {
                     TypedStore::Wasmtime(store) => store,
                     _ => unreachable!(),
@@ -381,7 +384,7 @@ impl Strategy {
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
         match self {
-            Strategy::Rwasm { engine, .. } => {
+            TypedModule::Rwasm { engine, .. } => {
                 let store = match store {
                     TypedStore::Rwasm(store) => store,
                     #[allow(unreachable_patterns)]
@@ -390,7 +393,7 @@ impl Strategy {
                 engine.resume(store, interruption_result, result)
             }
             #[cfg(feature = "wasmtime")]
-            Strategy::Wasmtime { .. } => {
+            TypedModule::Wasmtime { .. } => {
                 let store = match store {
                     TypedStore::Wasmtime(store) => store,
                     _ => unreachable!(),

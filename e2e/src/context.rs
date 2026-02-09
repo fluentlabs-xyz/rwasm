@@ -8,7 +8,7 @@ use lazy_static::lazy_static;
 use rwasm::{
     compile_wasmtime_module, CallStack, CompilationConfig, FuelConfig, FuncType, I64ValueSplit,
     ImportLinker, ImportLinkerEntity, ImportName, ModuleParser, Opcode, RwasmExecutor, RwasmModule,
-    StateRouterConfig, Store, Strategy, TrapCode, TypedExecutor, TypedStore, ValType, Value,
+    StateRouterConfig, Store, TrapCode, TypedExecutor, TypedModule, TypedStore, ValType, Value,
     ValueStack, F64,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
@@ -23,7 +23,7 @@ lazy_static! {
 }
 
 pub struct InstanceInner {
-    strategy: Strategy,
+    strategy: TypedModule,
     store: TypedStore<TestingContext>,
     value_stack: ValueStack,
     call_stack: CallStack,
@@ -33,7 +33,7 @@ pub struct InstanceInner {
 impl InstanceInner {
     fn new_executor(&mut self) -> TypedExecutor<'_, TestingContext> {
         match (&self.strategy, &mut self.store) {
-            (Strategy::Rwasm { module, .. }, TypedStore::Rwasm(rwasm_store)) => {
+            (TypedModule::Rwasm { module, .. }, TypedStore::Rwasm(rwasm_store)) => {
                 TypedExecutor::RwasmExecutor(RwasmExecutor::entrypoint(
                     module,
                     &mut self.value_stack,
@@ -41,7 +41,7 @@ impl InstanceInner {
                     rwasm_store,
                 ))
             }
-            (Strategy::Wasmtime { .. }, TypedStore::Wasmtime(_)) => {
+            (TypedModule::Wasmtime { .. }, TypedStore::Wasmtime(_)) => {
                 unreachable!("Wasmtime isn't supported executor")
             }
             _ => panic!("inconsistent types of module and store"),
@@ -224,7 +224,7 @@ impl TestContext<'_> {
         for engine in ENGINES.iter() {
             let mut instance_inner = self.create_instance(*engine, wasm.as_slice())?;
 
-            if let Strategy::Rwasm { .. } = &instance_inner.strategy {
+            if let TypedModule::Rwasm { .. } = &instance_inner.strategy {
                 #[cfg(feature = "debug-print")]
                 println!(" --- entrypoint ---");
                 instance_inner.execute("", &[], &mut [])?;
@@ -290,14 +290,14 @@ impl TestContext<'_> {
                     assert_eq!(buffer[bytes_read..].len(), 0);
                 }
 
-                Strategy::Rwasm {
+                TypedModule::Rwasm {
                     module: rwasm_module,
                     engine: Default::default(),
                 }
             }
             EngineMode::Wasmtime => {
                 let wasmtime_module = compile_wasmtime_module(config, wasm).unwrap();
-                Strategy::Wasmtime {
+                TypedModule::Wasmtime {
                     module: wasmtime_module,
                 }
             }
@@ -386,7 +386,7 @@ impl TestContext<'_> {
         let mut remaining_fuel = vec![];
         for (_, instance) in instances.iter_mut() {
             match &instance.strategy {
-                Strategy::Rwasm { .. } => {
+                TypedModule::Rwasm { .. } => {
                     // We reset an instruction pointer to the state function position to re-invoke the function.
                     // However, with different states.
                     // Some tests might fail, and we might keep outdated signature value in the state,
@@ -473,7 +473,7 @@ impl TestContext<'_> {
                     remaining_fuel.push(instance.store.remaining_fuel());
                     all_results.push(results)
                 }
-                Strategy::Wasmtime { .. } => {
+                TypedModule::Wasmtime { .. } => {
                     let func_type = self.extern_types.get(func_name).unwrap();
                     let mut result = vec![Value::I32(0); func_type.results().len()];
                     if let TypedStore::Wasmtime(store) = &mut instance.store {

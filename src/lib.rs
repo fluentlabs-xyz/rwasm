@@ -30,7 +30,7 @@ pub use wasmtime::{
 };
 
 #[cfg(feature = "std")]
-pub fn for_each_strategy<F: FnMut(Strategy) -> Result<(), StrategyError>>(
+pub fn for_each_strategy<F: FnMut(TypedModule) -> Result<(), StrategyError>>(
     mut f: F,
     compilation_config: CompilationConfig,
     wasm_binary: &[u8],
@@ -38,7 +38,7 @@ pub fn for_each_strategy<F: FnMut(Strategy) -> Result<(), StrategyError>>(
     // rwasm case
     {
         let (module, _) = RwasmModule::compile(compilation_config.clone(), wasm_binary)?;
-        f(Strategy::Rwasm {
+        f(TypedModule::Rwasm {
             module,
             engine: ExecutionEngine::acquire_shared(),
         })?;
@@ -47,7 +47,7 @@ pub fn for_each_strategy<F: FnMut(Strategy) -> Result<(), StrategyError>>(
     #[cfg(feature = "wasmtime")]
     {
         let module = compile_wasmtime_module(compilation_config.clone(), wasm_binary).unwrap();
-        f(Strategy::Wasmtime { module })?;
+        f(TypedModule::Wasmtime { module })?;
     }
     Ok(())
 }

@@ -1,6 +1,6 @@
 use rwasm::{
     always_failing_syscall_handler, compile_wasmtime_module, CompilationConfig, FuelConfig,
-    ImportLinker, Strategy, Value,
+    ImportLinker, TypedModule, Value,
 };
 use std::sync::Arc;
 use wasmtime::{Engine, Instance, Module, Store, TypedFunc};
@@ -107,7 +107,7 @@ fn test_10001_instances_in_a_row() {
 "#,
     )
     .unwrap();
-    let strategy = Strategy::Wasmtime {
+    let strategy = TypedModule::Wasmtime {
         module: compile_wasmtime_module(CompilationConfig::default(), &wasm_binary).unwrap(),
     };
     for _ in 0..10_000 {
@@ -123,7 +123,7 @@ fn test_10001_instances_in_a_row() {
 #[test]
 fn test_fib_bench() {
     let wasm_binary = include_bytes!("../benchmarks/lib.wasm");
-    let strategy = Strategy::Wasmtime {
+    let strategy = TypedModule::Wasmtime {
         module: compile_wasmtime_module(CompilationConfig::default(), wasm_binary).unwrap(),
     };
     // it fails on iter number 32'165...

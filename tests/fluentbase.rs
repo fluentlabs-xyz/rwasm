@@ -1,8 +1,8 @@
 use hex_literal::hex;
 use rwasm::{
     compile_wasmtime_module, for_each_strategy, CompilationConfig, ExecutionEngine, FuelConfig,
-    ImportLinker, ImportName, Opcode, RwasmModule, RwasmStore, StateRouterConfig, Store, Strategy,
-    TrapCode, TypedCaller, Value, WasmtimeStore,
+    ImportLinker, ImportName, Opcode, RwasmModule, RwasmStore, StateRouterConfig, Store, TrapCode,
+    TypedCaller, TypedModule, Value, WasmtimeStore,
 };
 use rwasm_fuel_policy::SyscallFuelParams;
 use std::{str::from_utf8, sync::Arc};
@@ -179,7 +179,7 @@ fn test_nitro_verifier_strategy() {
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true)
         .with_import_linker(import_linker.clone());
-    let exec_strategy = |strategy: Strategy| {
+    let exec_strategy = |strategy: TypedModule| {
         let mut store = strategy.create_store(
             import_linker.clone(),
             HostState {

@@ -1,7 +1,7 @@
 use rwasm::{
     always_failing_syscall_handler, compile_wasmtime_module, instruction_set, CompilationConfig,
     ExecutionEngine, FuelConfig, ImportLinker, ImportName, RwasmModule, RwasmStore, Store,
-    Strategy, TrapCode, TypedCaller, Value, WasmtimeStore,
+    TrapCode, TypedCaller, TypedModule, Value, WasmtimeStore,
 };
 use rwasm_fuel_policy::{LinearFuelParams, SyscallFuelParams};
 use std::sync::Arc;
@@ -278,7 +278,7 @@ fn test_memory_write_during_interruption() {
     });
     let import_linker = default_import_linker();
 
-    let test_strategy = |strategy: Strategy| {
+    let test_strategy = |strategy: TypedModule| {
         let mut store = strategy.create_store(
             import_linker.clone(),
             (),
@@ -298,7 +298,7 @@ fn test_memory_write_during_interruption() {
         assert_eq!(result[0].i32().unwrap(), 0x04030201);
     };
 
-    test_strategy(Strategy::Rwasm {
+    test_strategy(TypedModule::Rwasm {
         module,
         engine: ExecutionEngine::acquire_shared(),
     });

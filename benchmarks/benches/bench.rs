@@ -1,7 +1,7 @@
 use criterion::{criterion_main, Bencher, Criterion};
 use rwasm::{
     always_failing_syscall_handler, compile_wasmi_module, compile_wasmtime_module,
-    CompilationConfig, ExecutionEngine, FuelConfig, ImportLinker, RwasmModule, Strategy, Value,
+    CompilationConfig, ExecutionEngine, FuelConfig, ImportLinker, RwasmModule, TypedModule, Value,
 };
 use std::{sync::Arc, time::Duration};
 
@@ -28,7 +28,7 @@ fn bench_comparisons(c: &mut Criterion) {
         });
     };
 
-    fn bench_strategy(b: &mut Bencher, strategy: Strategy) {
+    fn bench_strategy(b: &mut Bencher, strategy: TypedModule) {
         b.iter(|| {
             let mut store = strategy.create_store(
                 Arc::new(ImportLinker::default()),
@@ -49,7 +49,7 @@ fn bench_comparisons(c: &mut Criterion) {
         let config = CompilationConfig::default().with_consume_fuel(true);
         let module = compile_wasmtime_module(config, wasm_binary).unwrap();
         group.bench_function("bench_strategy_wasmtime", |b| {
-            let strategy = Strategy::Wasmtime {
+            let strategy = TypedModule::Wasmtime {
                 module: module.clone(),
             };
             bench_strategy(b, strategy);
@@ -61,7 +61,7 @@ fn bench_comparisons(c: &mut Criterion) {
         let config = CompilationConfig::default().with_consume_fuel(true);
         let module = compile_wasmi_module(config, wasm_binary).unwrap();
         group.bench_function("bench_strategy_wasmi", |b| {
-            let strategy = Strategy::Wasmi {
+            let strategy = TypedModule::Wasmi {
                 module: module.clone(),
             };
             bench_strategy(b, strategy);
@@ -76,7 +76,7 @@ fn bench_comparisons(c: &mut Criterion) {
             .with_consume_fuel(false);
         let (module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
         group.bench_function("bench_strategy_rwasm", |b| {
-            let strategy = Strategy::Rwasm {
+            let strategy = TypedModule::Rwasm {
                 module: module.clone(),
                 engine: ExecutionEngine::acquire_shared(),
             };
