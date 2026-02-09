@@ -14,9 +14,9 @@ pub trait Store<T> {
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode>;
 
-    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R;
+    fn data_mut(&mut self) -> &mut T;
 
-    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R;
+    fn data(&self) -> &T;
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode>;
 
@@ -110,19 +110,19 @@ impl<'a, T: Send + Sync> Store<T> for TypedCaller<'a, T> {
         }
     }
 
-    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
+    fn data_mut(&mut self) -> &mut T {
         match self {
-            TypedCaller::Rwasm(store) => store.context_mut(func),
+            TypedCaller::Rwasm(store) => store.data_mut(),
             #[cfg(feature = "wasmtime")]
-            TypedCaller::Wasmtime(store) => store.context_mut(func),
+            TypedCaller::Wasmtime(store) => store.data_mut(),
         }
     }
 
-    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
+    fn data(&self) -> &T {
         match self {
-            TypedCaller::Rwasm(store) => store.context(func),
+            TypedCaller::Rwasm(store) => store.data(),
             #[cfg(feature = "wasmtime")]
-            TypedCaller::Wasmtime(store) => store.context(func),
+            TypedCaller::Wasmtime(store) => store.data(),
         }
     }
 
@@ -251,19 +251,19 @@ impl<T: Send + Sync> Store<T> for TypedStore<T> {
         }
     }
 
-    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
+    fn data_mut(&mut self) -> &mut T {
         match self {
-            TypedStore::Rwasm(store) => store.context_mut(func),
+            TypedStore::Rwasm(store) => store.data_mut(),
             #[cfg(feature = "wasmtime")]
-            TypedStore::Wasmtime(store) => store.context_mut(func),
+            TypedStore::Wasmtime(store) => store.data_mut(),
         }
     }
 
-    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
+    fn data(&self) -> &T {
         match self {
-            TypedStore::Rwasm(store) => store.context(func),
+            TypedStore::Rwasm(store) => store.data(),
             #[cfg(feature = "wasmtime")]
-            TypedStore::Wasmtime(store) => store.context(func),
+            TypedStore::Wasmtime(store) => store.data(),
         }
     }
 

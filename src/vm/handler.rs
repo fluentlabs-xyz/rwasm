@@ -22,7 +22,7 @@ impl SimpleCallHandler {
         _result: &mut [Value],
     ) -> Result<(), TrapCode> {
         let exit_code = params[0].i32().unwrap();
-        caller.context_mut(|ctx| ctx.exit_code = exit_code);
+        caller.data_mut().exit_code = exit_code;
         Err(TrapCode::ExecutionHalted)
     }
 
@@ -31,7 +31,7 @@ impl SimpleCallHandler {
         _params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        result[0] = Value::I32(caller.context(|ctx| ctx.state as i32));
+        result[0] = Value::I32(caller.data().state as i32);
         Ok(())
     }
 
@@ -43,9 +43,13 @@ impl SimpleCallHandler {
         let target = params[0].i32().unwrap() as usize;
         let offset = params[1].i32().unwrap() as usize;
         let length = params[2].i32().unwrap() as usize;
-        caller.context_mut(|ctx| ctx.exit_code = -2020);
-        let input =
-            caller.context(|ctx| ctx.input.get(offset..(offset + length)).unwrap().to_vec());
+        caller.data_mut().exit_code = -2020;
+        let input = caller
+            .data()
+            .input
+            .get(offset..(offset + length))
+            .unwrap()
+            .to_vec();
         caller.memory_write(target, &input)?;
         Ok(())
     }
@@ -55,7 +59,7 @@ impl SimpleCallHandler {
         _params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        result[0] = Value::I32(caller.context(|ctx| ctx.input.len() as i32));
+        result[0] = Value::I32(caller.data().input.len() as i32);
         Ok(())
     }
 
@@ -68,7 +72,7 @@ impl SimpleCallHandler {
         let length = params[1].i32().unwrap() as usize;
         let mut buffer = vec![0u8; length];
         caller.memory_read(offset, &mut buffer)?;
-        caller.context_mut(|ctx| ctx.output.extend_from_slice(&buffer));
+        caller.data_mut().output.extend_from_slice(&buffer);
         Ok(())
     }
 

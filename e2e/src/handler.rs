@@ -64,9 +64,9 @@ pub(crate) fn testing_context_syscall_handler(
             // since we're 100% sure the function is called using `Call`
             // that we can safely deduct 1 from PC (for `ReturnCall` we need to deduct 2)
             let pc = caller.program_counter();
-            caller.context_mut(|ctx| ctx.program_counter = pc - 1);
+            caller.data_mut().program_counter = pc - 1;
             // push state value into the stack
-            let state = caller.context(|ctx| ctx.state);
+            let state = caller.data().state;
             caller.stack_push(state.into());
             Ok(())
         }

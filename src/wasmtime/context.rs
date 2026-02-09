@@ -46,12 +46,12 @@ impl<'a, T: 'static + Send + Sync> Store<T> for WasmtimeCaller<'a, T> {
             .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
-    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
-        func(&mut self.caller.data_mut().data)
+    fn data_mut(&mut self) -> &mut T {
+        &mut self.caller.data_mut().data
     }
 
-    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
-        func(&self.caller.data().data)
+    fn data(&self) -> &T {
+        &self.caller.data().data
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {

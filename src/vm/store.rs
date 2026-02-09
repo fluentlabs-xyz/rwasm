@@ -16,7 +16,7 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     /// The linear memory shared by the running module and the host.
     pub(crate) global_memory: GlobalMemory,
     /// User-defined context available to host functions and syscalls.
-    pub(crate) context: T,
+    pub(crate) data: T,
     /// The last used signature index used for validating indirect calls.
     pub(crate) last_signature: Option<SignatureIdx>,
     /// Runtime-managed tables (may differ from compile-time layout due to mutations).
@@ -73,12 +73,12 @@ impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
         Ok(())
     }
 
-    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
-        func(&mut self.context)
+    fn data_mut(&mut self) -> &mut T {
+        &mut self.data
     }
 
-    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
-        func(&self.context)
+    fn data(&self) -> &T {
+        &self.data
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
@@ -108,7 +108,7 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         Self {
             consumed_fuel: 0,
             global_memory,
-            context,
+            data: context,
             #[cfg(feature = "tracing")]
             tracer: crate::Tracer::default(),
             global_variables: Default::default(),

@@ -32,10 +32,7 @@ pub(crate) fn fluentbase_syscall_handler(
         }
         // _input_size
         71 => {
-            caller.context(|ctx| {
-                println!("input_size: {}", ctx.input.len());
-                result[0] = Value::I32(ctx.input.len() as i32 + 1024); // size of context input
-            });
+            result[0] = Value::I32(caller.data().input.len() as i32 + 1024); // size of context input
         }
         // _read
         72 => {
@@ -46,7 +43,7 @@ pub(crate) fn fluentbase_syscall_handler(
                 "read: target={}, offset={}, length={}",
                 target, offset, length
             );
-            let data = caller.context(|ctx| ctx.input[offset..(offset + length)].to_vec());
+            let data = caller.data().input[offset..(offset + length)].to_vec();
             caller.memory_write(target, &data)?;
         }
         // _write
@@ -60,7 +57,7 @@ pub(crate) fn fluentbase_syscall_handler(
                 buffer.as_slice(),
                 from_utf8(&buffer).unwrap_or_else(|_| "can't parse utf-8 text")
             );
-            caller.context_mut(|ctx| ctx.output.extend_from_slice(&buffer))
+            caller.data_mut().output.extend_from_slice(&buffer)
         }
         // _exit
         74 => {
@@ -219,7 +216,7 @@ fn run_fluentbase_binary(wasm_binary: &[u8], host_state: HostState) -> HostState
     engine
         .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap();
-    store.context(Clone::clone)
+    store.data().clone()
 }
 
 #[test]

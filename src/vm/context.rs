@@ -38,12 +38,12 @@ impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
         Ok(())
     }
 
-    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
-        func(&mut self.store.context)
+    fn data_mut(&mut self) -> &mut T {
+        &mut self.store.data
     }
 
-    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
-        func(&self.store.context)
+    fn data(&self) -> &T {
+        &self.store.data
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {

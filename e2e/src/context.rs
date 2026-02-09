@@ -309,7 +309,7 @@ impl TestContext<'_> {
             testing_context_syscall_handler,
             FuelConfig::default().with_fuel_limit(u64::MAX),
         );
-        store.context_mut(|ctx| ctx.state = FUNC_ENTRYPOINT);
+        store.data_mut().state = FUNC_ENTRYPOINT;
         Ok(InstanceInner {
             store,
             strategy,
@@ -391,8 +391,7 @@ impl TestContext<'_> {
                     // However, with different states.
                     // Some tests might fail, and we might keep outdated signature value in the state,
                     // make sure the state is clear before every new call.
-                    let program_counter =
-                        instance.store.context(|ctx| ctx.program_counter as usize);
+                    let program_counter = instance.store.data().program_counter as usize;
 
                     instance.program_counter = program_counter;
                     instance.store.reset(true);
@@ -432,7 +431,7 @@ impl TestContext<'_> {
                         instance.value_stack.push(value.clone().into());
                     }
                     // change function state for router
-                    instance.store.context_mut(|ctx| ctx.state = func_state);
+                    instance.store.data_mut().state = func_state;
 
                     let pc = instance.program_counter;
                     #[cfg(feature = "debug-print")]
