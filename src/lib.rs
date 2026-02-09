@@ -3,7 +3,7 @@
 #![allow(unused_variables, dead_code)]
 #![recursion_limit = "750"]
 
-`extern crate alloc;
+extern crate alloc;
 extern crate core;
 
 mod compiler;
