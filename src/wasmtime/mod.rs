@@ -16,7 +16,11 @@ use crate::{
     wasmtime::{context::WrappedContext, engine::wasmtime_engine},
     CompilationConfig,
 };
-use std::time::Instant;
+use std::{
+    collections::HashMap,
+    sync::{OnceLock, RwLock},
+    time::Instant,
+};
 
 pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<T>;
@@ -43,4 +47,31 @@ pub fn compile_wasmtime_module(
     let module = wasmtime::Module::new(&engine, wasm_binary);
     println!("{:?}", start.elapsed());
     module
+}
+
+pub fn compile_wasmtime_module_cached(
+    compilation_config: CompilationConfig,
+    wasm_binary: impl AsRef<[u8]>,
+    caching_key: [u8; 32],
+) -> anyhow::Result<WasmtimeModule> {
+    static COMPILED_MODULES: OnceLock<RwLock<HashMap<[u8; 32], WasmtimeModule>>> = OnceLock::new();
+    let compiled_modules = COMPILED_MODULES.get_or_init(|| RwLock::new(HashMap::new()));
+
+    // Fast path: read lock lookup.
+    {
+        let guard = compiled_modules.read().unwrap();
+        if let Some(module) = guard.get(&caching_key) {
+            return Ok(module.clone());
+        }
+    }
+
+    // Slow path: compile and insert under write lock (with re-check).
+    let mut guard = compiled_modules.write().unwrap();
+    if let Some(module) = guard.get(&caching_key) {
+        return Ok(module.clone());
+    }
+
+    let module = compile_wasmtime_module(compilation_config, wasm_binary)?;
+    guard.insert(caching_key, module.clone());
+    Ok(module)
 }

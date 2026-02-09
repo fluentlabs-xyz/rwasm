@@ -25,7 +25,8 @@ pub use vm::*;
 pub use wasmparser::{FuncType, ValType};
 #[cfg(feature = "wasmtime")]
 pub use wasmtime::{
-    compile_wasmtime_module, WasmtimeCaller, WasmtimeLinker, WasmtimeModule, WasmtimeStore,
+    compile_wasmtime_module, compile_wasmtime_module_cached, WasmtimeCaller, WasmtimeLinker,
+    WasmtimeModule, WasmtimeStore,
 };
 
 #[cfg(feature = "std")]

@@ -1,5 +1,8 @@
 #[cfg(feature = "wasmtime")]
-use crate::{compile_wasmtime_module, WasmtimeCaller, WasmtimeModule, WasmtimeStore};
+use crate::wasmtime::{
+    compile_wasmtime_module, compile_wasmtime_module_cached, WasmtimeCaller, WasmtimeModule,
+    WasmtimeStore,
+};
 use crate::{
     CompilationConfig, CompilationError, ExecutionEngine, ImportLinker, RwasmCaller, RwasmExecutor,
     RwasmModule, RwasmStore, TrapCode, UntypedValue, Value,
@@ -197,10 +200,16 @@ impl Strategy {
     pub fn new(
         compilation_config: CompilationConfig,
         wasm_binary: impl AsRef<[u8]>,
+        binary_caching_key: Option<[u8; 32]>,
     ) -> Option<Self> {
         #[cfg(feature = "wasmtime")]
         {
-            let module = compile_wasmtime_module(compilation_config, wasm_binary).ok()?;
+            let module = if let Some(binary_caching_key) = binary_caching_key {
+                compile_wasmtime_module_cached(compilation_config, wasm_binary, binary_caching_key)
+                    .ok()?
+            } else {
+                compile_wasmtime_module(compilation_config, wasm_binary).ok()?
+            };
             Some(Self::Wasmtime { module })
         }
         #[cfg(not(feature = "wasmtime"))]
