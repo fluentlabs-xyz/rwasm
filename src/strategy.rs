@@ -187,6 +187,7 @@ impl<'a, T: Send + Sync + 'static> TypedExecutor<'a, T> {
     }
 }
 
+#[derive(Clone)]
 pub enum TypedModule {
     Rwasm {
         module: RwasmModule,
