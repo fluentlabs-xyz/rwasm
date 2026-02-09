@@ -13,7 +13,7 @@ pub use self::{
     syscall_handler::wasmtime_syscall_handler,
 };
 use crate::{
-    wasmtime::{context::WrappedContext, engine::wasmtime_engine_with_linker},
+    wasmtime::{context::WrappedContext, engine::wasmtime_engine},
     CompilationConfig,
 };
 use std::time::Instant;
@@ -27,7 +27,7 @@ pub fn deserialize_wasmtime_module(
 ) -> anyhow::Result<WasmtimeModule> {
     print!("parsing wasmtime module... ");
     let start = Instant::now();
-    let engine = wasmtime_engine_with_linker(
+    let engine = wasmtime_engine(
         compilation_config.import_linker,
         compilation_config.consume_fuel,
     );
@@ -42,7 +42,7 @@ pub fn compile_wasmtime_module(
 ) -> anyhow::Result<WasmtimeModule> {
     print!("compiling wasmtime module... ");
     let start = Instant::now();
-    let engine = wasmtime_engine_with_linker(
+    let engine = wasmtime_engine(
         compilation_config.import_linker,
         compilation_config.consume_fuel,
     );

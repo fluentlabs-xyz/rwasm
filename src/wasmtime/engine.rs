@@ -12,88 +12,30 @@ use wasmtime::{Config, Engine, OptLevel, Strategy};
 /// The engine is configured once and reused globally.
 /// Fuel metering is disabled (`consume_fuel(false)`) because fuel is accounted
 /// inside `RuntimeContext` and system runtimes are expected to self-manage.
-pub fn wasmtime_engine(consume_fuel: bool) -> &'static Engine {
-    static ENGINE: OnceLock<Engine> = OnceLock::new();
-    ENGINE.get_or_init(|| {
-        let mut cfg = Config::new();
-        cfg.strategy(Strategy::Cranelift);
-        cfg.collector(wasmtime::Collector::Null);
-
-        // rWasm stack size is defined in 32-bit slots; Wasmtime expects bytes.
-        cfg.max_wasm_stack(N_MAX_STACK_SIZE * size_of::<u32>());
-
-        cfg.async_support(false);
-        cfg.wasm_memory64(false);
-        cfg.memory_init_cow(false);
-        cfg.cranelift_opt_level(OptLevel::Speed);
-        cfg.parallel_compilation(true);
-
-        // Fuel accounting is handled externally via RuntimeContext.
-        cfg.consume_fuel(consume_fuel);
-
-        Engine::new(&cfg).unwrap()
-    })
-}
-
-pub fn wasmtime_engine_with_linker(
+pub fn wasmtime_shared_engine(
     import_linker: Option<Arc<ImportLinker>>,
     consume_fuel: bool,
 ) -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
-    ENGINE.get_or_init(|| factory_wasmtime_engine_with_linker(import_linker, consume_fuel))
+    ENGINE.get_or_init(|| wasmtime_engine(import_linker, consume_fuel))
 }
 
-#[cfg(test)]
-pub fn wasmtime_new_engine_with_linker(
-    import_linker: Option<Arc<ImportLinker>>,
-    consume_fuel: bool,
-) -> Engine {
-    factory_wasmtime_engine_with_linker(import_linker, consume_fuel)
-}
-
-fn factory_wasmtime_engine_with_linker(
-    import_linker: Option<Arc<ImportLinker>>,
-    consume_fuel: bool,
-) -> Engine {
+pub fn wasmtime_engine(import_linker: Option<Arc<ImportLinker>>, consume_fuel: bool) -> Engine {
     let mut cfg = Config::new();
-    #[cfg(feature = "pooling-allocator")]
-    {
-        use wasmtime::{InstanceAllocationStrategy, PoolingAllocationConfig};
-        // TODO(dmitry123): How many concurrent instances do we want to have?
-        const CONCURRENCY: u32 = 4096;
-        const MEMORIES_PER_INST: u32 = 1;
-        const TABLES_PER_INST: u32 = 5;
-        // Create pooling allocator config
-        let mut pool = PoolingAllocationConfig::default();
-        pool.total_core_instances(CONCURRENCY);
-        pool.total_memories(CONCURRENCY * MEMORIES_PER_INST);
-        pool.total_tables(CONCURRENCY * TABLES_PER_INST);
-        pool.total_stacks(CONCURRENCY);
-        pool.linear_memory_keep_resident(16 << 20);
-        pool.table_keep_resident(0);
-        pool.max_unused_warm_slots(0);
-        pool.decommit_batch_size(128);
-        // Enable pooling allocator
-        cfg.allocation_strategy(InstanceAllocationStrategy::Pooling(pool));
-    }
     cfg.strategy(Strategy::Cranelift);
     cfg.collector(wasmtime::Collector::Null);
+
+    // rWasm stack size is defined in 32-bit slots; Wasmtime expects bytes.
     cfg.max_wasm_stack(N_MAX_STACK_SIZE * size_of::<u32>());
+
     cfg.async_support(false);
-    // 32-bit memories are cheaper and pool better unless you truly need >4 GiB
     cfg.wasm_memory64(false);
-    // Make initial memory image cheap (copy-on-write for data segments)
-    cfg.memory_init_cow(true);
-    cfg.cranelift_opt_level(OptLevel::SpeedAndSize);
-    cfg.parallel_compilation(false);
+    cfg.memory_init_cow(false);
+    cfg.cranelift_opt_level(OptLevel::Speed);
+    cfg.parallel_compilation(true);
+
+    // Fuel accounting is handled externally via RuntimeContext.
     cfg.consume_fuel(consume_fuel);
-    // Enable debug info and backtrace for debug mode
-    #[cfg(debug_assertions)]
-    {
-        cfg.debug_info(true);
-        cfg.wasm_backtrace(true);
-    }
-    cfg.wasm_simd(true);
 
     if let Some(import_linker) = import_linker {
         let mut syscall_params = HashMap::new();
@@ -122,5 +64,5 @@ fn factory_wasmtime_engine_with_linker(
         cfg.cache(Some(cache));
     }
 
-    Engine::new(&cfg).expect("failed to create engine")
+    Engine::new(&cfg).unwrap()
 }
