@@ -205,22 +205,20 @@ impl TypedModule {
         compilation_config: CompilationConfig,
         wasm_binary: impl AsRef<[u8]>,
         binary_caching_key: Option<[u8; 32]>,
-    ) -> Option<Self> {
+    ) -> anyhow::Result<Self> {
         #[cfg(feature = "wasmtime")]
         {
             let module = if let Some(binary_caching_key) = binary_caching_key {
-                compile_wasmtime_module_cached(compilation_config, wasm_binary, binary_caching_key)
-                    .ok()?
+                compile_wasmtime_module_cached(compilation_config, wasm_binary, binary_caching_key)?
             } else {
-                compile_wasmtime_module(compilation_config, wasm_binary).ok()?
+                compile_wasmtime_module(compilation_config, wasm_binary)?
             };
-            Some(Self::Wasmtime { module })
+            Ok(Self::Wasmtime { module })
         }
         #[cfg(not(feature = "wasmtime"))]
         {
-            let (module, _) =
-                RwasmModule::compile(compilation_config, wasm_binary.as_ref()).ok()?;
-            Some(Self::Rwasm {
+            let (module, _) = RwasmModule::compile(compilation_config, wasm_binary.as_ref())?;
+            Ok(Self::Rwasm {
                 module,
                 engine: ExecutionEngine::new(),
             })

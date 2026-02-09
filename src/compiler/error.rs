@@ -24,6 +24,8 @@ pub enum CompilationError {
     TableOutOfBounds,
 }
 
+impl core::error::Error for CompilationError {}
+
 impl From<BinaryReaderError> for CompilationError {
     fn from(err: BinaryReaderError) -> Self {
         CompilationError::MalformedWasmBinary(err)
