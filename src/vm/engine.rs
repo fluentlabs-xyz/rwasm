@@ -42,7 +42,9 @@ impl ExecutionEngine {
 }
 
 #[derive(Default)]
-struct ExecutionEngineInner {}
+struct ExecutionEngineInner {
+    // we might store a reusable stack here
+}
 
 impl ExecutionEngineInner {
     /// Executes a rWasm module's function with the given parameters and stores the result.

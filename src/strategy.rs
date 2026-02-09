@@ -1,9 +1,9 @@
-use crate::{
-    CompilationError, ExecutionEngine, ImportLinker, RwasmCaller, RwasmExecutor, RwasmModule,
-    RwasmStore, TrapCode, UntypedValue, Value,
-};
 #[cfg(feature = "wasmtime")]
-use crate::{WasmtimeCaller, WasmtimeModule, WasmtimeStore};
+use crate::{compile_wasmtime_module, WasmtimeCaller, WasmtimeModule, WasmtimeStore};
+use crate::{
+    CompilationConfig, CompilationError, ExecutionEngine, ImportLinker, RwasmCaller, RwasmExecutor,
+    RwasmModule, RwasmStore, TrapCode, UntypedValue, Value,
+};
 use alloc::sync::Arc;
 
 pub trait Store<T> {
@@ -191,6 +191,28 @@ pub enum Strategy {
     },
     #[cfg(feature = "wasmtime")]
     Wasmtime { module: WasmtimeModule },
+}
+
+impl Strategy {
+    pub fn new(
+        compilation_config: CompilationConfig,
+        wasm_binary: impl AsRef<[u8]>,
+    ) -> Option<Self> {
+        #[cfg(feature = "wasmtime")]
+        {
+            let module = compile_wasmtime_module(compilation_config, wasm_binary).ok()?;
+            Some(Self::Wasmtime { module })
+        }
+        #[cfg(not(feature = "wasmtime"))]
+        {
+            let (module, _) =
+                RwasmModule::compile(compilation_config, wasm_binary.as_ref()).ok()?;
+            Some(Self::Rwasm {
+                module,
+                engine: ExecutionEngine::new(),
+            })
+        }
+    }
 }
 
 pub enum TypedStore<T: 'static + Send + Sync> {
