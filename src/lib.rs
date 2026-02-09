@@ -3,6 +3,9 @@
 #![allow(unused_variables, dead_code)]
 #![recursion_limit = "750"]
 
+`extern crate alloc;
+extern crate core;
+
 mod compiler;
 mod isa;
 mod module;
@@ -12,13 +15,10 @@ mod vm;
 #[cfg(feature = "wasmtime")]
 pub mod wasmtime;
 
-extern crate alloc;
-extern crate core;
-
 pub use compiler::*;
 pub use isa::*;
-use libm as _;
 pub use module::*;
+pub use rwasm_fuel_policy::*;
 pub use strategy::*;
 pub use types::*;
 pub use vm::*;
