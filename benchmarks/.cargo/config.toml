@@ -1,0 +1,3 @@
+[build]
+# Directory for all build artifacts
+target-dir = "../target"

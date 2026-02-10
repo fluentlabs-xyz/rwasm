@@ -16,6 +16,8 @@ mod vm;
 pub mod wasmtime;
 
 pub use compiler::*;
+#[cfg(test)]
+use hex_literal as _;
 pub use isa::*;
 pub use module::*;
 pub use rwasm_fuel_policy::*;
@@ -28,31 +30,5 @@ pub use wasmtime::{
     compile_wasmtime_module, compile_wasmtime_module_cached, WasmtimeCaller, WasmtimeLinker,
     WasmtimeModule, WasmtimeStore,
 };
-
-#[cfg(feature = "std")]
-pub fn for_each_strategy<F: FnMut(TypedModule) -> Result<(), StrategyError>>(
-    mut f: F,
-    compilation_config: CompilationConfig,
-    wasm_binary: &[u8],
-) -> Result<(), StrategyError> {
-    // rwasm case
-    {
-        let (module, _) = RwasmModule::compile(compilation_config.clone(), wasm_binary)?;
-        f(TypedModule::Rwasm {
-            module,
-            engine: ExecutionEngine::acquire_shared(),
-        })?;
-    }
-    // wasmtime case
-    #[cfg(feature = "wasmtime")]
-    {
-        let module = compile_wasmtime_module(compilation_config.clone(), wasm_binary).unwrap();
-        f(TypedModule::Wasmtime { module })?;
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-use hex_literal as _;
 #[cfg(test)]
 use wat as _;
