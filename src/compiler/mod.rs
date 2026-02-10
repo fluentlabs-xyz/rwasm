@@ -1,3 +1,4 @@
+mod block_fuel;
 mod compiled_expr;
 mod config;
 mod control_flow;

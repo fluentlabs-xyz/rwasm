@@ -19,6 +19,7 @@ pub use compiler::*;
 #[cfg(test)]
 use hex_literal as _;
 pub use isa::*;
+use libm as _;
 pub use module::*;
 pub use rwasm_fuel_policy::*;
 pub use strategy::*;
