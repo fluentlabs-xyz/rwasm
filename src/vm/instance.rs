@@ -11,8 +11,11 @@ impl RwasmInstance {
         engine: ExecutionEngine,
         module: RwasmModule,
     ) -> Result<Self, TrapCode> {
-        // Invoke an entrypoint before (it triggers first init for memory, data, tables, etc. and also calls start section)
-        engine.entrypoint(store, &module)?;
+        // Invoke an entrypoint before (it triggers first init for memory, data, tables, etc. and also calls a start section).
+        // We call entrypoint only if source PC is greater than 0, it means that the module has a start section and it's not legacy module.
+        if module.source_pc > 0 {
+            engine.entrypoint(store, &module)?;
+        }
         Ok(Self { engine, module })
     }
 
