@@ -65,6 +65,3 @@ wasmtime = ["dep:wasmtime", "dep:lru", "dep:anyhow"]
 cache-compiled-artifacts = ["wasmtime", "dep:directories"]
 e2e = []
 pooling-allocator = []
-
-#[patch."https://github.com/fluentlabs-xyz/wasmtime"]
-#wasmtime = { path = "../wasmtime/crates/wasmtime", optional = true, features = ["disable-fpu", "cache"] }

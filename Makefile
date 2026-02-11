@@ -34,4 +34,5 @@ clean:
 	# Delete all Cargo.lock files except the root
 	find . -name Cargo.lock ! -path './Cargo.lock' -type f -exec rm -f {} +
 
+.PHONY: all
 all: build test

@@ -76,24 +76,6 @@ fn main() {
             );
         }
     };
-
-    // Equivalent to:
-    // cp ./target/wasm32-unknown-unknown/release/wasm.wasm ./lib.wasm
-    let lib_wasm = manifest_dir.join("lib.wasm");
-    fs::copy(&built_wasm, &lib_wasm).unwrap_or_else(|e| {
-        panic!(
-            "failed to copy {} -> {}: {e}",
-            built_wasm.display(),
-            lib_wasm.display()
-        )
-    });
-
-    // Equivalent to:
-    // wasm2wat ./lib.wasm > ./lib.wat || true
-    let lib_wat = manifest_dir.join("lib.wat");
-    if let Err(e) = write_wat_best_effort(&lib_wasm, &lib_wat) {
-        eprintln!("cargo:warning=wasm2wat step failed (ignored, like `|| true`): {e}");
-    }
 }
 
 fn write_wat_best_effort(input_wasm: &Path, output_wat: &Path) -> Result<(), String> {

@@ -18,7 +18,7 @@ where
 }
 
 #[test]
-fn test_wasmtime_disabled_f32_sqrt() -> anyhow::Result<()> {
+fn test_wasmtime_disabled_f32_sqrt() {
     let wat = r#"
         (module
             (func (export "main") (result f32)
@@ -34,12 +34,11 @@ fn test_wasmtime_disabled_f32_sqrt() -> anyhow::Result<()> {
         .downcast_ref::<wasmtime::Trap>()
         .expect("execution should fail with a trap")
         .clone();
-    matches!(trap, wasmtime::Trap::DisabledOpcode);
-    Ok(())
+    assert_eq!(trap, wasmtime::Trap::DisabledOpcode);
 }
 
 #[test]
-fn test_wasmtime_disabled_f64_div() -> anyhow::Result<()> {
+fn test_wasmtime_disabled_f64_div() {
     let wat = r#"
         (module
             (func (export "main") (result f64)
@@ -58,12 +57,11 @@ fn test_wasmtime_disabled_f64_div() -> anyhow::Result<()> {
         .downcast_ref::<wasmtime::Trap>()
         .expect("execution should fail with a trap")
         .clone();
-    matches!(trap, wasmtime::Trap::DisabledOpcode);
-    Ok(())
+    assert_eq!(trap, wasmtime::Trap::DisabledOpcode);
 }
 
 #[test]
-fn test_wasmtime_f32_const() -> anyhow::Result<()> {
+fn test_wasmtime_f32_const() {
     let wat = r#"
         (module
             (func (export "main") (result f32)
@@ -71,13 +69,12 @@ fn test_wasmtime_f32_const() -> anyhow::Result<()> {
             )
         )
     "#;
-    let result = run_main::<f32>(wat);
-    matches!(result, Ok(9.0));
-    Ok(())
+    let result = run_main::<f32>(wat).unwrap();
+    assert_eq!(result, 9.0);
 }
 
 #[test]
-fn test_wasmtime_f64_const() -> anyhow::Result<()> {
+fn test_wasmtime_f64_const() {
     let wat = r#"
         (module
             (func (export "main") (result f64)
@@ -85,9 +82,8 @@ fn test_wasmtime_f64_const() -> anyhow::Result<()> {
             )
         )
     "#;
-    let result = run_main::<f64>(wat);
-    matches!(result, Ok(9.0));
-    Ok(())
+    let result = run_main::<f64>(wat).unwrap();
+    assert_eq!(result, 9.0);
 }
 
 #[test]
