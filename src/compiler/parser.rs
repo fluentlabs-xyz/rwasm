@@ -97,6 +97,9 @@ impl ModuleParser {
         wasm_binary: &[u8],
     ) -> Result<(RwasmModule, ConstructorParams), CompilationError> {
         if let Some(start_func) = self.allocations.translation.start_func {
+            if !self.config.allow_start_section {
+                return Err(CompilationError::StartSectionsAreNotAllowed);
+            }
             self.allocations
                 .translation
                 .emit_function_call(start_func, true, false);

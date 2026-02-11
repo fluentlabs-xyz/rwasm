@@ -126,7 +126,8 @@ impl TestingInstanceGroup {
             .with_builtins_consume_fuel(true)
             .with_default_imported_global_value(666.into())
             .with_allow_func_ref_function_types(true)
-            .with_consume_fuel(true);
+            .with_consume_fuel(true)
+            .with_allow_start_section(true);
 
         // Extract all exports first to calculate rwasm config
         let mut states = Vec::<(Box<str>, u32)>::new();
