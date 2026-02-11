@@ -1,7 +1,7 @@
 use crate::{
     always_failing_syscall_handler, CompilationConfig, CompilationError, ExecutionEngine,
-    ImportLinker, RwasmInstance, RwasmModule, RwasmStore, StrategyError, SyscallHandler, TrapCode,
-    Value,
+    ImportLinker, RwasmInstance, RwasmModule, RwasmStore, StoreTr, StrategyError, SyscallHandler,
+    TrapCode, Value,
 };
 use alloc::sync::Arc;
 
@@ -108,6 +108,56 @@ pub enum StrategyExecutor<T: 'static> {
         // An executor for wasmtime
         executor: crate::wasmtime::WasmtimeExecutor<T>,
     },
+}
+
+impl<T: 'static> StoreTr<T> for StrategyExecutor<T> {
+    fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
+        match self {
+            StrategyExecutor::Rwasm { store, .. } => store.memory_read(offset, buffer),
+            #[cfg(feature = "wasmtime")]
+            StrategyExecutor::Wasmtime { executor } => executor.memory_read(offset, buffer),
+        }
+    }
+
+    fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
+        match self {
+            StrategyExecutor::Rwasm { store, .. } => store.memory_write(offset, buffer),
+            #[cfg(feature = "wasmtime")]
+            StrategyExecutor::Wasmtime { executor } => executor.memory_write(offset, buffer),
+        }
+    }
+
+    fn data_mut(&mut self) -> &mut T {
+        match self {
+            StrategyExecutor::Rwasm { store, .. } => store.data_mut(),
+            #[cfg(feature = "wasmtime")]
+            StrategyExecutor::Wasmtime { executor } => executor.data_mut(),
+        }
+    }
+
+    fn data(&self) -> &T {
+        match self {
+            StrategyExecutor::Rwasm { store, .. } => store.data(),
+            #[cfg(feature = "wasmtime")]
+            StrategyExecutor::Wasmtime { executor } => executor.data(),
+        }
+    }
+
+    fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
+        match self {
+            StrategyExecutor::Rwasm { store, .. } => store.try_consume_fuel(delta),
+            #[cfg(feature = "wasmtime")]
+            StrategyExecutor::Wasmtime { executor } => executor.try_consume_fuel(delta),
+        }
+    }
+
+    fn remaining_fuel(&self) -> Option<u64> {
+        match self {
+            StrategyExecutor::Rwasm { store, .. } => store.remaining_fuel(),
+            #[cfg(feature = "wasmtime")]
+            StrategyExecutor::Wasmtime { executor } => executor.remaining_fuel(),
+        }
+    }
 }
 
 impl<T: 'static> StrategyExecutor<T> {
