@@ -22,18 +22,17 @@ impl StrategyDefinition {
     pub fn new(
         compilation_config: CompilationConfig,
         wasm_binary: impl AsRef<[u8]>,
-        module_caching_key: Option<[u8; 32]>,
+        #[allow(unused_variables)] module_caching_key: Option<[u8; 32]>,
     ) -> Result<Self, CompilationError> {
         #[cfg(feature = "wasmtime")]
         return Self::new_as_wasmtime(compilation_config, wasm_binary, module_caching_key);
         #[cfg(not(feature = "wasmtime"))]
-        return Self::new_as_rwasm(compilation_config, wasm_binary, module_caching_key);
+        return Self::new_as_rwasm(compilation_config, wasm_binary);
     }
 
     pub fn new_as_rwasm(
         compilation_config: CompilationConfig,
         wasm_binary: impl AsRef<[u8]>,
-        binary_caching_key: Option<[u8; 32]>,
     ) -> Result<Self, CompilationError> {
         let (module, _) = RwasmModule::compile(compilation_config, wasm_binary.as_ref())?;
         Ok(Self::Rwasm {

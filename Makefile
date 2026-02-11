@@ -21,11 +21,11 @@ coverage:
 	cargo build --manifest-path=./wasm/Cargo.toml
 	cd snippets && make
 	# run tests
-	cargo +nightly-2025-09-20 llvm-cov --lcov --manifest-path=./snippets/Cargo.toml > lcov1.info
-	cargo llvm-cov --lcov --manifest-path=./Cargo.toml > lcov2.info
-	cargo llvm-cov --lcov --manifest-path=./e2e/Cargo.toml > lcov3.info
+	cargo llvm-cov --lcov --features=wasmtime --manifest-path=./Cargo.toml > lcov1.info
+	cargo llvm-cov --lcov --manifest-path=./e2e/Cargo.toml > lcov2.info
 	# merge all lcov files together
-	grcov --llvm ./lcov1.info ./lcov2.info ./lcov3.info > lcov.info
+	grcov --llvm ./lcov1.info ./lcov2.info > lcov.info
+	rm lcov1.info lcov2.info
 
 .PHONY: clean
 clean:
