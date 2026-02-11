@@ -1,4 +1,4 @@
-use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore, Store, Value};
+use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore, StoreTr, Value};
 use rwasm_fuel_policy::FuelCosts;
 
 #[test]
@@ -67,7 +67,12 @@ fn test_locals_consume_fuel() {
             let mut store = RwasmStore::<()>::default();
             store.set_fuel(Some(fuel_limit));
             engine
-                .execute(&mut store, &module, &params_values, &mut result)
+                .execute(
+                    &mut store,
+                    &module,
+                    if i == 0 { &params_values } else { &[] },
+                    &mut result,
+                )
                 .unwrap();
             let remaining_fuel = store.remaining_fuel();
             assert_eq!(

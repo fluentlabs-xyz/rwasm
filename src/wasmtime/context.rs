@@ -1,18 +1,18 @@
-use crate::{Caller, Store, SyscallHandler, TrapCode, TypedCaller, UntypedValue};
+use crate::{CallerTr, StoreTr, SyscallHandler, TrapCode, TypedCaller};
 use wasmtime::{AsContext, AsContextMut, StoreLimits};
 
-pub struct WrappedContext<T: 'static + Send + Sync> {
+pub struct WrappedContext<T: 'static> {
     pub(crate) syscall_handler: SyscallHandler<T>,
     pub(crate) fuel: Option<u64>,
     pub(crate) resource_limiter: StoreLimits,
     pub(crate) data: T,
 }
 
-pub struct WasmtimeCaller<'a, T: 'static + Send + Sync> {
+pub struct WasmtimeCaller<'a, T: 'static> {
     caller: wasmtime::Caller<'a, WrappedContext<T>>,
 }
 
-impl<'a, T: 'static + Send + Sync> WasmtimeCaller<'a, T> {
+impl<'a, T: 'static> WasmtimeCaller<'a, T> {
     pub fn wrap_typed(caller: wasmtime::Caller<'a, WrappedContext<T>>) -> TypedCaller<'a, T> {
         TypedCaller::Wasmtime(Self { caller })
     }
@@ -21,7 +21,7 @@ impl<'a, T: 'static + Send + Sync> WasmtimeCaller<'a, T> {
     }
 }
 
-impl<'a, T: 'static + Send + Sync> Store<T> for WasmtimeCaller<'a, T> {
+impl<'a, T: 'static> StoreTr<T> for WasmtimeCaller<'a, T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let global_memory = self
             .caller
@@ -80,16 +80,4 @@ impl<'a, T: 'static + Send + Sync> Store<T> for WasmtimeCaller<'a, T> {
     }
 }
 
-impl<'a, T: 'static + Send + Sync> Caller<T> for WasmtimeCaller<'a, T> {
-    fn program_counter(&self) -> u32 {
-        unimplemented!("wasmtime: not allowed im wasmtime mode")
-    }
-
-    fn stack_push(&mut self, _value: UntypedValue) {
-        unimplemented!("wasmtime: not allowed in wasmtime mode")
-    }
-
-    fn consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
-        self.try_consume_fuel(fuel)
-    }
-}
+impl<'a, T: 'static> CallerTr<T> for WasmtimeCaller<'a, T> {}

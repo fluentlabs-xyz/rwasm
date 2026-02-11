@@ -1,6 +1,6 @@
 use crate::{
-    compile_wasmtime_module, CompilationConfig, FuelConfig, ImportLinker, ImportName, TrapCode,
-    WasmtimeStore,
+    wasmtime::{compile_wasmtime_module, WasmtimeExecutor},
+    CompilationConfig, ImportLinker, ImportName, TrapCode,
 };
 use rwasm_fuel_policy::{LinearFuelParams, QuadraticFuelParams, SyscallFuelParams};
 use std::sync::Arc;
@@ -77,12 +77,12 @@ fn get_test_wasmtime_module() -> (Module, Arc<ImportLinker>) {
 #[test]
 fn test_call_with_charging_quadratic_wasmtime() {
     let (module, import_linker) = get_test_wasmtime_module();
-    let mut wasmtime_worker = WasmtimeStore::new(
+    let mut wasmtime_worker = WasmtimeExecutor::new(
         module,
         import_linker.clone(),
         (),
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
-        FuelConfig::default().with_fuel_limit(100_000),
+        Some(100_000),
     );
 
     wasmtime_worker
@@ -98,12 +98,12 @@ fn test_call_with_charging_quadratic_wasmtime() {
 #[test]
 fn test_call_with_charging_linear_wasmtime() {
     let (module, import_linker) = get_test_wasmtime_module();
-    let mut wasmtime_worker = WasmtimeStore::new(
+    let mut wasmtime_worker = WasmtimeExecutor::new(
         module,
         import_linker.clone(),
         (),
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
-        FuelConfig::default().with_fuel_limit(100_000),
+        Some(100_000),
     );
 
     wasmtime_worker.execute("main", &[], &mut []).unwrap();
@@ -116,12 +116,12 @@ fn test_call_with_charging_linear_wasmtime() {
 #[test]
 fn test_call_with_charging_param_overflow_wasmtime() {
     let (module, import_linker) = get_test_wasmtime_module();
-    let mut wasmtime_worker = WasmtimeStore::new(
+    let mut wasmtime_worker = WasmtimeExecutor::new(
         module,
         import_linker.clone(),
         (),
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
-        FuelConfig::default().with_fuel_limit(100_000),
+        Some(100_000),
     );
 
     let err = wasmtime_worker

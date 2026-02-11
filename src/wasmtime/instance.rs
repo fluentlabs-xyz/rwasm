@@ -1,28 +1,39 @@
 use crate::{
     wasmtime::{types::map_anyhow_error, wasmtime_import_linker, WrappedContext},
-    FuelConfig, ImportLinker, SyscallHandler, TrapCode, Value, F32, F64,
+    ImportLinker, SyscallHandler, TrapCode, Value, F32, F64,
 };
 use std::sync::Arc;
-use wasmtime::{
-    AsContext, AsContextMut, Instance, InstancePre, Linker, Store, StoreLimitsBuilder, Val,
-};
+use wasmtime::{AsContext, AsContextMut, StoreContext, StoreContextMut};
 
-pub struct WasmtimeStore<T: 'static + Send + Sync> {
-    pub linker: Linker<WrappedContext<T>>,
-    pub store: Store<WrappedContext<T>>,
-    pub instance_pre: InstancePre<WrappedContext<T>>,
-    pub instance: Instance,
+pub struct WasmtimeExecutor<T: 'static> {
+    pub linker: wasmtime::Linker<WrappedContext<T>>,
+    pub store: wasmtime::Store<WrappedContext<T>>,
+    pub instance_pre: wasmtime::InstancePre<WrappedContext<T>>,
+    pub instance: wasmtime::Instance,
 }
 
-impl<T: 'static + Send + Sync> WasmtimeStore<T> {
+impl<T: 'static> AsContext for WasmtimeExecutor<T> {
+    type Data = WrappedContext<T>;
+
+    fn as_context(&self) -> StoreContext<'_, Self::Data> {
+        self.store.as_context()
+    }
+}
+impl<T: 'static> AsContextMut for WasmtimeExecutor<T> {
+    fn as_context_mut(&mut self) -> StoreContextMut<'_, Self::Data> {
+        self.store.as_context_mut()
+    }
+}
+
+impl<T: 'static> WasmtimeExecutor<T> {
     pub fn new(
         module: wasmtime::Module,
         import_linker: Arc<ImportLinker>,
         data: T,
         syscall_handler: SyscallHandler<T>,
-        fuel_config: FuelConfig,
+        fuel_limit: Option<u64>,
     ) -> Self {
-        let resource_limiter = StoreLimitsBuilder::new()
+        let resource_limiter = wasmtime::StoreLimitsBuilder::new()
             .instances(usize::MAX)
             .tables(usize::MAX)
             .memories(usize::MAX)
@@ -34,9 +45,9 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
             resource_limiter,
             data,
         };
-        let mut store = Store::<WrappedContext<T>>::new(module.engine(), context);
+        let mut store = wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context);
         store.limiter(|ctx| &mut ctx.resource_limiter);
-        if let Some(fuel) = fuel_config.fuel_limit {
+        if let Some(fuel) = fuel_limit {
             if let Ok(_) = store.get_fuel() {
                 store.set_fuel(fuel).expect("wasmtime: fuel is not enabled");
             } else {
@@ -44,9 +55,11 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
             }
         }
         #[allow(unused_mut)]
-        let mut linker = wasmtime_import_linker(module.engine(), import_linker);
+        let mut linker = wasmtime_import_linker(module.engine(), &import_linker);
         #[cfg(feature = "e2e")]
-        Self::link_spectest_globals(&mut linker, &mut store);
+        {
+            Self::link_spectest_globals(&mut linker, &mut store);
+        }
         let instance_pre = linker
             .instantiate_pre(&module)
             .unwrap_or_else(|err| panic!("wasmtime: can't pre-instantiate module: {}", err));
@@ -63,15 +76,15 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
 
     #[cfg(feature = "e2e")]
     fn link_spectest_globals(
-        linker: &mut Linker<WrappedContext<T>>,
-        store: &mut Store<WrappedContext<T>>,
+        linker: &mut wasmtime::Linker<WrappedContext<T>>,
+        store: &mut wasmtime::Store<WrappedContext<T>>,
     ) {
         use wasmtime::{Extern, Global, GlobalType, Mutability, ValType};
         let global = Extern::Global(
             Global::new(
                 store.as_context_mut(),
                 GlobalType::new(ValType::I32, Mutability::Const),
-                Val::I32(666),
+                wasmtime::Val::I32(666),
             )
             .unwrap(),
         );
@@ -82,7 +95,7 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
             Global::new(
                 store.as_context_mut(),
                 GlobalType::new(ValType::I64, Mutability::Const),
-                Val::I64(666),
+                wasmtime::Val::I64(666),
             )
             .unwrap(),
         );
@@ -97,6 +110,7 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
+        use wasmtime::Val;
         let entrypoint = self
             .instance
             .get_func(self.store.as_context_mut(), func_name)
@@ -163,22 +177,25 @@ impl<T: 'static + Send + Sync> WasmtimeStore<T> {
 
     pub fn resume(
         &mut self,
-        interruption_result: Result<&[Value], TrapCode>,
+        interruption_result: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
         unimplemented!("wasmtime: resume is not implemented yet");
     }
 
-    fn with_store_mut<R, F: FnOnce(&mut Store<WrappedContext<T>>) -> R>(&mut self, f: F) -> R {
+    fn with_store_mut<R, F: FnOnce(&mut wasmtime::Store<WrappedContext<T>>) -> R>(
+        &mut self,
+        f: F,
+    ) -> R {
         f(&mut self.store)
     }
 
-    fn with_store<R, F: FnOnce(&Store<WrappedContext<T>>) -> R>(&self, f: F) -> R {
+    fn with_store<R, F: FnOnce(&wasmtime::Store<WrappedContext<T>>) -> R>(&self, f: F) -> R {
         f(&self.store)
     }
 }
 
-impl<T: Send + Sync> crate::Store<T> for WasmtimeStore<T> {
+impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let instance = self.instance.clone();
         self.with_store_mut(|store| {

@@ -909,7 +909,7 @@ impl From<Value> for UntypedValue {
 
 /// Runtime representation of a value.
 ///
-/// Wasm code manipulate values of the four basic value types:
+/// Wasm code manipulates values of the four basic value types:
 /// integers and floating-point (IEEE 754-2008) data of 32 or 64 bit width each, respectively.
 ///
 /// There is no distinction between signed and unsigned integer types. Instead, integers are
@@ -917,13 +917,13 @@ impl From<Value> for UntypedValue {
 /// representation.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
-    /// Value of 32-bit signed or unsigned integer.
+    /// Value of a 32-bit signed or unsigned integer.
     I32(i32),
-    /// Value of 64-bit signed or unsigned integer.
+    /// Value an of 64-bit signed or unsigned integer.
     I64(i64),
     /// Value of 32-bit IEEE 754-2008 floating point number.
     F32(F32),
-    /// Value of 64-bit IEEE 754-2008 floating point number.
+    /// Value an of 64-bit IEEE 754-2008 floating point number.
     F64(F64),
     /// A nullable [`Func`][`crate::Func`] reference, a.k.a. [`FuncRef`].
     FuncRef(FuncRef),

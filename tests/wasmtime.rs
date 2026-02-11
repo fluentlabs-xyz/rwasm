@@ -1,6 +1,6 @@
 use rwasm::{
-    always_failing_syscall_handler, compile_wasmtime_module, CompilationConfig, FuelConfig,
-    ImportLinker, TypedModule, Value,
+    always_failing_syscall_handler, wasmtime::compile_wasmtime_module, CompilationConfig,
+    ImportLinker, StrategyDefinition, Value,
 };
 use std::sync::Arc;
 use wasmtime::{Engine, Instance, Module, Store, TypedFunc};
@@ -107,36 +107,41 @@ fn test_10001_instances_in_a_row() {
 "#,
     )
     .unwrap();
-    let strategy = TypedModule::Wasmtime {
-        module: compile_wasmtime_module(CompilationConfig::default(), &wasm_binary).unwrap(),
+    let strategy = StrategyDefinition::Wasmtime {
+        module: compile_wasmtime_module(
+            CompilationConfig::default().with_consume_fuel(false),
+            &wasm_binary,
+        )
+        .unwrap(),
     };
-    for _ in 0..10_000 {
-        let mut store = strategy.empty_store();
-        store.set_fuel(u64::MAX);
-        strategy.execute(&mut store, "main", &[], &mut []).unwrap();
+    for _ in 0..10_001 {
+        strategy
+            .default_executor()
+            .unwrap()
+            .execute("main", &[], &mut [])
+            .unwrap();
     }
-    let mut store = strategy.empty_store();
-    store.set_fuel(u64::MAX);
-    strategy.execute(&mut store, "main", &[], &mut []).unwrap();
 }
 
 #[test]
 fn test_fib_bench() {
     let wasm_binary = include_bytes!("../benchmarks/lib.wasm");
-    let strategy = TypedModule::Wasmtime {
+    let strategy = StrategyDefinition::Wasmtime {
         module: compile_wasmtime_module(CompilationConfig::default(), wasm_binary).unwrap(),
     };
     // it fails on iter number 32'165...
     for _ in 0..32_165 {
-        let mut store = strategy.create_store(
-            Arc::new(ImportLinker::default()),
-            (),
-            always_failing_syscall_handler,
-            FuelConfig::default().with_fuel_limit(1_000_000),
-        );
+        let mut executor = strategy
+            .create_executor(
+                Arc::new(ImportLinker::default()),
+                (),
+                always_failing_syscall_handler,
+                Some(1_000_000),
+            )
+            .unwrap();
         let mut result = [Value::I32(0)];
-        strategy
-            .execute(&mut store, "main", &[Value::I32(43)], &mut result)
+        executor
+            .execute("main", &[Value::I32(43)], &mut result)
             .unwrap();
         core::hint::black_box(result);
     }

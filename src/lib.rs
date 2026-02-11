@@ -26,10 +26,5 @@ pub use strategy::*;
 pub use types::*;
 pub use vm::*;
 pub use wasmparser::{FuncType, ValType};
-#[cfg(feature = "wasmtime")]
-pub use wasmtime::{
-    compile_wasmtime_module, compile_wasmtime_module_cached, WasmtimeCaller, WasmtimeLinker,
-    WasmtimeModule, WasmtimeStore,
-};
 #[cfg(test)]
 use wat as _;

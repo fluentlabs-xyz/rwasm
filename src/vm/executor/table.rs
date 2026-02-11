@@ -1,6 +1,6 @@
 use crate::{ElementSegmentIdx, RwasmExecutor, TableEntity, TableIdx, TrapCode};
 
-impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
+impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_table_size(&mut self, table_idx: TableIdx) {
         let table_size = self

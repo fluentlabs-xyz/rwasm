@@ -1,6 +1,6 @@
 use rwasm::{
     always_failing_syscall_handler, intrinsic::Intrinsic, CompilationConfig, ExecutionEngine,
-    FuelConfig, ImportLinker, ImportName, Opcode, RwasmModule, RwasmStore,
+    ImportLinker, ImportName, Opcode, RwasmModule, RwasmStore,
 };
 use std::sync::Arc;
 use wasmparser::ValType;
@@ -42,7 +42,7 @@ fn test_intrinsic_replace() {
         Arc::new(ImportLinker::default()),
         (),
         always_failing_syscall_handler,
-        FuelConfig::default().with_fuel_limit(100),
+        Some(100),
     );
     let engine = ExecutionEngine::new();
     engine
@@ -89,7 +89,7 @@ fn test_intrinsic_remove() {
         Arc::new(ImportLinker::default()),
         (),
         always_failing_syscall_handler,
-        FuelConfig::default(),
+        None,
     );
     let engine = ExecutionEngine::new();
     engine

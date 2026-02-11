@@ -11,9 +11,6 @@ use bincode::{
 };
 use core::ops::Deref;
 
-mod view;
-pub use view::*;
-
 /// Represents a compiled rWasm module.
 ///
 /// An `RwasmModule` encapsulates the executable code, static data, and element (function/table
@@ -27,7 +24,7 @@ pub struct RwasmModule {
 }
 
 fn _check() {
-    fn assert_send_sync<T: Send + Sync>() {}
+    fn assert_send_sync<T>() {}
     assert_send_sync::<RwasmModule>();
 }
 
@@ -56,16 +53,7 @@ impl RwasmModule {
             data_section: vec![],
             elem_section: vec![],
             hint_section: vec![],
-        }
-        .into()
-    }
-
-    pub fn with_one_function(code_section: InstructionSet) -> Self {
-        RwasmModuleInner {
-            code_section,
-            data_section: vec![],
-            elem_section: vec![],
-            hint_section: vec![],
+            source_pc: 0,
         }
         .into()
     }
@@ -112,7 +100,7 @@ pub struct RwasmModuleInner {
     /// The main instruction set (bytecode) for this module that includes an entrypoint
     /// and all required functions.
     ///
-    /// The source program counter offset is always 0.
+    /// The source program counter-offset is always 0.
     pub code_section: InstructionSet,
 
     /// Linear read-only memory data initialized when the module is instantiated.
@@ -122,10 +110,17 @@ pub struct RwasmModuleInner {
     pub elem_section: Vec<u32>,
 
     /// A hint section that stores original bytecode that used as a compiler input.
-    /// It can be Wasm, EVM bytecode or anything else.
+    /// It can be Wasm, EVM bytecode, or anything else.
     /// Use this section signature bytes to determine the type of the file,
     /// always fallback to EVM if it can't be extracted.
     pub hint_section: Vec<u8>,
+
+    /// A program counter that points to the original bytecode offset, where the execution starts.
+    /// But it ignores start and init sections.
+    /// If you want to start with init (like the first function run, then use 0 offset, otherwise this PC).
+    ///
+    /// Note: For old binaries this is always 0.
+    pub source_pc: u32,
 }
 
 /// Rwasm magic bytes 0xef52 (0x52 stands for 'R' in ASCII)
@@ -144,6 +139,7 @@ impl Encode for RwasmModuleInner {
         Encode::encode(&self.data_section, encoder)?;
         Encode::encode(&self.elem_section, encoder)?;
         Encode::encode(&self.hint_section, encoder)?;
+        Encode::encode(&self.source_pc, encoder)?;
         Ok(())
     }
 }
@@ -163,11 +159,25 @@ impl<Context> Decode<Context> for RwasmModuleInner {
         let data_section: Vec<u8> = Decode::decode(decoder)?;
         let elem_section: Vec<u32> = Decode::decode(decoder)?;
         let wasm_section: Vec<u8> = Decode::decode(decoder)?;
+        let source_pc: u32 = match Decode::decode(decoder) {
+            Ok(source_pc) => source_pc,
+            Err(DecodeError::UnexpectedEnd { additional }) => {
+                debug_assert_eq!(
+                    additional,
+                    size_of::<u32>(),
+                    "rwasm: unexpected end of source_pc decoding, expected 4 bytes"
+                );
+                // This field is optional if it's not presented, then fallback to 0
+                0
+            }
+            Err(err) => return Err(err),
+        };
         Ok(Self {
             code_section,
             data_section,
             elem_section,
             hint_section: wasm_section,
+            source_pc,
         })
     }
 }
@@ -184,11 +194,15 @@ impl core::fmt::Display for RwasmModule {
                 writeln!(f, " .function_begin_{} (#{})", pos, func_num)?;
             }
             write!(f, "  {:04}: {}", pos, opcode)?;
+            if pos == self.source_pc as usize {
+                write!(f, "  <- SOURCE")?;
+            }
             writeln!(f)?;
         }
         writeln!(f, " .function_end\n")?;
         writeln!(f, " .ro_data: {:x?},", self.data_section.as_slice())?;
         writeln!(f, " .ro_elem: {:?},", self.elem_section.as_slice())?;
+        writeln!(f, " .source_pc: {:?},", self.source_pc)?;
         writeln!(f, "}}")?;
         Ok(())
     }
@@ -200,6 +214,7 @@ pub struct RwasmModuleBuilder {
     data_section: Vec<u8>,
     elem_section: Vec<u32>,
     hint_section: Vec<u8>,
+    source_pc: u32,
 }
 
 impl RwasmModuleBuilder {
@@ -225,6 +240,11 @@ impl RwasmModuleBuilder {
         self
     }
 
+    pub fn with_source_pc(mut self, source_pc: u32) -> Self {
+        self.source_pc = source_pc;
+        self
+    }
+
     pub fn build(self) -> RwasmModule {
         RwasmModule {
             inner: Arc::new(RwasmModuleInner {
@@ -232,6 +252,7 @@ impl RwasmModuleBuilder {
                 data_section: self.data_section,
                 elem_section: self.elem_section,
                 hint_section: self.hint_section,
+                source_pc: self.source_pc,
             }),
         }
     }
@@ -240,6 +261,7 @@ impl RwasmModuleBuilder {
 #[cfg(test)]
 mod tests {
     use crate::{instruction_set, RwasmModuleInner};
+    use hex_literal::hex;
 
     #[test]
     fn test_module_encoding() {
@@ -255,12 +277,23 @@ mod tests {
             data_section: Default::default(),
             elem_section: vec![5, 6, 7, 8, 9],
             hint_section: vec![],
+            source_pc: u32::MAX,
         };
         let encoded_module = bincode::encode_to_vec(&module, bincode::config::legacy()).unwrap();
+        println!("{}", hex::encode(&encoded_module));
         let module2: RwasmModuleInner;
         (module2, _) =
             bincode::decode_from_slice(&encoded_module, bincode::config::legacy()).unwrap();
         assert_eq!(module, module2);
+    }
+
+    #[test]
+    fn test_decode_module_wo_source_pc() {
+        const LEGACY_MODULE: &[u8] = &hex!("ef52010600000000000000150000006400000015000000140000003e00000015000000030000003e000000160000000000000000000000050000000000000005000000060000000700000008000000090000000000000000000000");
+        let module2: RwasmModuleInner;
+        (module2, _) =
+            bincode::decode_from_slice(&LEGACY_MODULE, bincode::config::legacy()).unwrap();
+        assert_eq!(module2.source_pc, 0);
     }
 
     #[test]

@@ -6,6 +6,7 @@ use std::{error::Error, fmt, fmt::Display};
 pub enum TestError {
     InstanceNotRegistered { name: String },
     NoModuleInstancesFound,
+    // An error that happens with rWasm
     Rwasm(RwasmError),
 }
 

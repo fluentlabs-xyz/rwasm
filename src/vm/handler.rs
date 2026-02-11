@@ -1,4 +1,4 @@
-use crate::{types::TrapCode, Store, TypedCaller, Value};
+use crate::{types::TrapCode, StoreTr, TypedCaller, Value};
 use alloc::{vec, vec::Vec};
 
 #[derive(Default)]

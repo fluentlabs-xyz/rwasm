@@ -1,8 +1,9 @@
 use hex_literal::hex;
 use rwasm::{
-    compile_wasmtime_module, for_each_strategy, CompilationConfig, ExecutionEngine, FuelConfig,
-    ImportLinker, ImportName, Opcode, RwasmModule, RwasmStore, StateRouterConfig, Store, TrapCode,
-    TypedCaller, TypedModule, Value, WasmtimeStore,
+    for_each_strategy,
+    wasmtime::{compile_wasmtime_module, WasmtimeExecutor},
+    CompilationConfig, ExecutionEngine, ImportLinker, ImportName, Opcode, RwasmModule, RwasmStore,
+    StateRouterConfig, StoreTr, StrategyDefinition, TrapCode, TypedCaller, Value,
 };
 use rwasm_fuel_policy::SyscallFuelParams;
 use std::{str::from_utf8, sync::Arc};
@@ -122,7 +123,6 @@ fn test_nitro_verifier_rwasm() {
         .with_allow_malformed_entrypoint_func_type(true)
         .with_import_linker(import_linker.clone());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-    let engine = ExecutionEngine::new();
     let mut store = RwasmStore::<HostState>::new(
         import_linker.clone(),
         HostState {
@@ -130,11 +130,12 @@ fn test_nitro_verifier_rwasm() {
             ..Default::default()
         },
         fluentbase_syscall_handler,
-        FuelConfig::default(),
+        None,
     );
-    engine
-        .execute(&mut store, &rwasm_module, &[], &mut [])
+    let instance = import_linker
+        .instantiate(&mut store, ExecutionEngine::new(), rwasm_module)
         .unwrap();
+    instance.execute(&mut store, &[], &mut []).unwrap();
 }
 
 #[cfg(feature = "wasmtime")]
@@ -154,7 +155,7 @@ fn test_nitro_verifier_wasmtime() {
         &rwasm_module.hint_section,
     )
     .unwrap();
-    let mut worker = WasmtimeStore::<HostState>::new(
+    let mut worker = WasmtimeExecutor::<HostState>::new(
         module,
         import_linker,
         HostState {
@@ -162,7 +163,7 @@ fn test_nitro_verifier_wasmtime() {
             ..Default::default()
         },
         fluentbase_syscall_handler,
-        FuelConfig::default(),
+        None,
     );
     worker.execute("main", &[], &mut []).unwrap();
 }
@@ -176,19 +177,19 @@ fn test_nitro_verifier_strategy() {
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true)
         .with_import_linker(import_linker.clone());
-    let exec_strategy = |strategy: TypedModule| {
-        let mut store = strategy.create_store(
-            import_linker.clone(),
-            HostState {
-                input: ATTESTATION_INPUT.to_vec(),
-                ..Default::default()
-            },
-            fluentbase_syscall_handler,
-            FuelConfig::default().with_fuel_limit(1_000_000_000),
-        );
-        strategy
-            .execute::<HostState>(&mut store, "main", &[], &mut [])
-            .map_err(Into::into)
+    let exec_strategy = |strategy: StrategyDefinition| {
+        let mut executor = strategy
+            .create_executor(
+                import_linker.clone(),
+                HostState {
+                    input: ATTESTATION_INPUT.to_vec(),
+                    ..Default::default()
+                },
+                fluentbase_syscall_handler,
+                Some(1_000_000_000),
+            )
+            .unwrap();
+        executor.execute("main", &[], &mut []).map_err(Into::into)
     };
     // run with rwasm strategy first
     for_each_strategy(exec_strategy, config, wasm_binary).unwrap();
@@ -206,16 +207,16 @@ fn run_fluentbase_binary(wasm_binary: &[u8], host_state: HostState) -> HostState
         })
         .with_import_linker(import_linker.clone());
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
-    let engine = ExecutionEngine::default();
     let mut store = RwasmStore::new(
         import_linker.clone(),
         host_state,
         fluentbase_syscall_handler,
-        FuelConfig::default(),
+        None,
     );
-    engine
-        .execute(&mut store, &rwasm_module, &[], &mut [])
+    let instance = ImportLinker::default()
+        .instantiate(&mut store, ExecutionEngine::new(), rwasm_module)
         .unwrap();
+    instance.execute(&mut store, &[], &mut []).unwrap();
     store.data().clone()
 }
 

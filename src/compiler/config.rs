@@ -122,6 +122,10 @@ impl CompilationConfig {
 
     pub fn with_consume_fuel(mut self, consume_fuel: bool) -> Self {
         self.consume_fuel = consume_fuel;
+        if !consume_fuel {
+            self.consume_fuel_for_params_and_locals = false;
+            self.builtins_consume_fuel = false;
+        }
         self
     }
 

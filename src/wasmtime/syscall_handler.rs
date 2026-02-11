@@ -1,4 +1,7 @@
-use crate::{wasmtime::context::WrappedContext, TrapCode, Value, WasmtimeCaller, F32, F64};
+use crate::{
+    wasmtime::{context::WrappedContext, WasmtimeCaller},
+    TrapCode, Value, F32, F64,
+};
 use smallvec::SmallVec;
 use wasmtime::Val;
 
@@ -8,7 +11,7 @@ use wasmtime::Val;
 /// then calls `invoke_runtime_handler` with a `CallerAdapter` providing memory/context access.
 ///
 /// Returns `Ok(())` on success, or an `anyhow::Error` that may wrap a trap.
-pub fn wasmtime_syscall_handler<'a, T: Send + Sync + 'static>(
+pub fn wasmtime_syscall_handler<'a, T: 'static>(
     sys_func_idx: u32,
     caller: wasmtime::Caller<'a, WrappedContext<T>>,
     params: &[Val],

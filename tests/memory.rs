@@ -1,6 +1,6 @@
 use rwasm::{
-    always_failing_syscall_handler, instruction_set, ExecutionEngine, FuelConfig, ImportLinker,
-    RwasmModule, RwasmModuleBuilder, RwasmStore,
+    always_failing_syscall_handler, instruction_set, ExecutionEngine, ImportLinker, RwasmModule,
+    RwasmModuleBuilder, RwasmStore,
 };
 
 fn execute_module(module: &RwasmModule) -> u64 {
@@ -9,7 +9,7 @@ fn execute_module(module: &RwasmModule) -> u64 {
         ImportLinker::default().into(),
         (),
         always_failing_syscall_handler,
-        FuelConfig::default(),
+        None,
     );
     engine.execute(&mut store, &module, &[], &mut []).unwrap();
     store.fuel_consumed()

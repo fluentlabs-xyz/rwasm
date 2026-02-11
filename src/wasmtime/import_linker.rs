@@ -3,7 +3,6 @@ use crate::{
     ImportLinker,
 };
 use std::sync::Arc;
-use wasmtime::{Engine, Linker};
 
 /// Creates a Wasmtime linker from an rWasm `ImportLinker`.
 ///
@@ -12,11 +11,11 @@ use wasmtime::{Engine, Linker};
 /// - invokes `invoke_runtime_handler`,
 /// - maps rWasm results back to Wasmtime values,
 /// - converts certain trap codes into controlled termination (`ExecutionHalted`).
-pub fn wasmtime_import_linker<T: 'static + Send + Sync>(
-    engine: &Engine,
-    import_linker: Arc<ImportLinker>,
-) -> Linker<WrappedContext<T>> {
-    let mut linker = Linker::<WrappedContext<T>>::new(engine);
+pub fn wasmtime_import_linker<T: 'static>(
+    engine: &wasmtime::Engine,
+    import_linker: &Arc<ImportLinker>,
+) -> wasmtime::Linker<WrappedContext<T>> {
+    let mut linker = wasmtime::Linker::<WrappedContext<T>>::new(engine);
 
     for (import_name, import_entity) in import_linker.iter() {
         let params = import_entity

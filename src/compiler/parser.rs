@@ -101,6 +101,20 @@ impl ModuleParser {
                 .translation
                 .emit_function_call(start_func, true, false);
         }
+        self.allocations
+            .translation
+            .segment_builder
+            .entrypoint_bytecode
+            .op_return();
+
+        // A pointer to the instruction set (post-init section)
+        let source_pc = self
+            .allocations
+            .translation
+            .segment_builder
+            .entrypoint_bytecode
+            .len() as u32;
+
         if let Some(entrypoint_name) = self.config.entrypoint_name.as_ref() {
             let func_idx = self
                 .allocations
@@ -173,6 +187,7 @@ impl ModuleParser {
                 .global_memory_section,
             elem_section: element_section,
             hint_section: wasm_binary.to_vec(),
+            source_pc,
         };
         let constructor_params = self.allocations.translation.constructor_params;
 

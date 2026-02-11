@@ -1,21 +1,13 @@
-use crate::{
-    types::{TrapCode, UntypedValue},
-    Caller, RwasmStore, Store, ValueStackPtr,
-};
+use crate::{types::TrapCode, CallerTr, RwasmStore, StoreTr, ValueStackPtr};
 
-pub struct RwasmCaller<'a, T: 'static + Send + Sync> {
+pub struct RwasmCaller<'a, T: 'static> {
     store: &'a mut RwasmStore<T>,
-    program_counter: u32,
     sp: ValueStackPtr,
 }
 
-impl<'a, T: 'static + Send + Sync> RwasmCaller<'a, T> {
-    pub fn new(store: &'a mut RwasmStore<T>, program_counter: u32, sp: ValueStackPtr) -> Self {
-        Self {
-            store,
-            program_counter,
-            sp,
-        }
+impl<'a, T: 'static> RwasmCaller<'a, T> {
+    pub fn new(store: &'a mut RwasmStore<T>, sp: ValueStackPtr) -> Self {
+        Self { store, sp }
     }
 
     pub fn sp(&self) -> ValueStackPtr {
@@ -23,7 +15,7 @@ impl<'a, T: 'static + Send + Sync> RwasmCaller<'a, T> {
     }
 }
 
-impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
+impl<'a, T: 'static> StoreTr<T> for RwasmCaller<'a, T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.store.global_memory.read(offset, buffer)?;
         Ok(())
@@ -55,17 +47,4 @@ impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
     }
 }
 
-impl<'a, T: 'static + Send + Sync> Caller<T> for RwasmCaller<'a, T> {
-    fn program_counter(&self) -> u32 {
-        self.program_counter
-    }
-
-    fn stack_push(&mut self, value: UntypedValue) {
-        self.sp.push(value);
-    }
-
-    fn consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
-        //Not needed to consume fuel for rwasm
-        Ok(())
-    }
-}
+impl<'a, T: 'static> CallerTr<T> for RwasmCaller<'a, T> {}
