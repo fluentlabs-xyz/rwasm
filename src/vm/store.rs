@@ -33,7 +33,7 @@ pub struct RwasmStore<T: 'static> {
     pub(crate) import_linker: Arc<ImportLinker>,
     /// If set, contains the instruction/value-stack pointers to resume after a suspension.
     pub(crate) resumable_context: Option<ReusableContext>,
-    /// A fuel config.
+    /// A fuel config (None stands for no limit).
     pub(crate) fuel_limit: Option<u64>,
     /// Execution tracer used when the `tracing` feature is enabled.
     #[cfg(feature = "tracing")]
@@ -95,6 +95,13 @@ impl<T: 'static> StoreTr<T> for RwasmStore<T> {
     fn remaining_fuel(&self) -> Option<u64> {
         Some(self.fuel_limit? - self.consumed_fuel)
     }
+
+    fn reset_fuel(&mut self, new_fuel_limit: u64) {
+        // If new fuel limit is presented then change it
+        self.fuel_limit = Some(new_fuel_limit);
+        // Reset consumed fuel to 0 (indicating we have the entire fuel limit unspent)
+        self.consumed_fuel = 0;
+    }
 }
 
 impl<T: 'static> RwasmStore<T> {
@@ -148,15 +155,7 @@ impl<T: 'static> RwasmStore<T> {
         self.last_signature = None;
     }
 
-    pub fn set_fuel(&mut self, fuel: Option<u64>) {
-        self.fuel_limit = fuel;
-    }
-
     pub fn fuel_consumed(&self) -> u64 {
         self.consumed_fuel
-    }
-
-    pub fn set_syscall_handler(&mut self, handler: SyscallHandler<T>) {
-        self.syscall_handler = handler;
     }
 }

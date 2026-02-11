@@ -182,54 +182,31 @@ impl<T: 'static> WasmtimeExecutor<T> {
     ) -> Result<(), TrapCode> {
         unimplemented!("wasmtime: resume is not implemented yet");
     }
-
-    fn with_store_mut<R, F: FnOnce(&mut wasmtime::Store<WrappedContext<T>>) -> R>(
-        &mut self,
-        f: F,
-    ) -> R {
-        f(&mut self.store)
-    }
-
-    fn with_store<R, F: FnOnce(&wasmtime::Store<WrappedContext<T>>) -> R>(&self, f: F) -> R {
-        f(&self.store)
-    }
 }
 
 impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let instance = self.instance.clone();
-        self.with_store_mut(|store| {
-            let global_memory = instance
-                .get_export(store.as_context_mut(), "memory")
-                .unwrap_or_else(|| {
-                    unreachable!("wasmtime: missing memory export, it's not possible")
-                })
-                .into_memory()
-                .unwrap_or_else(|| {
-                    unreachable!("wasmtime: missing memory export, it's not possible")
-                });
-            global_memory
-                .read(store.as_context(), offset, buffer)
-                .map_err(|_| TrapCode::MemoryOutOfBounds)
-        })
+        let global_memory = instance
+            .get_export(self.store.as_context_mut(), "memory")
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
+            .into_memory()
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        global_memory
+            .read(self.store.as_context(), offset, buffer)
+            .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
         let instance = self.instance.clone();
-        self.with_store_mut(|store| {
-            let global_memory = instance
-                .get_export(store.as_context_mut(), "memory")
-                .unwrap_or_else(|| {
-                    unreachable!("wasmtime: missing memory export, it's not possible")
-                })
-                .into_memory()
-                .unwrap_or_else(|| {
-                    unreachable!("wasmtime: missing memory export, it's not possible")
-                });
-            global_memory
-                .write(store.as_context_mut(), offset, &buffer)
-                .map_err(|_| TrapCode::MemoryOutOfBounds)
-        })
+        let global_memory = instance
+            .get_export(self.store.as_context_mut(), "memory")
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
+            .into_memory()
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        global_memory
+            .write(self.store.as_context_mut(), offset, &buffer)
+            .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
     fn data_mut(&mut self) -> &mut T {
@@ -241,30 +218,35 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
-        self.with_store_mut(|store| {
-            if let Ok(remaining_fuel) = store.get_fuel() {
-                let new_fuel = remaining_fuel
-                    .checked_sub(delta)
-                    .ok_or(TrapCode::OutOfFuel)?;
-                store.set_fuel(new_fuel).unwrap_or_else(|_| {
-                    unreachable!("wasmtime: fuel mode is disabled in wasmtime")
-                });
-            } else if let Some(fuel) = store.data_mut().fuel.as_mut() {
-                *fuel = fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
-            }
-            Ok(())
-        })
+        if let Ok(remaining_fuel) = self.store.get_fuel() {
+            let new_fuel = remaining_fuel
+                .checked_sub(delta)
+                .ok_or(TrapCode::OutOfFuel)?;
+            self.store
+                .set_fuel(new_fuel)
+                .unwrap_or_else(|_| unreachable!("wasmtime: fuel mode is disabled in wasmtime"));
+        } else if let Some(fuel) = self.store.data_mut().fuel.as_mut() {
+            *fuel = fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
+        }
+        Ok(())
     }
 
     fn remaining_fuel(&self) -> Option<u64> {
-        self.with_store(|store| {
-            if let Ok(fuel) = store.get_fuel() {
-                Some(fuel)
-            } else if let Some(fuel) = store.data().fuel.as_ref() {
-                Some(*fuel)
-            } else {
-                None
-            }
-        })
+        if let Ok(fuel) = self.store.get_fuel() {
+            Some(fuel)
+        } else if let Some(fuel) = self.store.data().fuel.as_ref() {
+            Some(*fuel)
+        } else {
+            None
+        }
+    }
+
+    fn reset_fuel(&mut self, new_fuel_limit: u64) {
+        let has_fuel_enabled = self.store.get_fuel().is_ok();
+        if has_fuel_enabled {
+            self.store.set_fuel(new_fuel_limit).unwrap();
+        } else {
+            self.store.data_mut().fuel = Some(new_fuel_limit)
+        }
     }
 }

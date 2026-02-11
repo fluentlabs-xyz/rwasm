@@ -69,13 +69,21 @@ impl<'a, T: 'static> StoreTr<T> for WasmtimeCaller<'a, T> {
     }
 
     fn remaining_fuel(&self) -> Option<u64> {
-        // TODO(dmitry123): "do we want to deal with wasmtime's fuel?"
         if let Ok(fuel) = self.caller.get_fuel() {
             Some(fuel)
         } else if let Some(fuel) = self.caller.data().fuel.as_ref() {
             Some(*fuel)
         } else {
             None
+        }
+    }
+
+    fn reset_fuel(&mut self, new_fuel_limit: u64) {
+        let has_fuel_enabled = self.caller.get_fuel().is_ok();
+        if has_fuel_enabled {
+            self.caller.set_fuel(new_fuel_limit).unwrap();
+        } else {
+            self.caller.data_mut().fuel = Some(new_fuel_limit)
         }
     }
 }

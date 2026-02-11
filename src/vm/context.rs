@@ -1,17 +1,12 @@
-use crate::{types::TrapCode, CallerTr, RwasmStore, StoreTr, ValueStackPtr};
+use crate::{types::TrapCode, CallerTr, RwasmStore, StoreTr};
 
 pub struct RwasmCaller<'a, T: 'static> {
     store: &'a mut RwasmStore<T>,
-    sp: ValueStackPtr,
 }
 
 impl<'a, T: 'static> RwasmCaller<'a, T> {
-    pub fn new(store: &'a mut RwasmStore<T>, sp: ValueStackPtr) -> Self {
-        Self { store, sp }
-    }
-
-    pub fn sp(&self) -> ValueStackPtr {
-        self.sp
+    pub fn new(store: &'a mut RwasmStore<T>) -> Self {
+        Self { store }
     }
 }
 
@@ -44,6 +39,10 @@ impl<'a, T: 'static> StoreTr<T> for RwasmCaller<'a, T> {
 
     fn remaining_fuel(&self) -> Option<u64> {
         self.store.remaining_fuel()
+    }
+
+    fn reset_fuel(&mut self, new_fuel_limit: u64) {
+        self.store.reset_fuel(new_fuel_limit)
     }
 }
 

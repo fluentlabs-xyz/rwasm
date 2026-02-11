@@ -1,5 +1,5 @@
 use rwasm::{
-    always_failing_syscall_handler, instruction_set,
+    instruction_set,
     wasmtime::{compile_wasmtime_module, WasmtimeExecutor},
     CompilationConfig, ExecutionEngine, ImportLinker, ImportName, RwasmModule, RwasmModuleBuilder,
     RwasmStore, StoreTr, StrategyDefinition, TrapCode, TypedCaller, Value,
@@ -201,10 +201,9 @@ fn test_interrupted_call_wasmtime() {
     let mut store = RwasmStore::<()>::new(
         import_linker.clone(),
         (),
-        always_failing_syscall_handler,
+        interrupting_syscall_handler,
         None,
     );
-    store.set_syscall_handler(interrupting_syscall_handler);
     let engine = ExecutionEngine::new();
     let mut result = [Value::I32(0); 1];
     let err = engine

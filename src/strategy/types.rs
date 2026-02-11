@@ -12,6 +12,8 @@ pub trait StoreTr<T> {
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode>;
 
     fn remaining_fuel(&self) -> Option<u64>;
+
+    fn reset_fuel(&mut self, new_fuel_limit: u64);
 }
 
 pub trait CallerTr<T>: StoreTr<T> {}

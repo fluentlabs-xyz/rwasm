@@ -104,6 +104,14 @@ impl<'a, T> StoreTr<T> for TypedCaller<'a, T> {
             TypedCaller::Wasmtime(store) => store.remaining_fuel(),
         }
     }
+
+    fn reset_fuel(&mut self, new_fuel_limit: u64) {
+        match self {
+            TypedCaller::Rwasm(store) => store.reset_fuel(new_fuel_limit),
+            #[cfg(feature = "wasmtime")]
+            TypedCaller::Wasmtime(store) => store.reset_fuel(new_fuel_limit),
+        }
+    }
 }
 
 impl<'a, T> CallerTr<T> for TypedCaller<'a, T> {}
@@ -162,22 +170,12 @@ impl<T> StoreTr<T> for TypedStore<T> {
             TypedStore::Wasmtime(store) => store.remaining_fuel(),
         }
     }
-}
 
-impl<T> TypedStore<T> {
-    pub fn reset(&mut self, keep_flags: bool) {
+    fn reset_fuel(&mut self, new_fuel_limit: u64) {
         match self {
-            TypedStore::Rwasm(store) => store.reset(keep_flags),
+            TypedStore::Rwasm(store) => store.reset_fuel(new_fuel_limit),
             #[cfg(feature = "wasmtime")]
-            TypedStore::Wasmtime(_) => {}
-        }
-    }
-
-    pub fn set_fuel(&mut self, fuel: u64) {
-        match self {
-            TypedStore::Rwasm(store) => store.set_fuel(Some(fuel)),
-            #[cfg(feature = "wasmtime")]
-            TypedStore::Wasmtime(store) => store.store.set_fuel(fuel).unwrap(),
+            TypedStore::Wasmtime(store) => store.reset_fuel(new_fuel_limit),
         }
     }
 }

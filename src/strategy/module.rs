@@ -158,6 +158,14 @@ impl<T: 'static> StoreTr<T> for StrategyExecutor<T> {
             StrategyExecutor::Wasmtime { executor } => executor.remaining_fuel(),
         }
     }
+
+    fn reset_fuel(&mut self, new_fuel_limit: u64) {
+        match self {
+            StrategyExecutor::Rwasm { store, .. } => store.reset_fuel(new_fuel_limit),
+            #[cfg(feature = "wasmtime")]
+            StrategyExecutor::Wasmtime { executor } => executor.reset_fuel(new_fuel_limit),
+        }
+    }
 }
 
 impl<T: 'static> StrategyExecutor<T> {

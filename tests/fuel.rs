@@ -65,7 +65,7 @@ fn test_locals_consume_fuel() {
             .enumerate()
         {
             let mut store = RwasmStore::<()>::default();
-            store.set_fuel(Some(fuel_limit));
+            store.reset_fuel(fuel_limit);
             engine
                 .execute(
                     &mut store,

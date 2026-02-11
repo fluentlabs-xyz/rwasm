@@ -56,14 +56,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
         }
     }
 
-    pub fn advance_ip(&mut self, offset: usize) {
-        self.ip.add(offset)
-    }
-
-    pub fn caller<'vm>(&'vm mut self) -> TypedCaller<'vm, T> {
-        TypedCaller::Rwasm(RwasmCaller::<'vm, T>::new(&mut self.store, self.sp))
-    }
-
     pub fn program_counter(&self) -> u32 {
         let diff = self.ip.ptr as i32 - self.module.code_section.as_ptr() as i32;
         if diff < 0 {
@@ -436,7 +428,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         }
         let (params, result) = buffer.split_at_mut(params.len());
         let syscall_handler = self.store.syscall_handler;
-        let mut caller = self.caller();
+        let mut caller = TypedCaller::Rwasm(RwasmCaller::new(&mut self.store));
         match syscall_handler(&mut caller, sys_func_idx, params, result) {
             Ok(_) => {
                 // if execution succeeded, then copy output params back to the stack
