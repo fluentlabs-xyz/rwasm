@@ -258,6 +258,12 @@ impl RwasmModuleBuilder {
     }
 }
 
+impl Into<RwasmModule> for RwasmModuleBuilder {
+    fn into(self) -> RwasmModule {
+        self.build()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{instruction_set, RwasmModuleInner};
