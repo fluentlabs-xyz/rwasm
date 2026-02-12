@@ -19,7 +19,17 @@ impl ExecutionEngine {
     }
 
     #[inline(always)]
-    pub fn execute<T: Send + Sync>(
+    pub fn entrypoint<T>(
+        &self,
+        store: &mut RwasmStore<T>,
+        module: &RwasmModule,
+    ) -> Result<(), TrapCode> {
+        let mut ctx = self.inner.lock();
+        ctx.entrypoint(store, module)
+    }
+
+    #[inline(always)]
+    pub fn execute<T>(
         &self,
         store: &mut RwasmStore<T>,
         module: &RwasmModule,
@@ -30,7 +40,8 @@ impl ExecutionEngine {
         ctx.execute(store, module, params, result)
     }
 
-    pub fn resume<T: Send + Sync>(
+    #[inline(always)]
+    pub fn resume<T>(
         &self,
         store: &mut RwasmStore<T>,
         params: &[Value],
@@ -42,11 +53,36 @@ impl ExecutionEngine {
 }
 
 #[derive(Default)]
-struct ExecutionEngineInner {}
+struct ExecutionEngineInner {
+    // we should store a reusable stack here
+}
 
 impl ExecutionEngineInner {
+    pub(crate) fn entrypoint<T>(
+        &mut self,
+        store: &mut RwasmStore<T>,
+        module: &RwasmModule,
+    ) -> Result<(), TrapCode> {
+        let mut value_stack = ValueStack::default();
+        let mut call_stack = CallStack::default();
+        debug_assert!(
+            store.resumable_context.is_none(),
+            "rwasm: resumable context is presented"
+        );
+        let mut executor =
+            RwasmExecutor::entrypoint(&module, &mut value_stack, &mut call_stack, store);
+        match executor.run(&[], &mut []) {
+            Err(TrapCode::InterruptionCalled) => {
+                let (ip, sp) = (executor.ip, executor.sp);
+                value_stack.sync_stack_ptr(sp);
+                self.remember_context(module.clone(), store, value_stack, call_stack, ip)
+            }
+            res => res,
+        }
+    }
+
     /// Executes a rWasm module's function with the given parameters and stores the result.
-    pub fn execute<T: Send + Sync>(
+    pub(crate) fn execute<T>(
         &mut self,
         store: &mut RwasmStore<T>,
         module: &RwasmModule,
@@ -59,8 +95,12 @@ impl ExecutionEngineInner {
             store.resumable_context.is_none(),
             "rwasm: resumable context is presented"
         );
+        let sp = value_stack.stack_ptr();
+        let mut ip = InstructionPtr::new(module.code_section.as_ptr());
+        debug_assert!(module.source_pc < module.code_section.len() as u32);
+        ip.offset(module.source_pc as isize);
         let mut executor =
-            RwasmExecutor::entrypoint(&module, &mut value_stack, &mut call_stack, store);
+            RwasmExecutor::new(&module, &mut value_stack, sp, &mut call_stack, ip, store);
         match executor.run(params, result) {
             Err(TrapCode::InterruptionCalled) => {
                 let (ip, sp) = (executor.ip, executor.sp);
@@ -72,7 +112,7 @@ impl ExecutionEngineInner {
     }
 
     /// Resumes the execution of a WASM (WebAssembly) function that was previously interrupted.
-    pub fn resume<T: Send + Sync>(
+    pub(crate) fn resume<T>(
         &mut self,
         store: &mut RwasmStore<T>,
         params: &[Value],
@@ -99,7 +139,7 @@ impl ExecutionEngineInner {
         }
     }
 
-    fn remember_context<T: Send + Sync>(
+    fn remember_context<T>(
         &mut self,
         module: RwasmModule,
         store: &mut RwasmStore<T>,
@@ -117,14 +157,9 @@ impl ExecutionEngineInner {
     }
 }
 
-#[cfg(feature = "std")]
-thread_local! {
-    static ENGINE: ExecutionEngine = ExecutionEngine::new();
-}
-
-#[cfg(feature = "std")]
 impl ExecutionEngine {
     pub fn acquire_shared() -> ExecutionEngine {
-        ENGINE.with(Clone::clone)
+        static ENGINE: spin::Once<ExecutionEngine> = spin::Once::new();
+        ENGINE.call_once(|| ExecutionEngine::default()).clone()
     }
 }

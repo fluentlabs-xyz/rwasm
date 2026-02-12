@@ -53,7 +53,7 @@ use rand::Rng;
 /// |-----------------------|---------|
 use rwasm::{
     CallStack, CompilationConfig, ExecutionEngine, InstructionSet, RwasmExecutor, RwasmModule,
-    RwasmStore, TrapCode, Value, ValueStack,
+    RwasmModuleBuilder, RwasmStore, TrapCode, Value, ValueStack,
 };
 use std::{
     fmt::Debug,
@@ -62,7 +62,7 @@ use std::{
 
 fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Result<(Vec<u32>, u32), TrapCode> {
     is.op_return();
-    let rwasm_module = RwasmModule::with_one_function(is);
+    let rwasm_module = RwasmModuleBuilder::new(is).build();
     let mut value_stack = ValueStack::default();
     assert_eq!(value_stack.max_stack_height(), 0);
     value_stack.reserve(10)?;

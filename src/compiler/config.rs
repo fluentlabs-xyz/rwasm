@@ -50,6 +50,9 @@ pub struct CompilationConfig {
     /// WARNING: the flag can be removed one funcref/externref type mapping is
     /// implemented for wasmtime
     pub allow_func_ref_function_types: bool,
+    /// Allow a start section inside rWasm module. Be aware that a start section is called during resource
+    /// init for rWasm VM.
+    pub allow_start_section: bool,
 }
 
 impl Default for CompilationConfig {
@@ -65,6 +68,7 @@ impl Default for CompilationConfig {
             consume_fuel_for_params_and_locals: true,
             code_snippets: true,
             allow_func_ref_function_types: false,
+            allow_start_section: false,
         }
     }
 }
@@ -122,6 +126,10 @@ impl CompilationConfig {
 
     pub fn with_consume_fuel(mut self, consume_fuel: bool) -> Self {
         self.consume_fuel = consume_fuel;
+        if !consume_fuel {
+            self.consume_fuel_for_params_and_locals = false;
+            self.builtins_consume_fuel = false;
+        }
         self
     }
 
@@ -140,6 +148,11 @@ impl CompilationConfig {
         allow_func_ref_function_types: bool,
     ) -> Self {
         self.allow_func_ref_function_types = allow_func_ref_function_types;
+        self
+    }
+
+    pub fn with_allow_start_section(mut self, allow_start_section: bool) -> Self {
+        self.allow_start_section = allow_start_section;
         self
     }
 }

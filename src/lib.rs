@@ -3,62 +3,28 @@
 #![allow(unused_variables, dead_code)]
 #![recursion_limit = "750"]
 
+extern crate alloc;
+extern crate core;
+
 mod compiler;
-mod instruction_set;
+mod isa;
 mod module;
 mod strategy;
 mod types;
 mod vm;
-mod wasmi;
 #[cfg(feature = "wasmtime")]
 pub mod wasmtime;
 
-extern crate alloc;
-extern crate core;
-
 pub use compiler::*;
-pub use instruction_set::*;
+#[cfg(test)]
+use hex_literal as _;
+pub use isa::*;
 use libm as _;
 pub use module::*;
+pub use rwasm_fuel_policy::*;
 pub use strategy::*;
 pub use types::*;
 pub use vm::*;
-pub use wasmi::*;
 pub use wasmparser::{FuncType, ValType};
-#[cfg(feature = "wasmtime")]
-pub use wasmtime::{
-    compile_wasmtime_module, WasmtimeCaller, WasmtimeLinker, WasmtimeModule, WasmtimeStore,
-};
-
-#[cfg(feature = "std")]
-pub fn for_each_strategy<F: FnMut(Strategy) -> Result<(), StrategyError>>(
-    mut f: F,
-    compilation_config: CompilationConfig,
-    wasm_binary: &[u8],
-) -> Result<(), StrategyError> {
-    // rwasm case
-    {
-        let (module, _) = RwasmModule::compile(compilation_config.clone(), wasm_binary)?;
-        f(Strategy::Rwasm {
-            module,
-            engine: ExecutionEngine::acquire_shared(),
-        })?;
-    }
-    // wasmtime case
-    #[cfg(feature = "wasmtime")]
-    {
-        let module = compile_wasmtime_module(compilation_config.clone(), wasm_binary).unwrap();
-        f(Strategy::Wasmtime { module })?;
-    }
-    // wasmi case
-    {
-        let module = compile_wasmi_module(compilation_config.clone(), wasm_binary).unwrap();
-        f(Strategy::Wasmi { module })?;
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-use hex_literal as _;
 #[cfg(test)]
 use wat as _;

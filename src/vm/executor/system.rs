@@ -1,6 +1,6 @@
-use crate::{BlockFuel, GlobalIdx, MaxStackHeight, RwasmExecutor, SignatureIdx, Store, TrapCode};
+use crate::{BlockFuel, GlobalIdx, MaxStackHeight, RwasmExecutor, SignatureIdx, StoreTr, TrapCode};
 
-impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
+impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_consume_fuel(&mut self, block_fuel: BlockFuel) -> Result<(), TrapCode> {
         self.store.try_consume_fuel(block_fuel as u64)?;

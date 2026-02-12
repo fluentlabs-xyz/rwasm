@@ -4,14 +4,10 @@ use std::{error::Error, fmt, fmt::Display};
 /// Errors that may occur upon Wasm spec test suite execution.
 #[derive(Debug)]
 pub enum TestError {
-    Rwasm(RwasmError),
-    Wasmi(wasmi::Error),
-    #[cfg(feature = "wasmtime")]
-    WasmTime(wasmtime::Error),
-    InstanceNotRegistered {
-        name: String,
-    },
+    InstanceNotRegistered { name: String },
     NoModuleInstancesFound,
+    // An error that happens with rWasm
+    Rwasm(RwasmError),
 }
 
 impl Error for TestError {}
@@ -26,9 +22,6 @@ impl Display for TestError {
                 write!(f, "found no module instances registered so far")
             }
             Self::Rwasm(rwasm_error) => Display::fmt(rwasm_error, f),
-            TestError::Wasmi(wasmi_error) => Display::fmt(wasmi_error, f),
-            #[cfg(feature = "wasmtime")]
-            TestError::WasmTime(wasmtime_error) => Display::fmt(wasmtime_error, f),
         }
     }
 }

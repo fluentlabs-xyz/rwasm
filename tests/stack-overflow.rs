@@ -1,4 +1,4 @@
-use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore, Value};
+use rwasm::{CompilationConfig, ExecutionEngine, ImportLinker, RwasmModule, RwasmStore, Value};
 
 #[test]
 fn test_stack_overflow_number_of_params() -> anyhow::Result<()> {
@@ -22,14 +22,15 @@ fn test_stack_overflow_number_of_params() -> anyhow::Result<()> {
     let config = CompilationConfig::default()
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true);
-    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary)?;
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let instance =
+        ImportLinker::default().instantiate(&mut store, ExecutionEngine::new(), rwasm_module)?;
     let mut params = vec![Value::I64(0); 18];
     params.push(Value::I32(0));
     let mut result = [Value::I64(0); 0];
-    engine.execute(&mut store, &rwasm_module, &params, &mut result)?;
+    instance.execute(&mut store, &params, &mut result)?;
     Ok(())
 }
 
@@ -55,13 +56,14 @@ fn test_stack_overflow_32_params() -> anyhow::Result<()> {
     let config = CompilationConfig::default()
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true);
-    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary)?;
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let instance =
+        ImportLinker::default().instantiate(&mut store, ExecutionEngine::new(), rwasm_module)?;
     let params = vec![Value::I32(0); 32];
     let mut result = [Value::I64(0); 0];
-    engine.execute(&mut store, &rwasm_module, &params, &mut result)?;
+    instance.execute(&mut store, &params, &mut result)?;
     Ok(())
 }
 
@@ -87,12 +89,13 @@ fn test_stack_overflow_33_params() -> anyhow::Result<()> {
     let config = CompilationConfig::default()
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true);
-    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary)?;
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let instance =
+        ImportLinker::default().instantiate(&mut store, ExecutionEngine::new(), rwasm_module)?;
     let params = vec![Value::I32(0); 33];
     let mut result = [Value::I64(0); 0];
-    engine.execute(&mut store, &rwasm_module, &params, &mut result)?;
+    instance.execute(&mut store, &params, &mut result)?;
     Ok(())
 }

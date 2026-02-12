@@ -1,29 +1,16 @@
-use crate::{
-    types::{TrapCode, UntypedValue},
-    Caller, RwasmStore, Store, ValueStackPtr,
-};
+use crate::{types::TrapCode, CallerTr, RwasmStore, StoreTr};
 
-pub struct RwasmCaller<'a, T: 'static + Send + Sync> {
+pub struct RwasmCaller<'a, T: 'static> {
     store: &'a mut RwasmStore<T>,
-    program_counter: u32,
-    sp: ValueStackPtr,
 }
 
-impl<'a, T: 'static + Send + Sync> RwasmCaller<'a, T> {
-    pub fn new(store: &'a mut RwasmStore<T>, program_counter: u32, sp: ValueStackPtr) -> Self {
-        Self {
-            store,
-            program_counter,
-            sp,
-        }
-    }
-
-    pub fn sp(&self) -> ValueStackPtr {
-        self.sp
+impl<'a, T: 'static> RwasmCaller<'a, T> {
+    pub fn new(store: &'a mut RwasmStore<T>) -> Self {
+        Self { store }
     }
 }
 
-impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
+impl<'a, T: 'static> StoreTr<T> for RwasmCaller<'a, T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.store.global_memory.read(offset, buffer)?;
         Ok(())
@@ -38,12 +25,12 @@ impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
         Ok(())
     }
 
-    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
-        func(&mut self.store.context)
+    fn data_mut(&mut self) -> &mut T {
+        &mut self.store.data
     }
 
-    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
-        func(&self.store.context)
+    fn data(&self) -> &T {
+        &self.store.data
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
@@ -53,19 +40,10 @@ impl<'a, T: 'static + Send + Sync> Store<T> for RwasmCaller<'a, T> {
     fn remaining_fuel(&self) -> Option<u64> {
         self.store.remaining_fuel()
     }
-}
 
-impl<'a, T: 'static + Send + Sync> Caller<T> for RwasmCaller<'a, T> {
-    fn program_counter(&self) -> u32 {
-        self.program_counter
-    }
-
-    fn stack_push(&mut self, value: UntypedValue) {
-        self.sp.push(value);
-    }
-
-    fn consume_fuel(&mut self, fuel: u64) -> Result<(), TrapCode> {
-        //Not needed to consume fuel for rwasm
-        Ok(())
+    fn reset_fuel(&mut self, new_fuel_limit: u64) {
+        self.store.reset_fuel(new_fuel_limit)
     }
 }
+
+impl<'a, T: 'static> CallerTr<T> for RwasmCaller<'a, T> {}

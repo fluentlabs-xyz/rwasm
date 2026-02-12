@@ -17,7 +17,7 @@ use smallvec::SmallVec;
 /// The `RwasmExecutor` struct is a foundational component for executing WebAssembly modules
 /// in the `rwasm` runtime environment. It acts as the primary execution object, coordinating
 /// the state and execution flow of a WebAssembly module.
-pub struct RwasmExecutor<'a, T: Send + Sync + 'static> {
+pub struct RwasmExecutor<'a, T: 'static> {
     pub(crate) module: &'a RwasmModule,
     pub(crate) value_stack: &'a mut ValueStack,
     pub(crate) sp: ValueStackPtr,
@@ -26,119 +26,7 @@ pub struct RwasmExecutor<'a, T: Send + Sync + 'static> {
     pub(crate) store: &'a mut RwasmStore<T>,
 }
 
-macro_rules! exec_opcode {
-    ($self:ident, $instr:expr, $terminate_expr:expr) => {{}
-    use Opcode::*;
-    match $instr {
-        // stack
-        Unreachable => $self.visit_unreachable()?,
-        Trap(imm) => $self.visit_trap_code(imm)?,
-        LocalGet(imm) => $self.visit_local_get(imm),
-        LocalSet(imm) => $self.visit_local_set(imm),
-        LocalTee(imm) => $self.visit_local_tee(imm),
-        Br(imm) => $self.visit_br(imm),
-        BrIfEqz(imm) => $self.visit_br_if(imm),
-        BrIfNez(imm) => $self.visit_br_if_nez(imm),
-        BrTable(imm) => $self.visit_br_table(imm),
-        ConsumeFuel(imm) => $self.visit_consume_fuel(imm)?,
-        ConsumeFuelStack => $self.visit_consume_fuel_stack()?,
-        Return => {
-            if $self.visit_return() {
-                $terminate_expr
-            }
-        }
-        ReturnCallInternal(imm) => $self.visit_return_call_internal(imm),
-        ReturnCall(imm) => {
-            if $self.visit_return_call(imm)? {
-                $terminate_expr
-            }
-        }
-        ReturnCallIndirect(imm) => $self.visit_return_call_indirect(imm)?,
-        CallInternal(imm) => $self.visit_call_internal(imm)?,
-        Call(imm) => {
-            if $self.visit_call(imm)? {
-                $terminate_expr
-            }
-        }
-        CallIndirect(imm) => $self.visit_call_indirect(imm)?,
-        SignatureCheck(imm) => $self.visit_signature_check(imm)?,
-        StackCheck(imm) => $self.visit_stack_check(imm)?,
-        Drop => $self.visit_drop(),
-        Select => $self.visit_select(),
-        GlobalGet(imm) => $self.visit_global_get(imm),
-        GlobalSet(imm) => $self.visit_global_set(imm),
-        RefFunc(imm) => $self.visit_ref_func(imm),
-        I32Const(imm) => $self.visit_i32_const(imm),
-
-        // alu
-        I32Eqz => $self.visit_i32_eqz(),
-        I32Eq => $self.visit_i32_eq(),
-        I32Ne => $self.visit_i32_ne(),
-        I32LtS => $self.visit_i32_lt_s(),
-        I32LtU => $self.visit_i32_lt_u(),
-        I32GtS => $self.visit_i32_gt_s(),
-        I32GtU => $self.visit_i32_gt_u(),
-        I32LeS => $self.visit_i32_le_s(),
-        I32LeU => $self.visit_i32_le_u(),
-        I32GeS => $self.visit_i32_ge_s(),
-        I32GeU => $self.visit_i32_ge_u(),
-        I32Clz => $self.visit_i32_clz(),
-        I32Ctz => $self.visit_i32_ctz(),
-        I32Popcnt => $self.visit_i32_popcnt(),
-        I32Add => $self.visit_i32_add(),
-        I32Sub => $self.visit_i32_sub(),
-        I32Mul => $self.visit_i32_mul(),
-        I32DivS => $self.visit_i32_div_s()?,
-        I32DivU => $self.visit_i32_div_u()?,
-        I32RemS => $self.visit_i32_rem_s()?,
-        I32RemU => $self.visit_i32_rem_u()?,
-        I32And => $self.visit_i32_and(),
-        I32Or => $self.visit_i32_or(),
-        I32Xor => $self.visit_i32_xor(),
-        I32Shl => $self.visit_i32_shl(),
-        I32ShrS => $self.visit_i32_shr_s(),
-        I32ShrU => $self.visit_i32_shr_u(),
-        I32Rotl => $self.visit_i32_rotl(),
-        I32Rotr => $self.visit_i32_rotr(),
-        I32WrapI64 => $self.visit_i32_wrap_i64(),
-        I32Extend8S => $self.visit_i32_extend8_s(),
-        I32Extend16S => $self.visit_i32_extend16_s(),
-        I32Mul64 => $self.visit_i32_mul64(),
-        I32Add64 => $self.visit_i32_add64(),
-
-        // memory
-        MemorySize => $self.visit_memory_size(),
-        MemoryGrow => $self.visit_memory_grow()?,
-        MemoryFill => $self.visit_memory_fill()?,
-        MemoryCopy => $self.visit_memory_copy()?,
-        MemoryInit(imm) => $self.visit_memory_init(imm)?,
-        DataDrop(imm) => $self.visit_data_drop(imm),
-        I32Load(imm) => $self.visit_i32_load(imm)?,
-        I32Load8S(imm) => $self.visit_i32_load_i8_s(imm)?,
-        I32Load8U(imm) => $self.visit_i32_load_i8_u(imm)?,
-        I32Load16S(imm) => $self.visit_i32_load_i16_s(imm)?,
-        I32Load16U(imm) => $self.visit_i32_load_i16_u(imm)?,
-        I32Store(imm) => $self.visit_i32_store(imm)?,
-        I32Store8(imm) => $self.visit_i32_store_8(imm)?,
-        I32Store16(imm) => $self.visit_i32_store_16(imm)?,
-
-        // table
-        TableSize(imm) => $self.visit_table_size(imm),
-        TableGrow(imm) => $self.visit_table_grow(imm)?,
-        TableFill(imm) => $self.visit_table_fill(imm)?,
-        TableGet(imm) => $self.visit_table_get(imm)?,
-        TableSet(imm) => $self.visit_table_set(imm)?,
-        TableCopy(dst_imm, src_imm) => $self.visit_table_copy(dst_imm, src_imm)?,
-        TableInit(imm) => $self.visit_table_init(imm)?,
-        ElemDrop(imm) => $self.visit_element_drop(imm),
-
-        // fpu
-        #[cfg(feature = "fpu")]
-        opcode => $self.exec_fpu_opcode(opcode)?,
-    }};
-}
-
-impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
+impl<'a, T> RwasmExecutor<'a, T> {
     pub fn entrypoint(
         module: &'a RwasmModule,
         value_stack: &'a mut ValueStack,
@@ -168,19 +56,6 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         }
     }
 
-    pub fn advance_ip(&mut self, offset: usize) {
-        self.ip.add(offset)
-    }
-
-    pub fn caller<'vm>(&'vm mut self) -> TypedCaller<'vm, T> {
-        let program_counter = self.program_counter();
-        TypedCaller::Rwasm(RwasmCaller::<'vm, T>::new(
-            &mut self.store,
-            program_counter,
-            self.sp,
-        ))
-    }
-
     pub fn program_counter(&self) -> u32 {
         let diff = self.ip.ptr as i32 - self.module.code_section.as_ptr() as i32;
         if diff < 0 {
@@ -194,7 +69,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     }
 
     pub fn run(&mut self, params: &[Value], result: &mut [Value]) -> Result<(), TrapCode> {
-        // make sure we have enough capacity on the stack
+        // Make sure we have enough capacity on the stack
         self.value_stack.sync_stack_ptr(self.sp);
         let mut params_len = 0;
         for param in params {
@@ -205,68 +80,82 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         }
         self.value_stack.reserve(params_len)?;
         self.sp = self.value_stack.stack_ptr();
-        // copy input params
+
+        // Copy input params
         for x in params {
             self.sp.push_value(x);
         }
-        // run the loop
+
+        // Run the loop
         let status = self.run_the_loop();
-        // trap halts the execution, we need to clear the stack
-        if let Some(trap_code) = status.err() {
-            // clear stack only for non-interrupted calls
-            if trap_code != TrapCode::InterruptionCalled {
-                // TODO(dmitry123): "do we also need to reset store flags?"
-                self.call_stack.reset();
+
+        // Trap halts the execution, we need to clear the stack
+        match status {
+            // An interruption happened, reset SP and forward the trap
+            Err(TrapCode::InterruptionCalled) => {
+                self.value_stack.sync_stack_ptr(self.sp);
+                return Err(TrapCode::InterruptionCalled);
             }
-            // forward the error
-            return Err(trap_code);
+            // A halted execution can happen by terminating an app in a random place that
+            // causes the state to be dirty (we should clear it)
+            Err(trap_code) => {
+                self.value_stack.reset();
+                self.call_stack.reset();
+                // The last signature also might stick in a dirty state
+                self.store.last_signature = None;
+                // If we halted with `ExecutionHalted`, then just exit with default output params
+                return if trap_code == TrapCode::ExecutionHalted {
+                    Ok(())
+                } else {
+                    Err(trap_code)
+                };
+            }
+            _ => {}
         }
-        // copy output values in case of successful execution
+
+        // Copy output values in case of successful execution
         for x in result.iter_mut().rev() {
             *x = self.sp.pop_value(x.ty());
         }
         self.value_stack.sync_stack_ptr(self.sp);
-        // execution is over, clear stacks
-        // TODO(dmitry123): "enable this check after refactoring tests"
-        // debug_assert_eq!(
-        //     self.value_stack.stack_len(self.sp),
-        //     0,
-        //     "after execution the value stack must be empty"
-        // );
-        // we must reset the call stack in case of traps inside nested calls
-        self.call_stack.reset();
+        // Execution is over, make sure the stack is clear (it's guaranteed by wasm validation)
+        debug_assert_eq!(
+            self.value_stack.stack_len(self.sp),
+            0,
+            "after execution the value stack must be empty"
+        );
         Ok(())
     }
 
     pub fn run_with_stack_check(&mut self) -> Result<(), TrapCode> {
-        // run the loop
+        // Run the loop
         let status = loop {
             let instr = self.ip.get();
             #[cfg(feature = "debug-print")]
             self.debug_print(&instr);
-            exec_opcode!(self, instr, break Ok(()));
+            let return_reached = self.step(instr)?;
+            if return_reached {
+                break Ok(());
+            }
+            #[cfg(debug_assertions)]
             self.value_stack.check_max_stack_height(self.sp);
         };
-        // trap halts the execution, we need to clear the stack
+        // Trap halts the execution, we need to clear the stack
         if let Some(trap_code) = status.err() {
-            // clear stack only for non-interrupted calls
+            // Clear stack only for non-interrupted calls
             if trap_code != TrapCode::InterruptionCalled {
-                // TODO(dmitry123): "do we also need to reset store flags?"
+                self.value_stack.reset();
                 self.call_stack.reset();
+                self.store.last_signature = None;
             }
-            // forward the error
+            // Forward the error
             return Err(trap_code);
         }
+        // Sync SP before ending the execution
         self.value_stack.sync_stack_ptr(self.sp);
-        // execution is over, clear stacks
-        // TODO(dmitry123): "enable this check after refactoring tests"
-        // debug_assert_eq!(
-        //     self.value_stack.stack_len(self.sp),
-        //     0,
-        //     "after execution the value stack must be empty"
-        // );
-        // we must reset the call stack in case of traps inside nested calls
+        // We must reset the call stack in case of traps inside nested calls
         self.call_stack.reset();
+        self.store.last_signature = None;
         Ok(())
     }
 
@@ -275,65 +164,164 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
             let instr = self.ip.get();
             #[cfg(feature = "debug-print")]
             self.debug_print(&instr);
-            #[cfg(feature = "tracing")]
-            {
-                self.trace_instr_pre(&instr);
-                let mut wrapper = |instr: Opcode| -> Result<bool, TrapCode> {
-                    exec_opcode!(self, instr, return Ok(true));
-                    Ok(false)
-                };
-                let res = wrapper(instr);
-                self.trace_instr_post(&instr, res.err());
-                if res? {
-                    break Ok(());
-                }
+
+            let return_reached = self.step(instr)?;
+            if return_reached {
+                break Ok(());
             }
-            #[cfg(not(feature = "tracing"))]
-            exec_opcode!(self, instr, break Ok(()));
+
+            // #[cfg(feature = "tracing")]
+            // {
+            //     self.trace_instr_pre(&instr);
+            //     let mut wrapper = |instr: Opcode| -> Result<(), TrapCode> {
+            //         exec_opcode!(self, instr, return Ok(true));
+            //         Ok(false)
+            //     };
+            //     let res = wrapper(instr);
+            //     self.trace_instr_post(&instr, res.err());
+            //     if res? {
+            //         break Ok(());
+            //     }
+            // }
         }
     }
 
-    #[cfg(feature = "tracing")]
-    pub fn step(&mut self) -> Result<bool, TrapCode> {
-        if !self
-            .ip
-            .is_valid((self.module.code_section.instr.last().unwrap()) as *const Opcode as u64)
-        {
-            return Err(TrapCode::UnreachableCodeReached);
-        };
-        let instr = self.ip.get();
-        self.trace_instr_pre(&instr);
-        let mut wrapper = |instr: Opcode| -> Result<bool, TrapCode> {
-            exec_opcode!(self, instr, return Ok(true));
-            Ok(false)
-        };
-        let res = wrapper(instr);
-        self.trace_instr_post(&instr, res.err());
-        res
+    #[inline(always)]
+    pub fn step(&mut self, instr: Opcode) -> Result<bool, TrapCode> {
+        use Opcode::*;
+        match instr {
+            Unreachable => self.visit_unreachable()?,
+            Trap(imm) => self.visit_trap_code(imm)?,
+            LocalGet(imm) => self.visit_local_get(imm),
+            LocalSet(imm) => self.visit_local_set(imm),
+            LocalTee(imm) => self.visit_local_tee(imm),
+            Br(imm) => self.visit_br(imm),
+            BrIfEqz(imm) => self.visit_br_if(imm),
+            BrIfNez(imm) => self.visit_br_if_nez(imm),
+            BrTable(imm) => self.visit_br_table(imm),
+            ConsumeFuel(imm) => self.visit_consume_fuel(imm)?,
+            ConsumeFuelStack => self.visit_consume_fuel_stack()?,
+            Return => return Ok(self.visit_return()),
+            ReturnCallInternal(imm) => self.visit_return_call_internal(imm),
+            ReturnCall(imm) => self.visit_return_call(imm)?,
+            ReturnCallIndirect(imm) => self.visit_return_call_indirect(imm)?,
+            CallInternal(imm) => self.visit_call_internal(imm)?,
+            Call(imm) => self.visit_call(imm)?,
+            CallIndirect(imm) => self.visit_call_indirect(imm)?,
+            SignatureCheck(imm) => self.visit_signature_check(imm)?,
+            StackCheck(imm) => self.visit_stack_check(imm)?,
+            Drop => self.visit_drop(),
+            Select => self.visit_select(),
+            GlobalGet(imm) => self.visit_global_get(imm),
+            GlobalSet(imm) => self.visit_global_set(imm),
+            RefFunc(imm) => self.visit_ref_func(imm),
+            I32Const(imm) => self.visit_i32_const(imm),
+
+            I32Eqz => self.visit_i32_eqz(),
+            I32Eq => self.visit_i32_eq(),
+            I32Ne => self.visit_i32_ne(),
+            I32LtS => self.visit_i32_lt_s(),
+            I32LtU => self.visit_i32_lt_u(),
+            I32GtS => self.visit_i32_gt_s(),
+            I32GtU => self.visit_i32_gt_u(),
+            I32LeS => self.visit_i32_le_s(),
+            I32LeU => self.visit_i32_le_u(),
+            I32GeS => self.visit_i32_ge_s(),
+            I32GeU => self.visit_i32_ge_u(),
+            I32Clz => self.visit_i32_clz(),
+            I32Ctz => self.visit_i32_ctz(),
+            I32Popcnt => self.visit_i32_popcnt(),
+            I32Add => self.visit_i32_add(),
+            I32Sub => self.visit_i32_sub(),
+            I32Mul => self.visit_i32_mul(),
+            I32DivS => self.visit_i32_div_s()?,
+            I32DivU => self.visit_i32_div_u()?,
+            I32RemS => self.visit_i32_rem_s()?,
+            I32RemU => self.visit_i32_rem_u()?,
+            I32And => self.visit_i32_and(),
+            I32Or => self.visit_i32_or(),
+            I32Xor => self.visit_i32_xor(),
+            I32Shl => self.visit_i32_shl(),
+            I32ShrS => self.visit_i32_shr_s(),
+            I32ShrU => self.visit_i32_shr_u(),
+            I32Rotl => self.visit_i32_rotl(),
+            I32Rotr => self.visit_i32_rotr(),
+            I32WrapI64 => self.visit_i32_wrap_i64(),
+            I32Extend8S => self.visit_i32_extend8_s(),
+            I32Extend16S => self.visit_i32_extend16_s(),
+            I32Mul64 => self.visit_i32_mul64(),
+            I32Add64 => self.visit_i32_add64(),
+
+            MemorySize => self.visit_memory_size(),
+            MemoryGrow => self.visit_memory_grow()?,
+            MemoryFill => self.visit_memory_fill()?,
+            MemoryCopy => self.visit_memory_copy()?,
+            MemoryInit(imm) => self.visit_memory_init(imm)?,
+            DataDrop(imm) => self.visit_data_drop(imm),
+            I32Load(imm) => self.visit_i32_load(imm)?,
+            I32Load8S(imm) => self.visit_i32_load_i8_s(imm)?,
+            I32Load8U(imm) => self.visit_i32_load_i8_u(imm)?,
+            I32Load16S(imm) => self.visit_i32_load_i16_s(imm)?,
+            I32Load16U(imm) => self.visit_i32_load_i16_u(imm)?,
+            I32Store(imm) => self.visit_i32_store(imm)?,
+            I32Store8(imm) => self.visit_i32_store_8(imm)?,
+            I32Store16(imm) => self.visit_i32_store_16(imm)?,
+
+            TableSize(imm) => self.visit_table_size(imm),
+            TableGrow(imm) => self.visit_table_grow(imm)?,
+            TableFill(imm) => self.visit_table_fill(imm)?,
+            TableGet(imm) => self.visit_table_get(imm)?,
+            TableSet(imm) => self.visit_table_set(imm)?,
+            TableCopy(dst_imm, src_imm) => self.visit_table_copy(dst_imm, src_imm)?,
+            TableInit(imm) => self.visit_table_init(imm)?,
+            ElemDrop(imm) => self.visit_element_drop(imm),
+
+            #[cfg(feature = "fpu")]
+            opcode => self.exec_fpu_opcode(opcode)?,
+        }
+        Ok(false)
     }
 
-    #[cfg(feature = "tracing")]
-    fn trace_instr_pre(&mut self, instr: &Opcode) {
-        self.store.tracer.state.next_cycle();
-        let pc = self.program_counter();
-        let memory_size: u32 = self.store.global_memory.current_pages().into();
-        let consumed_fuel = self.store.fuel_consumed();
-        self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
-    }
-
-    #[cfg(feature = "tracing")]
-    fn trace_instr_post(&mut self, instr: &Opcode, trap_code: Option<TrapCode>) {
-        // TODO(wangyao): "track trap codes"
-
-        let sp = self.sp.to_relative_address();
-
-        let pc = self.program_counter();
-        let stack = self.value_stack.dump_stack();
-        self.store.tracer.post_opcode_state(pc, sp, stack);
-    }
+    // #[cfg(feature = "tracing")]
+    // pub fn step(&mut self) -> Result<(), TrapCode> {
+    //     if !self
+    //         .ip
+    //         .is_valid((self.module.code_section.instr.last().unwrap()) as *const Opcode as u64)
+    //     {
+    //         return Err(TrapCode::UnreachableCodeReached);
+    //     };
+    //     let instr = self.ip.get();
+    //     self.trace_instr_pre(&instr);
+    //     let mut wrapper = |instr: Opcode| -> Result<(), TrapCode> {
+    //         exec_opcode!(self, instr, return Ok(true));
+    //         Ok(false)
+    //     };
+    //     let res = wrapper(instr);
+    //     self.trace_instr_post(&instr, res.err());
+    //     res
+    // }
+    //
+    // #[cfg(feature = "tracing")]
+    // fn trace_instr_pre(&mut self, instr: &Opcode) {
+    //     self.store.tracer.state.next_cycle();
+    //     let pc = self.program_counter();
+    //     let memory_size: u32 = self.store.global_memory.current_pages().into();
+    //     let consumed_fuel = self.store.fuel_consumed();
+    //     self.store.tracer.pre_opcode_state(pc, self.sp, *instr);
+    // }
+    //
+    // #[cfg(feature = "tracing")]
+    // fn trace_instr_post(&mut self, instr: &Opcode, trap_code: Option<TrapCode>) {
+    //     // TODO(wangyao): "track trap codes"
+    //     let sp = self.sp.to_relative_address();
+    //     let pc = self.program_counter();
+    //     let stack = self.value_stack.dump_stack();
+    //     self.store.tracer.post_opcode_state(pc, sp, stack);
+    // }
 
     #[cfg(feature = "debug-print")]
     fn debug_print(&mut self, instr: &Opcode) {
+        // W/o stack syncing we can't dump stack properly
         self.value_stack.sync_stack_ptr(self.sp);
         print!(
             "{:04}:\t {} \tstack_len={}, stack_cap={}, ",
@@ -412,13 +400,18 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         Ok(())
     }
 
-    pub(crate) fn invoke_syscall(&mut self, sys_func_idx: SysFuncIdx) -> Result<bool, TrapCode> {
+    pub(crate) fn invoke_syscall(&mut self, sys_func_idx: SysFuncIdx) -> Result<(), TrapCode> {
         let (params, result) = self
             .store
             .import_linker
             .resolve_by_func_idx(sys_func_idx)
             .map(|v| (v.params, v.result))
-            .unwrap_or_else(|| unreachable!("can't resolve syscall in the import linker"));
+            .unwrap_or_else(|| {
+                unreachable!(
+                    "rwasm: can't resolve syscall in the import linker: {}",
+                    sys_func_idx
+                )
+            });
         let params_len = params.len();
         let result_len = result.len();
         let max_in_out = params_len.max(result_len);
@@ -435,17 +428,15 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
         }
         let (params, result) = buffer.split_at_mut(params.len());
         let syscall_handler = self.store.syscall_handler;
-        let mut caller = self.caller();
+        let mut caller = TypedCaller::Rwasm(RwasmCaller::new(&mut self.store));
         match syscall_handler(&mut caller, sys_func_idx, params, result) {
             Ok(_) => {
-                // TODO(dmitry123): "resync SP, only for e2e testing suite"
-                self.sp = caller.as_rwasm_ref().sp();
                 // if execution succeeded, then copy output params back to the stack
                 for x in result {
                     self.sp.push_value(x)
                 }
                 // just continue the execution, don't terminate the loop
-                Ok(false)
+                Ok(())
             }
             Err(TrapCode::ExecutionHalted) => {
                 // if execution halted, then copy output params back to the stack because the caller
@@ -454,7 +445,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
                     self.sp.push_value(x)
                 }
                 // when execution is halted, then we terminate an execution loop
-                Ok(true)
+                Err(TrapCode::ExecutionHalted)
             }
             Err(TrapCode::InterruptionCalled) => {
                 // terminate an execution

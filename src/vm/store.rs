@@ -1,22 +1,22 @@
 use crate::{
-    CallStack, FuelConfig, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages,
-    RwasmModule, SignatureIdx, Store, SyscallHandler, TableEntity, TableIdx, TrapCode,
-    UntypedValue, ValueStack,
+    CallStack, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, RwasmModule,
+    SignatureIdx, StoreTr, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue,
+    ValueStack,
 };
 use alloc::sync::Arc;
 use bitvec::{order::Lsb0, vec::BitVec};
 use hashbrown::HashMap;
 
-/// Host-side store that holds memory, tables, globals and host context for an rwasm instance.
+/// Host-side store that holds memory, tables, globals, and host context for a rwasm instance.
 /// It also tracks fuel for metering and provides access to imported functions and syscalls.
 /// The store is passed to host callbacks and persists across invocations of the same module.
-pub struct RwasmStore<T: 'static + Send + Sync> {
+pub struct RwasmStore<T: 'static> {
     /// Total amount of fuel consumed by the currently running instance.
     pub(crate) consumed_fuel: u64,
     /// The linear memory shared by the running module and the host.
     pub(crate) global_memory: GlobalMemory,
     /// User-defined context available to host functions and syscalls.
-    pub(crate) context: T,
+    pub(crate) data: T,
     /// The last used signature index used for validating indirect calls.
     pub(crate) last_signature: Option<SignatureIdx>,
     /// Runtime-managed tables (may differ from compile-time layout due to mutations).
@@ -33,8 +33,8 @@ pub struct RwasmStore<T: 'static + Send + Sync> {
     pub(crate) import_linker: Arc<ImportLinker>,
     /// If set, contains the instruction/value-stack pointers to resume after a suspension.
     pub(crate) resumable_context: Option<ReusableContext>,
-    /// A fuel config.
-    pub(crate) fuel_config: FuelConfig,
+    /// A fuel config (None stands for no limit).
+    pub(crate) fuel_limit: Option<u64>,
     /// Execution tracer used when the `tracing` feature is enabled.
     #[cfg(feature = "tracing")]
     pub tracer: crate::Tracer,
@@ -48,18 +48,18 @@ pub struct ReusableContext {
 }
 
 #[cfg(feature = "std")]
-impl<T: 'static + Send + Sync + Default> Default for RwasmStore<T> {
+impl<T: 'static + Default> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
             Arc::new(ImportLinker::default()),
             T::default(),
             crate::always_failing_syscall_handler,
-            FuelConfig::default(),
+            None,
         )
     }
 }
 
-impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
+impl<T: 'static> StoreTr<T> for RwasmStore<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         self.global_memory.read(offset, buffer)?;
         Ok(())
@@ -73,17 +73,17 @@ impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
         Ok(())
     }
 
-    fn context_mut<R, F: FnOnce(&mut T) -> R>(&mut self, func: F) -> R {
-        func(&mut self.context)
+    fn data_mut(&mut self) -> &mut T {
+        &mut self.data
     }
 
-    fn context<R, F: FnOnce(&T) -> R>(&self, func: F) -> R {
-        func(&self.context)
+    fn data(&self) -> &T {
+        &self.data
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
         let consumed_fuel = self.consumed_fuel.checked_add(delta).unwrap_or(u64::MAX);
-        if let Some(fuel_limit) = self.fuel_config.fuel_limit {
+        if let Some(fuel_limit) = self.fuel_limit {
             if consumed_fuel > fuel_limit {
                 return Err(TrapCode::OutOfFuel);
             }
@@ -93,22 +93,29 @@ impl<T: 'static + Send + Sync> Store<T> for RwasmStore<T> {
     }
 
     fn remaining_fuel(&self) -> Option<u64> {
-        Some(self.fuel_config.fuel_limit? - self.consumed_fuel)
+        Some(self.fuel_limit? - self.consumed_fuel)
+    }
+
+    fn reset_fuel(&mut self, new_fuel_limit: u64) {
+        // If new fuel limit is presented then change it
+        self.fuel_limit = Some(new_fuel_limit);
+        // Reset consumed fuel to 0 (indicating we have the entire fuel limit unspent)
+        self.consumed_fuel = 0;
     }
 }
 
-impl<T: 'static + Send + Sync> RwasmStore<T> {
+impl<T: 'static> RwasmStore<T> {
     pub fn new(
         import_linker: Arc<ImportLinker>,
         context: T,
         syscall_handler: SyscallHandler<T>,
-        fuel_config: FuelConfig,
+        fuel_limit: Option<u64>,
     ) -> Self {
         let global_memory = GlobalMemory::new(Pages::default());
         Self {
             consumed_fuel: 0,
             global_memory,
-            context,
+            data: context,
             #[cfg(feature = "tracing")]
             tracer: crate::Tracer::default(),
             global_variables: Default::default(),
@@ -119,7 +126,7 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
             empty_elem_segments: BitVec::EMPTY,
             import_linker,
             resumable_context: None,
-            fuel_config,
+            fuel_limit,
         }
     }
 
@@ -148,15 +155,7 @@ impl<T: 'static + Send + Sync> RwasmStore<T> {
         self.last_signature = None;
     }
 
-    pub fn set_fuel(&mut self, fuel: Option<u64>) {
-        self.fuel_config.fuel_limit = fuel;
-    }
-
     pub fn fuel_consumed(&self) -> u64 {
         self.consumed_fuel
-    }
-
-    pub fn set_syscall_handler(&mut self, handler: SyscallHandler<T>) {
-        self.syscall_handler = handler;
     }
 }

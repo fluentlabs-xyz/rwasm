@@ -1,14 +1,14 @@
 use crate::{
     compiler::{
+        block_fuel::compile_block_params,
         compiled_expr::CompiledExpr,
         func_builder::FuncBuilder,
         snippets::Snippet,
         translator::{InstructionTranslator, ReusableAllocations},
     },
-    instruction_set, BranchOffset, CompilationConfig, CompilationError, ConstructorParams,
-    DataSegmentIdx, ElementSegmentIdx, FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName,
-    LocalDepth, Opcode, RwasmModule, RwasmModuleInner, TableIdx, TrapCode, UntypedValue,
-    DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
+    CompilationConfig, CompilationError, ConstructorParams, DataSegmentIdx, ElementSegmentIdx,
+    FuncIdx, FuncRef, GlobalIdx, GlobalVariable, ImportName, Opcode, RwasmModule, RwasmModuleInner,
+    TableIdx, DEFAULT_MEMORY_INDEX, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::{
@@ -16,7 +16,6 @@ use core::{
     ops::Range,
 };
 use hashbrown::HashMap;
-use rwasm_fuel_policy::{SyscallFuelParams, FUEL_MAX_LINEAR_X, FUEL_MAX_QUADRATIC_X};
 use wasmparser::{
     CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind,
     ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType, FunctionBody,
@@ -98,10 +97,27 @@ impl ModuleParser {
         wasm_binary: &[u8],
     ) -> Result<(RwasmModule, ConstructorParams), CompilationError> {
         if let Some(start_func) = self.allocations.translation.start_func {
+            if !self.config.allow_start_section {
+                return Err(CompilationError::StartSectionsAreNotAllowed);
+            }
             self.allocations
                 .translation
                 .emit_function_call(start_func, true, false);
         }
+        self.allocations
+            .translation
+            .segment_builder
+            .entrypoint_bytecode
+            .op_return();
+
+        // A pointer to the instruction set (post-init section)
+        let source_pc = self
+            .allocations
+            .translation
+            .segment_builder
+            .entrypoint_bytecode
+            .len() as u32;
+
         if let Some(entrypoint_name) = self.config.entrypoint_name.as_ref() {
             let func_idx = self
                 .allocations
@@ -174,6 +190,7 @@ impl ModuleParser {
                 .global_memory_section,
             elem_section: element_section,
             hint_section: wasm_binary.to_vec(),
+            source_pc,
         };
         let constructor_params = self.allocations.translation.constructor_params;
 
@@ -476,110 +493,10 @@ impl ModuleParser {
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
 
             if self.config.builtins_consume_fuel {
-                match import_linker_entity.syscall_fuel_param {
-                    SyscallFuelParams::None => {}
-                    SyscallFuelParams::Const(base) => translator
-                        .alloc
-                        .instruction_set
-                        .op_consume_fuel(base as u32),
-                    SyscallFuelParams::LinearFuel(fuel_params) => {
-                        translator
-                            .alloc
-                            .instruction_set
-                            .op_local_get(LocalDepth::from(fuel_params.param_index));
-                        translator
-                            .alloc
-                            .instruction_set
-                            .op_i32_const(UntypedValue::from(FUEL_MAX_LINEAR_X));
-                        translator.alloc.instruction_set.op_i32_gt_u();
-                        translator
-                            .alloc
-                            .instruction_set
-                            .op_br_if_eqz(BranchOffset::from(2));
-                        translator
-                            .alloc
-                            .instruction_set
-                            .op_trap(TrapCode::IntegerOverflow);
-
-                        translator
-                            .alloc
-                            .instruction_set
-                            .op_local_get(LocalDepth::from(fuel_params.param_index as u32));
-                        translator
-                            .alloc
-                            .instruction_set
-                            .op_i32_const(UntypedValue::from(31));
-                        translator.alloc.instruction_set.op_i32_add();
-                        translator
-                            .alloc
-                            .instruction_set
-                            .op_i32_const(UntypedValue::from(32));
-                        translator.alloc.instruction_set.op_i32_div_u();
-                        translator
-                            .alloc
-                            .instruction_set
-                            .op_i32_const(UntypedValue::from(fuel_params.word_cost));
-                        translator.alloc.instruction_set.op_i32_mul();
-                        if fuel_params.base_fuel != 0 {
-                            translator
-                                .alloc
-                                .instruction_set
-                                .op_i32_const(UntypedValue::from(fuel_params.base_fuel));
-                            translator.alloc.instruction_set.op_i32_add();
-                        }
-                        translator.alloc.instruction_set.op_consume_fuel_stack()
-                    }
-                    SyscallFuelParams::QuadraticFuel(fuel_params) => {
-                        let mut ixs = instruction_set! {
-                             // Runtime overflow check
-                            LocalGet(fuel_params.local_depth)
-                            I32Const(FUEL_MAX_QUADRATIC_X)
-                            I32GtU
-                            BrIfEqz(2)
-                            Trap(TrapCode::IntegerOverflow)
-
-                            // Linear part: word_cost × words
-                            LocalGet(fuel_params.local_depth)
-                            I32Const(31)
-                            I32Add
-                            I32Const(32)
-                            I32DivU
-                            I32Const(fuel_params.word_cost)
-                            I32Mul
-
-                            // Quadratic part: words² / divisor
-                            LocalGet(fuel_params.local_depth + 1) // linear part left words on stack
-                            I32Const(31)
-                            I32Add
-                            I32Const(32)
-                            I32DivU
-
-                            LocalGet(fuel_params.local_depth + 2) // linear and first words on stack
-                            I32Const(31)
-                            I32Add
-                            I32Const(32)
-                            I32DivU
-
-                            I32Mul
-                            I32Const(fuel_params.divisor)
-                            I32DivU
-
-                            // Sum: linear + quadratic
-                            I32Add
-
-                            // Convert gas -> fuel
-                            I32Const(fuel_params.fuel_denom_rate)
-                            I32Mul
-
-                            ConsumeFuelStack
-                        };
-                        translator
-                            .alloc
-                            .instruction_set
-                            .instr
-                            .append(&mut ixs.instr)
-                    }
-                }
+                compile_block_params(
+                    &mut translator.alloc.instruction_set,
+                    import_linker_entity.syscall_fuel_param,
+                )
             }
 
             translator

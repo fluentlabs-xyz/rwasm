@@ -1,5 +1,6 @@
 use rwasm::{
-    for_each_strategy, CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore, Value,
+    for_each_strategy, CompilationConfig, ExecutionEngine, ImportLinker, RwasmModule, RwasmStore,
+    Value,
 };
 
 #[test]
@@ -10,9 +11,11 @@ fn test_fib() {
         .with_consume_fuel(false);
     for_each_strategy(
         |strategy| {
-            let mut store = strategy.empty_store();
             let mut result = [Value::I32(0); 1];
-            strategy.execute(&mut store, "main", &[Value::I32(43)], &mut result)?;
+            strategy
+                .default_executor()
+                .unwrap()
+                .execute("main", &[Value::I32(43)], &mut result)?;
             assert_eq!(result[0].i32().unwrap(), 433494437);
             Ok(())
         },
@@ -43,10 +46,12 @@ fn test_i64_load8_s() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let instance = ImportLinker::default()
+        .instantiate(&mut store, ExecutionEngine::new(), rwasm_module)
+        .unwrap();
     let mut result = [Value::I64(0); 1];
-    engine
-        .execute(&mut store, &rwasm_module, &[Value::I32(0)], &mut result)
+    instance
+        .execute(&mut store, &[Value::I32(0)], &mut result)
         .unwrap();
     assert_eq!(result[0].i64().unwrap(), 97);
 }
@@ -71,10 +76,12 @@ fn test_i64_load() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let instance = ImportLinker::default()
+        .instantiate(&mut store, ExecutionEngine::new(), rwasm_module)
+        .unwrap();
     let mut result = [Value::I64(0); 1];
-    engine
-        .execute(&mut store, &rwasm_module, &[Value::I32(0)], &mut result)
+    instance
+        .execute(&mut store, &[Value::I32(0)], &mut result)
         .unwrap();
     assert_eq!(result[0].i64().unwrap(), 0x6867666564636261);
 }
@@ -131,10 +138,12 @@ fn test_bulk_bench() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
+    let instance = ImportLinker::default()
+        .instantiate(&mut store, ExecutionEngine::new(), rwasm_module)
+        .unwrap();
     let mut result = [Value::I64(0); 1];
-    engine
-        .execute(&mut store, &rwasm_module, &[Value::I64(5000)], &mut result)
+    instance
+        .execute(&mut store, &[Value::I64(5000)], &mut result)
         .unwrap();
 }
 
@@ -172,11 +181,11 @@ fn test_multi_value_params() {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     println!("{}", rwasm_module);
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::new();
-    let mut result = [Value::I64(0), Value::I64(0)];
-    engine
-        .execute(&mut store, &rwasm_module, &[Value::I32(0)], &mut result)
+    let instance = ImportLinker::default()
+        .instantiate(&mut store, ExecutionEngine::new(), rwasm_module)
         .unwrap();
+    let mut result = [Value::I64(0), Value::I64(0)];
+    instance.execute(&mut store, &[], &mut result).unwrap();
     assert_eq!(result[0].i64().unwrap(), 2251799813685248);
     assert_eq!(result[1].i64().unwrap(), 0);
 }

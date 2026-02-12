@@ -22,7 +22,10 @@ pub enum CompilationError {
     MalformedFuncType,
     MemoryOutOfBounds,
     TableOutOfBounds,
+    StartSectionsAreNotAllowed,
 }
+
+impl core::error::Error for CompilationError {}
 
 impl From<BinaryReaderError> for CompilationError {
     fn from(err: BinaryReaderError) -> Self {
@@ -47,7 +50,7 @@ impl core::fmt::Display for CompilationError {
             CompilationError::NotSupportedFuncType => write!(f, "not supported func type"),
             CompilationError::UnresolvedImportFunction => write!(f, "unresolved import function"),
             CompilationError::MalformedImportFunctionType => {
-                write!(f, "MalformedImportFunctionType")
+                write!(f, "malformed import function type")
             }
             CompilationError::NonDefaultMemoryIndex => write!(f, "non default memory index"),
             CompilationError::ConstEvaluationFailed => write!(f, "const evaluation failed"),
@@ -58,6 +61,9 @@ impl core::fmt::Display for CompilationError {
             CompilationError::MalformedFuncType => write!(f, "malformed func type"),
             CompilationError::MemoryOutOfBounds => write!(f, "out of bounds memory access"),
             CompilationError::TableOutOfBounds => write!(f, "out of bounds table access"),
+            CompilationError::StartSectionsAreNotAllowed => {
+                write!(f, "start sections are not allowed")
+            }
         }
     }
 }

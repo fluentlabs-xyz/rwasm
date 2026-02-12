@@ -1,4 +1,7 @@
-use crate::{intrinsic::Intrinsic, ImportName};
+use crate::{
+    intrinsic::Intrinsic, vm::instance::RwasmInstance, ExecutionEngine, ImportName, RwasmModule,
+    RwasmStore, TrapCode,
+};
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use rwasm_fuel_policy::SyscallFuelParams;
@@ -74,6 +77,15 @@ impl<'a> Iterator for ImportLinkerIter<'a> {
 }
 
 impl ImportLinker {
+    pub fn instantiate<T>(
+        &self,
+        store: &mut RwasmStore<T>,
+        engine: ExecutionEngine,
+        module: RwasmModule,
+    ) -> Result<RwasmInstance, TrapCode> {
+        RwasmInstance::new(store, engine, module)
+    }
+
     pub fn insert_function(
         &mut self,
         import_name: ImportName,

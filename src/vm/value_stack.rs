@@ -134,11 +134,13 @@ impl ValueStack {
         let offset = new_sp.offset_from(self.base_ptr());
         debug_assert!(offset >= 0, "stack underflow: {}", offset);
         self.stack_ptr = offset as usize;
+        #[cfg(debug_assertions)]
         if self.stack_ptr > self.max_stack_height {
             self.max_stack_height = self.stack_ptr;
         }
     }
 
+    #[cfg(debug_assertions)]
     pub(crate) fn check_max_stack_height(&mut self, sp: ValueStackPtr) {
         let offset = sp.offset_from(self.base_ptr());
         debug_assert!(offset >= 0, "stack underflow: {}", offset);
@@ -218,6 +220,7 @@ impl ValueStack {
     pub fn push(&mut self, entry: UntypedValue) {
         *self.get_release_unchecked_mut(self.stack_ptr) = entry;
         self.stack_ptr += 1;
+        #[cfg(test)]
         if self.stack_ptr > self.max_stack_height {
             self.max_stack_height = self.stack_ptr;
         }
@@ -282,6 +285,7 @@ impl ValueStack {
             .unwrap_or_else(|| panic!("did not reserve enough value stack space"));
         cells.fill(UntypedValue::default());
         self.stack_ptr += additional;
+        #[cfg(test)]
         if self.stack_ptr > self.max_stack_height {
             self.max_stack_height = self.stack_ptr;
         }

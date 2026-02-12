@@ -1,8 +1,90 @@
 use rwasm::{
-    always_failing_syscall_handler, compile_wasmtime_module, CompilationConfig, FuelConfig,
-    ImportLinker, Strategy, Value,
+    always_failing_syscall_handler, wasmtime::compile_wasmtime_module, CompilationConfig,
+    ImportLinker, StrategyDefinition, Value,
 };
 use std::sync::Arc;
+use wasmtime::{Engine, Instance, Module, Store, TypedFunc};
+
+pub fn run_main<Results>(wat: &str) -> anyhow::Result<Results>
+where
+    Results: wasmtime::WasmResults,
+{
+    let engine = Engine::default();
+    let module = Module::new(&engine, wat)?;
+    let mut store = Store::new(&engine, ());
+    let instance = Instance::new(&mut store, &module, &[])?;
+    let run: TypedFunc<(), Results> = instance.get_typed_func(&mut store, "main")?;
+    run.call(&mut store, ())
+}
+
+#[test]
+fn test_wasmtime_disabled_f32_sqrt() {
+    let wat = r#"
+        (module
+            (func (export "main") (result f32)
+                f32.const 9.0
+                f32.sqrt
+            )
+        )
+    "#;
+    let result = run_main::<f32>(wat);
+    let trap = result
+        .err()
+        .expect("execution should fail")
+        .downcast_ref::<wasmtime::Trap>()
+        .expect("execution should fail with a trap")
+        .clone();
+    assert_eq!(trap, wasmtime::Trap::DisabledOpcode);
+}
+
+#[test]
+fn test_wasmtime_disabled_f64_div() {
+    let wat = r#"
+        (module
+            (func (export "main") (result f64)
+                f64.const 9.0
+                f64.const 3.0
+                f64.div
+                f64.const 10.0
+                f64.add
+            )
+        )
+    "#;
+    let result = run_main::<f64>(wat);
+    let trap = result
+        .err()
+        .expect("execution should fail")
+        .downcast_ref::<wasmtime::Trap>()
+        .expect("execution should fail with a trap")
+        .clone();
+    assert_eq!(trap, wasmtime::Trap::DisabledOpcode);
+}
+
+#[test]
+fn test_wasmtime_f32_const() {
+    let wat = r#"
+        (module
+            (func (export "main") (result f32)
+                f32.const 9.0
+            )
+        )
+    "#;
+    let result = run_main::<f32>(wat).unwrap();
+    assert_eq!(result, 9.0);
+}
+
+#[test]
+fn test_wasmtime_f64_const() {
+    let wat = r#"
+        (module
+            (func (export "main") (result f64)
+                f64.const 9.0
+            )
+        )
+    "#;
+    let result = run_main::<f64>(wat).unwrap();
+    assert_eq!(result, 9.0);
+}
 
 #[test]
 fn test_10001_instances_in_a_row() {
@@ -21,36 +103,41 @@ fn test_10001_instances_in_a_row() {
 "#,
     )
     .unwrap();
-    let strategy = Strategy::Wasmtime {
-        module: compile_wasmtime_module(CompilationConfig::default(), &wasm_binary).unwrap(),
+    let strategy = StrategyDefinition::Wasmtime {
+        module: compile_wasmtime_module(
+            CompilationConfig::default().with_consume_fuel(false),
+            &wasm_binary,
+        )
+        .unwrap(),
     };
-    for _ in 0..10_000 {
-        let mut store = strategy.empty_store();
-        store.set_fuel(u64::MAX);
-        strategy.execute(&mut store, "main", &[], &mut []).unwrap();
+    for _ in 0..10_001 {
+        strategy
+            .default_executor()
+            .unwrap()
+            .execute("main", &[], &mut [])
+            .unwrap();
     }
-    let mut store = strategy.empty_store();
-    store.set_fuel(u64::MAX);
-    strategy.execute(&mut store, "main", &[], &mut []).unwrap();
 }
 
 #[test]
 fn test_fib_bench() {
     let wasm_binary = include_bytes!("../benchmarks/lib.wasm");
-    let strategy = Strategy::Wasmtime {
+    let strategy = StrategyDefinition::Wasmtime {
         module: compile_wasmtime_module(CompilationConfig::default(), wasm_binary).unwrap(),
     };
     // it fails on iter number 32'165...
     for _ in 0..32_165 {
-        let mut store = strategy.create_store(
-            Arc::new(ImportLinker::default()),
-            (),
-            always_failing_syscall_handler,
-            FuelConfig::default().with_fuel_limit(1_000_000),
-        );
+        let mut executor = strategy
+            .create_executor(
+                Arc::new(ImportLinker::default()),
+                (),
+                always_failing_syscall_handler,
+                Some(1_000_000),
+            )
+            .unwrap();
         let mut result = [Value::I32(0)];
-        strategy
-            .execute(&mut store, "main", &[Value::I32(43)], &mut result)
+        executor
+            .execute("main", &[Value::I32(43)], &mut result)
             .unwrap();
         core::hint::black_box(result);
     }

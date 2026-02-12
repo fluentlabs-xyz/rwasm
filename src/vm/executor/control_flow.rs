@@ -4,7 +4,7 @@ use crate::{
 };
 use core::cmp;
 
-impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
+impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_unreachable(&mut self) -> Result<(), TrapCode> {
         Err(TrapCode::UnreachableCodeReached)
@@ -70,7 +70,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     }
 
     #[inline(always)]
-    pub(crate) fn visit_return_call(&mut self, sys_func_idx: SysFuncIdx) -> Result<bool, TrapCode> {
+    pub(crate) fn visit_return_call(&mut self, sys_func_idx: SysFuncIdx) -> Result<(), TrapCode> {
         self.value_stack.sync_stack_ptr(self.sp);
         // external call can cause interruption,
         // that is why it's important to increase IP before doing the call
@@ -124,7 +124,7 @@ impl<'a, T: Send + Sync> RwasmExecutor<'a, T> {
     }
 
     #[inline(always)]
-    pub(crate) fn visit_call(&mut self, sys_func_idx: SysFuncIdx) -> Result<bool, TrapCode> {
+    pub(crate) fn visit_call(&mut self, sys_func_idx: SysFuncIdx) -> Result<(), TrapCode> {
         self.value_stack.sync_stack_ptr(self.sp);
         // external call can cause interruption,
         // that is why it's important to increase IP before doing the call

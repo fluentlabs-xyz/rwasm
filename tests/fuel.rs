@@ -1,4 +1,4 @@
-use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore, Store, Value};
+use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore, StoreTr, Value};
 use rwasm_fuel_policy::FuelCosts;
 
 #[test]
@@ -14,7 +14,6 @@ fn test_locals_consume_fuel() {
         (32, 0),
         (1000, 0),
         // locals_count>1000 -> 'function params size is out of bounds' (RwasmModule::compile fails)
-        // (1001, 0),
     ];
     test_cases
         .iter_mut()
@@ -66,9 +65,14 @@ fn test_locals_consume_fuel() {
             .enumerate()
         {
             let mut store = RwasmStore::<()>::default();
-            store.set_fuel(Some(fuel_limit));
+            store.reset_fuel(fuel_limit);
             engine
-                .execute(&mut store, &module, &params_values, &mut result)
+                .execute(
+                    &mut store,
+                    &module,
+                    if i == 0 { &params_values } else { &[] },
+                    &mut result,
+                )
                 .unwrap();
             let remaining_fuel = store.remaining_fuel();
             assert_eq!(
