@@ -83,9 +83,12 @@ impl GlobalMemory {
     /// If this operation accesses out of bounds linear memory.
     pub fn read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
         let len_buffer = buffer.len();
+        let end = offset
+            .checked_add(len_buffer)
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
         let slice = self
             .data()
-            .get(offset..(offset + len_buffer))
+            .get(offset..end)
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         buffer.copy_from_slice(slice);
         Ok(())
@@ -99,9 +102,12 @@ impl GlobalMemory {
     /// If this operation accesses out of bounds linear memory.
     pub fn write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
         let len_buffer = buffer.len();
+        let end = offset
+            .checked_add(len_buffer)
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
         let slice = self
             .data_mut()
-            .get_mut(offset..(offset + len_buffer))
+            .get_mut(offset..end)
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         slice.copy_from_slice(buffer);
         Ok(())
