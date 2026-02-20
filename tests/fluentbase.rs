@@ -29,16 +29,20 @@ pub(crate) fn fluentbase_syscall_handler(
             let len = params[1].i32().unwrap() as usize;
             let mut buffer = vec![0u8; len];
             caller.memory_read(ptr, &mut buffer)?;
-            println!("debug_log: {}", core::str::from_utf8(&buffer).unwrap());
+            println!("debug_log: {}", from_utf8(&buffer).unwrap());
         }
         // _input_size
         71 => {
-            result[0] = Value::I32(caller.data().input.len() as i32 + 1024); // size of context input
+            result[0] = Value::I32(caller.data().input.len() as i32); // size of context input
+        }
+        // _output_size
+        72 => {
+            result[0] = Value::I32(0);
         }
         // _read
-        72 => {
+        73 => {
             let target = params[0].i32().unwrap() as usize;
-            let offset = params[1].i32().unwrap() as usize - 1024; // size of context input
+            let offset = params[1].i32().unwrap() as usize; // size of context input
             let length = params[2].i32().unwrap() as usize;
             println!(
                 "read: target={}, offset={}, length={}",
@@ -48,7 +52,7 @@ pub(crate) fn fluentbase_syscall_handler(
             caller.memory_write(target, &data)?;
         }
         // _write
-        73 => {
+        74 => {
             let offset = params[0].i32().unwrap() as usize;
             let length = params[1].i32().unwrap() as usize;
             let mut buffer = vec![0u8; length];
@@ -61,10 +65,14 @@ pub(crate) fn fluentbase_syscall_handler(
             caller.data_mut().output.extend_from_slice(&buffer)
         }
         // _exit
-        74 => {
+        75 => {
             let exit_code = params[0].i32().unwrap();
             println!("exit code: {}", exit_code);
             return Err(TrapCode::ExecutionHalted);
+        }
+        // _read_output
+        76 => {
+            unimplemented!("_read_output");
         }
         _ => unreachable!(),
     }
@@ -88,24 +96,38 @@ pub(crate) fn create_import_linker() -> Arc<ImportLinker> {
         &[ValType::I32; 1],
     );
     import_linker.insert_function(
-        ImportName::new("fluentbase_v1preview", "_read"),
+        ImportName::new("fluentbase_v1preview", "_output_size"),
         72,
+        SyscallFuelParams::default(),
+        &[],
+        &[ValType::I32; 1],
+    );
+    import_linker.insert_function(
+        ImportName::new("fluentbase_v1preview", "_read"),
+        73,
         SyscallFuelParams::default(),
         &[ValType::I32; 3],
         &[],
     );
     import_linker.insert_function(
         ImportName::new("fluentbase_v1preview", "_write"),
-        73,
+        74,
         SyscallFuelParams::default(),
         &[ValType::I32; 2],
         &[],
     );
     import_linker.insert_function(
         ImportName::new("fluentbase_v1preview", "_exit"),
-        74,
+        75,
         SyscallFuelParams::default(),
         &[ValType::I32; 1],
+        &[],
+    );
+    import_linker.insert_function(
+        ImportName::new("fluentbase_v1preview", "_read_output"),
+        76,
+        SyscallFuelParams::default(),
+        &[ValType::I32; 3],
         &[],
     );
     Arc::new(import_linker)

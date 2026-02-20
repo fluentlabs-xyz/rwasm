@@ -16,7 +16,7 @@ use crate::{
         ElementSegmentIdx, GlobalIdx, LocalDepth, MaxStackHeight, Opcode, SignatureIdx, TableIdx,
         UntypedValue,
     },
-    CompilationError, SysFuncIdx, TrapCode,
+    CompilationError, NumLocals, SysFuncIdx, TrapCode,
 };
 use alloc::{vec, vec::Vec};
 use bincode::{
@@ -242,6 +242,10 @@ impl InstructionSet {
     impl_basic_opcode!(I32Extend16S);
     impl_basic_opcode!(I32Mul64);
     impl_basic_opcode!(I32Add64);
+
+    // bulk opcodes
+    impl_basic_opcode!(BulkConst(NumLocals));
+    impl_basic_opcode!(BulkDrop(NumLocals));
 
     // fpu opcodes (emits trap for disable fpu feature flag)
     impl_fpu_opcode!(F32Load(AddressOffset));

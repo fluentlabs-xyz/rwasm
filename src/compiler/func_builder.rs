@@ -85,14 +85,29 @@ impl<'a> FuncBuilder<'a> {
                 _ => return Err(CompilationError::NotSupportedLocalType),
             }
 
+            let mut total_locals_required = 0u32;
             for _ in 0..amount as usize {
-                self.translator.alloc.instruction_set.op_i32_const(0);
                 // for i64 type, we need to push 2 values on the stack
                 if value_type == ValType::I64 || value_type == ValType::F64 {
-                    self.translator.alloc.instruction_set.op_i32_const(0);
+                    total_locals_required += 2;
+                } else {
+                    total_locals_required += 1;
                 }
                 self.translator.alloc.stack_types.push(value_type);
             }
+            self.translator
+                .alloc
+                .instruction_set
+                .op_bulk_const(total_locals_required);
+
+            // for _ in 0..amount as usize {
+            //     self.translator.alloc.instruction_set.op_i32_const(0);
+            //     // for i64 type, we need to push 2 values on the stack
+            //     if value_type == ValType::I64 || value_type == ValType::F64 {
+            //         self.translator.alloc.instruction_set.op_i32_const(0);
+            //     }
+            //     self.translator.alloc.stack_types.push(value_type);
+            // }
 
             self.translator.stack_height.push_n(amount);
             if value_type == ValType::I64 || value_type == ValType::F64 {
