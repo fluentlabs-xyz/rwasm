@@ -1,17 +1,15 @@
-// build.rs
 use std::{env, path::PathBuf, process::Command};
 
 fn main() {
+    // Skip wasm builds
     let target_family = env::var("CARGO_CFG_TARGET_FAMILY").unwrap();
     if target_family == "wasm" {
         return;
     }
 
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
-
     // Keep the inner cargo build artifacts isolated from the outer build.
-    let inner_target_dir = out_dir.join("wasm-target");
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let inner_target_dir = manifest_dir.join("../../target/wasm-target");
     let wasm_output_dir = inner_target_dir.join("wasm32-unknown-unknown/release/fib.wasm");
 
     let is_coverage = env::var_os("CARGO_LLVM_COV").is_some();
@@ -19,7 +17,7 @@ fn main() {
         // I don't like this hack, but it's the only way I could figure out how to get the correct
         // path to the wasm file
         let wasm_output_dir =
-            format!("{}", wasm_output_dir.display()).replace("/llvm-cov-target", "");
+            format!("{}", wasm_output_dir.display()).replace("target/llvm-cov-target", "target");
         println!("cargo:rustc-env=OUTPUT_WASM_PATH={}", wasm_output_dir);
         return;
     }
