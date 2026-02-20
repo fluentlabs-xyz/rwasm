@@ -3,7 +3,7 @@ use crate::{
         AddressOffset, BlockFuel, BranchOffset, BranchTableTargets, CompiledFunc, DataSegmentIdx,
         ElementSegmentIdx, GlobalIdx, LocalDepth, SignatureIdx, TableIdx, UntypedValue,
     },
-    MaxStackHeight, SysFuncIdx, TrapCode,
+    MaxStackHeight, NumLocals, SysFuncIdx, TrapCode,
 };
 use alloc::{format, vec::Vec};
 use bincode::{Decode, Encode};
@@ -101,6 +101,8 @@ pub enum Opcode {
     I32Extend16S,
     I32Mul64,
     I32Add64,
+    BulkConst(NumLocals),
+    BulkDrop(NumLocals),
 
     // fpu
     #[cfg(feature = "fpu")]

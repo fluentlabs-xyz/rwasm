@@ -103,3 +103,4 @@ pub type MaxStackHeight = u32;
 pub type SysFuncIdx = u32;
 pub type AddressOffset = u32;
 pub type BlockFuel = u32;
+pub type NumLocals = u32;

@@ -1,4 +1,4 @@
-use crate::{CompiledFunc, LocalDepth, RwasmExecutor, UntypedValue};
+use crate::{CompiledFunc, LocalDepth, NumLocals, RwasmExecutor, UntypedValue};
 
 impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]
@@ -50,6 +50,21 @@ impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_i32_const(&mut self, untyped_value: UntypedValue) {
         self.sp.push(untyped_value);
+        self.ip.add(1);
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_bulk_const(&mut self, imm: NumLocals) {
+        // TODO(dmitry123): We can optimize it, but need to support bulk stack reset
+        for _ in 0..imm {
+            self.sp.push_i32(0);
+        }
+        self.ip.add(1);
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_bulk_drop(&mut self, imm: NumLocals) {
+        self.sp.drop_n(imm as usize);
         self.ip.add(1);
     }
 }

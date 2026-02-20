@@ -71,10 +71,8 @@ impl DropKeep {
                 instr_builder.op_local_set(drop as u32);
                 opcode_count += 1;
             });
-            (0..(drop - keep)).for_each(|_| {
-                instr_builder.op_drop();
-                opcode_count += 1;
-            });
+            instr_builder.op_bulk_drop(drop - keep);
+            opcode_count += 1;
         } else {
             height.push1();
             height.pop1();
@@ -83,10 +81,8 @@ impl DropKeep {
                 instr_builder.op_local_set(keep as u32 + drop as u32 - i as u32);
                 opcode_count += 2;
             });
-            (0..drop).for_each(|_| {
-                instr_builder.op_drop();
-                opcode_count += 1;
-            });
+            instr_builder.op_bulk_drop(drop);
+            opcode_count += 1;
         }
         opcode_count
     }
@@ -135,6 +131,11 @@ mod tests {
                     }
                     Opcode::Drop => {
                         stack.pop();
+                    }
+                    Opcode::BulkDrop(count) => {
+                        for _ in 0..*count {
+                            stack.pop();
+                        }
                     }
                     _ => unreachable!("unknown opcode: {:?}", instr),
                 }
