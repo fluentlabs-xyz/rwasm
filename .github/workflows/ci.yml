@@ -2,12 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [ main, devel, fix/engine-acquired-stack ]
+    branches: [ main, devel ]
     paths-ignore:
       - "**.md"
       - "docs/**"
   pull_request:
-    branches: [ main, devel, fix/engine-acquired-stack ]
+    branches: [ main, devel ]
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -40,7 +40,7 @@ jobs:
         run: |
           rustup target add wasm32-unknown-unknown
           rustup +nightly-2025-09-20 target add wasm32-unknown-unknown
-          make build test
+          make test
 
   lint:
     name: Lint

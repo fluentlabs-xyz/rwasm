@@ -13,236 +13,236 @@ use bincode::{Decode, Encode};
 #[repr(u16)]
 pub enum Opcode {
     // stack/system
-    Unreachable = 0x00,
-    Trap(TrapCode) = 0x01,
-    LocalGet(LocalDepth) = 0x10,
-    LocalSet(LocalDepth) = 0x11,
-    LocalTee(LocalDepth) = 0x12,
-    Br(BranchOffset) = 0x20,
-    BrIfEqz(BranchOffset) = 0x21,
-    BrIfNez(BranchOffset) = 0x22,
-    BrTable(BranchTableTargets) = 0x23,
-    ConsumeFuel(BlockFuel) = 0x30,
-    ConsumeFuelStack = 0x31,
-    Return = 0x40,
-    ReturnCallInternal(CompiledFunc) = 0x41,
-    ReturnCall(SysFuncIdx) = 0x42,
-    ReturnCallIndirect(SignatureIdx) = 0x43,
-    CallInternal(CompiledFunc) = 0x44,
-    Call(SysFuncIdx) = 0x45,
-    CallIndirect(SignatureIdx) = 0x46,
-    SignatureCheck(SignatureIdx) = 0x50,
-    StackCheck(MaxStackHeight) = 0x51,
-    RefFunc(CompiledFunc) = 0x60,
-    I32Const(UntypedValue) = 0x61,
-    Drop = 0x62,
-    Select = 0x63,
-    GlobalGet(GlobalIdx) = 0x70,
-    GlobalSet(GlobalIdx) = 0x71,
+    Unreachable,
+    Trap(TrapCode),
+    LocalGet(LocalDepth),
+    LocalSet(LocalDepth),
+    LocalTee(LocalDepth),
+    Br(BranchOffset),
+    BrIfEqz(BranchOffset),
+    BrIfNez(BranchOffset),
+    BrTable(BranchTableTargets),
+    ConsumeFuel(BlockFuel),
+    ConsumeFuelStack,
+    Return,
+    ReturnCallInternal(CompiledFunc),
+    ReturnCall(SysFuncIdx),
+    ReturnCallIndirect(SignatureIdx),
+    CallInternal(CompiledFunc),
+    Call(SysFuncIdx),
+    CallIndirect(SignatureIdx),
+    SignatureCheck(SignatureIdx),
+    StackCheck(MaxStackHeight),
+    RefFunc(CompiledFunc),
+    I32Const(UntypedValue),
+    Drop,
+    Select,
+    GlobalGet(GlobalIdx),
+    GlobalSet(GlobalIdx),
 
     // memory
-    I32Load(AddressOffset) = 0x80,
-    I32Load8S(AddressOffset) = 0x81,
-    I32Load8U(AddressOffset) = 0x82,
-    I32Load16S(AddressOffset) = 0x83,
-    I32Load16U(AddressOffset) = 0x84,
-    I32Store(AddressOffset) = 0x85,
-    I32Store8(AddressOffset) = 0x86,
-    I32Store16(AddressOffset) = 0x87,
-    MemorySize = 0x88,
-    MemoryGrow = 0x89,
-    MemoryFill = 0x8a,
-    MemoryCopy = 0x8b,
-    MemoryInit(DataSegmentIdx) = 0x8c,
-    DataDrop(DataSegmentIdx) = 0x8d,
+    I32Load(AddressOffset),
+    I32Load8S(AddressOffset),
+    I32Load8U(AddressOffset),
+    I32Load16S(AddressOffset),
+    I32Load16U(AddressOffset),
+    I32Store(AddressOffset),
+    I32Store8(AddressOffset),
+    I32Store16(AddressOffset),
+    MemorySize,
+    MemoryGrow,
+    MemoryFill,
+    MemoryCopy,
+    MemoryInit(DataSegmentIdx),
+    DataDrop(DataSegmentIdx),
 
     // table
-    TableSize(TableIdx) = 0x90,
-    TableGrow(TableIdx) = 0x91,
-    TableFill(TableIdx) = 0x92,
-    TableGet(TableIdx) = 0x93,
-    TableSet(TableIdx) = 0x94,
-    TableCopy(TableIdx, TableIdx) = 0x95,
-    TableInit(ElementSegmentIdx) = 0x96,
-    ElemDrop(ElementSegmentIdx) = 0x97,
+    TableSize(TableIdx),
+    TableGrow(TableIdx),
+    TableFill(TableIdx),
+    TableGet(TableIdx),
+    TableSet(TableIdx),
+    TableCopy(TableIdx, TableIdx),
+    TableInit(ElementSegmentIdx),
+    ElemDrop(ElementSegmentIdx),
 
     // alu
-    I32Eqz = 0xa0,
-    I32Eq = 0xa1,
-    I32Ne = 0xa2,
-    I32LtS = 0xa3,
-    I32LtU = 0xa4,
-    I32GtS = 0xa5,
-    I32GtU = 0xa6,
-    I32LeS = 0xa7,
-    I32LeU = 0xa8,
-    I32GeS = 0xa9,
-    I32GeU = 0xaa,
-    I32Clz = 0xab,
-    I32Ctz = 0xac,
-    I32Popcnt = 0xad,
-    I32Add = 0xae,
-    I32Sub = 0xaf,
-    I32Mul = 0xb0,
-    I32DivS = 0xb1,
-    I32DivU = 0xb2,
-    I32RemS = 0xb3,
-    I32RemU = 0xb4,
-    I32And = 0xb5,
-    I32Or = 0xb6,
-    I32Xor = 0xb7,
-    I32Shl = 0xb8,
-    I32ShrS = 0xb9,
-    I32ShrU = 0xba,
-    I32Rotl = 0xbb,
-    I32Rotr = 0xbc,
-    I32WrapI64 = 0xbd,
-    I32Extend8S = 0xbe,
-    I32Extend16S = 0xbf,
-    I32Mul64 = 0xc0,
-    I32Add64 = 0xc1,
+    I32Eqz,
+    I32Eq,
+    I32Ne,
+    I32LtS,
+    I32LtU,
+    I32GtS,
+    I32GtU,
+    I32LeS,
+    I32LeU,
+    I32GeS,
+    I32GeU,
+    I32Clz,
+    I32Ctz,
+    I32Popcnt,
+    I32Add,
+    I32Sub,
+    I32Mul,
+    I32DivS,
+    I32DivU,
+    I32RemS,
+    I32RemU,
+    I32And,
+    I32Or,
+    I32Xor,
+    I32Shl,
+    I32ShrS,
+    I32ShrU,
+    I32Rotl,
+    I32Rotr,
+    I32WrapI64,
+    I32Extend8S,
+    I32Extend16S,
+    I32Mul64,
+    I32Add64,
 
     // fpu
     #[cfg(feature = "fpu")]
-    F32Load(AddressOffset) = 0xff00,
+    F32Load(AddressOffset),
     #[cfg(feature = "fpu")]
-    F64Load(AddressOffset) = 0xff01,
+    F64Load(AddressOffset),
     #[cfg(feature = "fpu")]
-    F32Store(AddressOffset) = 0xff02,
+    F32Store(AddressOffset),
     #[cfg(feature = "fpu")]
-    F64Store(AddressOffset) = 0xff03,
+    F64Store(AddressOffset),
     #[cfg(feature = "fpu")]
-    F32Eq = 0xff04,
+    F32Eq,
     #[cfg(feature = "fpu")]
-    F32Ne = 0xff05,
+    F32Ne,
     #[cfg(feature = "fpu")]
-    F32Lt = 0xff06,
+    F32Lt,
     #[cfg(feature = "fpu")]
-    F32Gt = 0xff07,
+    F32Gt,
     #[cfg(feature = "fpu")]
-    F32Le = 0xff08,
+    F32Le,
     #[cfg(feature = "fpu")]
-    F32Ge = 0xff09,
+    F32Ge,
     #[cfg(feature = "fpu")]
-    F64Eq = 0xff0a,
+    F64Eq,
     #[cfg(feature = "fpu")]
-    F64Ne = 0xff0b,
+    F64Ne,
     #[cfg(feature = "fpu")]
-    F64Lt = 0xff0c,
+    F64Lt,
     #[cfg(feature = "fpu")]
-    F64Gt = 0xff0d,
+    F64Gt,
     #[cfg(feature = "fpu")]
-    F64Le = 0xff0e,
+    F64Le,
     #[cfg(feature = "fpu")]
-    F64Ge = 0xff0f,
+    F64Ge,
     #[cfg(feature = "fpu")]
-    F32Abs = 0xff10,
+    F32Abs,
     #[cfg(feature = "fpu")]
-    F32Neg = 0xff11,
+    F32Neg,
     #[cfg(feature = "fpu")]
-    F32Ceil = 0xff12,
+    F32Ceil,
     #[cfg(feature = "fpu")]
-    F32Floor = 0xff13,
+    F32Floor,
     #[cfg(feature = "fpu")]
-    F32Trunc = 0xff14,
+    F32Trunc,
     #[cfg(feature = "fpu")]
-    F32Nearest = 0xff15,
+    F32Nearest,
     #[cfg(feature = "fpu")]
-    F32Sqrt = 0xff16,
+    F32Sqrt,
     #[cfg(feature = "fpu")]
-    F32Add = 0xff17,
+    F32Add,
     #[cfg(feature = "fpu")]
-    F32Sub = 0xff18,
+    F32Sub,
     #[cfg(feature = "fpu")]
-    F32Mul = 0xff19,
+    F32Mul,
     #[cfg(feature = "fpu")]
-    F32Div = 0xff1a,
+    F32Div,
     #[cfg(feature = "fpu")]
-    F32Min = 0xff1b,
+    F32Min,
     #[cfg(feature = "fpu")]
-    F32Max = 0xff1c,
+    F32Max,
     #[cfg(feature = "fpu")]
-    F32Copysign = 0xff1d,
+    F32Copysign,
     #[cfg(feature = "fpu")]
-    F64Abs = 0xff1e,
+    F64Abs,
     #[cfg(feature = "fpu")]
-    F64Neg = 0xff1f,
+    F64Neg,
     #[cfg(feature = "fpu")]
-    F64Ceil = 0xff20,
+    F64Ceil,
     #[cfg(feature = "fpu")]
-    F64Floor = 0xff21,
+    F64Floor,
     #[cfg(feature = "fpu")]
-    F64Trunc = 0xff22,
+    F64Trunc,
     #[cfg(feature = "fpu")]
-    F64Nearest = 0xff23,
+    F64Nearest,
     #[cfg(feature = "fpu")]
-    F64Sqrt = 0xff24,
+    F64Sqrt,
     #[cfg(feature = "fpu")]
-    F64Add = 0xff25,
+    F64Add,
     #[cfg(feature = "fpu")]
-    F64Sub = 0xff26,
+    F64Sub,
     #[cfg(feature = "fpu")]
-    F64Mul = 0xff27,
+    F64Mul,
     #[cfg(feature = "fpu")]
-    F64Div = 0xff28,
+    F64Div,
     #[cfg(feature = "fpu")]
-    F64Min = 0xff29,
+    F64Min,
     #[cfg(feature = "fpu")]
-    F64Max = 0xff2a,
+    F64Max,
     #[cfg(feature = "fpu")]
-    F64Copysign = 0xff2b,
+    F64Copysign,
     #[cfg(feature = "fpu")]
-    I32TruncF32S = 0xff2c,
+    I32TruncF32S,
     #[cfg(feature = "fpu")]
-    I32TruncF32U = 0xff2d,
+    I32TruncF32U,
     #[cfg(feature = "fpu")]
-    I32TruncF64S = 0xff2e,
+    I32TruncF64S,
     #[cfg(feature = "fpu")]
-    I32TruncF64U = 0xff2f,
+    I32TruncF64U,
     #[cfg(feature = "fpu")]
-    I64TruncF32S = 0xff30,
+    I64TruncF32S,
     #[cfg(feature = "fpu")]
-    I64TruncF32U = 0xff31,
+    I64TruncF32U,
     #[cfg(feature = "fpu")]
-    I64TruncF64S = 0xff32,
+    I64TruncF64S,
     #[cfg(feature = "fpu")]
-    I64TruncF64U = 0xff33,
+    I64TruncF64U,
     #[cfg(feature = "fpu")]
-    F32ConvertI32S = 0xff34,
+    F32ConvertI32S,
     #[cfg(feature = "fpu")]
-    F32ConvertI32U = 0xff35,
+    F32ConvertI32U,
     #[cfg(feature = "fpu")]
-    F32ConvertI64S = 0xff36,
+    F32ConvertI64S,
     #[cfg(feature = "fpu")]
-    F32ConvertI64U = 0xff37,
+    F32ConvertI64U,
     #[cfg(feature = "fpu")]
-    F32DemoteF64 = 0xff38,
+    F32DemoteF64,
     #[cfg(feature = "fpu")]
-    F64ConvertI32S = 0xff39,
+    F64ConvertI32S,
     #[cfg(feature = "fpu")]
-    F64ConvertI32U = 0xff3a,
+    F64ConvertI32U,
     #[cfg(feature = "fpu")]
-    F64ConvertI64S = 0xff3b,
+    F64ConvertI64S,
     #[cfg(feature = "fpu")]
-    F64ConvertI64U = 0xff3c,
+    F64ConvertI64U,
     #[cfg(feature = "fpu")]
-    F64PromoteF32 = 0xff3d,
+    F64PromoteF32,
     #[cfg(feature = "fpu")]
-    I32TruncSatF32S = 0xff3e,
+    I32TruncSatF32S,
     #[cfg(feature = "fpu")]
-    I32TruncSatF32U = 0xff3f,
+    I32TruncSatF32U,
     #[cfg(feature = "fpu")]
-    I32TruncSatF64S = 0xff40,
+    I32TruncSatF64S,
     #[cfg(feature = "fpu")]
-    I32TruncSatF64U = 0xff41,
+    I32TruncSatF64U,
     #[cfg(feature = "fpu")]
-    I64TruncSatF32S = 0xff42,
+    I64TruncSatF32S,
     #[cfg(feature = "fpu")]
-    I64TruncSatF32U = 0xff43,
+    I64TruncSatF32U,
     #[cfg(feature = "fpu")]
-    I64TruncSatF64S = 0xff44,
+    I64TruncSatF64S,
     #[cfg(feature = "fpu")]
-    I64TruncSatF64U = 0xff45,
+    I64TruncSatF64U,
 }
 
 impl core::fmt::Display for Opcode {

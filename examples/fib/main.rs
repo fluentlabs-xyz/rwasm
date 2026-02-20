@@ -1,4 +1,5 @@
-#[cfg(target_arch = "wasm32")]
+#![no_main]
+
 #[no_mangle]
 pub fn main(n: i32) -> i32 {
     let (mut a, mut b) = (0, 1);

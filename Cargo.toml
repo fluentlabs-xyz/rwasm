@@ -43,6 +43,8 @@ rand = "=0.9.1"
 wat = "1.243.0"
 hex-literal = "1.0.0"
 hex = "0.4.3"
+criterion = { version = "0.7.0", default-features = false, features = [] }
+fib-example = { path = "examples/fib" }
 
 [features]
 default = ["std", "wasmtime", "disable-fpu"]
@@ -65,3 +67,7 @@ wasmtime = ["dep:wasmtime", "dep:lru", "dep:anyhow"]
 cache-compiled-artifacts = ["wasmtime", "dep:directories"]
 e2e = []
 pooling-allocator = []
+
+[[bench]]
+name = "bench"
+harness = false

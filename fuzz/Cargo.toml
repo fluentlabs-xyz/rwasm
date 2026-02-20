@@ -1,0 +1,48 @@
+[package]
+name = "rwasm-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = "1.4.2"
+# Needed to map export names -> indices for snapshotting globals/tables/memory.
+# Use the same package/version as `rwasm` itself to avoid version skew.
+wasmparser = { version = "0.100.1", package = "wasmparser-nostd", default-features = false }
+# `wasmtime` crates (crates.io vs git), which causes type mismatches.
+wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", tag = "v41.0.2" }
+# `wasmtime-fuzzing` is not always published on crates.io; pull it from the Wasmtime repo.
+wasmtime-fuzzing = { git = "https://github.com/bytecodealliance/wasmtime", tag = "v41.0.2" }
+log = "0.4.26"
+env_logger = "0.11.8"
+anyhow = "1.0"
+rwasm = { path = "..", default-features = false, features = ["std", "fpu"] }
+wat = "1.230.0"
+
+[[bin]]
+name = "differential"
+path = "fuzz_targets/differential.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "repro_artifact"
+path = "src/bin/repro_artifact.rs"
+test = false
+doc = false
+
+[features]
+default = ["disable-signals"]
+# Disable signal-based traps in wasmtime to avoid conflicts with libfuzzer's
+# signal handlers. This is needed on macOS where libfuzzer intercepts signals
+# before wasmtime can handle them, causing false "deadly signal" crashes.
+# Enabled by default on macOS.
+disable-signals = []
+
+[workspace]
+
+

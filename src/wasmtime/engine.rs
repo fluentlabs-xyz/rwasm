@@ -21,6 +21,12 @@ pub fn wasmtime_engine(compilation_config: &CompilationConfig) -> Engine {
     // rWasm stack size is defined in 32-bit slots; Wasmtime expects bytes.
     cfg.max_wasm_stack(N_MAX_STACK_SIZE * size_of::<u32>());
 
+    // Leave these alone (defaults are already tuned for 64-bit hosts):
+    // - memory_reservation: big VA reservation (e.g. ~4GiB) enabling most bounds checks to disappear
+    // - memory_guard_size: guard region (e.g. 32MiB) enabling “trap instead of check” for small offsets
+    // cfg.memory_reservation(...);
+    // cfg.memory_guard_size(...);
+
     cfg.async_support(false);
     cfg.wasm_memory64(false);
     cfg.memory_init_cow(false);

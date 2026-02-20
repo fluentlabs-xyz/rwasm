@@ -3,7 +3,7 @@ use crate::{
     SignatureIdx, StoreTr, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue,
     ValueStack,
 };
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 use bitvec::{order::Lsb0, vec::BitVec};
 use hashbrown::HashMap;
 
@@ -47,7 +47,6 @@ pub struct ReusableContext {
     pub value_stack: ValueStack,
 }
 
-#[cfg(feature = "std")]
 impl<T: 'static + Default> Default for RwasmStore<T> {
     fn default() -> Self {
         Self::new(
@@ -157,5 +156,69 @@ impl<T: 'static> RwasmStore<T> {
 
     pub fn fuel_consumed(&self) -> u64 {
         self.consumed_fuel
+    }
+
+    /// Returns the current linear memory size in bytes.
+    ///
+    /// Note: rwasm currently supports only the default (index 0) linear memory.
+    pub fn memory_size_bytes(&self) -> usize {
+        self.global_memory.data().len()
+    }
+
+    /// Returns a snapshot of the first `max_bytes` of linear memory.
+    ///
+    /// This is intended for differential testing/fuzzing where we want to compare post-call
+    /// side effects without copying potentially huge memories.
+    pub fn memory_snapshot_prefix(&self, max_bytes: usize) -> Vec<u8> {
+        let mem = self.global_memory.data();
+        let n = core::cmp::min(mem.len(), max_bytes);
+        mem[..n].to_vec()
+    }
+
+    /// Returns a full snapshot of linear memory.
+    ///
+    /// This is primarily intended for differential fuzzing using Wasmtime's oracle strategy,
+    /// which compares full exported memories.
+    pub fn memory_snapshot(&self) -> Vec<u8> {
+        self.global_memory.data().to_vec()
+    }
+
+    /// Returns per-table snapshots as `(table_index, size, non_null_prefix)` tuples.
+    ///
+    /// `non_null_prefix` contains `0/1` bytes describing whether each element is null (0) or non-null (1)
+    /// for the first `max_elems` elements of the table.
+    pub fn table_snapshots_nullness_prefix(&self, max_elems: usize) -> Vec<(u32, u32, Vec<u8>)> {
+        let mut out: Vec<(u32, u32, Vec<u8>)> = Vec::new();
+        // Ensure deterministic ordering for differential comparisons.
+        let mut table_indices: Vec<TableIdx> = self.tables.keys().copied().collect();
+        table_indices.sort_unstable();
+        for idx in table_indices {
+            // TableIdx is a new type wrapper around u32.
+            let table = &self.tables[&idx];
+            let size = table.size();
+            let n = core::cmp::min(size as usize, max_elems);
+            let mut prefix = Vec::with_capacity(n);
+            for &bits in table.elements.iter().take(n) {
+                // In rwasm, a null funcref is represented as 0.
+                prefix.push(if bits == 0 { 0 } else { 1 });
+            }
+            out.push((idx as u32, size, prefix));
+        }
+        out
+    }
+
+    /// Returns the raw 32-bit "global word" at the given internal index.
+    ///
+    /// rwasm stores globals as 32-bit words. `i64`/`f64` globals occupy **two** words:
+    /// - low word at `global_index * 2`
+    /// - high word at `global_index * 2 + 1`
+    ///
+    /// This accessor is intended for differential fuzzing/oracles.
+    pub fn global_word_bits(&self, global_word_index: u32) -> u32 {
+        self.global_variables
+            .get(&global_word_index)
+            .copied()
+            .unwrap_or_default()
+            .to_bits()
     }
 }

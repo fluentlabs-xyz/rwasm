@@ -1,4 +1,5 @@
 use criterion::{criterion_main, Bencher, Criterion};
+use fib_example::FIB_WASM;
 use rwasm::{
     always_failing_syscall_handler, wasmtime::compile_wasmtime_module, CompilationConfig,
     ExecutionEngine, ImportLinker, RwasmModule, StrategyDefinition, Value,
@@ -47,9 +48,8 @@ fn bench_comparisons(c: &mut Criterion) {
     }
 
     {
-        let wasm_binary = include_bytes!("../lib.wasm");
         let config = CompilationConfig::default().with_consume_fuel(true);
-        let module = compile_wasmtime_module(config, wasm_binary).unwrap();
+        let module = compile_wasmtime_module(config, FIB_WASM).unwrap();
         group.bench_function("bench_strategy_wasmtime", |b| {
             let strategy = StrategyDefinition::Wasmtime {
                 module: module.clone(),
@@ -71,12 +71,11 @@ fn bench_comparisons(c: &mut Criterion) {
     // }
 
     {
-        let wasm_binary = include_bytes!("../lib.wasm");
         let config = CompilationConfig::default()
             .with_entrypoint_name("main".into())
             .with_allow_malformed_entrypoint_func_type(true)
             .with_consume_fuel(false);
-        let (module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
+        let (module, _) = RwasmModule::compile(config, FIB_WASM).unwrap();
         group.bench_function("bench_strategy_rwasm", |b| {
             let strategy = StrategyDefinition::Rwasm {
                 module: module.clone(),

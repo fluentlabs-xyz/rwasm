@@ -1,11 +1,12 @@
+use fib_example::FIB_WASM;
 use rwasm::{
     for_each_strategy, CompilationConfig, ExecutionEngine, ImportLinker, RwasmModule, RwasmStore,
     Value,
 };
+use std::sync::Arc;
 
 #[test]
 fn test_fib() {
-    let wasm_binary = include_bytes!("../benchmarks/lib.wasm");
     let config = CompilationConfig::default()
         .with_entrypoint_name("main".into())
         .with_consume_fuel(false);
@@ -20,7 +21,7 @@ fn test_fib() {
             Ok(())
         },
         config,
-        wasm_binary,
+        FIB_WASM,
     )
     .unwrap();
 }
@@ -188,4 +189,51 @@ fn test_multi_value_params() {
     instance.execute(&mut store, &[], &mut result).unwrap();
     assert_eq!(result[0].i64().unwrap(), 2251799813685248);
     assert_eq!(result[1].i64().unwrap(), 0);
+}
+
+#[test]
+fn test_entrypoint_init_fails() {
+    let wat = r#"
+        (module
+          (type (func))
+          (table 1 1 funcref)
+          (memory 1 1)
+          (global (mut i32) (i32.const 1000))
+          (export "" (func 0))
+          (export "1" (table 0))
+          (export "2" (memory 0))
+          (func (type 0)
+            global.get 0
+            i32.eqz
+            if
+              unreachable
+            end
+            global.get 0
+            i32.const 1
+            i32.sub
+            global.set 0
+          )
+        )
+    "#;
+
+    let wasm = wat::parse_str(wat).expect("wat parses");
+    let config = CompilationConfig::default()
+        .with_consume_fuel(false)
+        .with_entrypoint_name("".into())
+        // no imports
+        .with_import_linker(Arc::new(ImportLinker::default()))
+        // this module has no start section, allow it anyway for fuzz-like inputs
+        .with_allow_start_section(true);
+
+    let (module, _) = RwasmModule::compile(config, &wasm).expect("rwasm compiles");
+    let engine = ExecutionEngine::new();
+    let mut store = RwasmStore::new(
+        Arc::new(ImportLinker::default()),
+        (),
+        rwasm::always_failing_syscall_handler,
+        None,
+    );
+
+    engine.entrypoint(&mut store, &module).unwrap();
+    engine.execute(&mut store, &module, &[], &mut []).unwrap();
 }
