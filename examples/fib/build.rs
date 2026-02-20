@@ -7,6 +7,28 @@ fn main() {
         return;
     }
 
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
+
+    // Keep the inner cargo build artifacts isolated from the outer build.
+    let inner_target_dir = out_dir.join("wasm-target");
+    let wasm_output_dir = inner_target_dir.join("wasm32-unknown-unknown/release/fib.wasm");
+
+    let is_coverage = env::var_os("CARGO_LLVM_COV").is_some();
+    if is_coverage {
+        // I don't like this hack, but it's the only way I could figure out how to get the correct
+        // path to the wasm file
+        let wasm_output_dir =
+            format!("{}", wasm_output_dir.display()).replace("/llvm-cov-target", "");
+        println!("cargo:rustc-env=OUTPUT_WASM_PATH={}", wasm_output_dir);
+        return;
+    }
+
+    println!(
+        "cargo:rustc-env=OUTPUT_WASM_PATH={}",
+        wasm_output_dir.display()
+    );
+
     // Re-run the build script when your Rust sources or manifest change.
     // (You can add more rerun-if-changed lines if you have generated inputs.)
     println!("cargo:rerun-if-changed=Cargo.toml");
@@ -18,13 +40,6 @@ fn main() {
     if env::var_os(GUARD).is_some() {
         return;
     }
-
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
-
-    // Keep the inner cargo build artifacts isolated from the outer build.
-    let inner_target_dir = out_dir.join("wasm-target");
-    let wasm_output_dir = inner_target_dir.join("wasm32-unknown-unknown/release/fib.wasm");
 
     // Equivalent to:
     // cargo b --bin fib --release --target=wasm32-unknown-unknown --no-default-features
@@ -46,9 +61,4 @@ fn main() {
     if !status.success() {
         panic!("inner `cargo build` failed with status: {status}");
     }
-
-    println!(
-        "cargo:rustc-env=OUTPUT_WASM_PATH={}",
-        wasm_output_dir.display()
-    );
 }
