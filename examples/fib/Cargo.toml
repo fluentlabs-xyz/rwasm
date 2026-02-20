@@ -1,0 +1,22 @@
+[package]
+name = "fib-example"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+path = "main.rs"
+name = "fib"
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+path = "lib.rs"
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = 3
+strip = true
+debug = false
+debug-assertions = false
+rpath = false
+codegen-units = 1

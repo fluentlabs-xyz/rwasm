@@ -24,7 +24,7 @@ jobs:
         run: |
           rustup target add wasm32-unknown-unknown
           rustup +nightly-2025-09-20 target add wasm32-unknown-unknown
-          cd benchmarks && make && cargo bench -- --save-baseline devel
+          make && cargo bench -- --save-baseline devel
       - name: Upload baseline artifact
         uses: actions/upload-artifact@v6
         with:
@@ -69,7 +69,7 @@ jobs:
           fi
           rustup target add wasm32-unknown-unknown
           rustup +nightly-2025-09-20 target add wasm32-unknown-unknown
-          cd benchmarks && make && cargo bench -- $BASEFLAG | tee bench_output.txt
+          make && cargo bench -- $BASEFLAG | tee bench_output.txt
 
       - name: Upload full report
         uses: actions/upload-artifact@v6
@@ -84,7 +84,7 @@ jobs:
             echo "### Criterion results (vs baseline)"
             echo
             echo '```'
-            sed -n '1,200p' benchmarks/bench_output.txt
+            sed -n '1,200p' bench_output.txt
             echo '```'
             echo
             echo "_Heads-up_: runner perf is noisy; treat deltas as a smoke check."

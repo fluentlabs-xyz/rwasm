@@ -1,3 +1,4 @@
+use fib_example::FIB_WASM;
 use rwasm::{
     always_failing_syscall_handler, wasmtime::compile_wasmtime_module, CompilationConfig,
     ImportLinker, StrategyDefinition, Value,
@@ -121,9 +122,8 @@ fn test_10001_instances_in_a_row() {
 
 #[test]
 fn test_fib_bench() {
-    let wasm_binary = include_bytes!("../benchmarks/lib.wasm");
     let strategy = StrategyDefinition::Wasmtime {
-        module: compile_wasmtime_module(CompilationConfig::default(), wasm_binary).unwrap(),
+        module: compile_wasmtime_module(CompilationConfig::default(), FIB_WASM).unwrap(),
     };
     // it fails on iter number 32'165...
     for _ in 0..32_165 {
@@ -146,12 +146,11 @@ fn test_fib_bench() {
 #[test]
 fn test_instance_reuse() {
     use wasmtime::*;
-    let wasm_binary = include_bytes!("../benchmarks/lib.wasm");
     let mut config = Config::new();
     let pooling_allocator = PoolingAllocationConfig::default();
     config.allocation_strategy(InstanceAllocationStrategy::Pooling(pooling_allocator));
     let engine = Engine::new(&config).unwrap();
-    let module = Module::new(&engine, wasm_binary).unwrap();
+    let module = Module::new(&engine, FIB_WASM).unwrap();
     let linker = Linker::new(module.engine());
     let instance_pre = linker.instantiate_pre(&module).unwrap();
     // it fails on iter number 32'165...

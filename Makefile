@@ -1,12 +1,15 @@
 .PHONY: build
 build:
+	# check rwasm for errors
+	cargo check
 	# build all binaries
-	cd benchmarks && make
-	cargo build --manifest-path=./wasm/Cargo.toml
+	cargo build --manifest-path=./examples/fib/Cargo.toml
+	cargo build --manifest-path=./examples/wasm/Cargo.toml
+	# build snippets
 	cd snippets && make
 
 .PHONY: test
-test:
+test: build
 	# run tests
 	cargo test --color=always --no-fail-fast --manifest-path Cargo.toml
 	cargo test --color=always --no-fail-fast --manifest-path e2e/Cargo.toml
@@ -15,11 +18,7 @@ test:
 	cargo test --release --package rwasm --test fluentbase test_nitro_verifier -- --ignored
 
 .PHONY: coverage
-coverage:
-	# build all binaries
-	cd benchmarks && make
-	cargo build --manifest-path=./wasm/Cargo.toml
-	cd snippets && make
+coverage: build
 	# run tests
 	cargo llvm-cov --lcov --features=wasmtime --manifest-path=./Cargo.toml > lcov1.info
 	cargo llvm-cov --lcov --manifest-path=./e2e/Cargo.toml > lcov2.info
