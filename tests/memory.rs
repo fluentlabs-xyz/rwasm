@@ -10,6 +10,7 @@ fn execute_module(module: &RwasmModule) -> u64 {
         (),
         always_failing_syscall_handler,
         None,
+        None,
     );
     engine.execute(&mut store, &module, &[], &mut []).unwrap();
     store.fuel_consumed()

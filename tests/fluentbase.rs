@@ -153,6 +153,7 @@ fn test_nitro_verifier_rwasm() {
         },
         fluentbase_syscall_handler,
         None,
+        None,
     );
     let instance = import_linker
         .instantiate(&mut store, ExecutionEngine::new(), rwasm_module)
@@ -186,6 +187,7 @@ fn test_nitro_verifier_wasmtime() {
         },
         fluentbase_syscall_handler,
         None,
+        None,
     );
     worker.execute("main", &[], &mut []).unwrap();
 }
@@ -209,6 +211,7 @@ fn test_nitro_verifier_strategy() {
                 },
                 fluentbase_syscall_handler,
                 Some(1_000_000_000),
+                None,
             )
             .unwrap();
         executor.execute("main", &[], &mut []).map_err(Into::into)
@@ -233,6 +236,7 @@ fn run_fluentbase_binary(wasm_binary: &[u8], host_state: HostState) -> HostState
         import_linker.clone(),
         host_state,
         fluentbase_syscall_handler,
+        None,
         None,
     );
     let instance = ImportLinker::default()

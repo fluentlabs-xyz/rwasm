@@ -24,6 +24,7 @@ impl<'a> FuncBuilder<'a> {
         with_consume_fuel: bool,
         with_code_snippets: bool,
         consume_fuel_for_params_and_locals: bool,
+        max_allowed_memory_pages: u32,
     ) -> Self {
         Self {
             func_body,
@@ -34,6 +35,7 @@ impl<'a> FuncBuilder<'a> {
                 with_consume_fuel,
                 with_code_snippets,
                 consume_fuel_for_params_and_locals,
+                max_allowed_memory_pages,
             ),
             pos: 0,
         }

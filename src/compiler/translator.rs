@@ -17,8 +17,7 @@ use crate::{
     },
     AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
     ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
-    Opcode, TableIdx, DEFAULT_MEMORY_INDEX, N_MAX_MEMORY_PAGES, N_MAX_TABLE_SIZE,
-    SNIPPET_FUNC_IDX_UNRESOLVED,
+    Opcode, TableIdx, DEFAULT_MEMORY_INDEX, N_MAX_TABLE_SIZE, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec, vec::Vec};
 use bitvec::macros::internal::funty::Fundamental;
@@ -190,6 +189,8 @@ pub struct InstructionTranslator {
     pub(crate) locals: LocalsRegistry,
     /// Enable translation with optimized code snippets
     pub(crate) with_code_snippets: bool,
+    /// Max allowed memory pages
+    pub(crate) max_allowed_memory_pages: u32,
 }
 
 impl InstructionTranslator {
@@ -198,6 +199,7 @@ impl InstructionTranslator {
         with_consume_fuel: bool,
         with_code_snippets: bool,
         consume_fuel_for_params_and_locals: bool,
+        max_allowed_memory_pages: u32,
     ) -> Self {
         Self {
             reachable: true,
@@ -207,6 +209,7 @@ impl InstructionTranslator {
             locals: Default::default(),
             with_code_snippets,
             consume_fuel_for_params_and_locals,
+            max_allowed_memory_pages,
         }
     }
 
@@ -1563,8 +1566,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let max_pages = memory_type
                 .maximum
                 .and_then(|v| u32::try_from(v).ok())
-                .filter(|v| *v <= N_MAX_MEMORY_PAGES)
-                .unwrap_or(N_MAX_MEMORY_PAGES);
+                .filter(|v| *v <= builder.max_allowed_memory_pages)
+                .unwrap_or(builder.max_allowed_memory_pages);
             builder
                 .alloc
                 .instruction_set

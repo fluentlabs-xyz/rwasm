@@ -232,6 +232,7 @@ fn test_entrypoint_init_fails() {
         (),
         rwasm::always_failing_syscall_handler,
         None,
+        None,
     );
 
     engine.entrypoint(&mut store, &module).unwrap();

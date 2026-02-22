@@ -1,4 +1,4 @@
-use crate::{ImportLinker, Opcode};
+use crate::{ImportLinker, Opcode, N_DEFAULT_MAX_MEMORY_PAGES};
 use alloc::{boxed::Box, sync::Arc};
 use wasmparser::WasmFeatures;
 
@@ -53,6 +53,8 @@ pub struct CompilationConfig {
     /// Allow a start section inside rWasm module. Be aware that a start section is called during resource
     /// init for rWasm VM.
     pub allow_start_section: bool,
+    /// The maximum number of memory pages that can be allocated by the module.
+    pub max_allowed_memory_pages: u32,
 }
 
 impl Default for CompilationConfig {
@@ -69,6 +71,7 @@ impl Default for CompilationConfig {
             code_snippets: true,
             allow_func_ref_function_types: false,
             allow_start_section: false,
+            max_allowed_memory_pages: N_DEFAULT_MAX_MEMORY_PAGES,
         }
     }
 }

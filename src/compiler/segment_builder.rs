@@ -1,7 +1,7 @@
 use crate::{
     instruction_set, CompilationError, DataSegmentIdx, ElementSegmentIdx, GlobalIdx,
     GlobalVariable, I64ValueSplit, InstructionSet, TableIdx, DEFAULT_MEMORY_INDEX, NULL_FUNC_IDX,
-    N_BYTES_PER_MEMORY_PAGE, N_MAX_MEMORY_PAGES,
+    N_BYTES_PER_MEMORY_PAGE,
 };
 use alloc::{vec, vec::Vec};
 use hashbrown::HashMap;
@@ -69,13 +69,17 @@ impl SegmentBuilder {
     }
 
     /// Max stack height: 3
-    pub fn add_memory_pages(&mut self, initial_pages: u32) -> Result<(), CompilationError> {
+    pub fn add_memory_pages(
+        &mut self,
+        initial_pages: u32,
+        max_allowed_memory_pages: u32,
+    ) -> Result<(), CompilationError> {
         // there is a hard limit of max possible memory used (~64 mB)
         let next_pages = self
             .total_allocated_pages
             .checked_add(initial_pages)
             .unwrap_or(u32::MAX);
-        if next_pages >= N_MAX_MEMORY_PAGES {
+        if next_pages >= max_allowed_memory_pages {
             return Err(CompilationError::MaxReadonlyDataReached);
         }
         // it makes no sense to grow memory with 0 pages

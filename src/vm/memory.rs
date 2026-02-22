@@ -1,4 +1,4 @@
-use crate::types::{Pages, TrapCode, N_MAX_MEMORY_PAGES};
+use crate::types::{Pages, TrapCode};
 use bytes::BytesMut;
 
 /// Shared linear memory backing store for a running module.
@@ -9,26 +9,24 @@ pub struct GlobalMemory {
     pub shared_memory: BytesMut,
     /// Current logical size of the linear memory in pages.
     pub current_pages: Pages,
+    /// The maximum allowed size of the linear memory in pages.
+    pub max_allowed_memory_pages: Pages,
 }
 
-const MEMORY_MAX_PAGES: Pages = Pages::new_unchecked(N_MAX_MEMORY_PAGES * 2);
-
 impl GlobalMemory {
-    pub fn new(initial_pages: Pages) -> Self {
+    pub fn new(initial_pages: Pages, max_allowed_memory_pages: Pages) -> Self {
         let initial_len = initial_pages
             .to_bytes()
             .expect("rwasm: not supported target pointer width");
-        let maximum_len = MEMORY_MAX_PAGES
-            .to_bytes()
-            .expect("rwasm: not supported target pointer width");
-        if initial_len > maximum_len {
+        if initial_len > max_allowed_memory_pages.to_bytes().unwrap() {
             unreachable!("rwasm: initial memory size is greater than the maximum");
         }
-        let mut shared_memory = BytesMut::with_capacity(maximum_len);
+        let mut shared_memory = BytesMut::with_capacity(initial_len);
         shared_memory.resize(initial_len, 0);
         Self {
             shared_memory,
             current_pages: initial_pages,
+            max_allowed_memory_pages,
         }
     }
 
@@ -51,7 +49,7 @@ impl GlobalMemory {
             return Some(current_pages);
         }
         let desired_pages = current_pages.checked_add(additional)?;
-        if desired_pages > MEMORY_MAX_PAGES {
+        if desired_pages > self.max_allowed_memory_pages {
             return None;
         }
         // At this point, it is okay to grow the underlying virtual memory

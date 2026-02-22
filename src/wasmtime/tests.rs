@@ -83,6 +83,7 @@ fn test_call_with_charging_quadratic_wasmtime() {
         (),
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
         Some(100_000),
+        None,
     );
 
     wasmtime_worker
@@ -104,6 +105,7 @@ fn test_call_with_charging_linear_wasmtime() {
         (),
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
         Some(100_000),
+        None,
     );
 
     wasmtime_worker.execute("main", &[], &mut []).unwrap();
@@ -122,6 +124,7 @@ fn test_call_with_charging_param_overflow_wasmtime() {
         (),
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
         Some(100_000),
+        None,
     );
 
     let err = wasmtime_worker

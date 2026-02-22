@@ -51,6 +51,7 @@ fn test_interrupted_call_rwasm() {
             Err(TrapCode::InterruptionCalled)
         },
         Some(100_000),
+        None,
     );
     let engine = ExecutionEngine::new();
     let err = engine
@@ -105,6 +106,7 @@ fn test_interrupted_call_rwasm_with_syscall() {
         (),
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
         Some(100_000),
+        None,
     );
     let engine = ExecutionEngine::new();
     engine
@@ -160,6 +162,7 @@ fn test_interrupted_call_rwasm_with_overflow() {
         (),
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
         Some(100_000),
+        None,
     );
     let engine = ExecutionEngine::new();
     let err = engine
@@ -203,6 +206,7 @@ fn test_interrupted_call_wasmtime() {
         (),
         interrupting_syscall_handler,
         None,
+        None,
     );
     let engine = ExecutionEngine::new();
     let mut result = [Value::I32(0); 1];
@@ -225,6 +229,7 @@ fn test_interrupted_call_wasmtime() {
         import_linker.clone(),
         (),
         interrupting_syscall_handler,
+        None,
         None,
     );
     let mut result = [Value::I32(0); 1];
@@ -256,6 +261,7 @@ fn test_call_stack_empty_after_trap_in_nested_call() {
             // return an empty interruption
             Err(TrapCode::InterruptionCalled)
         },
+        None,
         None,
     );
     let engine = ExecutionEngine::new();
@@ -298,6 +304,7 @@ fn test_memory_write_during_interruption() {
                     // return an empty interruption
                     Err(TrapCode::InterruptionCalled)
                 },
+                None,
                 None,
             )
             .unwrap();

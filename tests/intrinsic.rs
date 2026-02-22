@@ -43,6 +43,7 @@ fn test_intrinsic_replace() {
         (),
         always_failing_syscall_handler,
         Some(100),
+        None,
     );
     let engine = ExecutionEngine::new();
     engine
@@ -89,6 +90,7 @@ fn test_intrinsic_remove() {
         Arc::new(ImportLinker::default()),
         (),
         always_failing_syscall_handler,
+        None,
         None,
     );
     let engine = ExecutionEngine::new();

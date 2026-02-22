@@ -1,7 +1,7 @@
 use crate::{
     wasmtime::{types::map_anyhow_error, wasmtime_import_linker, WrappedContext},
     ImportLinker, SyscallHandler, TrapCode, Value, F32, F64, N_BYTES_PER_MEMORY_PAGE,
-    N_MAX_MEMORY_PAGES,
+    N_DEFAULT_MAX_MEMORY_PAGES,
 };
 use std::sync::Arc;
 use wasmtime::{AsContext, AsContextMut, StoreContext, StoreContextMut};
@@ -33,9 +33,13 @@ impl<T: 'static> WasmtimeExecutor<T> {
         data: T,
         syscall_handler: SyscallHandler<T>,
         fuel_limit: Option<u64>,
+        max_allowed_memory_pages: Option<u32>,
     ) -> Self {
         let resource_limiter = wasmtime::StoreLimitsBuilder::new()
-            .memory_size((N_MAX_MEMORY_PAGES * N_BYTES_PER_MEMORY_PAGE) as usize)
+            .memory_size(
+                (max_allowed_memory_pages.unwrap_or(N_DEFAULT_MAX_MEMORY_PAGES)
+                    * N_BYTES_PER_MEMORY_PAGE) as usize,
+            )
             .build();
 
         let context = WrappedContext {
