@@ -158,4 +158,9 @@ impl CompilationConfig {
         self.allow_start_section = allow_start_section;
         self
     }
+
+    pub fn with_max_allowed_memory_pages(mut self, max_allowed_memory_pages: u32) -> Self {
+        self.max_allowed_memory_pages = max_allowed_memory_pages;
+        self
+    }
 }
