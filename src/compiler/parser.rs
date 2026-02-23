@@ -484,6 +484,7 @@ impl ModuleParser {
                 self.config.consume_fuel,
                 self.config.code_snippets,
                 self.config.consume_fuel_for_params_and_locals,
+                self.config.max_allowed_memory_pages,
             );
             translator.prepare(func_idx)?;
             let signature_index = translator
@@ -597,7 +598,7 @@ impl ModuleParser {
             self.allocations
                 .translation
                 .segment_builder
-                .add_memory_pages(initial_memory)?;
+                .add_memory_pages(initial_memory, self.config.max_allowed_memory_pages)?;
         }
         Ok(())
     }
@@ -889,6 +890,7 @@ impl ModuleParser {
             self.config.consume_fuel,
             self.config.code_snippets,
             self.config.consume_fuel_for_params_and_locals,
+            self.config.max_allowed_memory_pages,
         )
         .translate()?;
         let _ = replace(&mut self.allocations, allocations);

@@ -1,7 +1,7 @@
 use crate::{
     CallStack, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, RwasmModule,
     SignatureIdx, StoreTr, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue,
-    ValueStack,
+    ValueStack, N_DEFAULT_MAX_MEMORY_PAGES,
 };
 use alloc::{sync::Arc, vec::Vec};
 use bitvec::{order::Lsb0, vec::BitVec};
@@ -53,6 +53,7 @@ impl<T: 'static + Default> Default for RwasmStore<T> {
             Arc::new(ImportLinker::default()),
             T::default(),
             crate::always_failing_syscall_handler,
+            None,
             None,
         )
     }
@@ -109,8 +110,12 @@ impl<T: 'static> RwasmStore<T> {
         context: T,
         syscall_handler: SyscallHandler<T>,
         fuel_limit: Option<u64>,
+        max_allowed_memory_pages: Option<u32>,
     ) -> Self {
-        let global_memory = GlobalMemory::new(Pages::default());
+        let global_memory = GlobalMemory::new(
+            Pages::new_unchecked(0),
+            Pages::new_unchecked(max_allowed_memory_pages.unwrap_or(N_DEFAULT_MAX_MEMORY_PAGES)),
+        );
         Self {
             consumed_fuel: 0,
             global_memory,

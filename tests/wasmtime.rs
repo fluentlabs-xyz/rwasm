@@ -133,6 +133,7 @@ fn test_fib_bench() {
                 (),
                 always_failing_syscall_handler,
                 Some(1_000_000),
+                None,
             )
             .unwrap();
         let mut result = [Value::I32(0)];

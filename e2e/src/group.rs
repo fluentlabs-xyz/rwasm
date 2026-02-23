@@ -54,6 +54,7 @@ impl TestingInstanceRwasm {
             TestingContext::default(),
             testing_context_syscall_handler,
             Some(u64::MAX),
+            None,
         );
         let instance = import_linker.instantiate(&mut store, engine, module)?;
         Ok(TestingInstanceRwasm {
@@ -99,6 +100,7 @@ impl TestingInstanceWasmtime {
             TestingContext::default(),
             testing_context_syscall_handler,
             Some(u64::MAX),
+            None,
         );
         Ok(TestingInstanceWasmtime { store })
     }

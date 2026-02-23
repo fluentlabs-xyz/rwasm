@@ -65,6 +65,7 @@ impl StrategyDefinition {
             (),
             always_failing_syscall_handler,
             None,
+            None,
         )
     }
 
@@ -74,11 +75,17 @@ impl StrategyDefinition {
         context: T,
         syscall_handler: SyscallHandler<T>,
         fuel_limit: Option<u64>,
+        max_allowed_memory_pages: Option<u32>,
     ) -> Result<StrategyExecutor<T>, TrapCode> {
         match self {
             StrategyDefinition::Rwasm { engine, module } => {
-                let mut store =
-                    RwasmStore::new(import_linker.clone(), context, syscall_handler, fuel_limit);
+                let mut store = RwasmStore::new(
+                    import_linker.clone(),
+                    context,
+                    syscall_handler,
+                    fuel_limit,
+                    max_allowed_memory_pages,
+                );
                 let instance =
                     import_linker.instantiate(&mut store, engine.clone(), module.clone())?;
                 Ok(StrategyExecutor::Rwasm { store, instance })
@@ -91,6 +98,7 @@ impl StrategyDefinition {
                     context,
                     syscall_handler,
                     fuel_limit,
+                    max_allowed_memory_pages,
                 );
                 Ok(StrategyExecutor::Wasmtime { executor })
             }
@@ -180,8 +188,13 @@ impl<T: 'static> StrategyExecutor<T> {
     ) -> Result<Self, StrategyError> {
         let definition =
             StrategyDefinition::new(compilation_config, wasm_binary, module_caching_key)?;
-        let executor =
-            definition.create_executor(import_linker, context, syscall_handler, fuel_limit)?;
+        let executor = definition.create_executor(
+            import_linker,
+            context,
+            syscall_handler,
+            fuel_limit,
+            None,
+        )?;
         Ok(executor)
     }
 
