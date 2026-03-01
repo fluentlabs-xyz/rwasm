@@ -1,0 +1,64 @@
+name: Clippy
+
+on:
+  push:
+    branches: [ main, devel ]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  pull_request:
+    branches: [ main, devel ]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  clippy:
+    name: Clippy (${{ matrix.name }})
+    runs-on: self-hosted
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: root
+            toolchain: stable
+            command: cargo clippy --all-targets --all-features
+          - name: e2e
+            toolchain: stable
+            command: cargo clippy --manifest-path=./e2e/Cargo.toml --all-targets --all-features
+          - name: snippets
+            toolchain: nightly-2025-09-20
+            command: cargo +nightly-2025-09-20 clippy --manifest-path=./snippets/Cargo.toml --lib --all-features
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install clang and build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev pkg-config
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Setup cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Ensure wasm32 target for nightly snippets
+        if: ${{ matrix.name == 'snippets' }}
+        run: rustup +nightly-2025-09-20 target add wasm32-unknown-unknown
+
+      - name: Run clippy
+        run: ${{ matrix.command }}

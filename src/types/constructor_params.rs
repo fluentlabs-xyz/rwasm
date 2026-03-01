@@ -5,7 +5,7 @@ use wasmparser::CustomSectionReader;
 ///
 /// This constant is used to denote the name of a custom section named "input".
 /// It is defined as a static string slice with a fixed value.
-const CONSTRUCTOR_CUSTOM_SECTION_NAME: &'static str = "input";
+const CONSTRUCTOR_CUSTOM_SECTION_NAME: &str = "input";
 
 #[derive(Default, Debug)]
 #[repr(transparent)]
