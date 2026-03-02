@@ -37,6 +37,7 @@ fn bench_comparisons(c: &mut Criterion) {
                     (),
                     always_failing_syscall_handler,
                     Some(1_000_000_000),
+                    None,
                 )
                 .unwrap();
             let mut result = [Value::I32(0)];

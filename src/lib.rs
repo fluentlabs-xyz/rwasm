@@ -28,3 +28,7 @@ pub use vm::*;
 pub use wasmparser::{FuncType, ValType};
 #[cfg(test)]
 use wat as _;
+#[cfg(test)]
+use criterion as _;
+#[cfg(test)]
+use fib_example as _;

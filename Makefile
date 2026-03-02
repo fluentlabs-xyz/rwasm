@@ -1,5 +1,14 @@
+.PHONY: ensure-wasm-targets
+ensure-wasm-targets:
+	rustup target add wasm32-unknown-unknown
+	rustup +nightly-2025-09-20 target add wasm32-unknown-unknown
+
+.PHONY: ensure-submodules
+ensure-submodules:
+	git submodule update --init --recursive
+
 .PHONY: build
-build:
+build: ensure-wasm-targets ensure-submodules
 	# check rwasm for errors
 	cargo check
 	# build all binaries
@@ -16,6 +25,12 @@ test: build
 	cargo +nightly-2025-09-20 test --color=always --no-fail-fast --manifest-path snippets/Cargo.toml
 	# run nitro test (with release flag)
 	cargo test --release --package rwasm --test fluentbase test_nitro_verifier -- --ignored
+
+.PHONY: clippy
+clippy: ensure-wasm-targets
+	cargo clippy --all-targets --all-features
+	cargo clippy --manifest-path=./e2e/Cargo.toml --all-targets --all-features
+	cargo +nightly-2025-09-20 clippy --manifest-path=./snippets/Cargo.toml --lib --all-features
 
 .PHONY: coverage
 coverage: build

@@ -10,11 +10,18 @@ on:
 jobs:
   baseline-on-push:
     if: github.event_name == 'push'
-    runs-on: ubuntu-amd64-8core
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install clang and build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev pkg-config
+
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+
       - name: Run Criterion (save baseline "devel")
         env:
           CRITERION_NO_PLOTTING: "1"
@@ -25,6 +32,7 @@ jobs:
           rustup target add wasm32-unknown-unknown
           rustup +nightly-2025-09-20 target add wasm32-unknown-unknown
           make && cargo bench -- --save-baseline devel
+
       - name: Upload baseline artifact
         uses: actions/upload-artifact@v6
         with:
@@ -35,20 +43,25 @@ jobs:
 
   compare-on-pr:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-amd64-8core
+    runs-on: [self-hosted, linux]
     permissions:
       contents: read
-      pull-requests: write  # needed to comment on PRs (won’t work for forks; see note below)
+      pull-requests: write
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install clang and build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev pkg-config
+
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      # Try to fetch the latest successful baseline from devel
       - name: Download baseline from devel
         id: dl
         uses: dawidd6/action-download-artifact@v15
-        continue-on-error: true            # allow first PRs without a baseline
+        continue-on-error: true
         with:
           workflow: bench.yml
           workflow_conclusion: success
@@ -89,6 +102,8 @@ jobs:
             echo
             echo "_Heads-up_: runner perf is noisy; treat deltas as a smoke check."
           } > comment.md
+
       - uses: marocchino/sticky-pull-request-comment@v2
+        if: ${{ !github.event.pull_request.head.repo.fork }}
         with:
           path: comment.md
