@@ -56,6 +56,9 @@ jobs:
       - name: Setup cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Ensure wasm32 target for repository toolchain
+        run: rustup target add wasm32-unknown-unknown
+
       - name: Ensure wasm32 target for nightly snippets
         if: ${{ matrix.name == 'snippets' }}
         run: rustup +nightly-2025-09-20 target add wasm32-unknown-unknown
