@@ -9,7 +9,8 @@ This folder is the canonical technical documentation for `fluentlabs-xyz/rwasm`.
 3. [Module Format](./module-format.md)
 4. [VM, Fuel, and Tracing](./vm-and-fuel.md)
 5. [Opcode Specification](./opcodes.md)
-6. [Contributor Guide](./contributor-guide.md)
+6. [Security Considerations](./security-considerations.md)
+7. [Contributor Guide](./contributor-guide.md)
 
 ## Audience split
 

@@ -4,6 +4,8 @@
 
 `rwasm` is a deterministic reduced WebAssembly execution format and runtime stack used for blockchain- and proof-oriented workloads.
 
+It is designed to be **ZK-friendly**, with execution semantics and representation choices intended to be efficient for both execution and proving pipelines.
+
 It provides:
 
 - a compiler path from Wasm to rWasm module representation
@@ -20,6 +22,7 @@ Primary technical docs live in [`docs/`](./docs/README.md):
 - [Module Format](./docs/module-format.md)
 - [VM, Fuel, and Tracing](./docs/vm-and-fuel.md)
 - [Opcode Specification](./docs/opcodes.md)
+- [Security Considerations](./docs/security-considerations.md)
 - [Contributor Guide](./docs/contributor-guide.md)
 
 ## Repository layout

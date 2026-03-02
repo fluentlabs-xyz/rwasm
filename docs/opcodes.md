@@ -12,7 +12,7 @@ This document is the canonical opcode inventory for `rwasm`.
 - Immediate operands (when present) are carried inside the enum variant.
 - Memory/table/global operations use explicit index/offset immediates.
 - Fuel and trap behavior is mediated by VM/store + host syscall policy.
-- `fpu` opcodes are available only when the `fpu` feature is enabled.
+- FPU opcodes exist in source behind feature flags, but are intentionally excluded from this production-facing opcode spec.
 
 ## Complete opcode catalog
 
@@ -122,78 +122,10 @@ This document is the canonical opcode inventory for `rwasm`.
 
 ### fpu
 
-| Code (`u16`) | Opcode | Immediate | Feature gate |
-| ---: | --- | --- | --- |
-| 84 | `F32Load` | `AddressOffset` | `fpu` |
-| 85 | `F64Load` | `AddressOffset` | `fpu` |
-| 86 | `F32Store` | `AddressOffset` | `fpu` |
-| 87 | `F64Store` | `AddressOffset` | `fpu` |
-| 88 | `F32Eq` | — | `fpu` |
-| 89 | `F32Ne` | — | `fpu` |
-| 90 | `F32Lt` | — | `fpu` |
-| 91 | `F32Gt` | — | `fpu` |
-| 92 | `F32Le` | — | `fpu` |
-| 93 | `F32Ge` | — | `fpu` |
-| 94 | `F64Eq` | — | `fpu` |
-| 95 | `F64Ne` | — | `fpu` |
-| 96 | `F64Lt` | — | `fpu` |
-| 97 | `F64Gt` | — | `fpu` |
-| 98 | `F64Le` | — | `fpu` |
-| 99 | `F64Ge` | — | `fpu` |
-| 100 | `F32Abs` | — | `fpu` |
-| 101 | `F32Neg` | — | `fpu` |
-| 102 | `F32Ceil` | — | `fpu` |
-| 103 | `F32Floor` | — | `fpu` |
-| 104 | `F32Trunc` | — | `fpu` |
-| 105 | `F32Nearest` | — | `fpu` |
-| 106 | `F32Sqrt` | — | `fpu` |
-| 107 | `F32Add` | — | `fpu` |
-| 108 | `F32Sub` | — | `fpu` |
-| 109 | `F32Mul` | — | `fpu` |
-| 110 | `F32Div` | — | `fpu` |
-| 111 | `F32Min` | — | `fpu` |
-| 112 | `F32Max` | — | `fpu` |
-| 113 | `F32Copysign` | — | `fpu` |
-| 114 | `F64Abs` | — | `fpu` |
-| 115 | `F64Neg` | — | `fpu` |
-| 116 | `F64Ceil` | — | `fpu` |
-| 117 | `F64Floor` | — | `fpu` |
-| 118 | `F64Trunc` | — | `fpu` |
-| 119 | `F64Nearest` | — | `fpu` |
-| 120 | `F64Sqrt` | — | `fpu` |
-| 121 | `F64Add` | — | `fpu` |
-| 122 | `F64Sub` | — | `fpu` |
-| 123 | `F64Mul` | — | `fpu` |
-| 124 | `F64Div` | — | `fpu` |
-| 125 | `F64Min` | — | `fpu` |
-| 126 | `F64Max` | — | `fpu` |
-| 127 | `F64Copysign` | — | `fpu` |
-| 128 | `I32TruncF32S` | — | `fpu` |
-| 129 | `I32TruncF32U` | — | `fpu` |
-| 130 | `I32TruncF64S` | — | `fpu` |
-| 131 | `I32TruncF64U` | — | `fpu` |
-| 132 | `I64TruncF32S` | — | `fpu` |
-| 133 | `I64TruncF32U` | — | `fpu` |
-| 134 | `I64TruncF64S` | — | `fpu` |
-| 135 | `I64TruncF64U` | — | `fpu` |
-| 136 | `F32ConvertI32S` | — | `fpu` |
-| 137 | `F32ConvertI32U` | — | `fpu` |
-| 138 | `F32ConvertI64S` | — | `fpu` |
-| 139 | `F32ConvertI64U` | — | `fpu` |
-| 140 | `F32DemoteF64` | — | `fpu` |
-| 141 | `F64ConvertI32S` | — | `fpu` |
-| 142 | `F64ConvertI32U` | — | `fpu` |
-| 143 | `F64ConvertI64S` | — | `fpu` |
-| 144 | `F64ConvertI64U` | — | `fpu` |
-| 145 | `F64PromoteF32` | — | `fpu` |
-| 146 | `I32TruncSatF32S` | — | `fpu` |
-| 147 | `I32TruncSatF32U` | — | `fpu` |
-| 148 | `I32TruncSatF64S` | — | `fpu` |
-| 149 | `I32TruncSatF64U` | — | `fpu` |
-| 150 | `I64TruncSatF32S` | — | `fpu` |
-| 151 | `I64TruncSatF32U` | — | `fpu` |
-| 152 | `I64TruncSatF64S` | — | `fpu` |
-| 153 | `I64TruncSatF64U` | — | `fpu` |
+FPU opcodes are intentionally **not listed here** as part of the supported production opcode surface.
+
+They are currently retained in source mainly for wasm testsuite compatibility and internal validation paths,
+not as a recommended/guaranteed opcode set for production integration.
 
 ## Stability and compatibility
 

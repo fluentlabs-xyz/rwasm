@@ -43,6 +43,7 @@ Wasm binary
 - compact executable representation
 - predictable fuel accounting hooks
 - host embedding via explicit syscall/import boundaries
+- ZK-friendly layout and execution choices for proving-aware pipelines
 
 ## Feature gates (important)
 
