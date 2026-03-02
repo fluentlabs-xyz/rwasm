@@ -34,7 +34,7 @@ jobs:
           make && cargo bench -- --save-baseline devel
 
       - name: Upload baseline artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: criterion-baseline-devel
           path: benchmarks/target/criterion
@@ -85,7 +85,7 @@ jobs:
           make && cargo bench -- $BASEFLAG | tee bench_output.txt
 
       - name: Upload full report
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: criterion-report-${{ github.sha }}
           path: benchmarks/target/criterion
