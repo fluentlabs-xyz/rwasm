@@ -10,7 +10,7 @@ on:
 jobs:
   baseline-on-push:
     if: github.event_name == 'push'
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v6
 
@@ -43,7 +43,7 @@ jobs:
 
   compare-on-pr:
     if: github.event_name == 'pull_request'
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux]
     permissions:
       contents: read
       pull-requests: write

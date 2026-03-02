@@ -20,7 +20,7 @@ env:
 jobs:
   test:
     name: Test
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6

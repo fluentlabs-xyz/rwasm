@@ -46,9 +46,18 @@ Wasm binary
 
 ## Feature gates (important)
 
-- `wasmtime`: enables wasmtime-backed execution paths
-- `fpu`: enables floating-point opcode surface
-- `serde`: serialization for selected types
-- `tracing`: runtime tracing/event capture
+Current cargo features (`Cargo.toml`):
+
+- `default = ["std", "wasmtime", "disable-fpu"]`
+- `std`: std support for crate/runtime dependencies
+- `wasmtime`: enables wasmtime-backed strategy/execution
+- `disable-fpu`: configures wasmtime dependency with disabled FPU support
+- `fpu`: enables floating-point opcode/runtime surface in rWASM VM
+- `serde`: serde support for selected types
+- `tracing`: tracing-related model support (depends on `serde`)
+- `debug-print`: debug print surface
+- `cache-compiled-artifacts`: enables artifact cache helpers (depends on `wasmtime`)
+- `pooling-allocator`: optional allocator mode hooks
+- `e2e`: e2e feature flag surface
 
 Treat feature combinations as part of the runtime surface: always test the exact feature set you ship.

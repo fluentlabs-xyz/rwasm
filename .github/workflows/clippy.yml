@@ -20,7 +20,7 @@ env:
 jobs:
   clippy:
     name: Clippy (${{ matrix.name }})
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux]
     timeout-minutes: 60
     strategy:
       fail-fast: false

@@ -20,7 +20,7 @@ env:
 jobs:
   coverage:
     name: Coverage
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v6
         with:
