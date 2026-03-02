@@ -2,20 +2,27 @@
 
 [![codecov](https://codecov.io/gh/fluentlabs-xyz/rwasm/graph/badge.svg?token=9T2PLQQW4L)](https://codecov.io/gh/fluentlabs-xyz/rwasm)
 
-`rwasm` is a deterministic reduced WebAssembly execution format and runtime stack used for blockchain- and proof-oriented workloads.
+`rwasm` is a deterministic reduced WebAssembly format + runtime stack for execution environments that care about **performance**, **predictability**, and **proof-friendliness**.
 
-It is designed to be **ZK-friendly**, with execution semantics and representation choices intended to be efficient for both execution and proving pipelines.
+It is designed to be **ZK-friendly**: execution semantics and representation choices aim to stay efficient both for normal execution and proving-oriented pipelines.
 
-It provides:
+---
 
-- a compiler path from Wasm to rWasm module representation
-- an opcode-driven VM with explicit fuel accounting
-- strategy abstraction for native rWasm and optional Wasmtime execution
-- integration surfaces for host imports/syscalls
+## What this repository provides
+
+- Wasm → rWasm compilation pipeline
+- rWasm opcode model and module encoding
+- native rWasm VM runtime with fuel support
+- strategy abstraction for native execution and optional Wasmtime backend
+- host import/syscall integration surfaces
+
+---
 
 ## Documentation
 
-Primary technical docs live in [`docs/`](./docs/README.md):
+Start with [`docs/README.md`](./docs/README.md).
+
+Core docs:
 
 - [Architecture](./docs/architecture.md)
 - [Compilation & Execution Pipeline](./docs/pipeline.md)
@@ -25,16 +32,9 @@ Primary technical docs live in [`docs/`](./docs/README.md):
 - [Security Considerations](./docs/security-considerations.md)
 - [Contributor Guide](./docs/contributor-guide.md)
 
-## Repository layout
+---
 
-- `src/` — core compiler, module model, opcode types, VM runtime, strategy layer
-- `e2e/` — end-to-end test harnesses (including testsuite submodule usage)
-- `snippets/` — snippet-focused fixtures/tests (nightly toolchain)
-- `examples/` — sample modules/programs
-- `benches/` — Criterion benchmarks
-- `.github/workflows/` — CI/CD pipelines
-
-## Local development
+## Quick start (local)
 
 ### Prerequisites
 
@@ -44,6 +44,14 @@ Primary technical docs live in [`docs/`](./docs/README.md):
 - `clang`, `libclang-dev`, `pkg-config`
 - initialized git submodules
 
+### Setup
+
+```bash
+rustup target add wasm32-unknown-unknown
+rustup +nightly-2025-09-20 target add wasm32-unknown-unknown
+git submodule update --init --recursive
+```
+
 ### Canonical commands
 
 ```bash
@@ -52,11 +60,30 @@ make clippy
 make test
 ```
 
-## Notes on reproducibility
+---
 
-- CI assumes self-hosted runner label and system packages available via apt.
-- `make` targets ensure wasm targets and submodule initialization before critical build/test paths.
-- Feature gates (`fpu`, `wasmtime`, `tracing`, etc.) alter executable/runtime surface; pin features in production flows.
+## Feature notes
+
+`Cargo.toml` defines the runtime surface via features. Important points:
+
+- default enables `std`, `wasmtime`, `disable-fpu`
+- `fpu` exists as a feature-gated surface in code
+- FPU opcodes are currently not treated as production-facing opcode surface in docs (kept mainly for testsuite/internal compatibility)
+
+When integrating in production, pin exact feature set and toolchain.
+
+---
+
+## Repository layout
+
+- `src/` — compiler, module model, opcode types, VM, strategy layer
+- `e2e/` — end-to-end harnesses and testsuite integration
+- `snippets/` — snippet fixtures/tests (nightly path)
+- `examples/` — sample modules/programs
+- `benches/` — Criterion benchmarks
+- `.github/workflows/` — CI/CD workflows
+
+---
 
 ## License
 
