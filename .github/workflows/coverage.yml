@@ -54,7 +54,7 @@ jobs:
           make coverage
 
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v5.5.2
+        uses: codecov/codecov-action@v5.5.3
         with:
           files: ./lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
