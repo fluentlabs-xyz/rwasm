@@ -17,9 +17,8 @@ pub const UNIT: u32 = 4; // size_of<u32>() / size_of<u8>()
 /// than SP_START.
 pub const SP_START: u32 = N_DEFAULT_STACK_SIZE as u32 * UNIT + UNIT;
 
-/// This is the index when the stack reaches the max length. So every valid index for the stack is
-/// >0. Making the index of a stack element strictly larger than 0 makes circuit checking this bound
-/// simpler.
+/// This is the index when the stack reaches the max length. So every valid index for the stack is >0.
+/// Making the index of a stack element strictly larger than 0 makes circuit checking this bound simpler.
 pub const SP_END: u32 = UNIT;
 
 pub const FUNC_FRAME_SIZE: u32 = UNIT; // TODO (dmitry123): "it looks like the call stack only save the returning pc right?"
@@ -32,4 +31,4 @@ pub const DATA_SEG_ELEM_SIZE: u32 = UNIT;
 pub const DATA_SEG_START: u32 = TABLE_SEG_END + UNIT;
 pub const DATA_SEG_END: u32 = DATA_SEG_START + N_MAX_DATA_SEGMENTS_BITS as u32 * DATA_SEG_ELEM_SIZE;
 pub const GLOBAL_MEM_START: u32 = DATA_SEG_END + UNIT;
-pub const GLOBAL_MEM_END: u32 = GLOBAL_MEM_START + (1 << 8) << 20;
+pub const GLOBAL_MEM_END: u32 = (GLOBAL_MEM_START + (1 << 8)) << 20;

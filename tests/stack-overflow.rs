@@ -29,7 +29,7 @@ fn test_stack_overflow_number_of_params() -> anyhow::Result<()> {
         ImportLinker::default().instantiate(&mut store, ExecutionEngine::new(), rwasm_module)?;
     let mut params = vec![Value::I64(0); 18];
     params.push(Value::I32(0));
-    let mut result = [Value::I64(0); 0];
+    let mut result = [];
     instance.execute(&mut store, &params, &mut result)?;
     Ok(())
 }
@@ -62,7 +62,7 @@ fn test_stack_overflow_32_params() -> anyhow::Result<()> {
     let instance =
         ImportLinker::default().instantiate(&mut store, ExecutionEngine::new(), rwasm_module)?;
     let params = vec![Value::I32(0); 32];
-    let mut result = [Value::I64(0); 0];
+    let mut result = [];
     instance.execute(&mut store, &params, &mut result)?;
     Ok(())
 }
@@ -95,7 +95,7 @@ fn test_stack_overflow_33_params() -> anyhow::Result<()> {
     let instance =
         ImportLinker::default().instantiate(&mut store, ExecutionEngine::new(), rwasm_module)?;
     let params = vec![Value::I32(0); 33];
-    let mut result = [Value::I64(0); 0];
+    let mut result = [];
     instance.execute(&mut store, &params, &mut result)?;
     Ok(())
 }

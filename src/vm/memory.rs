@@ -1,4 +1,5 @@
 use crate::types::{Pages, TrapCode};
+use alloc::vec::Vec;
 use bytes::BytesMut;
 
 /// Shared linear memory backing store for a running module.
@@ -90,6 +91,18 @@ impl GlobalMemory {
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         buffer.copy_from_slice(slice);
         Ok(())
+    }
+
+    /// Reads `n` bytes into vec
+    pub fn read_into_vec(&self, offset: usize, len_buffer: usize) -> Result<Vec<u8>, TrapCode> {
+        let end = offset
+            .checked_add(len_buffer)
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
+        let slice = self
+            .data()
+            .get(offset..end)
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
+        Ok(slice.to_vec())
     }
 
     /// Writes `n` bytes to `memory[offset..offset+n]` from `buffer`

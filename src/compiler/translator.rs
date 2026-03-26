@@ -19,7 +19,7 @@ use crate::{
     ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
     Opcode, TableIdx, DEFAULT_MEMORY_INDEX, N_MAX_TABLE_SIZE, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
-use alloc::{boxed::Box, vec, vec::Vec};
+use alloc::{boxed::Box, vec::Vec};
 use bitvec::macros::internal::funty::Fundamental;
 use hashbrown::HashMap;
 use rwasm_fuel_policy::FuelCosts;
@@ -29,7 +29,7 @@ use wasmparser::{
 };
 
 /// Reusable allocations of a [`FuncTranslator`].
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FuncTranslatorAllocations {
     /// A stack structure to manage control flow frames within the module.
     ///
@@ -69,30 +69,6 @@ pub struct FuncTranslatorAllocations {
     pub(crate) constructor_params: ConstructorParams,
     pub(crate) snippet_calls: Vec<SnippetCall>,
     pub(crate) intrinsic_handler: IntrinsicHandler,
-}
-
-impl Default for FuncTranslatorAllocations {
-    fn default() -> Self {
-        Self {
-            control_frames: Default::default(),
-            labels: Default::default(),
-            instruction_set: Default::default(),
-            br_table_branches: Default::default(),
-            stack_types: vec![],
-            segment_builder: Default::default(),
-            func_type_registry: Default::default(),
-            compiled_funcs: vec![],
-            tables: vec![],
-            memories: vec![],
-            globals: vec![],
-            exported_funcs: Default::default(),
-            start_func: None,
-            func_offsets: vec![],
-            constructor_params: Default::default(),
-            snippet_calls: Default::default(),
-            intrinsic_handler: Default::default(),
-        }
-    }
 }
 
 impl FuncTranslatorAllocations {
@@ -142,7 +118,7 @@ impl FuncTranslatorAllocations {
                     }
                 }
                 Intrinsic::Remove => {
-                    if func_type.results().len() != 0 {
+                    if !func_type.results().is_empty() {
                         unreachable!("remove intrinsic with result not supported")
                     }
                     for _ in 0..func_type.params().len() {
@@ -399,13 +375,13 @@ impl InstructionTranslator {
         let last_func_offset = self.alloc.func_offsets.last().copied().unwrap() as usize;
         // update max stack height in `StackAlloc` opcode
         let how_deep_stack_check = if self.with_consume_fuel { 3 } else { 2 };
-        let mut iter = self
+        let iter = self
             .alloc
             .instruction_set
             .iter_mut()
             .skip(last_func_offset)
             .take(how_deep_stack_check);
-        while let Some(opcode) = iter.next() {
+        for opcode in iter {
             match opcode {
                 Opcode::ConsumeFuel(_) | Opcode::SignatureCheck(_) => {}
                 Opcode::StackCheck(max_stack_height) => {
@@ -494,7 +470,7 @@ impl InstructionTranslator {
             only {height_diff} values available on the frame",
         );
         let drop = height_diff - keep;
-        DropKeep::new(drop as usize, keep as usize).map_err(Into::into)
+        DropKeep::new(drop as usize, keep as usize)
     }
 
     /// Return the value stack height difference to the height at the given `depth`.
@@ -535,7 +511,6 @@ impl InstructionTranslator {
             drop_keep.drop() as usize + len_params_locals,
             drop_keep.keep() as usize,
         )
-        .map_err(Into::into)
     }
 
     /// Computes how many values should be dropped and kept for the return call.
@@ -558,7 +533,7 @@ impl InstructionTranslator {
         );
         let len_params_locals = self.locals.len_registered();
         let drop = height_diff - keep + len_params_locals;
-        DropKeep::new(drop as usize, keep as usize).map_err(Into::into)
+        DropKeep::new(drop as usize, keep as usize)
     }
 
     /// Returns the maximum control stack depth at the current position in the code.
@@ -799,22 +774,19 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 None => panic!("stack corrupted in else block"),
             }
         }
-        match if_frame.block_type() {
-            BlockType::FuncType(func_type_idx) => {
-                let func_type = self
-                    .alloc
-                    .func_type_registry
-                    .resolve_original_func_type(func_type_idx);
-                func_type.params().iter().for_each(|param| {
-                    if *param == ValType::I64 || *param == ValType::F64 {
-                        self.stack_height.push_n(2);
-                    } else {
-                        self.stack_height.push1();
-                    }
-                    self.alloc.stack_types.push(*param);
-                });
-            }
-            _ => {}
+        if let BlockType::FuncType(func_type_idx) = if_frame.block_type() {
+            let func_type = self
+                .alloc
+                .func_type_registry
+                .resolve_original_func_type(func_type_idx);
+            func_type.params().iter().for_each(|param| {
+                if *param == ValType::I64 || *param == ValType::F64 {
+                    self.stack_height.push_n(2);
+                } else {
+                    self.stack_height.push1();
+                }
+                self.alloc.stack_types.push(*param);
+            });
         }
         self.alloc.control_frames.push_frame(if_frame);
         // We can reset reachability now since the parent `if` block was reachable.
@@ -913,7 +885,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             }
             _ => {}
         }
-        if self.is_fuel_metering_enabled() && self.alloc.control_frames.len() != 0 {
+        if self.is_fuel_metering_enabled() && !self.alloc.control_frames.is_empty() {
             let fuel_ix = self.push_consume_fuel_empty();
             let mut frame = self.alloc.control_frames.pop_frame();
             frame.update_consume_fuel_instr(fuel_ix);
@@ -1077,7 +1049,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                             let instr = offset_instr(base, builder.alloc.br_table_branches.len());
                             let offset = builder.try_resolve_label_for(label, instr)?;
                             *builder.alloc.br_table_branches.last_mut().unwrap() =
-                                Opcode::Br(BranchOffset::from(offset));
+                                Opcode::Br(offset);
 
                             builder.alloc.br_table_branches.op_return();
                         } else {
@@ -1096,8 +1068,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
                             let instr = offset_instr(base, final_len + trampoline_ixs.len());
                             let offset = builder.try_resolve_label_for(label, instr)?;
-                            *trampoline_ixs.last_mut().unwrap() =
-                                Opcode::Br(BranchOffset::from(offset));
+                            *trampoline_ixs.last_mut().unwrap() = Opcode::Br(offset);
                         }
                     }
                 }
@@ -1209,7 +1180,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .alloc
                 .func_type_registry
                 .resolve_func_type(func_type_idx);
-            let drop_keep = builder.drop_keep_return_call(&func_type)?;
+            let drop_keep = builder.drop_keep_return_call(func_type)?;
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
             drop_keep.translate_drop_keep(
                 &mut builder.alloc.instruction_set,
@@ -1235,7 +1206,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .resolve_func_type(func_type_index);
             builder.stack_height.pop1();
             builder.alloc.stack_types.pop().unwrap();
-            let mut drop_keep = builder.drop_keep_return_call(&func_type)?;
+            let mut drop_keep = builder.drop_keep_return_call(func_type)?;
             // TODO(dmitry123): "why? is there a bug in [drop_keep_return_call]?"
             drop_keep.keep += 1;
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
@@ -1365,7 +1336,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_global_get(&mut self, global_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
-            let global_type = builder.resolve_global_type(global_index).clone();
+            let global_type = *builder.resolve_global_type(global_index);
             builder.alloc.stack_types.push(global_type.content_type);
             if global_type.content_type == ValType::I64 || global_type.content_type == ValType::F64
             {
@@ -1392,7 +1363,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
     fn visit_global_set(&mut self, global_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
-            let global_type = builder.resolve_global_type(global_index).clone();
+            let global_type = *builder.resolve_global_type(global_index);
             debug_assert!(global_type.mutable);
             builder.alloc.stack_types.pop().unwrap();
             builder
@@ -2379,7 +2350,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            let data_segment_index: DataSegmentIdx = data_segment_index.into();
+            let data_segment_index: DataSegmentIdx = data_segment_index;
             let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
             let (ib, rb) = (
                 &mut builder.alloc.instruction_set,
@@ -2451,7 +2422,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 &mut builder.alloc.instruction_set,
                 &mut builder.alloc.segment_builder,
             );
-            let elem_segment_index: ElementSegmentIdx = segment_index.into();
+            let elem_segment_index: ElementSegmentIdx = segment_index;
             let (offset, length) = rb
                 .element_sections
                 .get(&elem_segment_index)

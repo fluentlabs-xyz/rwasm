@@ -16,7 +16,7 @@ pub(crate) fn compile_block_params(
             isa.op_i32_gt_u();
             isa.op_br_if_eqz(BranchOffset::from(2));
             isa.op_trap(TrapCode::IntegerOverflow);
-            isa.op_local_get(LocalDepth::from(fuel_params.param_index as u32));
+            isa.op_local_get(LocalDepth::from(fuel_params.param_index));
             isa.op_i32_const(UntypedValue::from(31));
             isa.op_i32_add();
             isa.op_i32_const(UntypedValue::from(32));

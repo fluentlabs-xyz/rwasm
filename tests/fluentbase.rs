@@ -60,7 +60,7 @@ pub(crate) fn fluentbase_syscall_handler(
             println!(
                 "write: {:?} ({})",
                 buffer.as_slice(),
-                from_utf8(&buffer).unwrap_or_else(|_| "can't parse utf-8 text")
+                from_utf8(&buffer).unwrap_or("can't parse utf-8 text")
             );
             caller.data_mut().output.extend_from_slice(&buffer)
         }
@@ -249,7 +249,10 @@ fn run_fluentbase_binary(wasm_binary: &[u8], host_state: HostState) -> HostState
 #[test]
 fn test_wasm_panic() {
     let wasm_binary = include_bytes!("assets/panic-stack-ub.wasm");
-    let mut host_state = HostState::default();
+    let mut host_state = HostState {
+        state: STATE_MAIN,
+        ..Default::default()
+    };
     host_state.state = STATE_MAIN;
     let host_state = run_fluentbase_binary(wasm_binary, host_state);
     assert_eq!(
@@ -261,9 +264,11 @@ fn test_wasm_panic() {
 #[test]
 fn test_wasm_secp256k1() {
     let wasm_binary = include_bytes!("assets/secp256k1-stack-ub.wasm");
-    let mut host_state = HostState::default();
-    host_state.state = STATE_MAIN;
-    host_state.input = vec![0u8; 1024];
+    let mut host_state = HostState {
+        input: vec![0u8; 1024],
+        output: vec![],
+        state: STATE_MAIN,
+    };
     host_state.input.extend_from_slice(&hex!("a04a451028d0f9284ce82243755e245238ab1e4ecf7b9dd8bf4734d9ecfd0529cf09dd8d0eb3c3968aca8846a249424e5537d3470f979ff902b57914dc77d02316bd29784f668a73cc7a36f4cc5b9ce704481e6cb5b1c2c832af02ca6837ebec044e3b81af9c2234cad09d679ce6035ed1392347ce64ce405f5dcd36228a25de6e47fd35c4215d1edf53e6f83de344615ce719bdb0fd878f6ed76f06dd277956de"));
     run_fluentbase_binary(wasm_binary, host_state);
 }

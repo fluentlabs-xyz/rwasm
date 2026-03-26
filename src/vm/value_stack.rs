@@ -261,13 +261,13 @@ impl ValueStack {
             .len()
             .checked_add(additional)
             .filter(|&new_len| new_len <= self.maximum_len)
-            .ok_or_else(|| TrapCode::StackOverflow)?;
+            .ok_or(TrapCode::StackOverflow)?;
         if new_len > self.capacity() {
             // Note: By extending the new length, we effectively double
             // the current value stack length and add the additional flat amount
             // on top. This avoids too many frequent reallocations.
             self.entries
-                .extend(core::iter::repeat(UntypedValue::default()).take(new_len));
+                .extend(core::iter::repeat_n(UntypedValue::default(), new_len));
         }
         Ok(())
     }
@@ -513,6 +513,7 @@ impl ValueStackPtr {
     ///
     /// [`ValueStack`]: super::ValueStack
     #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn drop(&mut self) {
         self.dec_by(1);
     }

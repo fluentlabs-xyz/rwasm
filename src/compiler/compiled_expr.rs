@@ -59,8 +59,8 @@ impl Clone for Op {
     fn clone(&self) -> Self {
         match self {
             Op::Const(op) => Op::Const(op.clone()),
-            Op::Global(op) => Op::Global(op.clone()),
-            Op::FuncRef(op) => Op::FuncRef(op.clone()),
+            Op::Global(op) => Op::Global(*op),
+            Op::FuncRef(op) => Op::FuncRef(*op),
             Op::Expr(_) => unreachable!("cloning of expr is not possible"),
         }
     }
@@ -157,7 +157,7 @@ impl Op {
         T: Into<Value>,
     {
         let value: Value = value.into();
-        let value = match value.into() {
+        let value = match value {
             Value::I32(value) => value as i64,
             Value::I64(value) => value,
             Value::F32(value) => value.to_bits() as i32 as i64,

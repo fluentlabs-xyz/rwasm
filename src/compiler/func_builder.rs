@@ -16,6 +16,7 @@ pub struct FuncBuilder<'a> {
 }
 
 impl<'a> FuncBuilder<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         func_body: FunctionBody<'a>,
         validator: FuncValidator<ValidatorResources>,

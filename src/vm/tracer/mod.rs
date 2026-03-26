@@ -149,17 +149,10 @@ impl Tracer {
     }
 
     pub fn remember_next_table(&mut self, table_idx: TableIdx) {
-        self.logs.last_mut().map(|v| {
+        if let Some(v) = self.logs.last_mut() {
             v.next_table_idx = Some(table_idx);
-        });
+        }
     }
-
-    // pub fn global_variable(&mut self, value: UntypedValue, index: u32) {
-    //     self.global_variables.push(TracerGlobalVariable {
-    //         value: value.to_bits(),
-    //         index,
-    //     })
-    // }
 
     pub fn memory_change(&mut self, offset: u32, len: u32, memory: &[u8]) {
         self.memory_changes.push(TracerMemoryState {

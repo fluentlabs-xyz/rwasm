@@ -2,7 +2,6 @@
 /// 64-bit subtraction in pure 32-bit arithmetic
 /// (two’s-complement works for both signed and unsigned values)
 /// -------------------------------------------------------------------------
-
 #[inline(always)]
 pub(crate) fn i64_sub_impl(
     a_lo: u32,

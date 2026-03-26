@@ -1,7 +1,7 @@
 #[inline(always)]
 pub(crate) fn i64_shr_s_impl(a_lo: u32, a_hi: u32, b_lo: u32, _b_hi: u32) -> (u32, u32) {
     // WASM uses only the low 6 bits of the shift count
-    let shamt = (b_lo & 0x3F) as u32;
+    let shamt = b_lo & 0x3F;
 
     match shamt {
         0 => (a_lo, a_hi),

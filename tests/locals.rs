@@ -36,9 +36,7 @@ fn build_max_locals_module(num_funcs: u32) -> Vec<u8> {
     wasm.push(0x03);
     wasm.extend_from_slice(&func_section_size_leb);
     wasm.extend_from_slice(&num_funcs_leb);
-    for _ in 0..num_funcs {
-        wasm.push(0x00);
-    }
+    wasm.extend(core::iter::repeat_n(0x00, num_funcs as usize));
 
     // Export section (export first func as "main")
     wasm.extend_from_slice(&[0x07, 0x08, 0x01, 0x04, 0x6d, 0x61, 0x69, 0x6e, 0x00, 0x00]);

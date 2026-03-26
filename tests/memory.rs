@@ -12,7 +12,7 @@ fn execute_module(module: &RwasmModule) -> u64 {
         None,
         None,
     );
-    engine.execute(&mut store, &module, &[], &mut []).unwrap();
+    engine.execute(&mut store, module, &[], &mut []).unwrap();
     store.fuel_consumed()
 }
 

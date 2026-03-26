@@ -69,7 +69,7 @@ fn test_locals_consume_fuel() {
             engine
                 .execute(
                     &mut store,
-                    &module,
+                    module,
                     if i == 0 { &params_values } else { &[] },
                     &mut result,
                 )

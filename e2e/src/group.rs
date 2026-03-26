@@ -71,7 +71,7 @@ impl TestingInstanceRwasm {
         result: &mut [Value],
     ) -> anyhow::Result<Option<u64>, TrapCode> {
         // Update the state based on the function name (state router)
-        let Some(state) = self.extern_state.get(&func_name.to_string()).copied() else {
+        let Some(state) = self.extern_state.get(func_name).copied() else {
             unreachable!("missing state for exported function: {}", func_name);
         };
         self.store.data_mut().state = state;

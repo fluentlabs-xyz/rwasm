@@ -71,10 +71,8 @@ impl<'a, T: 'static> StoreTr<T> for WasmtimeCaller<'a, T> {
     fn remaining_fuel(&self) -> Option<u64> {
         if let Ok(fuel) = self.caller.get_fuel() {
             Some(fuel)
-        } else if let Some(fuel) = self.caller.data().fuel.as_ref() {
-            Some(*fuel)
         } else {
-            None
+            self.caller.data().fuel.as_ref().copied()
         }
     }
 

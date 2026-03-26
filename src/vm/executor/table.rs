@@ -21,7 +21,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .store
             .tables
             .entry(table_idx)
-            .or_insert_with(TableEntity::new);
+            .or_default();
         let result = table.grow_untyped(delta, init);
         self.sp.push_as(result);
         #[cfg(feature = "tracing")]

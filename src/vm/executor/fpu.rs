@@ -134,7 +134,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     #[inline(always)]
-    fn execute_unary_32x32<O, I>(&mut self, f: fn(F32) -> F32) -> Result<(), TrapCode> {
+    fn execute_unary_32x32(&mut self, f: fn(F32) -> F32) -> Result<(), TrapCode> {
         let value = self.sp.pop_f32();
         let output_bits = f(value);
         self.sp.push_f32(output_bits);
@@ -144,37 +144,37 @@ impl<'a, T> RwasmExecutor<'a, T> {
 
     #[inline(always)]
     pub(crate) fn visit_f32_abs(&mut self) -> Result<(), TrapCode> {
-        self.execute_unary_32x32::<F32, F32>(<F32 as Float<F32>>::abs)
+        self.execute_unary_32x32(<F32 as Float<F32>>::abs)
     }
 
     #[inline(always)]
     pub(crate) fn visit_f32_neg(&mut self) -> Result<(), TrapCode> {
-        self.execute_unary_32x32::<F32, F32>(<F32 as Neg>::neg)
+        self.execute_unary_32x32(<F32 as Neg>::neg)
     }
 
     #[inline(always)]
     pub(crate) fn visit_f32_ceil(&mut self) -> Result<(), TrapCode> {
-        self.execute_unary_32x32::<F32, F32>(<F32 as Float<F32>>::ceil)
+        self.execute_unary_32x32(<F32 as Float<F32>>::ceil)
     }
 
     #[inline(always)]
     pub(crate) fn visit_f32_floor(&mut self) -> Result<(), TrapCode> {
-        self.execute_unary_32x32::<F32, F32>(<F32 as Float<F32>>::floor)
+        self.execute_unary_32x32(<F32 as Float<F32>>::floor)
     }
 
     #[inline(always)]
     pub(crate) fn visit_f32_trunc(&mut self) -> Result<(), TrapCode> {
-        self.execute_unary_32x32::<F32, F32>(<F32 as Float<F32>>::trunc)
+        self.execute_unary_32x32(<F32 as Float<F32>>::trunc)
     }
 
     #[inline(always)]
     pub(crate) fn visit_f32_nearest(&mut self) -> Result<(), TrapCode> {
-        self.execute_unary_32x32::<F32, F32>(<F32 as Float<F32>>::nearest)
+        self.execute_unary_32x32(<F32 as Float<F32>>::nearest)
     }
 
     #[inline(always)]
     pub(crate) fn visit_f32_sqrt(&mut self) -> Result<(), TrapCode> {
-        self.execute_unary_32x32::<F32, F32>(<F32 as Float<F32>>::sqrt)
+        self.execute_unary_32x32(<F32 as Float<F32>>::sqrt)
     }
 
     #[inline(always)]
@@ -359,7 +359,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     pub(crate) fn visit_f64_convert_i32_s(&mut self) -> Result<(), TrapCode> {
         let value = self.sp.pop_i32();
         let output_bits: F64 = value.extend_into();
-        self.sp.push_f64(output_bits.into());
+        self.sp.push_f64(output_bits);
         self.ip.add(1);
         Ok(())
     }
@@ -368,7 +368,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     pub(crate) fn visit_f64_convert_i32_u(&mut self) -> Result<(), TrapCode> {
         let value = self.sp.pop_i32() as u32;
         let output_bits: F64 = value.extend_into();
-        self.sp.push_f64(output_bits.into());
+        self.sp.push_f64(output_bits);
         self.ip.add(1);
         Ok(())
     }
@@ -377,7 +377,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     pub(crate) fn visit_f64_promote_f32(&mut self) -> Result<(), TrapCode> {
         let value = self.sp.pop_f32();
         let output_bits: F64 = value.extend_into();
-        self.sp.push_f64(output_bits.into());
+        self.sp.push_f64(output_bits);
         self.ip.add(1);
         Ok(())
     }
@@ -462,7 +462,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let rhs = self.sp.pop_f64();
         let lhs = self.sp.pop_f64();
         let result = f(lhs, rhs);
-        self.sp.push_f64(result.into());
+        self.sp.push_f64(result);
         self.ip.add(1);
         Ok(())
     }

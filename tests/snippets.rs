@@ -1094,14 +1094,14 @@ fn generate_random_numbers(n: usize) -> Vec<u64> {
     for k in 0..=5 {
         v.push(k);
         if k != 0 {
-            v.push(k * -1);
+            v.push(-k);
         }
     }
 
     // 2. Small values
     for _ in 0..n {
         v.push(rng.random_range(0..1000));
-        v.push(rng.random_range(0..1000) * -1);
+        v.push(-rng.random_range(0..1000));
     }
 
     // 3. Big random values
@@ -1248,15 +1248,11 @@ fn run_i64_binary_op(op: &str, a: i64, b: i64, expected: i64) {
         &[Value::I64(a), Value::I64(b)],
         &mut result,
     );
-    if !execution_result.is_ok() {
+    if execution_result.is_err() {
         println!("{:?}", execution_result);
     }
 
-    assert!(
-        matches!(execution_result, Ok(_)),
-        "Execution failed for {}",
-        op
-    );
+    assert!(execution_result.is_ok(), "Execution failed for {}", op);
     assert_eq!(
         result[0].i64().unwrap(),
         expected,
@@ -1299,15 +1295,11 @@ fn run_i64_comparation_op(op: &str, a: i64, b: i64, expected: bool) {
         &[Value::I64(a), Value::I64(b)],
         &mut result,
     );
-    if !execution_result.is_ok() {
+    if execution_result.is_err() {
         println!("{:?}", execution_result);
     }
 
-    assert!(
-        matches!(execution_result, Ok(_)),
-        "Execution failed for {}",
-        op
-    );
+    assert!(execution_result.is_ok(), "Execution failed for {}", op);
     let expected = if expected { 1 } else { 0 };
     assert_eq!(
         result[0].i32().unwrap(),

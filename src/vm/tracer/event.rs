@@ -24,11 +24,7 @@ pub fn opcode_stack_write(op: Opcode) -> bool {
         return false;
     }
     if op.is_memory_instruction() {
-        if op.is_memory_load_instruction() {
-            true
-        } else {
-            false
-        }
+        op.is_memory_load_instruction()
     } else {
         false
     }

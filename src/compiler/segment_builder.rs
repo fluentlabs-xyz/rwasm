@@ -76,9 +76,7 @@ impl SegmentBuilder {
     ) -> Result<(), CompilationError> {
         // there is a hard limit of max possible memory used (~64 mB)
         let next_pages = self
-            .total_allocated_pages
-            .checked_add(initial_pages)
-            .unwrap_or(u32::MAX);
+            .total_allocated_pages.saturating_add(initial_pages);
         if next_pages >= max_allowed_memory_pages {
             return Err(CompilationError::MaxReadonlyDataReached);
         }
