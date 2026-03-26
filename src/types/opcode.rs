@@ -277,84 +277,81 @@ impl Opcode {
     }
 
     pub fn is_alu_instruction(self) -> bool {
-        match self {
+        matches!(
+            self,
             Opcode::I32Eq
-            | Opcode::I32Eqz
-            | Opcode::I32Ne
-            | Opcode::I32LtS
-            | Opcode::I32LtU
-            | Opcode::I32GtU
-            | Opcode::I32GtS
-            | Opcode::I32LeS
-            | Opcode::I32LeU
-            | Opcode::I32GeS
-            | Opcode::I32GeU
-            | Opcode::I32Clz
-            | Opcode::I32Ctz
-            | Opcode::I32Popcnt
-            | Opcode::I32Add
-            | Opcode::I32Sub
-            | Opcode::I32Mul
-            | Opcode::I32DivS
-            | Opcode::I32DivU
-            | Opcode::I32RemS
-            | Opcode::I32RemU
-            | Opcode::I32And
-            | Opcode::I32Or
-            | Opcode::I32Xor
-            | Opcode::I32Shl
-            | Opcode::I32ShrS
-            | Opcode::I32ShrU
-            | Opcode::I32Rotl
-            | Opcode::I32Rotr => true,
-            _ => false,
-        }
+                | Opcode::I32Eqz
+                | Opcode::I32Ne
+                | Opcode::I32LtS
+                | Opcode::I32LtU
+                | Opcode::I32GtU
+                | Opcode::I32GtS
+                | Opcode::I32LeS
+                | Opcode::I32LeU
+                | Opcode::I32GeS
+                | Opcode::I32GeU
+                | Opcode::I32Clz
+                | Opcode::I32Ctz
+                | Opcode::I32Popcnt
+                | Opcode::I32Add
+                | Opcode::I32Sub
+                | Opcode::I32Mul
+                | Opcode::I32DivS
+                | Opcode::I32DivU
+                | Opcode::I32RemS
+                | Opcode::I32RemU
+                | Opcode::I32And
+                | Opcode::I32Or
+                | Opcode::I32Xor
+                | Opcode::I32Shl
+                | Opcode::I32ShrS
+                | Opcode::I32ShrU
+                | Opcode::I32Rotl
+                | Opcode::I32Rotr
+        )
     }
 
     pub fn is_memory_instruction(self) -> bool {
-        match self {
+        matches!(
+            self,
             Opcode::I32Load8S(_)
-            | Opcode::I32Load8U(_)
-            | Opcode::I32Load16S(_)
-            | Opcode::I32Load16U(_)
-            | Opcode::I32Load(_)
-            | Opcode::I32Store8(_)
-            | Opcode::I32Store16(_)
-            | Opcode::I32Store(_) => true,
-            _ => false,
-        }
+                | Opcode::I32Load8U(_)
+                | Opcode::I32Load16S(_)
+                | Opcode::I32Load16U(_)
+                | Opcode::I32Load(_)
+                | Opcode::I32Store8(_)
+                | Opcode::I32Store16(_)
+                | Opcode::I32Store(_)
+        )
     }
 
     pub fn is_memory_load_instruction(self) -> bool {
-        match self {
+        matches!(
+            self,
             Opcode::I32Load8S(_)
-            | Opcode::I32Load8U(_)
-            | Opcode::I32Load16S(_)
-            | Opcode::I32Load16U(_)
-            | Opcode::I32Load(_) => true,
-            _ => false,
-        }
+                | Opcode::I32Load8U(_)
+                | Opcode::I32Load16S(_)
+                | Opcode::I32Load16U(_)
+                | Opcode::I32Load(_)
+        )
     }
 
     pub fn is_memory_store_instruction(self) -> bool {
-        match self {
-            Opcode::I32Store8(_) | Opcode::I32Store16(_) | Opcode::I32Store(_) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Opcode::I32Store8(_) | Opcode::I32Store16(_) | Opcode::I32Store(_)
+        )
     }
 
     pub fn is_ecall_instruction(self) -> bool {
-        match self {
-            Opcode::Call(_) | Opcode::ReturnCall(_) => true,
-            _ => false,
-        }
+        matches!(self, Opcode::Call(_) | Opcode::ReturnCall(_))
     }
 
     pub fn is_branch_instruction(self) -> bool {
-        match self {
-            Opcode::Br(_) | Opcode::BrIfEqz(_) | Opcode::BrIfNez(_) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Opcode::Br(_) | Opcode::BrIfEqz(_) | Opcode::BrIfNez(_)
+        )
     }
 
     pub fn is_jump_instruction(self) -> bool {
@@ -366,59 +363,56 @@ impl Opcode {
     }
 
     pub fn is_unary_instruction(self) -> bool {
-        match self {
-            Opcode::I32Clz | Opcode::I32Ctz | Opcode::I32Popcnt | Opcode::I32Eqz => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Opcode::I32Clz | Opcode::I32Ctz | Opcode::I32Popcnt | Opcode::I32Eqz
+        )
     }
 
     pub fn is_binary_instruction(self) -> bool {
-        match self {
+        matches!(
+            self,
             Opcode::I32Eq
-            | Opcode::I32Ne
-            | Opcode::I32LtS
-            | Opcode::I32LtU
-            | Opcode::I32GtU
-            | Opcode::I32GtS
-            | Opcode::I32LeS
-            | Opcode::I32LeU
-            | Opcode::I32GeS
-            | Opcode::I32GeU
-            | Opcode::I32Add
-            | Opcode::I32Sub
-            | Opcode::I32Mul
-            | Opcode::I32DivS
-            | Opcode::I32DivU
-            | Opcode::I32RemS
-            | Opcode::I32RemU
-            | Opcode::I32And
-            | Opcode::I32Or
-            | Opcode::I32Xor
-            | Opcode::I32Shl
-            | Opcode::I32ShrS
-            | Opcode::I32ShrU
-            | Opcode::I32Rotl
-            | Opcode::I32Rotr => true,
-            _ => false,
-        }
+                | Opcode::I32Ne
+                | Opcode::I32LtS
+                | Opcode::I32LtU
+                | Opcode::I32GtU
+                | Opcode::I32GtS
+                | Opcode::I32LeS
+                | Opcode::I32LeU
+                | Opcode::I32GeS
+                | Opcode::I32GeU
+                | Opcode::I32Add
+                | Opcode::I32Sub
+                | Opcode::I32Mul
+                | Opcode::I32DivS
+                | Opcode::I32DivU
+                | Opcode::I32RemS
+                | Opcode::I32RemU
+                | Opcode::I32And
+                | Opcode::I32Or
+                | Opcode::I32Xor
+                | Opcode::I32Shl
+                | Opcode::I32ShrS
+                | Opcode::I32ShrU
+                | Opcode::I32Rotl
+                | Opcode::I32Rotr
+        )
     }
 
     pub fn is_nullary(&self) -> bool {
-        match self {
-            Opcode::Br(_) | Opcode::I32Const(_) => true,
-            _ => false,
-        }
+        matches!(self, Opcode::Br(_) | Opcode::I32Const(_))
     }
 
     pub fn is_call_instruction(self) -> bool {
-        match self {
+        matches!(
+            self,
             Opcode::CallIndirect(_)
-            | Opcode::CallInternal(_)
-            | Opcode::ReturnCallIndirect(_)
-            | Opcode::ReturnCallInternal(_)
-            | Opcode::Return => true,
-            _ => false,
-        }
+                | Opcode::CallInternal(_)
+                | Opcode::ReturnCallIndirect(_)
+                | Opcode::ReturnCallInternal(_)
+                | Opcode::Return
+        )
     }
 
     pub fn is_const_instruction(self) -> bool {

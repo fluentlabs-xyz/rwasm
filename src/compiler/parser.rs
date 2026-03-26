@@ -87,7 +87,7 @@ impl ModuleParser {
                 .clone();
             result.push((k.clone(), *v, func_type));
             #[cfg(feature = "debug-print")]
-            print!("{}: func_idx={}, func_type_idx={}\n", k, v, func_type_idx);
+            println!("{}: func_idx={}, func_type_idx={}", k, v, func_type_idx);
         }
         Ok(result)
     }

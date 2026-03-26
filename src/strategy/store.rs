@@ -116,6 +116,7 @@ impl<'a, T> StoreTr<T> for TypedCaller<'a, T> {
 
 impl<'a, T> CallerTr<T> for TypedCaller<'a, T> {}
 
+#[allow(clippy::large_enum_variant)]
 pub enum TypedStore<T: 'static> {
     Rwasm(RwasmStore<T>),
     #[cfg(feature = "wasmtime")]

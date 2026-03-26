@@ -16,8 +16,7 @@ impl InstructionSet {
     ///   interpreted as signed i64)
     ///
     /// # Returns
-    /// - `(q_lo, q_hi)`: Low and high 32 bits of the signed quotient
-    /// (as if casting a result to i64 and splitting)
+    /// - `(q_lo, q_hi)`: Low and high 32 bits of the signed quotient (as if casting a result to i64 and splitting)
     ///
     /// # Algorithm
     /// - Checks for division by zero and triggers a trap if detected.
@@ -26,8 +25,7 @@ impl InstructionSet {
     /// - Computes absolute values of numerator and denominator.
     /// - Performs unsigned 64-bit division using a dedicated routine (`div64_impl`), producing the
     ///   absolute quotient.
-    /// - Applies the correct sign to the quotient according to the signs of the operands
-    /// (truncates toward zero).
+    /// - Applies the correct sign to the quotient according to the signs of the operands (truncates toward zero).
     ///
     /// # Panics / Traps
     /// - Division by zero triggers a trap.

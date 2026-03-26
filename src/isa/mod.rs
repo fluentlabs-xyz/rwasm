@@ -115,12 +115,14 @@ impl InstructionSet {
     pub fn is_return_last(&self) -> bool {
         self.instr
             .last()
-            .map(|instr| match instr {
-                Opcode::Return
-                | Opcode::ReturnCall(_)
-                | Opcode::ReturnCallInternal(_)
-                | Opcode::ReturnCallIndirect(_) => true,
-                _ => false,
+            .map(|instr| {
+                matches!(
+                    instr,
+                    Opcode::Return
+                        | Opcode::ReturnCall(_)
+                        | Opcode::ReturnCallInternal(_)
+                        | Opcode::ReturnCallIndirect(_)
+                )
             })
             .unwrap_or_default()
     }

@@ -106,6 +106,7 @@ impl StrategyDefinition {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum StrategyExecutor<T: 'static> {
     Rwasm {
         store: RwasmStore<T>,
