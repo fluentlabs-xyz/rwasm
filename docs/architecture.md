@@ -15,27 +15,27 @@ Wasm binary
 ## Major subsystems
 
 - **Compiler** (`src/compiler/**`)
-  - parses/validates wasm
-  - rewrites to rWASM-oriented instruction stream
-  - builds module metadata (func/table/data/global sections)
+    - parses/validates wasm
+    - rewrites to rWASM-oriented instruction stream
+    - builds module metadata (func/table/data/global sections)
 
 - **Module model** (`src/module/**`)
-  - serialized representation consumed by the runtime
-  - contains compiled funcs, signatures, globals, data/element segments, etc.
+    - serialized representation consumed by the runtime
+    - contains compiled funcs, signatures, globals, data/element segments, etc.
 
 - **Instruction set** (`src/types/opcode.rs`)
-  - defines opcode enum and instruction categories
-  - includes optional FPU opcodes behind `fpu` feature
+    - defines opcode enum and instruction categories
+    - includes optional FPU opcodes behind `fpu` feature
 
 - **Runtime VM** (`src/vm/**`)
-  - stack machine execution engine
-  - memory/table/global handling
-  - trap model + host import linkage
-  - optional tracing support
+    - stack machine execution engine
+    - memory/table/global handling
+    - trap model + host import linkage
+    - optional tracing support
 
 - **Execution strategy abstraction** (`src/strategy/**`)
-  - `Rwasm` strategy (native engine)
-  - optional `Wasmtime` strategy for compatibility/comparison
+    - `Rwasm` strategy (native engine)
+    - optional `Wasmtime` strategy for compatibility/comparison
 
 ## Design goals
 
@@ -49,10 +49,9 @@ Wasm binary
 
 Current cargo features (`Cargo.toml`):
 
-- `default = ["std", "wasmtime", "disable-fpu"]`
+- `default = ["std", "wasmtime"]`
 - `std`: std support for crate/runtime dependencies
 - `wasmtime`: enables wasmtime-backed strategy/execution
-- `disable-fpu`: configures wasmtime dependency with disabled FPU support
 - `fpu`: enables floating-point opcode/runtime surface in rWASM VM
 - `serde`: serde support for selected types
 - `tracing`: tracing-related model support (depends on `serde`)

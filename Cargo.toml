@@ -47,7 +47,7 @@ criterion = { version = "0.7.0", default-features = false, features = [] }
 fib-example = { path = "examples/fib" }
 
 [features]
-default = ["std", "wasmtime", "disable-fpu"]
+default = ["std", "wasmtime"]
 std = [
     "bytes/std",
     "bincode/std",
@@ -55,7 +55,6 @@ std = [
     "bitvec/std",
     "wasmtime?/std",
 ]
-disable-fpu = ["wasmtime/disable-fpu"]
 serde = [
     "dep:serde", "serde/derive"
 ]

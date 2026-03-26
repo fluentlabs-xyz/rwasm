@@ -68,7 +68,7 @@ make test
 
 `Cargo.toml` defines the runtime surface via features. Important points:
 
-- default enables `std`, `wasmtime`, `disable-fpu`
+- default enables `std`, `wasmtime`
 - `fpu` exists as a feature-gated surface in code
 - FPU opcodes are currently not treated as production-facing opcode surface in docs (kept mainly for testsuite/internal
   compatibility)
