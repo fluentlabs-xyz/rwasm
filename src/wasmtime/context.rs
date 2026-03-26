@@ -34,6 +34,12 @@ impl<'a, T: 'static> StoreTr<T> for WasmtimeCaller<'a, T> {
             .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
+    fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
+        let mut data = vec![0u8; length];
+        self.memory_read(offset, &mut data)?;
+        Ok(data)
+    }
+
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
         let global_memory = self
             .caller
