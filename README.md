@@ -2,9 +2,11 @@
 
 [![codecov](https://codecov.io/gh/fluentlabs-xyz/rwasm/graph/badge.svg?token=9T2PLQQW4L)](https://codecov.io/gh/fluentlabs-xyz/rwasm)
 
-`rwasm` is a deterministic reduced WebAssembly format + runtime stack for execution environments that care about **performance**, **predictability**, and **proof-friendliness**.
+`rwasm` is a deterministic reduced WebAssembly format + runtime stack for execution environments that care about *
+*performance**, **predictability**, and **proof-friendliness**.
 
-It is designed to be **ZK-friendly**: execution semantics and representation choices aim to stay efficient both for normal execution and proving-oriented pipelines.
+It is designed to be **ZK-friendly**: execution semantics and representation choices aim to stay efficient both for
+normal execution and proving-oriented pipelines.
 
 ---
 
@@ -68,7 +70,8 @@ make test
 
 - default enables `std`, `wasmtime`, `disable-fpu`
 - `fpu` exists as a feature-gated surface in code
-- FPU opcodes are currently not treated as production-facing opcode surface in docs (kept mainly for testsuite/internal compatibility)
+- FPU opcodes are currently not treated as production-facing opcode surface in docs (kept mainly for testsuite/internal
+  compatibility)
 
 When integrating in production, pin exact feature set and toolchain.
 
@@ -87,4 +90,4 @@ When integrating in production, pin exact feature set and toolchain.
 
 ## License
 
-[MIT](./LICENSE)
+[Apache 2.0](./LICENSE)
