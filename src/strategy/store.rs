@@ -1,4 +1,5 @@
 use crate::{CallerTr, RwasmCaller, RwasmStore, StoreTr, TrapCode};
+use alloc::vec::Vec;
 
 pub enum TypedCaller<'a, T: 'static> {
     Rwasm(RwasmCaller<'a, T>),
@@ -62,6 +63,14 @@ impl<'a, T> StoreTr<T> for TypedCaller<'a, T> {
             TypedCaller::Rwasm(store) => store.memory_read(offset, buffer),
             #[cfg(feature = "wasmtime")]
             TypedCaller::Wasmtime(store) => store.memory_read(offset, buffer),
+        }
+    }
+
+    fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
+        match self {
+            TypedCaller::Rwasm(store) => store.memory_read_into_vec(offset, length),
+            #[cfg(feature = "wasmtime")]
+            TypedCaller::Wasmtime(store) => store.memory_read_into_vec(offset, length),
         }
     }
 
@@ -129,6 +138,14 @@ impl<T> StoreTr<T> for TypedStore<T> {
             TypedStore::Rwasm(store) => store.memory_read(offset, buffer),
             #[cfg(feature = "wasmtime")]
             TypedStore::Wasmtime(store) => store.memory_read(offset, buffer),
+        }
+    }
+
+    fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
+        match self {
+            TypedStore::Rwasm(store) => store.memory_read_into_vec(offset, length),
+            #[cfg(feature = "wasmtime")]
+            TypedStore::Wasmtime(store) => store.memory_read_into_vec(offset, length),
         }
     }
 

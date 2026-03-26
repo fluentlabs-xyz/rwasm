@@ -3,7 +3,7 @@ use crate::{
     ImportLinker, RwasmInstance, RwasmModule, RwasmStore, StoreTr, StrategyError, SyscallHandler,
     TrapCode, Value,
 };
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 
 #[derive(Clone)]
 pub enum StrategyDefinition {
@@ -125,6 +125,16 @@ impl<T: 'static> StoreTr<T> for StrategyExecutor<T> {
             StrategyExecutor::Rwasm { store, .. } => store.memory_read(offset, buffer),
             #[cfg(feature = "wasmtime")]
             StrategyExecutor::Wasmtime { executor } => executor.memory_read(offset, buffer),
+        }
+    }
+
+    fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
+        match self {
+            StrategyExecutor::Rwasm { store, .. } => store.memory_read_into_vec(offset, length),
+            #[cfg(feature = "wasmtime")]
+            StrategyExecutor::Wasmtime { executor } => {
+                executor.memory_read_into_vec(offset, length)
+            }
         }
     }
 

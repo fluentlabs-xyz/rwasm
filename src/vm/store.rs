@@ -61,8 +61,11 @@ impl<T: 'static + Default> Default for RwasmStore<T> {
 
 impl<T: 'static> StoreTr<T> for RwasmStore<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        self.global_memory.read(offset, buffer)?;
-        Ok(())
+        self.global_memory.read(offset, buffer)
+    }
+
+    fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
+        self.global_memory.read_into_vec(offset, length)
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
