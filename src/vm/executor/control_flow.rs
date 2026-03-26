@@ -93,10 +93,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .expect("rwasm: unresolved table index")
             .get_untyped(func_index)
             .ok_or(TrapCode::TableOutOfBounds)?
-            .try_into()
-            .unwrap();
+            .into();
         if instr_ref == 0 {
-            return Err(TrapCode::IndirectCallToNull.into());
+            return Err(TrapCode::IndirectCallToNull);
         }
         self.ip.add(2);
         self.value_stack.sync_stack_ptr(self.sp);

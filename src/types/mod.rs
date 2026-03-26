@@ -58,9 +58,9 @@ pub const N_MAX_DATA_SEGMENTS: usize = 100_000;
 pub const N_MAX_ELEM_SEGMENTS: usize = 100_000;
 
 pub const N_MAX_DATA_SEGMENTS_BITS: usize =
-    (N_MAX_DATA_SEGMENTS + usize::BITS as usize - 1) / usize::BITS as usize;
+    N_MAX_DATA_SEGMENTS.div_ceil(usize::BITS as usize);
 pub const N_MAX_ELEM_SEGMENTS_BITS: usize =
-    (N_MAX_ELEM_SEGMENTS + usize::BITS as usize - 1) / usize::BITS as usize;
+    N_MAX_ELEM_SEGMENTS.div_ceil(usize::BITS as usize);
 
 /// For null RefFunc/ExternRef types we use 0. We can do this
 /// because 0 offset is reserved under an entrypoint that can't be re-called

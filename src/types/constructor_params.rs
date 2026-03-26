@@ -21,9 +21,9 @@ impl core::ops::Deref for ConstructorParams {
     }
 }
 
-impl Into<Vec<u8>> for ConstructorParams {
-    fn into(self) -> Vec<u8> {
-        self.0.unwrap_or_default()
+impl From<ConstructorParams> for Vec<u8> {
+    fn from(val: ConstructorParams) -> Self {
+        val.0.unwrap_or_default()
     }
 }
 

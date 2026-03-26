@@ -70,7 +70,7 @@ impl ExecutionEngineInner {
             "rwasm: resumable context is presented"
         );
         let mut executor =
-            RwasmExecutor::entrypoint(&module, &mut value_stack, &mut call_stack, store);
+            RwasmExecutor::entrypoint(module, &mut value_stack, &mut call_stack, store);
         match executor.run(&[], &mut []) {
             Err(TrapCode::InterruptionCalled) => {
                 let (ip, sp) = (executor.ip, executor.sp);
@@ -100,7 +100,7 @@ impl ExecutionEngineInner {
         debug_assert!(module.source_pc < module.code_section.len() as u32);
         ip.offset(module.source_pc as isize);
         let mut executor =
-            RwasmExecutor::new(&module, &mut value_stack, sp, &mut call_stack, ip, store);
+            RwasmExecutor::new(module, &mut value_stack, sp, &mut call_stack, ip, store);
         match executor.run(params, result) {
             Err(TrapCode::InterruptionCalled) => {
                 let (ip, sp) = (executor.ip, executor.sp);
@@ -160,6 +160,6 @@ impl ExecutionEngineInner {
 impl ExecutionEngine {
     pub fn acquire_shared() -> ExecutionEngine {
         static ENGINE: spin::Once<ExecutionEngine> = spin::Once::new();
-        ENGINE.call_once(|| ExecutionEngine::default()).clone()
+        ENGINE.call_once(ExecutionEngine::default).clone()
     }
 }

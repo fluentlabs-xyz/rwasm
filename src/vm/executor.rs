@@ -430,7 +430,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         }
         let (params, result) = buffer.split_at_mut(params.len());
         let syscall_handler = self.store.syscall_handler;
-        let mut caller = TypedCaller::Rwasm(RwasmCaller::new(&mut self.store));
+        let mut caller = TypedCaller::Rwasm(RwasmCaller::new(self.store));
         match syscall_handler(&mut caller, sys_func_idx, params, result) {
             Ok(_) => {
                 // if execution succeeded, then copy output params back to the stack

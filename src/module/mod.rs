@@ -258,9 +258,9 @@ impl RwasmModuleBuilder {
     }
 }
 
-impl Into<RwasmModule> for RwasmModuleBuilder {
-    fn into(self) -> RwasmModule {
-        self.build()
+impl From<RwasmModuleBuilder> for RwasmModule {
+    fn from(val: RwasmModuleBuilder) -> Self {
+        val.build()
     }
 }
 

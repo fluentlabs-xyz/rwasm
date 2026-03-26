@@ -33,9 +33,9 @@ impl From<UntypedValue> for FuncRef {
         }
     }
 }
-impl Into<UntypedValue> for FuncRef {
-    fn into(self) -> UntypedValue {
-        UntypedValue::from(self.0)
+impl From<FuncRef> for UntypedValue {
+    fn from(val: FuncRef) -> Self {
+        UntypedValue::from(val.0)
     }
 }
 

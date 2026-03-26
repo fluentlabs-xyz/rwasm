@@ -82,7 +82,7 @@ impl<T: 'static> StoreTr<T> for RwasmStore<T> {
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
-        let consumed_fuel = self.consumed_fuel.checked_add(delta).unwrap_or(u64::MAX);
+        let consumed_fuel = self.consumed_fuel.saturating_add(delta);
         if let Some(fuel_limit) = self.fuel_limit {
             if consumed_fuel > fuel_limit {
                 return Err(TrapCode::OutOfFuel);

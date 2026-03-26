@@ -2,7 +2,7 @@ use crate::{
     types::{F32, F64},
     ExternRef, FuncRef, TrapCode, UntypedValue,
 };
-use core::{f32, i32, i64, u32, u64};
+use core::f32;
 use wasmparser::ValType;
 
 /// Convert one type to another by wrapping.

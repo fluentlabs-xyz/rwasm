@@ -31,7 +31,7 @@ impl InstructionSet {
         // [addr]
         self.op_local_get(1);
         // [addr, addr]
-        self.op_i32_load(offset.checked_add(4).unwrap_or(u32::MAX));
+        self.op_i32_load(offset.saturating_add(4));
         // [hi, addr]
         self.op_local_get(2);
         // [addr, hi, addr]
@@ -87,7 +87,7 @@ impl InstructionSet {
     pub fn op_i64_store(&mut self, offset: AddressOffset) {
         self.op_local_get(3);
         self.op_local_get(2);
-        self.op_i32_store(offset.checked_add(4).unwrap_or(u32::MAX));
+        self.op_i32_store(offset.saturating_add(4));
         self.op_drop();
         self.op_i32_store(offset);
     }

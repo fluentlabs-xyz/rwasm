@@ -232,7 +232,7 @@ impl ModuleParser {
                 .translation
                 .func_type_registry
                 .resolve_func_type_ref(func_type_idx, |func_type| {
-                    func_type.params().len() == 0 && func_type.results().len() == 0
+                    func_type.params().is_empty() && func_type.results().is_empty()
                 });
             if !is_empty_func_type && !allow_malformed_entrypoint_func_type {
                 return Err(CompilationError::MalformedFuncType);
@@ -395,9 +395,7 @@ impl ModuleParser {
     fn process_types(&mut self, section: TypeSectionReader) -> Result<(), CompilationError> {
         self.validator.type_section(&section)?;
         for func_type in section.into_iter() {
-            let func_type = match func_type? {
-                Type::Func(func_type) => func_type,
-            };
+            let Type::Func(func_type) = func_type?;
             self.allocations
                 .translation
                 .func_type_registry
@@ -431,7 +429,7 @@ impl ModuleParser {
                     self.allocations
                         .translation
                         .segment_builder
-                        .add_global_variable(global_index.into(), &global_variable)?;
+                        .add_global_variable(global_index, &global_variable)?;
                     self.allocations.translation.globals.push(global_variable);
                     continue;
                 }
@@ -657,15 +655,12 @@ impl ModuleParser {
             let export = export?;
             // #[cfg(feature = "debug-print")]
             // println!("export: func_idx={} {}", export.index, export.name);
-            match export.kind {
-                ExternalKind::Func => {
-                    let function_name: Box<str> = export.name.into();
-                    self.allocations
-                        .translation
-                        .exported_funcs
-                        .insert(function_name, FuncIdx::from(export.index));
-                }
-                _ => {}
+            if export.kind == ExternalKind::Func {
+                let function_name: Box<str> = export.name.into();
+                self.allocations
+                    .translation
+                    .exported_funcs
+                    .insert(function_name, FuncIdx::from(export.index));
             }
         }
         Ok(())

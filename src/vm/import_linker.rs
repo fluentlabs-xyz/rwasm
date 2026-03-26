@@ -138,7 +138,7 @@ impl ImportLinker {
         if self.name_to_entity.contains_key(&import_name) {
             panic!("import linker name collision: {}", import_name)
         } else if self.idx_to_entity.contains_key(&sys_func_idx) {
-            panic!("import linker name collision: {}", import_name)
+            panic!("import linker `sys_func_idx` collision: {}", import_name)
         }
         let index = self.entities.len();
         self.entities.push(entity);
