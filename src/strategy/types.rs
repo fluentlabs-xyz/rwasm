@@ -1,7 +1,14 @@
 use crate::{CompilationError, TrapCode};
+use alloc::{vec, vec::Vec};
 
 pub trait StoreTr<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode>;
+
+    fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
+        let mut buffer = vec![0; length];
+        self.memory_read(offset, &mut buffer)?;
+        Ok(buffer)
+    }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode>;
 
