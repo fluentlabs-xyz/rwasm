@@ -91,11 +91,16 @@ impl GlobalMemory {
     }
 
     /// Reads `n` bytes into vec
-    pub fn read_into_vec(&self, offset: usize, len_buffer: usize) -> Result<Vec<u8>, TrapCode> {
-        let slice = self
-            .data()
-            .get(offset..(offset + len_buffer))
-            .ok_or(TrapCode::MemoryOutOfBounds)?;
+pub fn read_into_vec(&self, offset: usize, len_buffer: usize) -> Result<Vec<u8>, TrapCode> {
+    let end = offset
+        .checked_add(len_buffer)
+        .ok_or(TrapCode::MemoryOutOfBounds)?;
+    let slice = self
+        .data()
+        .get(offset..end)
+        .ok_or(TrapCode::MemoryOutOfBounds)?;
+    Ok(slice.to_vec())
+}
         Ok(slice.to_vec())
     }
 
