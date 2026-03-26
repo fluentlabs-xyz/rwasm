@@ -507,7 +507,7 @@ mod tests {
     #[test]
     fn test_opcode_encoding() {
         let opcode = Opcode::LocalGet(7);
-        let data = bincode::encode_to_vec(&opcode, bincode::config::legacy()).unwrap();
+        let data = bincode::encode_to_vec(opcode, bincode::config::legacy()).unwrap();
         println!("{:?}", data);
     }
 

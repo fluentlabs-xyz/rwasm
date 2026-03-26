@@ -5,7 +5,7 @@ use crate::{
 use alloc::vec::Vec;
 
 /// A Wasm table entity.
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct TableEntity {
     pub(crate) elements: Vec<u32>,
 }

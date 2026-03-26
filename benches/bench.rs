@@ -18,7 +18,7 @@ fn bench_comparisons(c: &mut Criterion) {
             for _ in 0..n {
                 let t = a;
                 a = b;
-                b = t + b;
+                b += t;
             }
             a
         }

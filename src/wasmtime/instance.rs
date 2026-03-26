@@ -51,7 +51,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
         let mut store = wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context);
         store.limiter(|ctx| &mut ctx.resource_limiter);
         if let Some(fuel) = fuel_limit {
-            if let Ok(_) = store.get_fuel() {
+            if store.get_fuel().is_ok() {
                 store.set_fuel(fuel).expect("wasmtime: fuel is not enabled");
             } else {
                 store.data_mut().fuel = Some(fuel);
@@ -142,9 +142,9 @@ impl<T: 'static> WasmtimeExecutor<T> {
             };
             buffer.push(value);
         }
-        buffer.extend(std::iter::repeat(Val::I32(0)).take(result.len()));
+        buffer.extend(std::iter::repeat_n(Val::I32(0), result.len()));
         let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
-        let exec_result = entrypoint
+        entrypoint
             .call(self.store.as_context_mut(), mapped_params, mapped_result)
             .map_err(map_anyhow_error)
             .or_else(|trap_code| {
@@ -153,10 +153,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
                 } else {
                     Err(trap_code)
                 }
-            });
-        if exec_result.is_err() {
-            return exec_result;
-        }
+            })?;
         for (i, x) in mapped_result.iter().cloned().enumerate() {
             result[i] = match x {
                 Val::I32(value) => Value::I32(value),
@@ -170,12 +167,12 @@ impl<T: 'static> WasmtimeExecutor<T> {
                     let value: Option<&u32> = value
                         .and_then(|ext_ref| ext_ref.data(&mut self.store).ok().flatten())
                         .and_then(|v| v.downcast_ref());
-                    Value::ExternRef(crate::ExternRef::new(value.map(|v| *v).unwrap_or_default()))
+                    Value::ExternRef(crate::ExternRef::new(value.copied().unwrap_or_default()))
                 }
                 _ => unreachable!("wasmtime: not supported type: {:?}", x),
             };
         }
-        exec_result
+        Ok(())
     }
 
     pub fn resume(
@@ -189,7 +186,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
 
 impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        let instance = self.instance.clone();
+        let instance = self.instance;
         let global_memory = instance
             .get_export(self.store.as_context_mut(), "memory")
             .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
@@ -201,14 +198,14 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        let instance = self.instance.clone();
+        let instance = self.instance;
         let global_memory = instance
             .get_export(self.store.as_context_mut(), "memory")
             .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
             .into_memory()
             .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
         global_memory
-            .write(self.store.as_context_mut(), offset, &buffer)
+            .write(self.store.as_context_mut(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)
     }
 
@@ -237,10 +234,8 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     fn remaining_fuel(&self) -> Option<u64> {
         if let Ok(fuel) = self.store.get_fuel() {
             Some(fuel)
-        } else if let Some(fuel) = self.store.data().fuel.as_ref() {
-            Some(*fuel)
         } else {
-            None
+            self.store.data().fuel.as_ref().copied()
         }
     }
 

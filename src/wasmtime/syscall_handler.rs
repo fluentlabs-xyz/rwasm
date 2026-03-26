@@ -28,7 +28,7 @@ pub fn wasmtime_syscall_handler<'a, T: 'static>(
     }));
 
     // Reserve space for result values (initialized to zeros).
-    buffer.extend(core::iter::repeat(Value::I32(0)).take(result.len()));
+    buffer.extend(core::iter::repeat_n(Value::I32(0), result.len()));
 
     let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
     let syscall_handler = caller.data().syscall_handler;

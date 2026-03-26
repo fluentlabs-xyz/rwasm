@@ -29,12 +29,10 @@ fn test_wasmtime_disabled_f32_sqrt() {
         )
     "#;
     let result = run_main::<f32>(wat);
-    let trap = result
-        .err()
-        .expect("execution should fail")
+    let trap = *result
+        .expect_err("execution should fail")
         .downcast_ref::<wasmtime::Trap>()
-        .expect("execution should fail with a trap")
-        .clone();
+        .expect("execution should fail with a trap");
     assert_eq!(trap, wasmtime::Trap::DisabledOpcode);
 }
 
@@ -52,12 +50,10 @@ fn test_wasmtime_disabled_f64_div() {
         )
     "#;
     let result = run_main::<f64>(wat);
-    let trap = result
-        .err()
-        .expect("execution should fail")
+    let trap = *result
+        .expect_err("execution should fail")
         .downcast_ref::<wasmtime::Trap>()
-        .expect("execution should fail with a trap")
-        .clone();
+        .expect("execution should fail with a trap");
     assert_eq!(trap, wasmtime::Trap::DisabledOpcode);
 }
 

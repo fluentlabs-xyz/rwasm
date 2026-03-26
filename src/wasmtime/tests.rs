@@ -89,7 +89,7 @@ fn test_call_with_charging_quadratic_wasmtime() {
     wasmtime_worker
         .execute("main_with_quadratic", &[], &mut [])
         .unwrap();
-    let words = (300 + 31) / 32;
+    let words = 300_u64.div_ceil(32);
     assert_eq!(
         wasmtime_worker.store.get_fuel().unwrap(),
         100_000 - (1 + 1 + 10 + WORD_COST * words + words * words / DIVISOR)

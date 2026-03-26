@@ -298,7 +298,7 @@ mod tests {
         const LEGACY_MODULE: &[u8] = &hex!("ef52010600000000000000150000006400000015000000140000003e00000015000000030000003e000000160000000000000000000000050000000000000005000000060000000700000008000000090000000000000000000000");
         let module2: RwasmModuleInner;
         (module2, _) =
-            bincode::decode_from_slice(&LEGACY_MODULE, bincode::config::legacy()).unwrap();
+            bincode::decode_from_slice(LEGACY_MODULE, bincode::config::legacy()).unwrap();
         assert_eq!(module2.source_pc, 0);
     }
 
