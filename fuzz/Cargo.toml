@@ -14,9 +14,9 @@ arbitrary = "1.4.2"
 # Use the same package/version as `rwasm` itself to avoid version skew.
 wasmparser = { version = "0.100.1", package = "wasmparser-nostd", default-features = false }
 # `wasmtime` crates (crates.io vs git), which causes type mismatches.
-wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", tag = "v41.0.2" }
+wasmtime = { package = "wasmtime-rwasm", version = "41.0.2-rwasm.1" }
 # `wasmtime-fuzzing` is not always published on crates.io; pull it from the Wasmtime repo.
-wasmtime-fuzzing = { git = "https://github.com/bytecodealliance/wasmtime", tag = "v41.0.2" }
+wasmtime-fuzzing = { package = "wasmtime-rwasm", version = "41.0.2-rwasm.1" }
 log = "0.4.26"
 env_logger = "0.11.8"
 anyhow = "1.0"

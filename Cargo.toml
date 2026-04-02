@@ -30,13 +30,13 @@ spin = "0.10.0"
 serde = { version = "1.0.219", features = ["derive", "rc"], optional = true }
 
 # wasmtime
-wasmtime = { git = "https://github.com/fluentlabs-xyz/wasmtime", branch = "v41-patched", optional = true, features = ["cache"] }
+wasmtime = { version = "41.0.2-rwasm.1", package = "wasmtime-rwasm", optional = true, features = ["cache"] }
 directories = { version = "6.0.0", optional = true }
 lru = { version = "0.16.3", optional = true }
 anyhow = { version = "1.0.98", optional = true }
 
 # rwasm fuel policy
-rwasm-fuel-policy = { git = "https://github.com/fluentlabs-xyz/rwasm-fuel-policy.git", branch = "main", default-features = false }
+rwasm-fuel-policy = { version = "0.0.2", default-features = false }
 
 [dev-dependencies]
 rand = "=0.9.1"
@@ -65,6 +65,7 @@ wasmtime = ["dep:wasmtime", "dep:lru", "dep:anyhow"]
 cache-compiled-artifacts = ["wasmtime", "dep:directories"]
 e2e = []
 pooling-allocator = []
+full-wasm-mode = ["wasmtime?/full-wasm-mode"]
 
 [[bench]]
 name = "bench"
