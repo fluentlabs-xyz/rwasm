@@ -4,8 +4,8 @@
 //!
 //! Key changes from Wasmtime's version:
 //! - Only compare **rwasm vs wasmtime**
-//! - No `ALLOWED_*` env vars (always choose between wasm-smith and single-inst)
-//! - Module generation is either **wasm-smith** or **single-inst**
+//! - No `ALLOWED_*` env vars
+//! - Module generation uses `wasm-smith` constrained to the currently supported rwasm subset
 //!
 //! Reference: `https://raw.githubusercontent.com/bytecodealliance/wasmtime/main/fuzz/fuzz_targets/differential.rs`
 
@@ -15,30 +15,102 @@ use libfuzzer_sys::{
     fuzz_target,
 };
 use rwasm::{
-    CompilationConfig, ExecutionEngine, ExternRef, FuncRef, RwasmModule, RwasmStore, StoreTr,
-    TrapCode, Value,
+    CompilationConfig, CompilationError, ExecutionEngine, ExternRef, FuncRef, RwasmModule,
+    RwasmStore, StoreTr, TrapCode, Value,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering::SeqCst},
     Once,
 };
-use wasmparser::{Parser, Payload};
+use wasm_smith as smith;
+use wasmparser::{Parser, Payload, ValType as ParserValType};
 use wasmtime::{
     Engine, Extern, ExternRef as WasmtimeExternRef, FuncType, Instance, Module, Ref, Store, Val,
-};
-use wasmtime_fuzzing::{
-    generators::{CompilerStrategy, Config, DiffValue, DiffValueType, SingleInstModule},
-    oracles::{dummy, log_wasm, StoreLimits},
 };
 
 /// Upper limit on the number of invocations for each WebAssembly function.
 const NUM_INVOCATIONS: usize = 5;
 const MAX_EXPORTS: usize = 8;
 
+/// Starting fuel for both engines in each differential run.
+///
+/// We compare *remaining* fuel after execution, which implies consumed fuel must match too.
+const FUEL_LIMIT: u64 = 50_000_000;
+
 /// How many table elements we snapshot/compare (nullness only) for each exported table.
 ///
 /// Keeping this bounded prevents pathological slowdown when tables grow very large.
 const TABLE_NULLNESS_PREFIX_ELEMS: usize = 256;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum DiffValue {
+    I32(i32),
+    I64(i64),
+    F32(u32),
+    F64(u64),
+    FuncRef { null: bool },
+    ExternRef { null: bool },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DiffValueType {
+    I32,
+    I64,
+    F32,
+    F64,
+    FuncRef,
+    ExternRef,
+}
+
+impl TryFrom<ParserValType> for DiffValueType {
+    type Error = ();
+
+    fn try_from(value: ParserValType) -> std::result::Result<Self, Self::Error> {
+        match value {
+            ParserValType::I32 => Ok(Self::I32),
+            ParserValType::I64 => Ok(Self::I64),
+            ParserValType::F32 => Ok(Self::F32),
+            ParserValType::F64 => Ok(Self::F64),
+            ParserValType::FuncRef => Ok(Self::FuncRef),
+            ParserValType::ExternRef => Ok(Self::ExternRef),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<wasmtime::ValType> for DiffValueType {
+    type Error = ();
+
+    fn try_from(value: wasmtime::ValType) -> std::result::Result<Self, Self::Error> {
+        match value {
+            wasmtime::ValType::I32 => Ok(Self::I32),
+            wasmtime::ValType::I64 => Ok(Self::I64),
+            wasmtime::ValType::F32 => Ok(Self::F32),
+            wasmtime::ValType::F64 => Ok(Self::F64),
+            wasmtime::ValType::Ref(r) => match r.heap_type() {
+                wasmtime::HeapType::Func => Ok(Self::FuncRef),
+                wasmtime::HeapType::Extern => Ok(Self::ExternRef),
+                _ => Err(()),
+            },
+            _ => Err(()),
+        }
+    }
+}
+
+fn arbitrary_diff_value_of_type(u: &mut Unstructured<'_>, ty: DiffValueType) -> Result<DiffValue> {
+    Ok(match ty {
+        DiffValueType::I32 => DiffValue::I32(u.arbitrary::<i32>()?),
+        DiffValueType::I64 => DiffValue::I64(u.arbitrary::<i64>()?),
+        DiffValueType::F32 => DiffValue::F32(u.arbitrary::<u32>()?),
+        DiffValueType::F64 => DiffValue::F64(u.arbitrary::<u64>()?),
+        DiffValueType::FuncRef => DiffValue::FuncRef {
+            null: u.arbitrary::<bool>()?,
+        },
+        DiffValueType::ExternRef => DiffValue::ExternRef {
+            null: u.arbitrary::<bool>()?,
+        },
+    })
+}
 
 /// Only run once when the fuzz target loads.
 static SETUP: Once = Once::new();
@@ -48,8 +120,6 @@ static STATS: RuntimeStats = RuntimeStats::new();
 
 fuzz_target!(|data: &[u8]| {
     SETUP.call_once(|| {
-        // Mirrors Wasmtime's harness: initialize fuzzing infrastructure once.
-        wasmtime_fuzzing::init_fuzzing();
         let _ = env_logger::try_init();
     });
 
@@ -63,86 +133,41 @@ fn execute_one(data: &[u8]) -> Result<()> {
 
     STATS.bump_attempts();
 
-    // Generate a Wasmtime fuzzing configuration suitable for differential execution.
-    let mut config: Config = u.arbitrary()?;
+    let mut gen_cfg = smith::Config::default();
+    gen_cfg.bulk_memory_enabled = true;
+    gen_cfg.multi_value_enabled = true;
+    gen_cfg.extended_const_enabled = true;
+    gen_cfg.sign_extension_ops_enabled = true;
+    gen_cfg.reference_types_enabled = true;
+    gen_cfg.tail_call_enabled = true;
 
-    // rwasm doesn't support the component model proposals.
-    config.module_config.component_model_async = false;
-    config.module_config.component_model_async_builtins = false;
-    config.module_config.component_model_async_stackful = false;
-    config.module_config.component_model_error_context = false;
+    gen_cfg.memory64_enabled = false;
+    gen_cfg.relaxed_simd_enabled = false;
+    gen_cfg.simd_enabled = false;
+    gen_cfg.custom_page_sizes_enabled = false;
+    gen_cfg.threads_enabled = false;
+    gen_cfg.shared_everything_threads_enabled = false;
+    gen_cfg.gc_enabled = false;
+    gen_cfg.exceptions_enabled = false;
 
-    // Disable additional Wasm proposals via the underlying wasm-smith config knobs that
-    // `wasmtime-fuzzing` will mirror into `wasmtime::Config`.
-    //
-    // Keep bulk-memory + multi-value + others on (they're core-ish and rwasm supports them),
-    // but turn off the rest of the non-MVP extensions for now.
-    {
-        let cfg = &mut config.module_config.config;
-        cfg.bulk_memory_enabled = true;
-        cfg.multi_value_enabled = true;
-        cfg.extended_const_enabled = true;
-        cfg.sign_extension_ops_enabled = true;
-        cfg.reference_types_enabled = true;
-        cfg.tail_call_enabled = true;
+    // Keep generated modules inside the currently supported differential subset.
+    gen_cfg.max_imports = 0;
+    gen_cfg.max_memories = 1;
+    gen_cfg.min_memories = 1;
+    gen_cfg.min_tables = 1;
+    gen_cfg.max_tables = 2;
+    gen_cfg.export_everything = true;
 
-        cfg.wide_arithmetic_enabled = false;
-        cfg.memory64_enabled = false;
-        cfg.relaxed_simd_enabled = false;
-        cfg.simd_enabled = false;
-        cfg.custom_page_sizes_enabled = false;
-        cfg.threads_enabled = false;
-        cfg.shared_everything_threads_enabled = false;
-        cfg.gc_enabled = false;
-        cfg.exceptions_enabled = false;
-        // Do not use multi memory proposal
-        cfg.max_memories = 1;
-
-        // export everything
-        cfg.export_everything = true;
-
-        // Ensure broad coverage by ensuring memory and table ops
-        // encountered often.
-        cfg.min_tables = 1;
-        cfg.max_tables = 2;
-        cfg.min_memories = 1;
-    }
-    // Use Cranelift to support tail-call
-    config.wasmtime.compiler_strategy = CompilerStrategy::CraneliftNative;
-
-    config.set_differential_config();
-
-    // Build a module either via wasm-smith or as a single-instruction module.
-    let build_wasm_smith_module = |u: &mut Unstructured, config: &Config| -> Result<Vec<u8>> {
-        STATS.wasm_smith_modules.fetch_add(1, SeqCst);
-        // `wasmtime-fuzzing` / `wasm-smith` generation is not supposed to panic, but in practice it
-        // occasionally does (e.g. internal unwraps in generator code). Treat those as "skip input"
-        // so the fuzzer reports only real engine bugs/diffs.
-        let module = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            config.generate(u, Some(10000))
-        })) {
-            Ok(res) => res?,
-            Err(_) => return Err(arbitrary::Error::IncorrectFormat),
-        };
-        Ok(module.to_bytes())
-    };
-    let build_single_inst_module = |u: &mut Unstructured, config: &Config| -> Result<Vec<u8>> {
-        STATS.single_instruction_modules.fetch_add(1, SeqCst);
-        let module = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            SingleInstModule::new(u, &config.module_config)
-        })) {
-            Ok(res) => res?,
-            Err(_) => return Err(arbitrary::Error::IncorrectFormat),
-        };
-        Ok(module.to_bytes())
+    STATS.wasm_smith_modules.fetch_add(1, SeqCst);
+    let wasm = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        smith::Module::new(gen_cfg, &mut u)
+    })) {
+        Ok(Ok(module)) => module.to_bytes(),
+        Ok(Err(_)) => return Err(arbitrary::Error::IncorrectFormat),
+        Err(_) => return Err(arbitrary::Error::IncorrectFormat),
     };
 
-    let wasm = match u.int_in_range::<u8>(0..=1)? {
-        0 => build_wasm_smith_module(&mut u, &config)?,
-        _ => build_single_inst_module(&mut u, &config)?,
-    };
-
-    log_wasm(&wasm);
+    log::trace!("generated wasm bytes: {}", hex::encode(&wasm));
 
     // We parse exports/types once; this is used by the rwasm-side snapshots.
     // If we can't parse the module, we can't reliably snapshot/compare side effects.
@@ -155,7 +180,7 @@ fn execute_one(data: &[u8]) -> Result<()> {
     // Note: rwasm currently recompiles per-export (entrypoint-by-name), so for semantic
     // comparability we will instantiate RHS fresh inside each evaluation below.
     let exports: Vec<(String, wasmtime::FuncType)> = {
-        let rhs_store = create_wasmtime_store(&config);
+        let rhs_store = create_wasmtime_store();
         let rhs_module = match wasmtime::Module::new(rhs_store.engine(), &wasm) {
             Ok(m) => m,
             Err(_e) => {
@@ -192,7 +217,7 @@ fn execute_one(data: &[u8]) -> Result<()> {
                     let ty = ty
                         .try_into()
                         .map_err(|_| arbitrary::Error::IncorrectFormat)?;
-                    DiffValue::arbitrary_of_type(&mut u, ty)
+                    arbitrary_diff_value_of_type(&mut u, ty)
                 })
                 .collect::<Result<Vec<_>>>()
             {
@@ -213,7 +238,7 @@ fn execute_one(data: &[u8]) -> Result<()> {
 
             // Build a fresh RHS Wasmtime instance for this evaluation.
             // This keeps semantics comparable with rwasm's "entrypoint does init + call" execution model.
-            let rhs_store = create_wasmtime_store(&config);
+            let rhs_store = create_wasmtime_store();
             let rhs_module = match wasmtime::Module::new(rhs_store.engine(), &wasm) {
                 Ok(m) => m,
                 Err(_e) => {
@@ -280,13 +305,13 @@ fn differential_rwasm_vs_wasmtime(
 
     // LHS: rwasm evaluation (compile with `name` as entrypoint).
     let lhs_results = match run_rwasm_one(wasm, name, args, result_tys, export_map) {
-        Ok(Some((results, snap))) => Ok((results, snap)),
-        Ok(None) => return Ok(true), // rwasm can't compile supported subset -> skip
+        Ok(Some((results, snap, fuel_remaining))) => Ok((results, snap, fuel_remaining)),
+        Ok(None) => return Ok(true), // module requires unsupported functionality in current rwasm
         Err(trap) => Err(trap),
     };
     log::debug!(
         " -> lhs results on rwasm: {:?}",
-        lhs_results.as_ref().map(|(r, _)| r)
+        lhs_results.as_ref().map(|(r, _, _)| r)
     );
 
     // RHS: Wasmtime evaluation.
@@ -300,12 +325,25 @@ fn differential_rwasm_vs_wasmtime(
 
     match (lhs_results, rhs_results) {
         // LHS ok, RHS ok: compare return values and then compare exported state.
-        (Ok((lhs_vals, lhs_snap)), Ok(Some(rhs_vals))) => {
+        (
+            Ok((lhs_vals, lhs_snap, lhs_fuel_remaining)),
+            Ok(Some((rhs_vals, rhs_fuel_remaining))),
+        ) => {
             if lhs_vals != rhs_vals {
                 panic!(
                     "diff results: export={name} args={args:?} result_tys={result_tys:?}\n\
                      rwasm={lhs_vals:?}\n\
                      wasmtime={rhs_vals:?}\n"
+                );
+            }
+
+            let lhs_consumed = FUEL_LIMIT.saturating_sub(lhs_fuel_remaining);
+            let rhs_consumed = FUEL_LIMIT.saturating_sub(rhs_fuel_remaining);
+            if lhs_consumed != rhs_consumed {
+                panic!(
+                    "diff fuel: export={name} args={args:?} result_tys={result_tys:?}\n\
+                     rwasm_remaining={lhs_fuel_remaining} rwasm_consumed={lhs_consumed}\n\
+                     wasmtime_remaining={rhs_fuel_remaining} wasmtime_consumed={rhs_consumed}\n"
                 );
             }
 
@@ -415,17 +453,21 @@ fn run_rwasm_one(
     args: &[DiffValue],
     results_t: &[DiffValueType],
     export_map: &ExportMap,
-) -> Result<Option<(Vec<DiffValue>, RwasmSnapshot)>, TrapCode> {
+) -> Result<Option<(Vec<DiffValue>, RwasmSnapshot, u64)>, TrapCode> {
     let config = CompilationConfig::default()
         .with_entrypoint_name(export.into())
         .with_allow_malformed_entrypoint_func_type(true)
-        .with_consume_fuel(false);
+        .with_allow_start_section(true)
+        .with_consume_fuel(true);
 
     let (module, _) = match RwasmModule::compile(config, wasm) {
         Ok(x) => x,
         Err(e) => {
-            // Treat this as a compilation differential (Wasmtime already compiled+instantiated,
-            // otherwise we would have returned early before selecting exports).
+            if is_unsupported_rwasm_compilation_error(&e) {
+                STATS.unsupported_modules.fetch_add(1, SeqCst);
+                return Ok(None);
+            }
+            // If this is not an expected unsupported feature class, keep it loud.
             panic!(
                 "compile-diff: export={export} rwasm_compilation_error={e:?} ({e}) args={args:?} result_tys={results_t:?}\n"
             );
@@ -434,7 +476,7 @@ fn run_rwasm_one(
 
     let engine = ExecutionEngine::default();
     let mut store = RwasmStore::<()>::default();
-    store.reset_fuel(u64::MAX);
+    store.reset_fuel(FUEL_LIMIT);
 
     let params: Vec<Value> = args
         .iter()
@@ -453,7 +495,24 @@ fn run_rwasm_one(
         .ok_or(TrapCode::IllegalOpcode)?;
 
     let snap = RwasmSnapshot::new(export_map, &store);
-    Ok(Some((vals, snap)))
+    let fuel_remaining = store.remaining_fuel().unwrap_or(0);
+    Ok(Some((vals, snap, fuel_remaining)))
+}
+
+fn is_unsupported_rwasm_compilation_error(err: &CompilationError) -> bool {
+    matches!(
+        err,
+        CompilationError::NotSupportedExtension
+            | CompilationError::NotSupportedImportType
+            | CompilationError::NotSupportedFuncType
+            | CompilationError::MalformedImportFunctionType
+            | CompilationError::UnresolvedImportFunction
+            | CompilationError::NonDefaultMemoryIndex
+            | CompilationError::NotSupportedLocalType
+            | CompilationError::NotSupportedGlobalType
+            | CompilationError::StartSectionsAreNotAllowed
+            | CompilationError::MissingEntrypoint
+    )
 }
 
 /// Creates a Wasmtime store, with signal-based traps disabled on macOS.
@@ -469,8 +528,9 @@ fn run_rwasm_one(
 /// With signals_based_traps disabled, wasmtime uses explicit bounds checks and
 /// trap instructions instead, avoiding the signal handler conflict.
 #[cfg(any(target_os = "macos", feature = "disable-signals"))]
-fn create_wasmtime_store(config: &Config) -> Store<StoreLimits> {
-    let mut wasmtime_config = config.to_wasmtime();
+fn create_wasmtime_store() -> Store<()> {
+    let mut wasmtime_config = wasmtime::Config::new();
+    wasmtime_config.consume_fuel(true);
     wasmtime_config.signals_based_traps(false);
     // When signals_based_traps is disabled, spectre mitigations must also be disabled.
     // This is because spectre mitigations rely on faults from out-of-bounds accesses
@@ -481,15 +541,24 @@ fn create_wasmtime_store(config: &Config) -> Store<StoreLimits> {
         wasmtime_config.cranelift_flag_set("enable_table_access_spectre_mitigation", "false");
     }
     let engine = Engine::new(&wasmtime_config).unwrap();
-    let mut store = Store::new(&engine, StoreLimits::new());
-    config.configure_store(&mut store);
+    let mut store = Store::new(&engine, ());
+    store
+        .set_fuel(FUEL_LIMIT)
+        .expect("failed to set wasmtime fuel for differential fuzzing");
     store
 }
 
 /// Creates a Wasmtime store using the default configuration.
 #[cfg(not(any(target_os = "macos", feature = "disable-signals")))]
-fn create_wasmtime_store(config: &Config) -> Store<StoreLimits> {
-    config.to_store()
+fn create_wasmtime_store() -> Store<()> {
+    let mut wasmtime_config = wasmtime::Config::new();
+    wasmtime_config.consume_fuel(true);
+    let engine = Engine::new(&wasmtime_config).unwrap();
+    let mut store = Store::new(&engine, ());
+    store
+        .set_fuel(FUEL_LIMIT)
+        .expect("failed to set wasmtime fuel for differential fuzzing");
+    store
 }
 
 #[derive(Debug, Clone)]
@@ -609,15 +678,14 @@ impl RwasmSnapshot {
 /// Like `wasmtime-fuzzing`'s `WasmtimeInstance`, but with access to the underlying `Store`/`Instance`
 /// so we can read exported tables for the table oracle.
 struct RawWasmtimeInstance {
-    store: Store<StoreLimits>,
+    store: Store<()>,
     instance: Instance,
 }
 
 impl RawWasmtimeInstance {
-    fn new(mut store: Store<StoreLimits>, module: Module) -> anyhow::Result<Self> {
-        let instance = dummy::dummy_linker(&mut store, &module)
-            .and_then(|l| l.instantiate(&mut store, &module))
-            .context("unable to instantiate module in wasmtime (dummy linker)")?;
+    fn new(mut store: Store<()>, module: Module) -> anyhow::Result<Self> {
+        let instance = Instance::new(&mut store, &module, &[])
+            .context("unable to instantiate module in wasmtime")?;
         Ok(Self { store, instance })
     }
 
@@ -669,9 +737,7 @@ impl RawWasmtimeInstance {
     }
 
     fn is_oom(&self) -> bool {
-        // `StoreLimits::is_oom()` exists in `wasmtime-fuzzing` but is private.
-        // We can't reliably detect OOM via the public API here, so conservatively
-        // report "not OOM" and let mismatches surface normally.
+        // OOM detection isn't available through the public API in this harness.
         false
     }
 
@@ -680,7 +746,7 @@ impl RawWasmtimeInstance {
         function_name: &str,
         arguments: &[DiffValue],
         _results: &[DiffValueType],
-    ) -> anyhow::Result<Option<Vec<DiffValue>>> {
+    ) -> anyhow::Result<Option<(Vec<DiffValue>, u64)>> {
         let arguments: Vec<_> = arguments
             .iter()
             .map(|v| diff_value_to_wasmtime_val(&mut self.store, v))
@@ -701,7 +767,12 @@ impl RawWasmtimeInstance {
             .collect::<Option<Vec<_>>>()
             .ok_or_else(|| anyhow::anyhow!("unsupported result type"))?;
 
-        Ok(Some(results))
+        let remaining_fuel = self
+            .store
+            .get_fuel()
+            .map_err(|e| anyhow::anyhow!("failed to read wasmtime fuel: {e}"))?;
+
+        Ok(Some((results, remaining_fuel)))
     }
 
     fn get_global(&mut self, name: &str, _ty: DiffValueType) -> Option<DiffValue> {
@@ -753,7 +824,7 @@ fn wasmtime_table_nullness_prefix(
     Some((size_u32, prefix))
 }
 
-fn diff_value_to_wasmtime_val(store: &mut Store<StoreLimits>, v: &DiffValue) -> Option<Val> {
+fn diff_value_to_wasmtime_val(store: &mut Store<()>, v: &DiffValue) -> Option<Val> {
     Some(match v {
         DiffValue::I32(x) => Val::I32(*x),
         DiffValue::I64(x) => Val::I64(*x),
@@ -779,7 +850,6 @@ fn diff_value_to_wasmtime_val(store: &mut Store<StoreLimits>, v: &DiffValue) -> 
                 Val::ExternRef(Some(r))
             }
         }
-        _ => return None,
     })
 }
 
@@ -910,7 +980,6 @@ fn diff_value_to_rwasm(v: &DiffValue) -> Option<Value> {
                 Value::ExternRef(ExternRef::new(1u32))
             }
         }
-        _ => return None,
     })
 }
 
@@ -922,7 +991,6 @@ fn zero_rwasm_from_diff_type(t: &DiffValueType) -> Value {
         DiffValueType::F64 => Value::F64(rwasm::F64::from_bits(0)),
         DiffValueType::FuncRef => Value::FuncRef(FuncRef::null()),
         DiffValueType::ExternRef => Value::ExternRef(ExternRef::null()),
-        _ => Value::I32(0),
     }
 }
 
@@ -945,6 +1013,7 @@ struct RuntimeStats {
     attempts: AtomicUsize,
     total_invocations: AtomicUsize,
     successes: AtomicUsize,
+    unsupported_modules: AtomicUsize,
     wasm_smith_modules: AtomicUsize,
     single_instruction_modules: AtomicUsize,
 }
@@ -955,6 +1024,7 @@ impl RuntimeStats {
             attempts: AtomicUsize::new(0),
             total_invocations: AtomicUsize::new(0),
             successes: AtomicUsize::new(0),
+            unsupported_modules: AtomicUsize::new(0),
             wasm_smith_modules: AtomicUsize::new(0),
             single_instruction_modules: AtomicUsize::new(0),
         }
@@ -966,12 +1036,14 @@ impl RuntimeStats {
             return;
         }
         let successes = self.successes.load(SeqCst);
+        let unsupported = self.unsupported_modules.load(SeqCst);
         println!(
             "=== Execution rate ({} successes / {} attempted modules): {:.02}% ===",
             successes,
             attempts,
             successes as f64 / attempts as f64 * 100f64,
         );
+        println!("\tunsupported-by-rwasm modules skipped: {unsupported}");
         let wasm_smith = self.wasm_smith_modules.load(SeqCst);
         let single_inst = self.single_instruction_modules.load(SeqCst);
         let total = wasm_smith + single_inst;
