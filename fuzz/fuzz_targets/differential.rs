@@ -434,8 +434,12 @@ fn differential_rwasm_vs_wasmtime(
         // LHS trap, RHS trap: considered equivalent (coarser than Wasmtime's Trap equality).
         (Err(_), Err(_)) => Ok(true),
 
+        // If Wasmtime side cannot represent the invocation in the currently comparable subset,
+        // skip this case instead of reporting a false mismatch.
+        (_, Ok(None)) => Ok(true),
+
         // LHS trap, RHS ok: mismatch.
-        (Err(lhs_trap), Ok(_)) => {
+        (Err(lhs_trap), Ok(Some(_))) => {
             panic!("diff: export={name} wasmtime=Ok rwasm_trap={lhs_trap:?} args={args:?} result_tys={result_tys:?}\n")
         }
 
@@ -443,10 +447,6 @@ fn differential_rwasm_vs_wasmtime(
         (Ok(_), Err(rhs_err)) => {
             panic!("diff: export={name} wasmtime_trap={rhs_err:?} rwasm=Ok args={args:?} result_tys={result_tys:?}\n")
         }
-
-        // Wasmtime-side engines can return Ok(None) for unsupported signatures; for WasmtimeInstance
-        // this shouldn't happen, but keep it for parity with the upstream oracle.
-        (Ok(_), Ok(None)) => Ok(true),
     }
 }
 
@@ -481,11 +481,18 @@ fn run_rwasm_one(
     let mut store = RwasmStore::<()>::default();
     store.reset_fuel(FUEL_LIMIT);
 
-    let params: Vec<Value> = args
+    let fallback_funcref_idx = export_map.exported_funcs.get(export).copied();
+    let params: Vec<Value> = match args
         .iter()
-        .map(diff_value_to_rwasm)
-        .collect::<Option<_>>()
-        .ok_or(TrapCode::IllegalOpcode)?;
+        .map(|v| diff_value_to_rwasm(v, fallback_funcref_idx))
+        .collect::<Option<Vec<_>>>()
+    {
+        Some(p) => p,
+        None => {
+            STATS.unsupported_modules.fetch_add(1, SeqCst);
+            return Ok(None);
+        }
+    };
     let mut results: Vec<Value> = results_t.iter().map(zero_rwasm_from_diff_type).collect();
 
     engine.execute(&mut store, &module, &params, &mut results)?;
@@ -750,16 +757,19 @@ impl RawWasmtimeInstance {
         arguments: &[DiffValue],
         _results: &[DiffValueType],
     ) -> anyhow::Result<Option<(Vec<DiffValue>, u64)>> {
-        let arguments: Vec<_> = arguments
-            .iter()
-            .map(|v| diff_value_to_wasmtime_val(&mut self.store, v))
-            .collect::<Option<_>>()
-            .ok_or_else(|| anyhow::anyhow!("unsupported argument type"))?;
-
         let function = self
             .instance
             .get_func(&mut self.store, function_name)
             .expect("unable to access exported function");
+
+        let arguments: Vec<_> = match arguments
+            .iter()
+            .map(|v| diff_value_to_wasmtime_val(&mut self.store, v, Some(&function)))
+            .collect::<Option<Vec<_>>>()
+        {
+            Some(args) => args,
+            None => return Ok(None),
+        };
         let ty = function.ty(&self.store);
         let mut results = vec![Val::I32(0); ty.results().len()];
         function.call(&mut self.store, &arguments, &mut results)?;
@@ -827,21 +837,22 @@ fn wasmtime_table_nullness_prefix(
     Some((size_u32, prefix))
 }
 
-fn diff_value_to_wasmtime_val(store: &mut Store<()>, v: &DiffValue) -> Option<Val> {
+fn diff_value_to_wasmtime_val(
+    store: &mut Store<()>,
+    v: &DiffValue,
+    fallback_funcref: Option<&wasmtime::Func>,
+) -> Option<Val> {
     Some(match v {
         DiffValue::I32(x) => Val::I32(*x),
         DiffValue::I64(x) => Val::I64(*x),
         DiffValue::F32(bits) => Val::F32(*bits),
         DiffValue::F64(bits) => Val::F64(*bits),
         DiffValue::FuncRef { null } => {
-            // Compare funcref values by nullness only.
-            //
-            // Creating a deterministic non-null funcref requires selecting a specific function
-            // from the module instance, which this helper doesn't have access to.
             if *null {
                 Val::FuncRef(None)
             } else {
-                return None;
+                // Use a deterministic in-module function reference for non-null funcref args.
+                Val::FuncRef(Some(fallback_funcref?.clone()))
             }
         }
         DiffValue::ExternRef { null } => {
@@ -962,7 +973,7 @@ fn parse_export_map(wasm: &[u8]) -> Result<ExportMap, ()> {
     Ok(out)
 }
 
-fn diff_value_to_rwasm(v: &DiffValue) -> Option<Value> {
+fn diff_value_to_rwasm(v: &DiffValue, fallback_funcref_idx: Option<u32>) -> Option<Value> {
     Some(match v {
         DiffValue::I32(x) => Value::I32(*x),
         DiffValue::I64(x) => Value::I64(*x),
@@ -972,8 +983,8 @@ fn diff_value_to_rwasm(v: &DiffValue) -> Option<Value> {
             if *null {
                 Value::FuncRef(FuncRef::null())
             } else {
-                // Deterministic non-null placeholder. We only compare nullness across engines.
-                Value::FuncRef(FuncRef::new(1u32))
+                // Use deterministic exported callee index when available.
+                Value::FuncRef(FuncRef::new(fallback_funcref_idx?))
             }
         }
         DiffValue::ExternRef { null } => {
