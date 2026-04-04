@@ -14,6 +14,9 @@ For each generated module/export invocation, the harness compares:
 Fuel is initialized to the same `FUEL_LIMIT` on both sides.
 If consumed fuel differs, the target fails.
 
+To keep fuel comparison meaningful, rwasm compilation in this harness disables
+`consume_fuel_for_params_and_locals`, aligning with wasmtime's instruction-centric fuel behavior.
+
 ---
 
 ## Why some binaries are excluded

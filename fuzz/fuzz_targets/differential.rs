@@ -461,6 +461,10 @@ fn run_rwasm_one(
         .with_entrypoint_name(export.into())
         .with_allow_malformed_entrypoint_func_type(true)
         .with_allow_start_section(true)
+        // Keep fuel semantics aligned with wasmtime's instruction-centric consume_fuel mode.
+        // If this is true, rwasm additionally charges for params/locals setup, which can create
+        // deterministic +1 deltas that are harness artifacts rather than execution mismatches.
+        .with_consume_fuel_for_params_and_locals(false)
         .with_consume_fuel(true);
 
     let (module, _) = match RwasmModule::compile(config, wasm) {
