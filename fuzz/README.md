@@ -12,7 +12,13 @@ For each generated module/export invocation, the harness compares:
 4. **remaining fuel** (and therefore consumed fuel) between engines.
 
 Fuel is initialized to the same `FUEL_LIMIT` on both sides.
-If consumed fuel differs, the target fails.
+The harness compares consumed fuel, with one normalization rule:
+
+- rwasm applies a per-invocation base entry charge (`FuelCosts::BASE`) that raw-wasmtime
+  execution does not account in the same place,
+- so we compare both raw and normalized (`rwasm_consumed - FuelCosts::BASE`) values.
+
+If neither raw nor normalized value matches wasmtime, the target fails.
 
 ---
 
@@ -25,13 +31,14 @@ The harness handles this in two ways:
 1. **Generation constraints (preferred path)**
    - no imports (`max_imports = 0`),
    - no multi-memory (`max_memories = 1`),
+   - bounded data-segment count (`max_data_segments = 16`),
    - single-table subset (`max_tables = 1`),
    - no GC / exceptions / threads / SIMD / memory64 / relaxed-SIMD / custom page sizes,
    - only proposals currently enabled in the differential subset.
 
 2. **Compiler-side unsupported filter (safety net)**
    - if `RwasmModule::compile` returns known unsupported-feature errors
-     (for example unsupported extension/import/type categories, non-default memory index, missing entrypoint),
+     (for example unsupported extension/import/type categories, non-default memory index, missing entrypoint, or readonly-data overflow),
      the module is skipped from differential comparison.
 
 3. **Runtime snapshot guard (fallback safety)**
