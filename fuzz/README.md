@@ -25,6 +25,7 @@ The harness handles this in two ways:
 1. **Generation constraints (preferred path)**
    - no imports (`max_imports = 0`),
    - no multi-memory (`max_memories = 1`),
+   - single-table subset (`max_tables = 1`),
    - no GC / exceptions / threads / SIMD / memory64 / relaxed-SIMD / custom page sizes,
    - only proposals currently enabled in the differential subset.
 
@@ -32,6 +33,10 @@ The harness handles this in two ways:
    - if `RwasmModule::compile` returns known unsupported-feature errors
      (for example unsupported extension/import/type categories, non-default memory index, missing entrypoint),
      the module is skipped from differential comparison.
+
+3. **Runtime snapshot guard (fallback safety)**
+   - if table snapshot mapping cannot be resolved on one side for a generated module,
+     that module is treated as outside the currently comparable subset and skipped (instead of panic/crash).
 
 This keeps fuzzing focused on the shared supported execution subset.
 
