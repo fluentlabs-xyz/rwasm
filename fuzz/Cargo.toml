@@ -13,10 +13,9 @@ arbitrary = "1.4.2"
 # Needed to map export names -> indices for snapshotting globals/tables/memory.
 # Use the same package/version as `rwasm` itself to avoid version skew.
 wasmparser = { version = "0.100.1", package = "wasmparser-nostd", default-features = false }
-# `wasmtime` crates (crates.io vs git), which causes type mismatches.
 wasmtime = { package = "wasmtime-rwasm", version = "41.0.2-rwasm.1" }
-# `wasmtime-fuzzing` is not always published on crates.io; pull it from the Wasmtime repo.
-wasmtime-fuzzing = { package = "wasmtime-rwasm", version = "41.0.2-rwasm.1" }
+wasm-smith = "0.243.0"
+hex = "0.4.3"
 log = "0.4.26"
 env_logger = "0.11.8"
 anyhow = "1.0"
