@@ -235,4 +235,12 @@ impl<T: 'static> StrategyExecutor<T> {
             StrategyExecutor::Wasmtime { executor } => executor.resume(interruption_result, result),
         }
     }
+
+    pub fn snapshot_memory(&mut self) -> Vec<u8> {
+        match self {
+            StrategyExecutor::Rwasm { store, .. } => store.memory_snapshot(),
+            #[cfg(feature = "wasmtime")]
+            StrategyExecutor::Wasmtime { executor } => executor.snapshot_memory(),
+        }
+    }
 }
