@@ -14,7 +14,8 @@ For each generated module/export invocation, the harness compares:
 Memory comparison is done directly on exported memory views.
 For compatibility with reserved-memory implementation differences, trailing all-zero extension bytes are treated as equivalent.
 
-Fuel is initialized to the same `FUEL_LIMIT` on both sides.
+Fuel is reset to the same `FUEL_LIMIT` **before each compared invocation** on both sides.
+The harness compares per-call consumed fuel deltas.
 If consumed fuel differs, the target fails.
 
 ---
