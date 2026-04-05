@@ -47,7 +47,7 @@ criterion = { version = "0.7.0", default-features = false, features = [] }
 fib-example = { path = "examples/fib" }
 
 [features]
-default = ["std", "wasmtime", "debug-print", "fpu", "full-wasm-mode"]
+default = ["std", "wasmtime", "debug-print"]
 std = [
     "bytes/std",
     "bincode/std",

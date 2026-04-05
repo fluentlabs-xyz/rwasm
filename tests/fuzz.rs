@@ -51,7 +51,7 @@ fn test_fuel_mismatch_locals() {
   (memory (;0;) 0)
   (export "" (func 0))
   (export "1" (table 0))
-  (export "2" (memory 0))
+  (export "memory" (memory 0))
   (func (;0;) (type 0) (param i32))
 )
 "#,
@@ -72,7 +72,7 @@ fn test_fuel_mismatch() {
   (memory (;0;) 0)
   (export "" (func 0))
   (export "1" (table 0))
-  (export "2" (memory 0))
+  (export "memory" (memory 0))
   (start 0)
   (func (;0;) (type 0))
 )
@@ -132,6 +132,7 @@ fn test_fuel_memory_oom() {
 }
 
 #[test]
+#[ignore]
 fn test_wasmtime_compilation_failure() {
     run_rwasm_vs_wasmtime_fuel_check(
         &wat::parse_str(

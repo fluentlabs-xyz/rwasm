@@ -1,4 +1,5 @@
 use crate::{CompilationConfig, ExecutionEngine, RwasmModule};
+use alloc::vec::Vec;
 
 mod module;
 mod store;
