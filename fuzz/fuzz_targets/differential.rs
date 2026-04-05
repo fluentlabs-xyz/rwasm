@@ -18,12 +18,14 @@ use rwasm::{
     CompilationConfig, ExecutionEngine, ExternRef, FuncRef, RwasmModule, RwasmStore, StoreTr,
     TrapCode, Value,
 };
+use rwasm_fuel_policy::{rwasm_fuel_for_operator, FuelCosts};
 use std::sync::{
     atomic::{AtomicUsize, Ordering::SeqCst},
     Once,
 };
 use wasm_smith as smith;
 use wasmparser::{Parser, Payload, ValType as ParserValType};
+use wasmparser_fuel::{Parser as FuelParser, Payload as FuelPayload};
 use wasmtime::{
     Engine, Extern, ExternRef as WasmtimeExternRef, FuncType, Instance, Module, Ref, Store, Val,
 };
@@ -178,6 +180,14 @@ fn execute_one(data: &[u8]) -> Result<()> {
 
     // Memory growth semantics are currently excluded from this differential subset.
     if module_uses_memory_grow(&wasm) {
+        STATS.unsupported_modules.fetch_add(1, SeqCst);
+        return Ok(());
+    }
+
+    // For strict fuel equality we only compare modules whose operators are all base-fuel cost
+    // under current rwasm fuel policy. Variable-cost operators are treated as outside this
+    // differential fuel subset for now.
+    if module_uses_non_base_fuel_ops(&wasm) {
         STATS.unsupported_modules.fetch_add(1, SeqCst);
         return Ok(());
     }
@@ -893,6 +903,29 @@ fn module_uses_memory_grow(wasm: &[u8]) -> bool {
                     return false;
                 };
                 if matches!(op, wasmparser::Operator::MemoryGrow { .. }) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn module_uses_non_base_fuel_ops(wasm: &[u8]) -> bool {
+    for payload in FuelParser::new(0).parse_all(wasm) {
+        let Ok(payload) = payload else {
+            return false;
+        };
+        if let FuelPayload::CodeSectionEntry(body) = payload {
+            let Ok(mut ops) = body.get_operators_reader() else {
+                return false;
+            };
+            while !ops.eof() {
+                let Ok(op) = ops.read() else {
+                    return false;
+                };
+                let cost = rwasm_fuel_for_operator(&op);
+                if cost != FuelCosts::BASE {
                     return true;
                 }
             }
