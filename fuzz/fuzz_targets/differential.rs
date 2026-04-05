@@ -387,12 +387,13 @@ fn run_rwasm_one(
         .with_allow_start_section(true)
         .with_consume_fuel(true)
         .with_consume_fuel_for_params_and_locals(false)
-        .with_allow_func_ref_function_types(false);
+        .with_allow_func_ref_function_types(false)
+        .with_max_allowed_memory_pages(4096);
 
     let (module, _) = match RwasmModule::compile(config, wasm) {
         Ok(x) => x,
         Err(e) => {
-            eprintln!("unsupported rwasm binary: rwasm_compilation_error={e:?} ({e}");
+            eprintln!("unsupported rwasm binary: {e:?}");
             STATS.unsupported_modules.fetch_add(1, SeqCst);
             return Ok(None);
         }

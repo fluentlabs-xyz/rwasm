@@ -1,8 +1,6 @@
 .PHONY: fuzz
 fuzz:
-	cargo +nightly fuzz run differential -- -runs=3000
-
-HASH=?
+	cargo +nightly fuzz run differential -- -runs=10000 -max_len=1048576
 
 .PHONY: extract-wasm
 extract-wasm:

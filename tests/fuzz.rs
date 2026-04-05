@@ -109,6 +109,34 @@ fn test_fuel_mismatch_2() {
 }
 
 #[test]
+fn test_fuel_mismatch_3() {
+    run_rwasm_vs_wasmtime_fuel_check(
+        &wat::parse_str(
+            r#"
+(module
+  (type (;0;) (func))
+  (type (;1;) (func))
+  (table (;0;) 0 externref)
+  (memory (;0;) 0)
+  (global (;0;) (mut i32) i32.const 621216000)
+  (export "" (func 0))
+  (export "1" (func 1))
+  (export "2" (table 0))
+  (export "memory" (memory 0))
+  (export "4" (global 0))
+  (func (;0;) (type 1)
+    (local f32 i64 i32)
+  )
+  (func (;1;) (type 0))
+)
+"#,
+        )
+        .unwrap(),
+        &[],
+    );
+}
+
+#[test]
 fn test_fuel_memory_oom() {
     run_rwasm_vs_wasmtime_fuel_check(
         &wat::parse_str(
