@@ -44,6 +44,10 @@ The harness handles this in two ways:
 4. **Memory grow exclusion (current subset policy)**
    - modules containing `memory.grow` are currently excluded from differential comparison in this harness subset.
 
+5. **Strict fuel-equality subset**
+   - for fuel comparison, modules containing non-base-cost operators (under current `rwasm-fuel-policy`) are skipped,
+   - this keeps fuel parity checks exact and avoids known variable-cost policy drift between engines.
+
 This keeps fuzzing focused on the shared supported execution subset.
 
 ---
