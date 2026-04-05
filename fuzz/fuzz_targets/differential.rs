@@ -331,10 +331,7 @@ fn differential_rwasm_vs_wasmtime(
 
     match (lhs_results, rhs_results) {
         // LHS ok, RHS ok: compare return values and then compare exported state.
-        (
-            Ok((lhs_vals, lhs_store, lhs_fuel_remaining)),
-            Ok(Some((rhs_vals, rhs_fuel_remaining))),
-        ) => {
+        (Ok((lhs_vals, lhs_store, lhs_fuel_consumed)), Ok(Some((rhs_vals, rhs_fuel_consumed)))) => {
             if lhs_vals != rhs_vals {
                 panic!(
                     "diff results: export={name} args={args:?} result_tys={result_tys:?}\n\
@@ -343,13 +340,11 @@ fn differential_rwasm_vs_wasmtime(
                 );
             }
 
-            let lhs_consumed = FUEL_LIMIT.saturating_sub(lhs_fuel_remaining);
-            let rhs_consumed = FUEL_LIMIT.saturating_sub(rhs_fuel_remaining);
-            if lhs_consumed != rhs_consumed {
+            if lhs_fuel_consumed != rhs_fuel_consumed {
                 panic!(
                     "diff fuel: export={name} args={args:?} result_tys={result_tys:?}\n\
-                     rwasm_remaining={lhs_fuel_remaining} rwasm_consumed={lhs_consumed}\n\
-                     wasmtime_remaining={rhs_fuel_remaining} wasmtime_consumed={rhs_consumed}\n"
+                     rwasm_consumed={lhs_fuel_consumed}\n\
+                     wasmtime_consumed={rhs_fuel_consumed}\n"
                 );
             }
 
@@ -406,6 +401,7 @@ fn run_rwasm_one(
     let engine = ExecutionEngine::default();
     let mut store = RwasmStore::<()>::default();
     store.reset_fuel(FUEL_LIMIT);
+    let fuel_before = store.remaining_fuel().unwrap_or(0);
 
     let fallback_funcref_idx = export_map.exported_funcs.get(export).copied();
     let params: Vec<Value> = match args
@@ -430,8 +426,9 @@ fn run_rwasm_one(
         .collect::<Option<Vec<_>>>()
         .ok_or(TrapCode::IllegalOpcode)?;
 
-    let fuel_remaining = store.remaining_fuel().unwrap_or(0);
-    Ok(Some((vals, store, fuel_remaining)))
+    let fuel_after = store.remaining_fuel().unwrap_or(0);
+    let fuel_consumed = fuel_before.saturating_sub(fuel_after);
+    Ok(Some((vals, store, fuel_consumed)))
 }
 
 /// Creates a Wasmtime store, with signal-based traps disabled on macOS.
@@ -672,6 +669,10 @@ impl RawWasmtimeInstance {
     fn new(mut store: Store<()>, module: Module) -> anyhow::Result<Self> {
         let instance = Instance::new(&mut store, &module, &[])
             .context("unable to instantiate module in wasmtime")?;
+        // Keep differential fuel accounting call-scoped (exclude instantiation/start side costs).
+        store
+            .set_fuel(FUEL_LIMIT)
+            .map_err(|e| anyhow::anyhow!("failed to reset wasmtime fuel after instantiate: {e}"))?;
         Ok(Self { store, instance })
     }
 
@@ -733,6 +734,14 @@ impl RawWasmtimeInstance {
         arguments: &[DiffValue],
         _results: &[DiffValueType],
     ) -> anyhow::Result<Option<(Vec<DiffValue>, u64)>> {
+        self.store
+            .set_fuel(FUEL_LIMIT)
+            .map_err(|e| anyhow::anyhow!("failed to reset wasmtime fuel: {e}"))?;
+        let fuel_before = self
+            .store
+            .get_fuel()
+            .map_err(|e| anyhow::anyhow!("failed to read wasmtime fuel: {e}"))?;
+
         let function = self
             .instance
             .get_func(&mut self.store, function_name)
@@ -756,12 +765,13 @@ impl RawWasmtimeInstance {
             .collect::<Option<Vec<_>>>()
             .ok_or_else(|| anyhow::anyhow!("unsupported result type"))?;
 
-        let remaining_fuel = self
+        let fuel_after = self
             .store
             .get_fuel()
             .map_err(|e| anyhow::anyhow!("failed to read wasmtime fuel: {e}"))?;
+        let fuel_consumed = fuel_before.saturating_sub(fuel_after);
 
-        Ok(Some((results, remaining_fuel)))
+        Ok(Some((results, fuel_consumed)))
     }
 
     fn get_global(&mut self, name: &str, _ty: DiffValueType) -> Option<DiffValue> {
