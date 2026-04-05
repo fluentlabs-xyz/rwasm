@@ -14,6 +14,8 @@ For each generated module/export invocation, the harness compares:
 Memory comparison is done directly on exported memory views.
 For compatibility with reserved-memory implementation differences, trailing all-zero extension bytes are treated as equivalent.
 
+Global comparison is performed on materialized global-word state in rwasm store; modules where required global words are not materialized in this view are skipped as unsupported subset.
+
 Fuel is reset to the same `FUEL_LIMIT` **before each compared invocation** on both sides.
 The harness compares per-call consumed fuel deltas.
 If consumed fuel differs, the target fails.
@@ -110,5 +112,5 @@ wasm-tools print repro.wasm
 ## Notes
 
 - This harness uses `wasm-smith` generation plus explicit filtering to stay within rwasm-supported behavior.
-- Fuel parity is enforced by comparing remaining fuel after each invocation.
+- Fuel parity is enforced by comparing per-invocation consumed fuel deltas.
 - If you broaden generator features, re-check rwasm compiler support first (see `src/compiler/*`).
