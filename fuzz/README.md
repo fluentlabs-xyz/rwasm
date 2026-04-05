@@ -8,10 +8,16 @@ For each generated module/export invocation, the harness compares:
 
 1. return values,
 2. trap-vs-success behavior,
-3. post-execution memory/global/table snapshots,
+3. post-execution store state (exported memory/global/table views),
 4. **remaining fuel** (and therefore consumed fuel) between engines.
 
-Fuel is initialized to the same `FUEL_LIMIT` on both sides.
+Memory comparison is done directly on exported memory views.
+For compatibility with reserved-memory implementation differences, trailing all-zero extension bytes are treated as equivalent.
+
+Global comparison is performed on materialized global-word state in rwasm store; modules where required global words are not materialized in this view are skipped as unsupported subset.
+
+Fuel is reset to the same `FUEL_LIMIT` **before each compared invocation** on both sides.
+The harness compares per-call consumed fuel deltas.
 If consumed fuel differs, the target fails.
 
 ---
@@ -34,9 +40,12 @@ The harness handles this in two ways:
      (for example unsupported extension/import/type categories, non-default memory index, missing entrypoint),
      the module is skipped from differential comparison.
 
-3. **Runtime snapshot guard (fallback safety)**
-   - if table snapshot mapping cannot be resolved on one side for a generated module,
+3. **Store-comparison guard (fallback safety)**
+   - if exported state mapping cannot be resolved on one side for a generated module,
      that module is treated as outside the currently comparable subset and skipped (instead of panic/crash).
+
+4. **Memory grow exclusion (current subset policy)**
+   - modules containing `memory.grow` are currently excluded from differential comparison in this harness subset.
 
 This keeps fuzzing focused on the shared supported execution subset.
 
@@ -103,5 +112,5 @@ wasm-tools print repro.wasm
 ## Notes
 
 - This harness uses `wasm-smith` generation plus explicit filtering to stay within rwasm-supported behavior.
-- Fuel parity is enforced by comparing remaining fuel after each invocation.
+- Fuel parity is enforced by comparing per-invocation consumed fuel deltas.
 - If you broaden generator features, re-check rwasm compiler support first (see `src/compiler/*`).

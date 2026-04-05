@@ -19,7 +19,7 @@ hex = "0.4.3"
 log = "0.4.26"
 env_logger = "0.11.8"
 anyhow = "1.0"
-rwasm = { path = "..", default-features = false, features = ["std", "fpu"] }
+rwasm = { path = "..", default-features = false, features = ["std", "fpu", "full-wasm-mode"] }
 wat = "1.230.0"
 
 [[bin]]

@@ -182,6 +182,22 @@ impl<T: 'static> WasmtimeExecutor<T> {
     ) -> Result<(), TrapCode> {
         unimplemented!("wasmtime: resume is not implemented yet");
     }
+
+    pub fn snapshot_memory(&mut self) -> Vec<u8> {
+        let instance = self.instance;
+        let global_memory = instance
+            .get_export(self.store.as_context_mut(), "memory")
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
+            .into_memory()
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        let memory_size =
+            global_memory.size(self.store.as_context_mut()) * N_BYTES_PER_MEMORY_PAGE as u64;
+        let mut snapshot = vec![0; memory_size as usize];
+        global_memory
+            .read(self.store.as_context_mut(), 0, &mut snapshot)
+            .unwrap();
+        snapshot
+    }
 }
 
 impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {

@@ -43,6 +43,8 @@ pub struct CompilationConfig {
     /// Enable replacement with optimized code snippets
     pub code_snippets: bool,
     /// Enable fuel metering for params and locals
+    ///
+    /// Note: This flag is not supported by wasmtime
     pub consume_fuel_for_params_and_locals: bool,
     /// Allow function types with funcref and externref (needed only for e2e testing suite, but
     /// practically inside a blockchain environment it's not possible)

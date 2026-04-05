@@ -215,6 +215,11 @@ impl<T: 'static> RwasmStore<T> {
         out
     }
 
+    /// Returns whether a raw global word is currently materialized at the given internal index.
+    pub fn has_global_word(&self, global_word_index: u32) -> bool {
+        self.global_variables.contains_key(&global_word_index)
+    }
+
     /// Returns the raw 32-bit "global word" at the given internal index.
     ///
     /// rwasm stores globals as 32-bit words. `i64`/`f64` globals occupy **two** words:
