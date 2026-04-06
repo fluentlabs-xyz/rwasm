@@ -50,6 +50,8 @@ fn main() -> anyhow::Result<()> {
     gen_cfg.min_tables = 1;
     // Keep table model inside currently stable rwasm differential subset.
     gen_cfg.max_tables = 1;
+    // Keep wasm-smith table limits inside rwasm runtime hard cap.
+    gen_cfg.max_table_elements = rwasm::N_MAX_TABLE_SIZE as u64;
     gen_cfg.export_everything = true;
 
     let module = smith::Module::new(gen_cfg, &mut u)

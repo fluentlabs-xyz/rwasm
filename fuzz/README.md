@@ -9,7 +9,10 @@ For each generated module/export invocation, the harness compares:
 1. return values,
 2. trap-vs-success behavior,
 3. post-execution store state (exported memory/global/table views),
-4. **remaining fuel** (and therefore consumed fuel) between engines.
+4. per-call consumed fuel between engines.
+
+Before executing an export, the harness runs rwasm module entrypoint/init once to materialize
+runtime state (tables/memory/data/elements), mirroring Wasmtime instantiation behavior.
 
 Memory comparison is done directly on exported memory views.
 For compatibility with reserved-memory implementation differences, trailing all-zero extension bytes are treated as equivalent.
@@ -33,6 +36,7 @@ The harness handles this in two ways:
    - no imports (`max_imports = 0`),
    - no multi-memory (`max_memories = 1`),
    - single-table subset (`max_tables = 1`),
+   - table element limit capped to rwasm runtime bound (`max_table_elements = N_MAX_TABLE_SIZE`),
    - no GC / exceptions / threads / SIMD / memory64 / relaxed-SIMD / custom page sizes,
    - only proposals currently enabled in the differential subset.
 
