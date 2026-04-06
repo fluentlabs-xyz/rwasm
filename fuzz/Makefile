@@ -1,9 +1,6 @@
 .PHONY: fuzz
 fuzz:
-	cargo +nightly fuzz run differential -- -runs=10000 -max_len=1048576 -seed=3459645477
-
-# sus seed: 1383685966
-# sus seed: 3459645477 (rwasm fatal crash table size)
+	cargo +nightly fuzz run differential -- -runs=10000 -max_len=1048576
 
 .PHONY: extract-wasm
 extract-wasm:

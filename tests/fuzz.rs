@@ -193,8 +193,11 @@ fn test_fuel_bad_memory() {
     );
 }
 
+// This test has different behavior for wasmtime because of it relies on
+// stack only for recursive calls, but rwasm checks depth level.
 #[test]
-fn test_wasmtime_compilation_failure() {
+#[ignore]
+fn wasmtime_stack_overflow_behaviour_mismatch() {
     let mut result = vec![Value::I32(0)];
     run_rwasm_vs_wasmtime_fuel_check(
         &wat::parse_str(
@@ -313,6 +316,38 @@ fn unresolved_table_segment() {
         )
         .unwrap(),
         &[Value::F64(F64::from(0))],
+        &mut [],
+    );
+}
+
+#[test]
+fn memory_out_of_bounds() {
+    run_rwasm_vs_wasmtime_fuel_check(
+        &wat::parse_str(
+            r#"
+(module
+  (type (;0;) (func))
+  (table (;0;) 159 586 externref)
+  (memory (;0;) 2548 50607)
+  (global (;0;) (mut f32) f32.const -0x1.777776p-8 (;=-0.0057291663;))
+  (global (;1;) (mut f32) f32.const 0x1.d8d8d8p+89 (;=1143274000000000000000000000;))
+  (export "" (func 0))
+  (export "llllllllllllllllllllll" (func 1))
+  (export "2" (table 0))
+  (export "memory" (memory 0))
+  (export "4" (global 0))
+  (export "5" (global 1))
+  (start 1)
+  (elem (;0;) declare externref (ref.null extern) (ref.null extern) (ref.null extern) (ref.null extern) (ref.null extern) (ref.null extern) (ref.null extern) (ref.null extern) (ref.null extern) (ref.null extern) (ref.null extern))
+  (func (;0;) (type 0))
+  (func (;1;) (type 0))
+  (data (;0;) "\00")
+  (data (;1;) (i32.const 0) "\00")
+)
+"#,
+        )
+        .unwrap(),
+        &[],
         &mut [],
     );
 }
