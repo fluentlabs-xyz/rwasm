@@ -10,7 +10,8 @@ fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value]) {
         .with_allow_start_section(true)
         .with_consume_fuel(true)
         .with_consume_fuel_for_params_and_locals(false)
-        .with_allow_func_ref_function_types(false);
+        .with_allow_func_ref_function_types(false)
+        .with_max_allowed_memory_pages(4096);
     let (module, _) = RwasmModule::compile(config.clone(), &wasm_binary).unwrap();
     println!("{}", module);
     let fuel_consumed = for_each_strategy(
@@ -21,7 +22,7 @@ fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value]) {
                     (),
                     always_failing_syscall_handler,
                     Some(1_000_000),
-                    None,
+                    Some(4096),
                 )
                 .unwrap();
             let fuel_before = executor.remaining_fuel().unwrap();
@@ -160,24 +161,53 @@ fn test_fuel_memory_oom() {
 }
 
 #[test]
-#[ignore]
+fn test_fuel_bad_memory() {
+    run_rwasm_vs_wasmtime_fuel_check(
+        &wat::parse_str(
+            r#"
+(module
+  (type (;0;) (func (param i32 i32 i32 i32 i32 i32 i32 i32)))
+  (table (;0;) 996180 996225 funcref)
+  (memory (;0;) 1543)
+  (global (;0;) f32 f32.const -0x1.0b58fcp+127 (;=-177682950000000000000000000000000000000;))
+  (global (;1;) (mut i32) i32.const 7936)
+  (export "" (func 0))
+  (export "1" (func 1))
+  (export "2" (table 0))
+  (export "memory" (memory 0))
+  (export "4" (global 0))
+  (export "5" (global 1))
+  (func (;0;) (type 0) (param i32 i32 i32 i32 i32 i32 i32 i32))
+  (func (;1;) (type 0) (param i32 i32 i32 i32 i32 i32 i32 i32))
+)
+"#,
+        )
+        .unwrap(),
+        &[const { Value::I32(0) }; 8],
+    );
+}
+
+#[test]
 fn test_wasmtime_compilation_failure() {
     run_rwasm_vs_wasmtime_fuel_check(
         &wat::parse_str(
             r#"
 (module
-  (type (;0;) (func))
-  (table (;0;) 298 funcref)
-  (memory (;0;) 489)
+  (type (;0;) (func (result i32)))
+  (type (;1;) (func (result f64)))
+  (table (;0;) 274 funcref)
+  (memory (;0;) 449)
   (export "" (func 0))
   (export "1" (table 0))
   (export "memory" (memory 0))
-  (func (;0;) (type 0)
-    table.size 0
+  (func (;0;) (type 1) (result f64)
+    call 0
+    i32.const -1936946036
     f32.convert_i32_s
-    i32.const -1903260018
-    f32.convert_i32_s
-    unreachable
+    f32.const -0x1.191918p-102 (;=-0.00000000000000000000000000000021655004;)
+    i32.trunc_sat_f32_s
+    f64.convert_i32_s
+    i32.const 0
     unreachable
   )
 )
