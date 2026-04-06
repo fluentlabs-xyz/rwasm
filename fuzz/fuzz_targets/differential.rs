@@ -621,7 +621,13 @@ fn rwasm_exported_memory(
     if idx != 0 {
         return None;
     }
-    Some(store.memory_snapshot())
+    let snapshot = store.memory_snapshot();
+    if snapshot.is_empty() {
+        // Memory exists on Wasmtime side for this export, but rwasm store view has no
+        // materialized linear memory bytes for this module state. Treat as unsupported subset.
+        return None;
+    }
+    Some(snapshot)
 }
 
 fn rwasm_exported_table_nullness_prefix(

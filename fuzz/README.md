@@ -13,6 +13,7 @@ For each generated module/export invocation, the harness compares:
 
 Memory comparison is done directly on exported memory views.
 For compatibility with reserved-memory implementation differences, trailing all-zero extension bytes are treated as equivalent.
+If exported memory is not materialized in rwasm store view (empty snapshot), that module is skipped as outside the currently comparable subset.
 
 Global comparison is performed on materialized global-word state in rwasm store; modules where required global words are not materialized in this view are skipped as unsupported subset.
 
