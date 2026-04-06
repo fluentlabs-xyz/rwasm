@@ -3,7 +3,7 @@ use rwasm::{
     Value,
 };
 
-fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value]) {
+fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value], result: &mut [Value]) {
     let config = CompilationConfig::default()
         .with_entrypoint_name("".into())
         .with_allow_malformed_entrypoint_func_type(true)
@@ -26,7 +26,7 @@ fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value]) {
                 )
                 .unwrap();
             let fuel_before = executor.remaining_fuel().unwrap();
-            let trap_code = executor.execute("", params, &mut []).err();
+            let trap_code = executor.execute("", params, result).err();
             let fuel_consumed = fuel_before - executor.remaining_fuel().unwrap();
             let memory_snapshot = executor.snapshot_memory();
             Ok((trap_code, fuel_consumed, memory_snapshot))
@@ -59,6 +59,7 @@ fn test_fuel_mismatch_locals() {
         )
         .unwrap(),
         &[Value::I32(0)],
+        &mut [],
     );
 }
 
@@ -81,6 +82,7 @@ fn test_fuel_mismatch() {
         )
         .unwrap(),
         &[],
+        &mut [],
     );
 }
 
@@ -106,6 +108,7 @@ fn test_fuel_mismatch_2() {
         )
         .unwrap(),
         &[],
+        &mut [],
     );
 }
 
@@ -134,6 +137,7 @@ fn test_fuel_mismatch_3() {
         )
         .unwrap(),
         &[],
+        &mut [],
     );
 }
 
@@ -157,6 +161,7 @@ fn test_fuel_memory_oom() {
         )
         .unwrap(),
         &[],
+        &mut [],
     );
 }
 
@@ -184,6 +189,7 @@ fn test_fuel_bad_memory() {
         )
         .unwrap(),
         &[const { Value::I32(0) }; 8],
+        &mut [],
     );
 }
 
@@ -215,5 +221,69 @@ fn test_wasmtime_compilation_failure() {
         )
         .unwrap(),
         &[],
+        &mut [],
+    );
+}
+
+#[test]
+fn test_rwasm_table_size_fatal() {
+    let mut result = vec![Value::I64(0), Value::I64(0), Value::I32(0)];
+    run_rwasm_vs_wasmtime_fuel_check(
+        &wat::parse_str(
+            r#"
+(module
+  (type (;0;) (func (result externref f64 f32)))
+  (type (;1;) (func))
+  (type (;2;) (func (result f64 f64 f32)))
+  (type (;3;) (func))
+  (type (;4;) (func (result f64 i32)))
+  (table (;0;) 4473 476776 externref)
+  (memory (;0;) 0)
+  (export "" (func 0))
+  (export "1" (func 1))
+  (export "2" (table 0))
+  (export "memory" (memory 0))
+  (elem (;0;) externref)
+  (func (;0;) (type 2) (result f64 f64 f32)
+    (local i32)
+    local.get 0
+    table.size 0
+    unreachable
+  )
+  (func (;1;) (type 2) (result f64 f64 f32)
+    unreachable
+  )
+  (data (;0;) "\df\db\df\00")
+)
+"#,
+        )
+        .unwrap(),
+        &[],
+        &mut result,
+    );
+}
+
+#[test]
+fn test_bad_memory() {
+    run_rwasm_vs_wasmtime_fuel_check(
+        &wat::parse_str(
+            r#"
+(module
+  (type (;0;) (func))
+  (table (;0;) 7 funcref)
+  (memory (;0;) 11)
+  (export "L\u{c}$" (func 0))
+  (export "" (func 1))
+  (export "2" (table 0))
+  (export "memory" (memory 0))
+  (func (;0;) (type 0))
+  (func (;1;) (type 0))
+  (data (;0;) (i32.const 505) "L")
+)
+"#,
+        )
+        .unwrap(),
+        &[],
+        &mut [],
     );
 }
