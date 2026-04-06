@@ -1,6 +1,6 @@
 use rwasm::{
     always_failing_syscall_handler, for_each_strategy, CompilationConfig, RwasmModule, StoreTr,
-    Value,
+    Value, F64,
 };
 
 fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value], result: &mut [Value]) {
@@ -284,6 +284,34 @@ fn test_bad_memory() {
         )
         .unwrap(),
         &[],
+        &mut [],
+    );
+}
+
+#[test]
+fn unresolved_table_segment() {
+    run_rwasm_vs_wasmtime_fuel_check(
+        &wat::parse_str(
+            r#"
+(module
+  (type (;0;) (func (param f64)))
+  (table (;0;) 0 externref)
+  (memory (;0;) 11 19286)
+  (export "" (func 0))
+  (export "|||||||" (table 0))
+  (export "memory" (memory 0))
+  (func (;0;) (type 0) (param f64)
+    f64.const 0x1.c7c7c7c7c7c7cp+968 (;=4441723041807660500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000;)
+    table.size 0
+    i64.extend_i32_s
+    f32.const 0x1.f8f8f8p+121 (;=5243934600000000000000000000000000000;)
+    unreachable
+  )
+)
+"#,
+        )
+        .unwrap(),
+        &[Value::F64(F64::from(0))],
         &mut [],
     );
 }
