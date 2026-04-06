@@ -28,7 +28,7 @@ fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value], result
             let fuel_before = executor.remaining_fuel().unwrap();
             let trap_code = executor.execute("", params, result).err();
             let fuel_consumed = fuel_before - executor.remaining_fuel().unwrap();
-            let memory_snapshot = executor.snapshot_memory();
+            let memory_snapshot = executor.snapshot_memory().len();
             Ok((trap_code, fuel_consumed, memory_snapshot))
         },
         config,
@@ -195,6 +195,7 @@ fn test_fuel_bad_memory() {
 
 #[test]
 fn test_wasmtime_compilation_failure() {
+    let mut result = vec![Value::I32(0)];
     run_rwasm_vs_wasmtime_fuel_check(
         &wat::parse_str(
             r#"
@@ -221,7 +222,7 @@ fn test_wasmtime_compilation_failure() {
         )
         .unwrap(),
         &[],
-        &mut [],
+        &mut result,
     );
 }
 
