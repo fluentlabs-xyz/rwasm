@@ -157,6 +157,8 @@ fn execute_one(data: &[u8]) -> Result<()> {
     gen_cfg.min_tables = 1;
     // Keep table model inside currently stable rwasm differential subset.
     gen_cfg.max_tables = 1;
+    // Keep wasm-smith table limits inside rwasm runtime hard cap.
+    gen_cfg.max_table_elements = rwasm::N_MAX_TABLE_SIZE as u64;
     gen_cfg.export_everything = true;
 
     STATS.wasm_smith_modules.fetch_add(1, SeqCst);
@@ -401,6 +403,12 @@ fn run_rwasm_one(
 
     let engine = ExecutionEngine::default();
     let mut store = RwasmStore::<()>::default();
+
+    // Materialize module runtime state (tables/memory/data/elements/start path) before invoking
+    // exported function body, mirroring Wasmtime instantiation semantics.
+    engine.entrypoint(&mut store, &module)?;
+
+    // Compare fuel on call scope only (exclude entrypoint/instantiation costs).
     store.reset_fuel(FUEL_LIMIT);
     let fuel_before = store.remaining_fuel().unwrap_or(0);
 
@@ -562,43 +570,43 @@ fn rwasm_exported_global(
     let idx = *export_map.exported_globals.get(name)?;
     let kind = *export_map.global_kinds.get(idx as usize)?;
 
-    let lo_idx = idx * 2;
-    let hi_idx = idx * 2 + 1;
+    let word0_idx = idx * 2;
+    let word1_idx = idx * 2 + 1;
 
     // Some globals may be represented through defaults/initializer paths and not materialized in
     // `global_variables` map in the same way for this differential harness state view.
     // Treat those as outside comparable subset instead of forcing a false mismatch.
     match kind {
         GlobalKind::I32 | GlobalKind::F32 | GlobalKind::FuncRef | GlobalKind::ExternRef => {
-            if !store.has_global_word(lo_idx) {
+            if !store.has_global_word(word0_idx) {
                 return None;
             }
         }
         GlobalKind::I64 | GlobalKind::F64 => {
-            if !(store.has_global_word(lo_idx) && store.has_global_word(hi_idx)) {
+            if !(store.has_global_word(word0_idx) && store.has_global_word(word1_idx)) {
                 return None;
             }
         }
     }
 
     let val = match kind {
-        GlobalKind::I32 => DiffValue::I32(store.global_word_bits(lo_idx) as i32),
-        GlobalKind::F32 => DiffValue::F32(store.global_word_bits(lo_idx)),
+        GlobalKind::I32 => DiffValue::I32(store.global_word_bits(word0_idx) as i32),
+        GlobalKind::F32 => DiffValue::F32(store.global_word_bits(word0_idx)),
         GlobalKind::I64 => {
-            let lo = store.global_word_bits(lo_idx) as u64;
-            let hi = store.global_word_bits(hi_idx) as u64;
+            let hi = store.global_word_bits(word0_idx) as u64;
+            let lo = store.global_word_bits(word1_idx) as u64;
             DiffValue::I64(((hi << 32) | lo) as i64)
         }
         GlobalKind::F64 => {
-            let lo = store.global_word_bits(lo_idx) as u64;
-            let hi = store.global_word_bits(hi_idx) as u64;
+            let hi = store.global_word_bits(word0_idx) as u64;
+            let lo = store.global_word_bits(word1_idx) as u64;
             DiffValue::F64((hi << 32) | lo)
         }
         GlobalKind::FuncRef => DiffValue::FuncRef {
-            null: store.global_word_bits(lo_idx) == 0,
+            null: store.global_word_bits(word0_idx) == 0,
         },
         GlobalKind::ExternRef => DiffValue::ExternRef {
-            null: store.global_word_bits(lo_idx) == 0,
+            null: store.global_word_bits(word0_idx) == 0,
         },
     };
 
