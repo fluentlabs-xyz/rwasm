@@ -599,8 +599,8 @@ impl ControlFrame {
             ControlFrame::Block(frame) => frame.bump_branches(),
             ControlFrame::Loop(frame) => frame.bump_branches(),
             ControlFrame::If(frame) => frame.bump_branches(),
-            Self::Unreachable(frame) => {
-                panic!("tried to `bump_branches` on an unreachable control frame: {frame:?}")
+            Self::Unreachable(_) => {
+                // Branch bookkeeping is irrelevant for unreachable control frames.
             }
         }
     }
@@ -619,9 +619,9 @@ impl ControlFrame {
             Self::Block(frame) => frame.update_consume_fuel_instr(instr),
             Self::Loop(frame) => frame.update_consume_fuel_instr(instr),
             Self::If(frame) => frame.update_consume_fuel_instr(instr),
-            Self::Unreachable(frame) => unreachable!(
-                "tried to `update_consume_fuel_instr` on an unreachable control frame: {frame:?}"
-            ),
+            Self::Unreachable(_) => {
+                // Unreachable frames don't emit/patch reachable fuel instructions.
+            }
         }
     }
 }

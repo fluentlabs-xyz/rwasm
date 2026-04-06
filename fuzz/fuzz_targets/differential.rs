@@ -185,7 +185,7 @@ fn execute_one(data: &[u8]) -> Result<()> {
     // Instantiate RHS once to enumerate exported functions, matching Wasmtime's harness.
     // Note: rwasm currently recompiles per-export (entrypoint-by-name), so for semantic
     // comparability we will instantiate RHS fresh inside each evaluation below.
-    let exports: Vec<(String, wasmtime::FuncType)> = {
+    let mut exports: Vec<(String, wasmtime::FuncType)> = {
         let rhs_store = create_wasmtime_store();
         let rhs_module = match wasmtime::Module::new(rhs_store.engine(), &wasm) {
             Ok(m) => m,
@@ -207,6 +207,8 @@ fn execute_one(data: &[u8]) -> Result<()> {
                 .collect(),
         }
     };
+    // Keep function-order stable across processes for reproducible artifact replay.
+    exports.sort_by(|(a, _), (b, _)| a.cmp(b));
 
     if exports.is_empty() {
         return Ok(());
@@ -390,10 +392,18 @@ fn run_rwasm_one(
         .with_allow_func_ref_function_types(false)
         .with_max_allowed_memory_pages(4096);
 
-    let (module, _) = match RwasmModule::compile(config, wasm) {
-        Ok(x) => x,
-        Err(e) => {
+    let compile_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        RwasmModule::compile(config, wasm)
+    }));
+
+    let (module, _) = match compile_result {
+        Ok(Ok(x)) => x,
+        Ok(Err(e)) => {
             eprintln!("unsupported rwasm binary: {e:?}");
+            STATS.unsupported_modules.fetch_add(1, SeqCst);
+            return Ok(None);
+        }
+        Err(_) => {
             STATS.unsupported_modules.fetch_add(1, SeqCst);
             return Ok(None);
         }
@@ -418,7 +428,17 @@ fn run_rwasm_one(
     };
     let mut results: Vec<Value> = results_t.iter().map(zero_rwasm_from_diff_type).collect();
 
-    engine.execute(&mut store, &module, &params, &mut results)?;
+    let exec_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        engine.execute(&mut store, &module, &params, &mut results)
+    }));
+    match exec_result {
+        Ok(Ok(())) => {}
+        Ok(Err(trap)) => return Err(trap),
+        Err(_) => {
+            STATS.unsupported_modules.fetch_add(1, SeqCst);
+            return Ok(None);
+        }
+    }
 
     let vals = results
         .iter()

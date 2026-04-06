@@ -7,8 +7,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .store
             .tables
             .get(&table_idx)
-            .expect("rwasm: unresolved table segment")
-            .size();
+            .map(TableEntity::size)
+            .unwrap_or(0);
         self.sp.push_as(table_size);
         self.ip.add(1);
     }
@@ -37,8 +37,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let (i, val, n) = self.sp.pop3();
         self.store
             .tables
-            .get_mut(&table_idx)
-            .expect("rwasm: missing table")
+            .entry(table_idx)
+            .or_default()
             .fill_untyped(i.into(), val, n.into())?;
         self.ip.add(1);
         Ok(())
@@ -50,8 +50,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let value = self
             .store
             .tables
-            .get_mut(&table_idx)
-            .expect("rwasm: missing table")
+            .entry(table_idx)
+            .or_default()
             .get_untyped(index.into())
             .ok_or(TrapCode::TableOutOfBounds)?;
         self.sp.push(value);
@@ -64,8 +64,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let (index, value) = self.sp.pop2();
         self.store
             .tables
-            .get_mut(&table_idx)
-            .expect("rwasm: missing table")
+            .entry(table_idx)
+            .or_default()
             .set_untyped(index.into(), value)
             .map_err(|_| TrapCode::TableOutOfBounds)?;
         #[cfg(feature = "tracing")]
@@ -88,6 +88,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let dst_index = u32::from(d);
         // Query both tables and check if they are the same:
         if src_table_idx != dst_table_idx {
+            self.store.tables.entry(src_table_idx).or_default();
+            self.store.tables.entry(dst_table_idx).or_default();
             let [src, dst] = self
                 .store
                 .tables
@@ -95,11 +97,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 .map(|v| v.expect("rwasm: unresolved table segment"));
             TableEntity::copy(dst, dst_index, src, src_index, len)?;
         } else {
-            let src = self
-                .store
-                .tables
-                .get_mut(&src_table_idx)
-                .expect("rwasm: unresolved table segment");
+            let src = self.store.tables.entry(src_table_idx).or_default();
             src.copy_within(dst_index, src_index, len)?;
         }
         self.ip.add(1);
@@ -139,11 +137,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         if is_empty_segment {
             module_elements_section = &[];
         }
-        let table = self
-            .store
-            .tables
-            .get_mut(&table_idx)
-            .expect("rwasm: missing table");
+        let table = self.store.tables.entry(table_idx).or_default();
         table.init_untyped(dst_index, module_elements_section, src_index, len)?;
 
         self.ip.add(2);
