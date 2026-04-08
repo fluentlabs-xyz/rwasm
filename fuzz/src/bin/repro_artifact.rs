@@ -6,9 +6,7 @@
 //! so the fuzzer artifact is not itself a WebAssembly binary (it won't start with `\0asm`).
 
 use libfuzzer_sys::arbitrary::Unstructured;
-use std::env;
-use std::fs;
-use std::path::PathBuf;
+use std::{env, fs, path::PathBuf};
 use wasm_smith as smith;
 
 fn main() -> anyhow::Result<()> {
@@ -45,11 +43,15 @@ fn main() -> anyhow::Result<()> {
     gen_cfg.gc_enabled = false;
     gen_cfg.exceptions_enabled = false;
 
+    // Keep generated modules inside the currently supported differential subset.
     gen_cfg.max_imports = 0;
     gen_cfg.max_memories = 1;
     gen_cfg.min_memories = 1;
     gen_cfg.min_tables = 1;
-    gen_cfg.max_tables = 2;
+    // Keep table model inside currently stable rwasm differential subset.
+    gen_cfg.max_tables = 1;
+    // Keep wasm-smith table limits inside rwasm runtime hard cap.
+    gen_cfg.max_table_elements = rwasm::N_MAX_TABLE_SIZE as u64;
     gen_cfg.export_everything = true;
 
     let module = smith::Module::new(gen_cfg, &mut u)

@@ -112,7 +112,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     ) -> Result<(), TrapCode> {
         self.ip.add(1);
         self.value_stack.sync_stack_ptr(self.sp);
-        if self.call_stack.len() > N_MAX_RECURSION_DEPTH {
+        if self.call_stack.len() >= N_MAX_RECURSION_DEPTH {
             return Err(TrapCode::StackOverflow);
         }
         self.call_stack.push(self.ip);
@@ -154,7 +154,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         // call func
         self.ip.add(2);
         self.value_stack.sync_stack_ptr(self.sp);
-        if self.call_stack.len() > N_MAX_RECURSION_DEPTH {
+        if self.call_stack.len() >= N_MAX_RECURSION_DEPTH {
             return Err(TrapCode::StackOverflow);
         }
         self.call_stack.push(self.ip);
