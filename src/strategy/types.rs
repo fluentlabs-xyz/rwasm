@@ -1,6 +1,12 @@
 use crate::{CompilationError, TrapCode};
 use alloc::vec::Vec;
 
+pub fn checked_memory_range_end(offset: usize, length: usize) -> Result<usize, TrapCode> {
+    offset
+        .checked_add(length)
+        .ok_or(TrapCode::MemoryOutOfBounds)
+}
+
 pub trait StoreTr<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode>;
 
@@ -35,5 +41,18 @@ impl From<CompilationError> for StrategyError {
 impl From<TrapCode> for StrategyError {
     fn from(err: TrapCode) -> Self {
         StrategyError::TrapCode(err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checked_memory_range_end_rejects_overflow() {
+        assert_eq!(
+            checked_memory_range_end(usize::MAX, 1).unwrap_err(),
+            TrapCode::MemoryOutOfBounds
+        );
     }
 }

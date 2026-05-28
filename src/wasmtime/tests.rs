@@ -1,6 +1,7 @@
 use crate::{
     wasmtime::{compile_wasmtime_module, WasmtimeExecutor},
-    CompilationConfig, ImportLinker, ImportName, TrapCode,
+    CompilationConfig, ImportLinker, ImportName, StoreTr, TrapCode, TypedCaller, Value,
+    N_BYTES_PER_MEMORY_PAGE,
 };
 use rwasm_fuel_policy::{LinearFuelParams, QuadraticFuelParams, SyscallFuelParams};
 use std::sync::Arc;
@@ -135,4 +136,113 @@ fn test_call_with_charging_param_overflow_wasmtime() {
         .execute("main_quadratic_with_overflow", &[], &mut [])
         .unwrap_err();
     assert_eq!(err, TrapCode::IntegerOverflow);
+}
+
+fn get_test_memory_module() -> (Module, Arc<ImportLinker>) {
+    let wasm_binary = wat::parse_str(
+        r#"
+            (module
+              (func $read (import "host" "read") (param i32 i32))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "\01\02\03\04")
+              (func (export "read_ok")
+                (i32.const 0)
+                (i32.const 4)
+                (call $read)
+              )
+              (func (export "read_oob")
+                (i32.const 65536)
+                (i32.const 1)
+                (call $read)
+              )
+            )
+            "#,
+    )
+    .unwrap();
+    let mut import_linker = ImportLinker::default();
+    import_linker.insert_function(
+        ImportName::new("host", "read"),
+        0xab,
+        SyscallFuelParams::default(),
+        &[wasmparser::ValType::I32, wasmparser::ValType::I32],
+        &[],
+    );
+    let import_linker = Arc::new(import_linker);
+    let compilation_config = CompilationConfig::default().with_import_linker(import_linker.clone());
+
+    (
+        compile_wasmtime_module(compilation_config, wasm_binary).unwrap(),
+        import_linker,
+    )
+}
+
+fn read_memory_syscall(
+    caller: &mut TypedCaller<'_, Vec<u8>>,
+    _sys_func_idx: u32,
+    params: &[Value],
+    _result: &mut [Value],
+) -> Result<(), TrapCode> {
+    let offset = match params[0] {
+        Value::I32(value) => value as usize,
+        _ => unreachable!("unexpected offset type"),
+    };
+    let length = match params[1] {
+        Value::I32(value) => value as usize,
+        _ => unreachable!("unexpected length type"),
+    };
+    let bytes = caller.memory_read_into_vec(offset, length)?;
+    caller.data_mut().extend(bytes);
+    Ok(())
+}
+
+#[test]
+fn test_wasmtime_executor_memory_read_into_vec_checks_bounds_before_allocating() {
+    let (module, import_linker) = get_test_memory_module();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        Vec::new(),
+        read_memory_syscall,
+        Some(100_000),
+        None,
+    );
+
+    assert_eq!(
+        wasmtime_worker.memory_read_into_vec(0, 4).unwrap(),
+        vec![1, 2, 3, 4]
+    );
+    assert_eq!(
+        wasmtime_worker
+            .memory_read_into_vec(N_BYTES_PER_MEMORY_PAGE as usize, 1)
+            .unwrap_err(),
+        TrapCode::MemoryOutOfBounds
+    );
+    assert_eq!(
+        wasmtime_worker
+            .memory_read_into_vec(usize::MAX, 1)
+            .unwrap_err(),
+        TrapCode::MemoryOutOfBounds
+    );
+}
+
+#[test]
+fn test_wasmtime_caller_memory_read_into_vec_checks_bounds_before_allocating() {
+    let (module, import_linker) = get_test_memory_module();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        Vec::new(),
+        read_memory_syscall,
+        Some(100_000),
+        None,
+    );
+
+    wasmtime_worker.execute("read_ok", &[], &mut []).unwrap();
+    assert_eq!(wasmtime_worker.data(), &[1, 2, 3, 4]);
+    assert_eq!(
+        wasmtime_worker
+            .execute("read_oob", &[], &mut [])
+            .unwrap_err(),
+        TrapCode::MemoryOutOfBounds
+    );
 }
