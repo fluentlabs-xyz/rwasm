@@ -1,4 +1,5 @@
 use crate::{
+    checked_memory_range_end,
     wasmtime::{types::map_anyhow_error, wasmtime_import_linker, WrappedContext},
     ImportLinker, SyscallHandler, TrapCode, Value, F32, F64, N_BYTES_PER_MEMORY_PAGE,
     N_DEFAULT_MAX_MEMORY_PAGES,
@@ -214,6 +215,19 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     }
 
     fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
+        let end = checked_memory_range_end(offset, length)?;
+        let instance = self.instance;
+        let global_memory = instance
+            .get_export(self.store.as_context_mut(), "memory")
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
+            .into_memory()
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        let memory_size = (global_memory.size(self.store.as_context_mut()) as usize)
+            .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
+        if end > memory_size {
+            return Err(TrapCode::MemoryOutOfBounds);
+        }
         let mut data = vec![0u8; length];
         self.memory_read(offset, &mut data)?;
         Ok(data)

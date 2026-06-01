@@ -1,4 +1,7 @@
-use crate::{CallerTr, StoreTr, SyscallHandler, TrapCode, TypedCaller};
+use crate::{
+    checked_memory_range_end, CallerTr, StoreTr, SyscallHandler, TrapCode, TypedCaller,
+    N_BYTES_PER_MEMORY_PAGE,
+};
 use wasmtime::{AsContext, AsContextMut, StoreLimits};
 
 pub struct WrappedContext<T: 'static> {
@@ -35,6 +38,19 @@ impl<'a, T: 'static> StoreTr<T> for WasmtimeCaller<'a, T> {
     }
 
     fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
+        let end = checked_memory_range_end(offset, length)?;
+        let memory_size = (self
+            .caller
+            .get_export("memory")
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
+            .into_memory()
+            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
+            .size(self.caller.as_context()) as usize)
+            .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
+        if end > memory_size {
+            return Err(TrapCode::MemoryOutOfBounds);
+        }
         let mut data = vec![0u8; length];
         self.memory_read(offset, &mut data)?;
         Ok(data)
