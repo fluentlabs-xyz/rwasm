@@ -280,6 +280,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
 
             #[cfg(feature = "fpu")]
             opcode => self.exec_fpu_opcode(opcode)?,
+            #[cfg(not(feature = "fpu"))]
+            _ => return Err(TrapCode::IllegalOpcode),
         }
         Ok(false)
     }

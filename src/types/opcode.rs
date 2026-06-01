@@ -8,20 +8,23 @@ use crate::{
 use alloc::{format, vec::Vec};
 use bincode::{Decode, Encode};
 
+const FPU_OPCODE_OFFSET: u32 = 1000;
+
 macro_rules! define_opcode_enum {
     (
         $(
             $(#[$meta:meta])*
-            $variant:ident $(($($field:ty),+ $(,)?))? => $code:expr,
+            $(@ $kind:ident)?
+            $variant:ident $(($($field:ident : $field_ty:ty),+ $(,)?))? => $code:expr,
         )*
     ) => {
-        #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         #[repr(u16)]
         pub enum Opcode {
             $(
                 $(#[$meta])*
-                $variant $(($($field),+))?,
+                $variant $(($($field_ty),+))?,
             )*
         }
 
@@ -30,71 +33,118 @@ macro_rules! define_opcode_enum {
                 match self {
                     $(
                         $(#[$meta])*
-                        Self::$variant $( ( $(define_opcode_enum!(@ignore $field)),+ ) )? => $code,
+                        Self::$variant $( ( $(define_opcode_enum!(@ignore $field)),+ ) )? => {
+                            define_opcode_enum!(@code $($kind)? $code)
+                        }
                     )*
                 }
             }
         }
+
+        impl Encode for Opcode {
+            fn encode<__E: bincode::enc::Encoder>(
+                &self,
+                encoder: &mut __E,
+            ) -> Result<(), bincode::error::EncodeError> {
+                match self {
+                    $(
+                        $(#[$meta])*
+                        Self::$variant $( ( $($field),+ ) )? => {
+                            Encode::encode(&define_opcode_enum!(@code $($kind)? $code), encoder)?;
+                            $(
+                                $(
+                                    Encode::encode($field, encoder)?;
+                                )+
+                            )?
+                            Ok(())
+                        }
+                    )*
+                }
+            }
+        }
+
+        impl<__Context> Decode<__Context> for Opcode {
+            fn decode<__D: bincode::de::Decoder<Context = __Context>>(
+                decoder: &mut __D,
+            ) -> Result<Self, bincode::error::DecodeError> {
+                let code = u32::decode(decoder)?;
+                match code {
+                    $(
+                        $(#[$meta])*
+                        code if code == define_opcode_enum!(@code $($kind)? $code) => {
+                            Ok(Self::$variant $( ( $(<$field_ty as Decode<__Context>>::decode(decoder)?),+ ) )?)
+                        }
+                    )*
+                    _ => Err(bincode::error::DecodeError::Other("rwasm: invalid opcode")),
+                }
+            }
+        }
     };
-    (@ignore $field:ty) => {
+    (@ignore $field:ident) => {
         _
+    };
+    (@code fpu $code:expr) => {
+        FPU_OPCODE_OFFSET + $code
+    };
+    (@code $code:expr) => {
+        $code
     };
 }
 
 define_opcode_enum! {
     // stack/system
     Unreachable => 0u32,
-    Trap(TrapCode) => 1u32,
-    LocalGet(LocalDepth) => 2u32,
-    LocalSet(LocalDepth) => 3u32,
-    LocalTee(LocalDepth) => 4u32,
-    Br(BranchOffset) => 5u32,
-    BrIfEqz(BranchOffset) => 6u32,
-    BrIfNez(BranchOffset) => 7u32,
-    BrTable(BranchTableTargets) => 8u32,
-    ConsumeFuel(BlockFuel) => 9u32,
+    Trap(trap_code: TrapCode) => 1u32,
+    LocalGet(depth: LocalDepth) => 2u32,
+    LocalSet(depth: LocalDepth) => 3u32,
+    LocalTee(depth: LocalDepth) => 4u32,
+    Br(offset: BranchOffset) => 5u32,
+    BrIfEqz(offset: BranchOffset) => 6u32,
+    BrIfNez(offset: BranchOffset) => 7u32,
+    BrTable(targets: BranchTableTargets) => 8u32,
+    ConsumeFuel(fuel: BlockFuel) => 9u32,
     ConsumeFuelStack => 10u32,
     Return => 11u32,
-    ReturnCallInternal(CompiledFunc) => 12u32,
-    ReturnCall(SysFuncIdx) => 13u32,
-    ReturnCallIndirect(SignatureIdx) => 14u32,
-    CallInternal(CompiledFunc) => 15u32,
-    Call(SysFuncIdx) => 16u32,
-    CallIndirect(SignatureIdx) => 17u32,
-    SignatureCheck(SignatureIdx) => 18u32,
-    StackCheck(MaxStackHeight) => 19u32,
-    RefFunc(CompiledFunc) => 20u32,
-    I32Const(UntypedValue) => 21u32,
+    ReturnCallInternal(func: CompiledFunc) => 12u32,
+    ReturnCall(func: SysFuncIdx) => 13u32,
+    ReturnCallIndirect(signature: SignatureIdx) => 14u32,
+    CallInternal(func: CompiledFunc) => 15u32,
+    Call(func: SysFuncIdx) => 16u32,
+    CallIndirect(signature: SignatureIdx) => 17u32,
+    SignatureCheck(signature: SignatureIdx) => 18u32,
+    StackCheck(height: MaxStackHeight) => 19u32,
+    RefFunc(func: CompiledFunc) => 20u32,
+    I32Const(value: UntypedValue) => 21u32,
     Drop => 22u32,
     Select => 23u32,
-    GlobalGet(GlobalIdx) => 24u32,
-    GlobalSet(GlobalIdx) => 25u32,
+    GlobalGet(global: GlobalIdx) => 24u32,
+    GlobalSet(global: GlobalIdx) => 25u32,
 
     // memory
-    I32Load(AddressOffset) => 26u32,
-    I32Load8S(AddressOffset) => 27u32,
-    I32Load8U(AddressOffset) => 28u32,
-    I32Load16S(AddressOffset) => 29u32,
-    I32Load16U(AddressOffset) => 30u32,
-    I32Store(AddressOffset) => 31u32,
-    I32Store8(AddressOffset) => 32u32,
-    I32Store16(AddressOffset) => 33u32,
+    I32Load(offset: AddressOffset) => 26u32,
+    I32Load8S(offset: AddressOffset) => 27u32,
+    I32Load8U(offset: AddressOffset) => 28u32,
+    I32Load16S(offset: AddressOffset) => 29u32,
+    I32Load16U(offset: AddressOffset) => 30u32,
+    I32Store(offset: AddressOffset) => 31u32,
+    I32Store8(offset: AddressOffset) => 32u32,
+    I32Store16(offset: AddressOffset) => 33u32,
     MemorySize => 34u32,
     MemoryGrow => 35u32,
     MemoryFill => 36u32,
     MemoryCopy => 37u32,
-    MemoryInit(DataSegmentIdx) => 38u32,
-    DataDrop(DataSegmentIdx) => 39u32,
+    MemoryInit(segment: DataSegmentIdx) => 38u32,
+    DataDrop(segment: DataSegmentIdx) => 39u32,
 
     // table
-    TableSize(TableIdx) => 40u32,
-    TableGrow(TableIdx) => 41u32,
-    TableFill(TableIdx) => 42u32,
-    TableGet(TableIdx) => 43u32,
-    TableSet(TableIdx) => 44u32,
-    TableCopy(TableIdx, TableIdx) => 45u32,
-    TableInit(ElementSegmentIdx) => 46u32,
-    ElemDrop(ElementSegmentIdx) => 47u32,
+    TableSize(table: TableIdx) => 40u32,
+    TableGrow(table: TableIdx) => 41u32,
+    TableFill(table: TableIdx) => 42u32,
+    TableGet(table: TableIdx) => 43u32,
+    TableSet(table: TableIdx) => 44u32,
+    TableCopy(dst: TableIdx, src: TableIdx) => 45u32,
+    TableInit(segment: ElementSegmentIdx) => 46u32,
+    ElemDrop(segment: ElementSegmentIdx) => 47u32,
 
     // alu
     I32Eqz => 48u32,
@@ -131,150 +181,80 @@ define_opcode_enum! {
     I32Extend16S => 79u32,
     I32Mul64 => 80u32,
     I32Add64 => 81u32,
-    BulkConst(NumLocals) => 82u32,
-    BulkDrop(NumLocals) => 83u32,
+    BulkConst(locals: NumLocals) => 82u32,
+    BulkDrop(locals: NumLocals) => 83u32,
 
     // fpu
-    #[cfg(feature = "fpu")]
-    F32Load(AddressOffset) => 84u32,
-    #[cfg(feature = "fpu")]
-    F64Load(AddressOffset) => 85u32,
-    #[cfg(feature = "fpu")]
-    F32Store(AddressOffset) => 86u32,
-    #[cfg(feature = "fpu")]
-    F64Store(AddressOffset) => 87u32,
-    #[cfg(feature = "fpu")]
-    F32Eq => 88u32,
-    #[cfg(feature = "fpu")]
-    F32Ne => 89u32,
-    #[cfg(feature = "fpu")]
-    F32Lt => 90u32,
-    #[cfg(feature = "fpu")]
-    F32Gt => 91u32,
-    #[cfg(feature = "fpu")]
-    F32Le => 92u32,
-    #[cfg(feature = "fpu")]
-    F32Ge => 93u32,
-    #[cfg(feature = "fpu")]
-    F64Eq => 94u32,
-    #[cfg(feature = "fpu")]
-    F64Ne => 95u32,
-    #[cfg(feature = "fpu")]
-    F64Lt => 96u32,
-    #[cfg(feature = "fpu")]
-    F64Gt => 97u32,
-    #[cfg(feature = "fpu")]
-    F64Le => 98u32,
-    #[cfg(feature = "fpu")]
-    F64Ge => 99u32,
-    #[cfg(feature = "fpu")]
-    F32Abs => 100u32,
-    #[cfg(feature = "fpu")]
-    F32Neg => 101u32,
-    #[cfg(feature = "fpu")]
-    F32Ceil => 102u32,
-    #[cfg(feature = "fpu")]
-    F32Floor => 103u32,
-    #[cfg(feature = "fpu")]
-    F32Trunc => 104u32,
-    #[cfg(feature = "fpu")]
-    F32Nearest => 105u32,
-    #[cfg(feature = "fpu")]
-    F32Sqrt => 106u32,
-    #[cfg(feature = "fpu")]
-    F32Add => 107u32,
-    #[cfg(feature = "fpu")]
-    F32Sub => 108u32,
-    #[cfg(feature = "fpu")]
-    F32Mul => 109u32,
-    #[cfg(feature = "fpu")]
-    F32Div => 110u32,
-    #[cfg(feature = "fpu")]
-    F32Min => 111u32,
-    #[cfg(feature = "fpu")]
-    F32Max => 112u32,
-    #[cfg(feature = "fpu")]
-    F32Copysign => 113u32,
-    #[cfg(feature = "fpu")]
-    F64Abs => 114u32,
-    #[cfg(feature = "fpu")]
-    F64Neg => 115u32,
-    #[cfg(feature = "fpu")]
-    F64Ceil => 116u32,
-    #[cfg(feature = "fpu")]
-    F64Floor => 117u32,
-    #[cfg(feature = "fpu")]
-    F64Trunc => 118u32,
-    #[cfg(feature = "fpu")]
-    F64Nearest => 119u32,
-    #[cfg(feature = "fpu")]
-    F64Sqrt => 120u32,
-    #[cfg(feature = "fpu")]
-    F64Add => 121u32,
-    #[cfg(feature = "fpu")]
-    F64Sub => 122u32,
-    #[cfg(feature = "fpu")]
-    F64Mul => 123u32,
-    #[cfg(feature = "fpu")]
-    F64Div => 124u32,
-    #[cfg(feature = "fpu")]
-    F64Min => 125u32,
-    #[cfg(feature = "fpu")]
-    F64Max => 126u32,
-    #[cfg(feature = "fpu")]
-    F64Copysign => 127u32,
-    #[cfg(feature = "fpu")]
-    I32TruncF32S => 128u32,
-    #[cfg(feature = "fpu")]
-    I32TruncF32U => 129u32,
-    #[cfg(feature = "fpu")]
-    I32TruncF64S => 130u32,
-    #[cfg(feature = "fpu")]
-    I32TruncF64U => 131u32,
-    #[cfg(feature = "fpu")]
-    I64TruncF32S => 132u32,
-    #[cfg(feature = "fpu")]
-    I64TruncF32U => 133u32,
-    #[cfg(feature = "fpu")]
-    I64TruncF64S => 134u32,
-    #[cfg(feature = "fpu")]
-    I64TruncF64U => 135u32,
-    #[cfg(feature = "fpu")]
-    F32ConvertI32S => 136u32,
-    #[cfg(feature = "fpu")]
-    F32ConvertI32U => 137u32,
-    #[cfg(feature = "fpu")]
-    F32ConvertI64S => 138u32,
-    #[cfg(feature = "fpu")]
-    F32ConvertI64U => 139u32,
-    #[cfg(feature = "fpu")]
-    F32DemoteF64 => 140u32,
-    #[cfg(feature = "fpu")]
-    F64ConvertI32S => 141u32,
-    #[cfg(feature = "fpu")]
-    F64ConvertI32U => 142u32,
-    #[cfg(feature = "fpu")]
-    F64ConvertI64S => 143u32,
-    #[cfg(feature = "fpu")]
-    F64ConvertI64U => 144u32,
-    #[cfg(feature = "fpu")]
-    F64PromoteF32 => 145u32,
-    #[cfg(feature = "fpu")]
-    I32TruncSatF32S => 146u32,
-    #[cfg(feature = "fpu")]
-    I32TruncSatF32U => 147u32,
-    #[cfg(feature = "fpu")]
-    I32TruncSatF64S => 148u32,
-    #[cfg(feature = "fpu")]
-    I32TruncSatF64U => 149u32,
-    #[cfg(feature = "fpu")]
-    I64TruncSatF32S => 150u32,
-    #[cfg(feature = "fpu")]
-    I64TruncSatF32U => 151u32,
-    #[cfg(feature = "fpu")]
-    I64TruncSatF64S => 152u32,
-    #[cfg(feature = "fpu")]
-    I64TruncSatF64U => 153u32,
+    @fpu F32Load(offset: AddressOffset) => 0u32,
+    @fpu F64Load(offset: AddressOffset) => 1u32,
+    @fpu F32Store(offset: AddressOffset) => 2u32,
+    @fpu F64Store(offset: AddressOffset) => 3u32,
+    @fpu F32Eq => 4u32,
+    @fpu F32Ne => 5u32,
+    @fpu F32Lt => 6u32,
+    @fpu F32Gt => 7u32,
+    @fpu F32Le => 8u32,
+    @fpu F32Ge => 9u32,
+    @fpu F64Eq => 10u32,
+    @fpu F64Ne => 11u32,
+    @fpu F64Lt => 12u32,
+    @fpu F64Gt => 13u32,
+    @fpu F64Le => 14u32,
+    @fpu F64Ge => 15u32,
+    @fpu F32Abs => 16u32,
+    @fpu F32Neg => 17u32,
+    @fpu F32Ceil => 18u32,
+    @fpu F32Floor => 19u32,
+    @fpu F32Trunc => 20u32,
+    @fpu F32Nearest => 21u32,
+    @fpu F32Sqrt => 22u32,
+    @fpu F32Add => 23u32,
+    @fpu F32Sub => 24u32,
+    @fpu F32Mul => 25u32,
+    @fpu F32Div => 26u32,
+    @fpu F32Min => 27u32,
+    @fpu F32Max => 28u32,
+    @fpu F32Copysign => 29u32,
+    @fpu F64Abs => 30u32,
+    @fpu F64Neg => 31u32,
+    @fpu F64Ceil => 32u32,
+    @fpu F64Floor => 33u32,
+    @fpu F64Trunc => 34u32,
+    @fpu F64Nearest => 35u32,
+    @fpu F64Sqrt => 36u32,
+    @fpu F64Add => 37u32,
+    @fpu F64Sub => 38u32,
+    @fpu F64Mul => 39u32,
+    @fpu F64Div => 40u32,
+    @fpu F64Min => 41u32,
+    @fpu F64Max => 42u32,
+    @fpu F64Copysign => 43u32,
+    @fpu I32TruncF32S => 44u32,
+    @fpu I32TruncF32U => 45u32,
+    @fpu I32TruncF64S => 46u32,
+    @fpu I32TruncF64U => 47u32,
+    @fpu I64TruncF32S => 48u32,
+    @fpu I64TruncF32U => 49u32,
+    @fpu I64TruncF64S => 50u32,
+    @fpu I64TruncF64U => 51u32,
+    @fpu F32ConvertI32S => 52u32,
+    @fpu F32ConvertI32U => 53u32,
+    @fpu F32ConvertI64S => 54u32,
+    @fpu F32ConvertI64U => 55u32,
+    @fpu F32DemoteF64 => 56u32,
+    @fpu F64ConvertI32S => 57u32,
+    @fpu F64ConvertI32U => 58u32,
+    @fpu F64ConvertI64S => 59u32,
+    @fpu F64ConvertI64U => 60u32,
+    @fpu F64PromoteF32 => 61u32,
+    @fpu I32TruncSatF32S => 62u32,
+    @fpu I32TruncSatF32U => 63u32,
+    @fpu I32TruncSatF64S => 64u32,
+    @fpu I32TruncSatF64U => 65u32,
+    @fpu I64TruncSatF32S => 66u32,
+    @fpu I64TruncSatF32U => 67u32,
+    @fpu I64TruncSatF64S => 68u32,
+    @fpu I64TruncSatF64U => 69u32,
 }
 
 impl core::fmt::Display for Opcode {
@@ -520,7 +500,37 @@ mod tests {
     fn test_opcode_encoding() {
         let opcode = Opcode::LocalGet(7);
         let data = bincode::encode_to_vec(opcode, bincode::config::legacy()).unwrap();
-        println!("{:?}", data);
+        assert_eq!(data, [2, 0, 0, 0, 7, 0, 0, 0]);
+
+        let (decoded, decoded_len): (Opcode, usize) =
+            bincode::decode_from_slice(&data, bincode::config::legacy()).unwrap();
+        assert_eq!(decoded, opcode);
+        assert_eq!(decoded_len, data.len());
+    }
+
+    #[test]
+    fn test_opcode_encoding_uses_explicit_code() {
+        let opcode = Opcode::TableCopy(3, 7);
+        let data = bincode::encode_to_vec(opcode, bincode::config::legacy()).unwrap();
+        assert_eq!(&data[..4], &opcode.code().to_le_bytes());
+
+        let (decoded, decoded_len): (Opcode, usize) =
+            bincode::decode_from_slice(&data, bincode::config::legacy()).unwrap();
+        assert_eq!(decoded, opcode);
+        assert_eq!(decoded_len, data.len());
+    }
+
+    #[test]
+    fn test_fpu_opcode_encoding_uses_offset() {
+        let opcode = Opcode::F32Load(7);
+        let data = bincode::encode_to_vec(opcode, bincode::config::legacy()).unwrap();
+        assert_eq!(opcode.code(), 1000);
+        assert_eq!(&data[..4], &1000u32.to_le_bytes());
+
+        let (decoded, decoded_len): (Opcode, usize) =
+            bincode::decode_from_slice(&data, bincode::config::legacy()).unwrap();
+        assert_eq!(decoded, opcode);
+        assert_eq!(decoded_len, data.len());
     }
 
     #[test]
