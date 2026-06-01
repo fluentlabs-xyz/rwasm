@@ -8,243 +8,253 @@ use crate::{
 use alloc::{format, vec::Vec};
 use bincode::{Decode, Encode};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(u16)]
-pub enum Opcode {
+const FPU_OPCODE_OFFSET: u32 = 1000;
+
+macro_rules! define_opcode_enum {
+    (
+        $(
+            $(#[$meta:meta])*
+            $(@ $kind:ident)?
+            $variant:ident $(($($field:ident : $field_ty:ty),+ $(,)?))? => $code:expr,
+        )*
+    ) => {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+        #[repr(u16)]
+        pub enum Opcode {
+            $(
+                $(#[$meta])*
+                $variant $(($($field_ty),+))?,
+            )*
+        }
+
+        impl Opcode {
+            pub fn code(&self) -> u32 {
+                match self {
+                    $(
+                        $(#[$meta])*
+                        Self::$variant $( ( $(define_opcode_enum!(@ignore $field)),+ ) )? => {
+                            define_opcode_enum!(@code $($kind)? $code)
+                        }
+                    )*
+                }
+            }
+        }
+
+        impl Encode for Opcode {
+            fn encode<__E: bincode::enc::Encoder>(
+                &self,
+                encoder: &mut __E,
+            ) -> Result<(), bincode::error::EncodeError> {
+                match self {
+                    $(
+                        $(#[$meta])*
+                        Self::$variant $( ( $($field),+ ) )? => {
+                            Encode::encode(&define_opcode_enum!(@code $($kind)? $code), encoder)?;
+                            $(
+                                $(
+                                    Encode::encode($field, encoder)?;
+                                )+
+                            )?
+                            Ok(())
+                        }
+                    )*
+                }
+            }
+        }
+
+        impl<__Context> Decode<__Context> for Opcode {
+            fn decode<__D: bincode::de::Decoder<Context = __Context>>(
+                decoder: &mut __D,
+            ) -> Result<Self, bincode::error::DecodeError> {
+                let code = u32::decode(decoder)?;
+                match code {
+                    $(
+                        $(#[$meta])*
+                        code if code == define_opcode_enum!(@code $($kind)? $code) => {
+                            Ok(Self::$variant $( ( $(<$field_ty as Decode<__Context>>::decode(decoder)?),+ ) )?)
+                        }
+                    )*
+                    _ => Err(bincode::error::DecodeError::Other("rwasm: invalid opcode")),
+                }
+            }
+        }
+    };
+    (@ignore $field:ident) => {
+        _
+    };
+    (@code fpu $code:expr) => {
+        FPU_OPCODE_OFFSET + $code
+    };
+    (@code $code:expr) => {
+        $code
+    };
+}
+
+define_opcode_enum! {
     // stack/system
-    Unreachable,
-    Trap(TrapCode),
-    LocalGet(LocalDepth),
-    LocalSet(LocalDepth),
-    LocalTee(LocalDepth),
-    Br(BranchOffset),
-    BrIfEqz(BranchOffset),
-    BrIfNez(BranchOffset),
-    BrTable(BranchTableTargets),
-    ConsumeFuel(BlockFuel),
-    ConsumeFuelStack,
-    Return,
-    ReturnCallInternal(CompiledFunc),
-    ReturnCall(SysFuncIdx),
-    ReturnCallIndirect(SignatureIdx),
-    CallInternal(CompiledFunc),
-    Call(SysFuncIdx),
-    CallIndirect(SignatureIdx),
-    SignatureCheck(SignatureIdx),
-    StackCheck(MaxStackHeight),
-    RefFunc(CompiledFunc),
-    I32Const(UntypedValue),
-    Drop,
-    Select,
-    GlobalGet(GlobalIdx),
-    GlobalSet(GlobalIdx),
+    Unreachable => 0u32,
+    Trap(trap_code: TrapCode) => 1u32,
+    LocalGet(depth: LocalDepth) => 2u32,
+    LocalSet(depth: LocalDepth) => 3u32,
+    LocalTee(depth: LocalDepth) => 4u32,
+    Br(offset: BranchOffset) => 5u32,
+    BrIfEqz(offset: BranchOffset) => 6u32,
+    BrIfNez(offset: BranchOffset) => 7u32,
+    BrTable(targets: BranchTableTargets) => 8u32,
+    ConsumeFuel(fuel: BlockFuel) => 9u32,
+    ConsumeFuelStack => 10u32,
+    Return => 11u32,
+    ReturnCallInternal(func: CompiledFunc) => 12u32,
+    ReturnCall(func: SysFuncIdx) => 13u32,
+    ReturnCallIndirect(signature: SignatureIdx) => 14u32,
+    CallInternal(func: CompiledFunc) => 15u32,
+    Call(func: SysFuncIdx) => 16u32,
+    CallIndirect(signature: SignatureIdx) => 17u32,
+    SignatureCheck(signature: SignatureIdx) => 18u32,
+    StackCheck(height: MaxStackHeight) => 19u32,
+    RefFunc(func: CompiledFunc) => 20u32,
+    I32Const(value: UntypedValue) => 21u32,
+    Drop => 22u32,
+    Select => 23u32,
+    GlobalGet(global: GlobalIdx) => 24u32,
+    GlobalSet(global: GlobalIdx) => 25u32,
 
     // memory
-    I32Load(AddressOffset),
-    I32Load8S(AddressOffset),
-    I32Load8U(AddressOffset),
-    I32Load16S(AddressOffset),
-    I32Load16U(AddressOffset),
-    I32Store(AddressOffset),
-    I32Store8(AddressOffset),
-    I32Store16(AddressOffset),
-    MemorySize,
-    MemoryGrow,
-    MemoryFill,
-    MemoryCopy,
-    MemoryInit(DataSegmentIdx),
-    DataDrop(DataSegmentIdx),
+    I32Load(offset: AddressOffset) => 26u32,
+    I32Load8S(offset: AddressOffset) => 27u32,
+    I32Load8U(offset: AddressOffset) => 28u32,
+    I32Load16S(offset: AddressOffset) => 29u32,
+    I32Load16U(offset: AddressOffset) => 30u32,
+    I32Store(offset: AddressOffset) => 31u32,
+    I32Store8(offset: AddressOffset) => 32u32,
+    I32Store16(offset: AddressOffset) => 33u32,
+    MemorySize => 34u32,
+    MemoryGrow => 35u32,
+    MemoryFill => 36u32,
+    MemoryCopy => 37u32,
+    MemoryInit(segment: DataSegmentIdx) => 38u32,
+    DataDrop(segment: DataSegmentIdx) => 39u32,
 
     // table
-    TableSize(TableIdx),
-    TableGrow(TableIdx),
-    TableFill(TableIdx),
-    TableGet(TableIdx),
-    TableSet(TableIdx),
-    TableCopy(TableIdx, TableIdx),
-    TableInit(ElementSegmentIdx),
-    ElemDrop(ElementSegmentIdx),
+    TableSize(table: TableIdx) => 40u32,
+    TableGrow(table: TableIdx) => 41u32,
+    TableFill(table: TableIdx) => 42u32,
+    TableGet(table: TableIdx) => 43u32,
+    TableSet(table: TableIdx) => 44u32,
+    TableCopy(dst: TableIdx, src: TableIdx) => 45u32,
+    TableInit(segment: ElementSegmentIdx) => 46u32,
+    ElemDrop(segment: ElementSegmentIdx) => 47u32,
 
     // alu
-    I32Eqz,
-    I32Eq,
-    I32Ne,
-    I32LtS,
-    I32LtU,
-    I32GtS,
-    I32GtU,
-    I32LeS,
-    I32LeU,
-    I32GeS,
-    I32GeU,
-    I32Clz,
-    I32Ctz,
-    I32Popcnt,
-    I32Add,
-    I32Sub,
-    I32Mul,
-    I32DivS,
-    I32DivU,
-    I32RemS,
-    I32RemU,
-    I32And,
-    I32Or,
-    I32Xor,
-    I32Shl,
-    I32ShrS,
-    I32ShrU,
-    I32Rotl,
-    I32Rotr,
-    I32WrapI64,
-    I32Extend8S,
-    I32Extend16S,
-    I32Mul64,
-    I32Add64,
-    BulkConst(NumLocals),
-    BulkDrop(NumLocals),
+    I32Eqz => 48u32,
+    I32Eq => 49u32,
+    I32Ne => 50u32,
+    I32LtS => 51u32,
+    I32LtU => 52u32,
+    I32GtS => 53u32,
+    I32GtU => 54u32,
+    I32LeS => 55u32,
+    I32LeU => 56u32,
+    I32GeS => 57u32,
+    I32GeU => 58u32,
+    I32Clz => 59u32,
+    I32Ctz => 60u32,
+    I32Popcnt => 61u32,
+    I32Add => 62u32,
+    I32Sub => 63u32,
+    I32Mul => 64u32,
+    I32DivS => 65u32,
+    I32DivU => 66u32,
+    I32RemS => 67u32,
+    I32RemU => 68u32,
+    I32And => 69u32,
+    I32Or => 70u32,
+    I32Xor => 71u32,
+    I32Shl => 72u32,
+    I32ShrS => 73u32,
+    I32ShrU => 74u32,
+    I32Rotl => 75u32,
+    I32Rotr => 76u32,
+    I32WrapI64 => 77u32,
+    I32Extend8S => 78u32,
+    I32Extend16S => 79u32,
+    I32Mul64 => 80u32,
+    I32Add64 => 81u32,
+    BulkConst(locals: NumLocals) => 82u32,
+    BulkDrop(locals: NumLocals) => 83u32,
 
     // fpu
-    #[cfg(feature = "fpu")]
-    F32Load(AddressOffset),
-    #[cfg(feature = "fpu")]
-    F64Load(AddressOffset),
-    #[cfg(feature = "fpu")]
-    F32Store(AddressOffset),
-    #[cfg(feature = "fpu")]
-    F64Store(AddressOffset),
-    #[cfg(feature = "fpu")]
-    F32Eq,
-    #[cfg(feature = "fpu")]
-    F32Ne,
-    #[cfg(feature = "fpu")]
-    F32Lt,
-    #[cfg(feature = "fpu")]
-    F32Gt,
-    #[cfg(feature = "fpu")]
-    F32Le,
-    #[cfg(feature = "fpu")]
-    F32Ge,
-    #[cfg(feature = "fpu")]
-    F64Eq,
-    #[cfg(feature = "fpu")]
-    F64Ne,
-    #[cfg(feature = "fpu")]
-    F64Lt,
-    #[cfg(feature = "fpu")]
-    F64Gt,
-    #[cfg(feature = "fpu")]
-    F64Le,
-    #[cfg(feature = "fpu")]
-    F64Ge,
-    #[cfg(feature = "fpu")]
-    F32Abs,
-    #[cfg(feature = "fpu")]
-    F32Neg,
-    #[cfg(feature = "fpu")]
-    F32Ceil,
-    #[cfg(feature = "fpu")]
-    F32Floor,
-    #[cfg(feature = "fpu")]
-    F32Trunc,
-    #[cfg(feature = "fpu")]
-    F32Nearest,
-    #[cfg(feature = "fpu")]
-    F32Sqrt,
-    #[cfg(feature = "fpu")]
-    F32Add,
-    #[cfg(feature = "fpu")]
-    F32Sub,
-    #[cfg(feature = "fpu")]
-    F32Mul,
-    #[cfg(feature = "fpu")]
-    F32Div,
-    #[cfg(feature = "fpu")]
-    F32Min,
-    #[cfg(feature = "fpu")]
-    F32Max,
-    #[cfg(feature = "fpu")]
-    F32Copysign,
-    #[cfg(feature = "fpu")]
-    F64Abs,
-    #[cfg(feature = "fpu")]
-    F64Neg,
-    #[cfg(feature = "fpu")]
-    F64Ceil,
-    #[cfg(feature = "fpu")]
-    F64Floor,
-    #[cfg(feature = "fpu")]
-    F64Trunc,
-    #[cfg(feature = "fpu")]
-    F64Nearest,
-    #[cfg(feature = "fpu")]
-    F64Sqrt,
-    #[cfg(feature = "fpu")]
-    F64Add,
-    #[cfg(feature = "fpu")]
-    F64Sub,
-    #[cfg(feature = "fpu")]
-    F64Mul,
-    #[cfg(feature = "fpu")]
-    F64Div,
-    #[cfg(feature = "fpu")]
-    F64Min,
-    #[cfg(feature = "fpu")]
-    F64Max,
-    #[cfg(feature = "fpu")]
-    F64Copysign,
-    #[cfg(feature = "fpu")]
-    I32TruncF32S,
-    #[cfg(feature = "fpu")]
-    I32TruncF32U,
-    #[cfg(feature = "fpu")]
-    I32TruncF64S,
-    #[cfg(feature = "fpu")]
-    I32TruncF64U,
-    #[cfg(feature = "fpu")]
-    I64TruncF32S,
-    #[cfg(feature = "fpu")]
-    I64TruncF32U,
-    #[cfg(feature = "fpu")]
-    I64TruncF64S,
-    #[cfg(feature = "fpu")]
-    I64TruncF64U,
-    #[cfg(feature = "fpu")]
-    F32ConvertI32S,
-    #[cfg(feature = "fpu")]
-    F32ConvertI32U,
-    #[cfg(feature = "fpu")]
-    F32ConvertI64S,
-    #[cfg(feature = "fpu")]
-    F32ConvertI64U,
-    #[cfg(feature = "fpu")]
-    F32DemoteF64,
-    #[cfg(feature = "fpu")]
-    F64ConvertI32S,
-    #[cfg(feature = "fpu")]
-    F64ConvertI32U,
-    #[cfg(feature = "fpu")]
-    F64ConvertI64S,
-    #[cfg(feature = "fpu")]
-    F64ConvertI64U,
-    #[cfg(feature = "fpu")]
-    F64PromoteF32,
-    #[cfg(feature = "fpu")]
-    I32TruncSatF32S,
-    #[cfg(feature = "fpu")]
-    I32TruncSatF32U,
-    #[cfg(feature = "fpu")]
-    I32TruncSatF64S,
-    #[cfg(feature = "fpu")]
-    I32TruncSatF64U,
-    #[cfg(feature = "fpu")]
-    I64TruncSatF32S,
-    #[cfg(feature = "fpu")]
-    I64TruncSatF32U,
-    #[cfg(feature = "fpu")]
-    I64TruncSatF64S,
-    #[cfg(feature = "fpu")]
-    I64TruncSatF64U,
+    @fpu F32Load(offset: AddressOffset) => 0u32,
+    @fpu F64Load(offset: AddressOffset) => 1u32,
+    @fpu F32Store(offset: AddressOffset) => 2u32,
+    @fpu F64Store(offset: AddressOffset) => 3u32,
+    @fpu F32Eq => 4u32,
+    @fpu F32Ne => 5u32,
+    @fpu F32Lt => 6u32,
+    @fpu F32Gt => 7u32,
+    @fpu F32Le => 8u32,
+    @fpu F32Ge => 9u32,
+    @fpu F64Eq => 10u32,
+    @fpu F64Ne => 11u32,
+    @fpu F64Lt => 12u32,
+    @fpu F64Gt => 13u32,
+    @fpu F64Le => 14u32,
+    @fpu F64Ge => 15u32,
+    @fpu F32Abs => 16u32,
+    @fpu F32Neg => 17u32,
+    @fpu F32Ceil => 18u32,
+    @fpu F32Floor => 19u32,
+    @fpu F32Trunc => 20u32,
+    @fpu F32Nearest => 21u32,
+    @fpu F32Sqrt => 22u32,
+    @fpu F32Add => 23u32,
+    @fpu F32Sub => 24u32,
+    @fpu F32Mul => 25u32,
+    @fpu F32Div => 26u32,
+    @fpu F32Min => 27u32,
+    @fpu F32Max => 28u32,
+    @fpu F32Copysign => 29u32,
+    @fpu F64Abs => 30u32,
+    @fpu F64Neg => 31u32,
+    @fpu F64Ceil => 32u32,
+    @fpu F64Floor => 33u32,
+    @fpu F64Trunc => 34u32,
+    @fpu F64Nearest => 35u32,
+    @fpu F64Sqrt => 36u32,
+    @fpu F64Add => 37u32,
+    @fpu F64Sub => 38u32,
+    @fpu F64Mul => 39u32,
+    @fpu F64Div => 40u32,
+    @fpu F64Min => 41u32,
+    @fpu F64Max => 42u32,
+    @fpu F64Copysign => 43u32,
+    @fpu I32TruncF32S => 44u32,
+    @fpu I32TruncF32U => 45u32,
+    @fpu I32TruncF64S => 46u32,
+    @fpu I32TruncF64U => 47u32,
+    @fpu I64TruncF32S => 48u32,
+    @fpu I64TruncF32U => 49u32,
+    @fpu I64TruncF64S => 50u32,
+    @fpu I64TruncF64U => 51u32,
+    @fpu F32ConvertI32S => 52u32,
+    @fpu F32ConvertI32U => 53u32,
+    @fpu F32ConvertI64S => 54u32,
+    @fpu F32ConvertI64U => 55u32,
+    @fpu F32DemoteF64 => 56u32,
+    @fpu F64ConvertI32S => 57u32,
+    @fpu F64ConvertI32U => 58u32,
+    @fpu F64ConvertI64S => 59u32,
+    @fpu F64ConvertI64U => 60u32,
+    @fpu F64PromoteF32 => 61u32,
+    @fpu I32TruncSatF32S => 62u32,
+    @fpu I32TruncSatF32U => 63u32,
+    @fpu I32TruncSatF64S => 64u32,
+    @fpu I32TruncSatF64U => 65u32,
+    @fpu I64TruncSatF32S => 66u32,
+    @fpu I64TruncSatF32U => 67u32,
+    @fpu I64TruncSatF64S => 68u32,
+    @fpu I64TruncSatF64U => 69u32,
 }
 
 impl core::fmt::Display for Opcode {
@@ -473,11 +483,6 @@ impl Opcode {
             _ => 0,
         }
     }
-
-    pub fn code(&self) -> u32 {
-        // TODO(wangyao): "is it safe?"
-        unsafe { *<*const _>::from(self).cast::<u16>() as u32 }
-    }
 }
 
 #[derive(Default, Debug, PartialEq, Clone, Eq, Hash)]
@@ -495,11 +500,134 @@ mod tests {
     fn test_opcode_encoding() {
         let opcode = Opcode::LocalGet(7);
         let data = bincode::encode_to_vec(opcode, bincode::config::legacy()).unwrap();
-        println!("{:?}", data);
+        assert_eq!(data, [2, 0, 0, 0, 7, 0, 0, 0]);
+
+        let (decoded, decoded_len): (Opcode, usize) =
+            bincode::decode_from_slice(&data, bincode::config::legacy()).unwrap();
+        assert_eq!(decoded, opcode);
+        assert_eq!(decoded_len, data.len());
+    }
+
+    #[test]
+    fn test_opcode_encoding_uses_explicit_code() {
+        let opcode = Opcode::TableCopy(3, 7);
+        let data = bincode::encode_to_vec(opcode, bincode::config::legacy()).unwrap();
+        assert_eq!(&data[..4], &opcode.code().to_le_bytes());
+
+        let (decoded, decoded_len): (Opcode, usize) =
+            bincode::decode_from_slice(&data, bincode::config::legacy()).unwrap();
+        assert_eq!(decoded, opcode);
+        assert_eq!(decoded_len, data.len());
+    }
+
+    #[test]
+    fn test_fpu_opcode_encoding_uses_offset() {
+        let opcode = Opcode::F32Load(7);
+        let data = bincode::encode_to_vec(opcode, bincode::config::legacy()).unwrap();
+        assert_eq!(opcode.code(), 1000);
+        assert_eq!(&data[..4], &1000u32.to_le_bytes());
+
+        let (decoded, decoded_len): (Opcode, usize) =
+            bincode::decode_from_slice(&data, bincode::config::legacy()).unwrap();
+        assert_eq!(decoded, opcode);
+        assert_eq!(decoded_len, data.len());
     }
 
     #[test]
     fn test_opcode_size() {
         assert_eq!(size_of::<Opcode>(), 8);
+    }
+
+    #[test]
+    fn test_opcode_code_values() {
+        let opcodes = [
+            Opcode::Unreachable,
+            Opcode::Trap(TrapCode::UnreachableCodeReached),
+            Opcode::LocalGet(7),
+            Opcode::LocalSet(7),
+            Opcode::LocalTee(7),
+            Opcode::Br(0.into()),
+            Opcode::BrIfEqz(0.into()),
+            Opcode::BrIfNez(0.into()),
+            Opcode::BrTable(0),
+            Opcode::ConsumeFuel(0),
+            Opcode::ConsumeFuelStack,
+            Opcode::Return,
+            Opcode::ReturnCallInternal(0),
+            Opcode::ReturnCall(0),
+            Opcode::ReturnCallIndirect(0),
+            Opcode::CallInternal(0),
+            Opcode::Call(0),
+            Opcode::CallIndirect(0),
+            Opcode::SignatureCheck(0),
+            Opcode::StackCheck(0),
+            Opcode::RefFunc(0),
+            Opcode::I32Const(42.into()),
+            Opcode::Drop,
+            Opcode::Select,
+            Opcode::GlobalGet(0),
+            Opcode::GlobalSet(0),
+            Opcode::I32Load(0),
+            Opcode::I32Load8S(0),
+            Opcode::I32Load8U(0),
+            Opcode::I32Load16S(0),
+            Opcode::I32Load16U(0),
+            Opcode::I32Store(0),
+            Opcode::I32Store8(0),
+            Opcode::I32Store16(0),
+            Opcode::MemorySize,
+            Opcode::MemoryGrow,
+            Opcode::MemoryFill,
+            Opcode::MemoryCopy,
+            Opcode::MemoryInit(0),
+            Opcode::DataDrop(0),
+            Opcode::TableSize(0),
+            Opcode::TableGrow(0),
+            Opcode::TableFill(0),
+            Opcode::TableGet(0),
+            Opcode::TableSet(0),
+            Opcode::TableCopy(0, 1),
+            Opcode::TableInit(0),
+            Opcode::ElemDrop(0),
+            Opcode::I32Eqz,
+            Opcode::I32Eq,
+            Opcode::I32Ne,
+            Opcode::I32LtS,
+            Opcode::I32LtU,
+            Opcode::I32GtS,
+            Opcode::I32GtU,
+            Opcode::I32LeS,
+            Opcode::I32LeU,
+            Opcode::I32GeS,
+            Opcode::I32GeU,
+            Opcode::I32Clz,
+            Opcode::I32Ctz,
+            Opcode::I32Popcnt,
+            Opcode::I32Add,
+            Opcode::I32Sub,
+            Opcode::I32Mul,
+            Opcode::I32DivS,
+            Opcode::I32DivU,
+            Opcode::I32RemS,
+            Opcode::I32RemU,
+            Opcode::I32And,
+            Opcode::I32Or,
+            Opcode::I32Xor,
+            Opcode::I32Shl,
+            Opcode::I32ShrS,
+            Opcode::I32ShrU,
+            Opcode::I32Rotl,
+            Opcode::I32Rotr,
+            Opcode::I32WrapI64,
+            Opcode::I32Extend8S,
+            Opcode::I32Extend16S,
+            Opcode::I32Mul64,
+            Opcode::I32Add64,
+            Opcode::BulkConst(3),
+            Opcode::BulkDrop(3),
+        ];
+        for (expected, opcode) in opcodes.iter().enumerate() {
+            assert_eq!(opcode.code(), expected as u32, "{opcode:#}");
+        }
     }
 }
