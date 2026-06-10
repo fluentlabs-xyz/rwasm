@@ -36,11 +36,11 @@ impl<T: 'static> WasmtimeExecutor<T> {
         fuel_limit: Option<u64>,
         max_allowed_memory_pages: Option<u32>,
     ) -> Self {
+        let memory_size_limit = (max_allowed_memory_pages.unwrap_or(N_DEFAULT_MAX_MEMORY_PAGES)
+            as usize)
+            .saturating_mul(N_BYTES_PER_MEMORY_PAGE as usize);
         let resource_limiter = wasmtime::StoreLimitsBuilder::new()
-            .memory_size(
-                (max_allowed_memory_pages.unwrap_or(N_DEFAULT_MAX_MEMORY_PAGES)
-                    * N_BYTES_PER_MEMORY_PAGE) as usize,
-            )
+            .memory_size(memory_size_limit)
             .build();
 
         let context = WrappedContext {
