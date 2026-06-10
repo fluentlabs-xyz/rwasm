@@ -89,6 +89,7 @@ impl ModuleParser {
             #[cfg(feature = "debug-print")]
             println!("{}: func_idx={}, func_type_idx={}", k, v, func_type_idx);
         }
+        result.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(result)
     }
 
