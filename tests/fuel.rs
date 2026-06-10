@@ -2,9 +2,38 @@ use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore, StoreTr
 use rwasm_fuel_policy::FuelCosts;
 
 #[test]
+fn test_entrypoint_call_consumes_fuel() {
+    let wasm_binary = wat::parse_str(
+        r#"
+        (module
+          (func (export "entry"))
+        )
+        "#,
+    )
+    .unwrap();
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("entry".into())
+        .with_consume_fuel(true)
+        .with_consume_fuel_for_params_and_locals(false);
+    let (module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+
+    let fuel_limit = 100;
+    let mut store = RwasmStore::<()>::default();
+    store.reset_fuel(fuel_limit);
+    ExecutionEngine::new()
+        .execute(&mut store, &module, &[], &mut [])
+        .unwrap();
+
+    assert_eq!(
+        fuel_limit - store.remaining_fuel().unwrap(),
+        (FuelCosts::CALL + FuelCosts::BASE) as u64
+    );
+}
+
+#[test]
 fn test_locals_consume_fuel() {
     let fuel_limit = 9999;
-    let basic_fuel_consumption = 2;
+    let basic_fuel_consumption = FuelCosts::CALL as u64 + 2;
 
     let test_cases: &mut [(usize, usize)] = &mut [
         (0, 0),

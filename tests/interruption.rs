@@ -112,12 +112,13 @@ fn test_interrupted_call_rwasm_with_syscall() {
     engine
         .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap();
+    // 10 - entrypoint call cost
     // 1 - function cost
     // 1 - base cost
     // 10 - call cost
     // 10*5 - linear cost
     // 7 - base cost
-    assert_eq!(store.fuel_consumed(), 1 + 1 + 10 + 10 * 5 + 7);
+    assert_eq!(store.fuel_consumed(), 10 + 1 + 1 + 10 + 10 * 5 + 7);
 }
 
 #[test]

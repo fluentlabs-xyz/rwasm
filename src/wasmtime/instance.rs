@@ -4,6 +4,7 @@ use crate::{
     ImportLinker, SyscallHandler, TrapCode, Value, F32, F64, N_BYTES_PER_MEMORY_PAGE,
     N_DEFAULT_MAX_MEMORY_PAGES,
 };
+use rwasm_fuel_policy::FuelCosts;
 use std::sync::Arc;
 use wasmtime::{AsContext, AsContextMut, StoreContext, StoreContextMut};
 
@@ -126,6 +127,9 @@ impl<T: 'static> WasmtimeExecutor<T> {
             .instance
             .get_func(self.store.as_context_mut(), func_name)
             .ok_or(TrapCode::UnknownExternalFunction)?;
+        if self.store.get_fuel().is_ok() {
+            <Self as crate::StoreTr<T>>::try_consume_fuel(self, FuelCosts::CALL as u64)?;
+        }
         let mut buffer = Vec::<Val>::default();
         for (i, value) in params.iter().enumerate() {
             let value = match value {
