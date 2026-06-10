@@ -93,7 +93,7 @@ fn test_call_with_charging_quadratic_wasmtime() {
     let words = 300_u64.div_ceil(32);
     assert_eq!(
         wasmtime_worker.store.get_fuel().unwrap(),
-        100_000 - (10 + 1 + 1 + 10 + WORD_COST * words + words * words / DIVISOR)
+        100_000 - (1 + 1 + 10 + WORD_COST * words + words * words / DIVISOR)
     );
 }
 
@@ -112,7 +112,7 @@ fn test_call_with_charging_linear_wasmtime() {
     wasmtime_worker.execute("main", &[], &mut []).unwrap();
     assert_eq!(
         wasmtime_worker.store.get_fuel().unwrap(),
-        100_000 - (10 + 1 + 1 + 10 + 10 * 5 + 7)
+        100_000 - (1 + 1 + 10 + 10 * 5 + 7)
     );
 }
 

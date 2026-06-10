@@ -49,8 +49,8 @@ fn test_intrinsic_replace() {
     engine
         .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap();
-    // 35 by consume_fuel, 10 by entrypoint call, 10 by call, and 2 by base opcodes.
-    assert_eq!(store.fuel_consumed(), 35 + 10 + 10 + 2);
+    // 35 by consume_fuel, 10 by call, and 2 by base opcodes.
+    assert_eq!(store.fuel_consumed(), 35 + 10 + 2);
 }
 
 #[test]

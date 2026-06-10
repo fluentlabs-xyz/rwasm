@@ -26,14 +26,14 @@ fn test_entrypoint_call_consumes_fuel() {
 
     assert_eq!(
         fuel_limit - store.remaining_fuel().unwrap(),
-        (FuelCosts::CALL + FuelCosts::BASE) as u64
+        FuelCosts::BASE as u64
     );
 }
 
 #[test]
 fn test_locals_consume_fuel() {
     let fuel_limit = 9999;
-    let basic_fuel_consumption = FuelCosts::CALL as u64 + 2;
+    let basic_fuel_consumption = 2;
 
     let test_cases: &mut [(usize, usize)] = &mut [
         (0, 0),
