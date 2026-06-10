@@ -28,6 +28,13 @@ impl<T: 'static> AsContextMut for WasmtimeExecutor<T> {
 }
 
 impl<T: 'static> WasmtimeExecutor<T> {
+    fn exported_memory(&mut self) -> Result<wasmtime::Memory, TrapCode> {
+        self.instance
+            .get_export(self.store.as_context_mut(), "memory")
+            .and_then(|export| export.into_memory())
+            .ok_or(TrapCode::MemoryOutOfBounds)
+    }
+
     pub fn new(
         module: wasmtime::Module,
         import_linker: Arc<ImportLinker>,
@@ -118,7 +125,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
         let entrypoint = self
             .instance
             .get_func(self.store.as_context_mut(), func_name)
-            .unwrap_or_else(|| unreachable!("wasmtime: missing entrypoint: {}", func_name));
+            .ok_or(TrapCode::UnknownExternalFunction)?;
         let mut buffer = Vec::<Val>::default();
         for (i, value) in params.iter().enumerate() {
             let value = match value {
@@ -185,12 +192,9 @@ impl<T: 'static> WasmtimeExecutor<T> {
     }
 
     pub fn snapshot_memory(&mut self) -> Vec<u8> {
-        let instance = self.instance;
-        let global_memory = instance
-            .get_export(self.store.as_context_mut(), "memory")
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
-            .into_memory()
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        let global_memory = self
+            .exported_memory()
+            .unwrap_or_else(|_| unreachable!("wasmtime: missing memory export, it's not possible"));
         let memory_size =
             global_memory.size(self.store.as_context_mut()) * N_BYTES_PER_MEMORY_PAGE as u64;
         let mut snapshot = vec![0; memory_size as usize];
@@ -203,12 +207,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
 
 impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        let instance = self.instance;
-        let global_memory = instance
-            .get_export(self.store.as_context_mut(), "memory")
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
-            .into_memory()
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        let global_memory = self.exported_memory()?;
         global_memory
             .read(self.store.as_context(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)
@@ -216,12 +215,7 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
 
     fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
         let end = checked_memory_range_end(offset, length)?;
-        let instance = self.instance;
-        let global_memory = instance
-            .get_export(self.store.as_context_mut(), "memory")
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
-            .into_memory()
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        let global_memory = self.exported_memory()?;
         let memory_size = (global_memory.size(self.store.as_context_mut()) as usize)
             .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
             .ok_or(TrapCode::MemoryOutOfBounds)?;
@@ -234,12 +228,7 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        let instance = self.instance;
-        let global_memory = instance
-            .get_export(self.store.as_context_mut(), "memory")
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
-            .into_memory()
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        let global_memory = self.exported_memory()?;
         global_memory
             .write(self.store.as_context_mut(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)

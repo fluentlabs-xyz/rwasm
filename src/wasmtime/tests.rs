@@ -138,6 +138,24 @@ fn test_call_with_charging_param_overflow_wasmtime() {
     assert_eq!(err, TrapCode::IntegerOverflow);
 }
 
+#[test]
+fn test_wasmtime_executor_missing_entrypoint_returns_trap() {
+    let (module, import_linker) = get_test_wasmtime_module();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        (),
+        |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
+        Some(100_000),
+        None,
+    );
+
+    let err = wasmtime_worker
+        .execute("missing_export", &[], &mut [])
+        .unwrap_err();
+    assert_eq!(err, TrapCode::UnknownExternalFunction);
+}
+
 fn get_test_memory_module() -> (Module, Arc<ImportLinker>) {
     let wasm_binary = wat::parse_str(
         r#"
@@ -152,6 +170,37 @@ fn get_test_memory_module() -> (Module, Arc<ImportLinker>) {
               )
               (func (export "read_oob")
                 (i32.const 65536)
+                (i32.const 1)
+                (call $read)
+              )
+            )
+            "#,
+    )
+    .unwrap();
+    let mut import_linker = ImportLinker::default();
+    import_linker.insert_function(
+        ImportName::new("host", "read"),
+        0xab,
+        SyscallFuelParams::default(),
+        &[wasmparser::ValType::I32, wasmparser::ValType::I32],
+        &[],
+    );
+    let import_linker = Arc::new(import_linker);
+    let compilation_config = CompilationConfig::default().with_import_linker(import_linker.clone());
+
+    (
+        compile_wasmtime_module(compilation_config, wasm_binary).unwrap(),
+        import_linker,
+    )
+}
+
+fn get_test_module_without_memory() -> (Module, Arc<ImportLinker>) {
+    let wasm_binary = wat::parse_str(
+        r#"
+            (module
+              (func $read (import "host" "read") (param i32 i32))
+              (func (export "read_missing_memory")
+                (i32.const 0)
                 (i32.const 1)
                 (call $read)
               )
@@ -193,6 +242,26 @@ fn read_memory_syscall(
     let bytes = caller.memory_read_into_vec(offset, length)?;
     caller.data_mut().extend(bytes);
     Ok(())
+}
+
+#[test]
+fn test_wasmtime_caller_missing_memory_returns_trap() {
+    let (module, import_linker) = get_test_module_without_memory();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        Vec::new(),
+        read_memory_syscall,
+        Some(100_000),
+        None,
+    );
+
+    assert_eq!(
+        wasmtime_worker
+            .execute("read_missing_memory", &[], &mut [])
+            .unwrap_err(),
+        TrapCode::MemoryOutOfBounds
+    );
 }
 
 #[test]
