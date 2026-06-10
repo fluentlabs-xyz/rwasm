@@ -124,3 +124,39 @@ fn test_memory_fill_fuel_scales_with_length() {
 
     assert!(consumed_for_len(128) > consumed_for_len(1));
 }
+
+#[test]
+fn test_table_bulk_ops_compile_with_fuel_metering() {
+    let wasm_binary = wat::parse_str(
+        r#"
+        (module
+          (type $t (func))
+          (func $f)
+          (table 4 funcref)
+          (elem funcref (ref.func $f))
+          (func (export "entry")
+            i32.const 0
+            i32.const 0
+            i32.const 1
+            table.init 0 0
+
+            i32.const 1
+            i32.const 0
+            i32.const 1
+            table.copy 0 0
+
+            i32.const 2
+            ref.func $f
+            i32.const 1
+            table.fill 0
+          )
+        )
+        "#,
+    )
+    .unwrap();
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("entry".into())
+        .with_consume_fuel(true);
+
+    RwasmModule::compile(config, &wasm_binary).unwrap();
+}
