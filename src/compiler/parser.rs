@@ -907,17 +907,28 @@ impl ModuleParser {
     /// Process the entries for the Wasm component model proposal.
     fn process_unsupported_component_model(
         &mut self,
-        range: Range<usize>,
+        _range: Range<usize>,
     ) -> Result<(), CompilationError> {
-        panic!(
-            "rwasm does not support the `component-model` Wasm proposal: bytes[{}..{}]",
-            range.start, range.end
-        )
+        Err(CompilationError::NotSupportedExtension)
     }
 
     /// Processes the end of the Wasm binary.
     fn process_end(&mut self, offset: usize) -> Result<(), CompilationError> {
         self.validator.end(offset)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_component_model_returns_error() {
+        let mut parser = ModuleParser::new(CompilationConfig::default());
+        let err = parser
+            .process_unsupported_component_model(0..0)
+            .expect_err("component-model payload must be rejected");
+        assert!(matches!(err, CompilationError::NotSupportedExtension));
     }
 }
