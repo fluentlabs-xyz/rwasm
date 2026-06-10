@@ -2360,12 +2360,17 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .memory_sections
                 .get(&data_segment_index)
                 .copied()
-                .expect("can't resolve a passive segment by index");
+                .ok_or(CompilationError::MemoryOutOfBounds)?;
             builder.stack_height.push2();
             builder.stack_height.pop2();
             builder.stack_height.pop3();
             // since we store all data sections in the one segment, then the index is always 0
-            ib.op_memory_init_checked(Some(offset), Some(length), data_segment_index + 1, false);
+            ib.op_memory_init_checked(
+                Some(offset),
+                Some(length),
+                data_segment_index + 1,
+                is_fuel_metering_enabled,
+            );
             Ok(())
         })
     }
