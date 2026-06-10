@@ -53,6 +53,10 @@ jobs:
           cargo install cargo-llvm-cov grcov
           make coverage
 
+      - name: Import Codecov CLI verification key
+        run: |
+          curl -fsSL https://keybase.io/codecovsecops/pgp_keys.asc | gpg --import
+
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v7.0.0
         with:
