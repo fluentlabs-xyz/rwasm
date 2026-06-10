@@ -1539,10 +1539,11 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .and_then(|v| u32::try_from(v).ok())
                 .filter(|v| *v <= builder.max_allowed_memory_pages)
                 .unwrap_or(builder.max_allowed_memory_pages);
+            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
             builder
                 .alloc
                 .instruction_set
-                .op_memory_grow_checked(Some(max_pages), false);
+                .op_memory_grow_checked(Some(max_pages), is_fuel_metering_enabled);
             // make sure types are correct
             let popped_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(popped_type, ValType::I32);
@@ -2396,7 +2397,11 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.instruction_set.op_memory_copy_checked(false);
+            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            builder
+                .alloc
+                .instruction_set
+                .op_memory_copy_checked(is_fuel_metering_enabled);
             Ok(())
         })
     }
@@ -2411,7 +2416,11 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.instruction_set.op_memory_fill_checked(false);
+            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            builder
+                .alloc
+                .instruction_set
+                .op_memory_fill_checked(is_fuel_metering_enabled);
             Ok(())
         })
     }
@@ -2438,7 +2447,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 TableIdx::try_from(table_index).unwrap(),
                 length,
                 offset,
-                false,
+                is_fuel_metering_enabled,
             );
             builder
                 .stack_height
@@ -2479,7 +2488,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.instruction_set.op_table_copy_checked(
                 TableIdx::try_from(dst_table).unwrap(),
                 TableIdx::try_from(src_table).unwrap(),
-                false,
+                is_fuel_metering_enabled,
             );
             Ok(())
         })
@@ -2499,10 +2508,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder
-                .alloc
-                .instruction_set
-                .op_table_fill_checked(TableIdx::try_from(table_index).unwrap(), false);
+            builder.alloc.instruction_set.op_table_fill_checked(
+                TableIdx::try_from(table_index).unwrap(),
+                is_fuel_metering_enabled,
+            );
             Ok(())
         })
     }
@@ -2548,7 +2557,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             ib.op_table_grow_checked(
                 TableIdx::try_from(table_index).unwrap(),
                 Some(max_table_elements),
-                false,
+                is_fuel_metering_enabled,
             );
             builder
                 .stack_height

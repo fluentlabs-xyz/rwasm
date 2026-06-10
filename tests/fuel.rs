@@ -85,3 +85,42 @@ fn test_locals_consume_fuel() {
         }
     }
 }
+
+#[test]
+fn test_memory_fill_fuel_scales_with_length() {
+    let wasm_binary = wat::parse_str(
+        r#"
+        (module
+          (memory (export "memory") 1)
+          (func (export "entry") (param i32)
+            i32.const 1
+            memory.grow
+            drop
+            i32.const 0
+            i32.const 7
+            local.get 0
+            memory.fill
+          )
+        )
+        "#,
+    )
+    .unwrap();
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("entry".into())
+        .with_consume_fuel(true);
+    let (module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+    let engine = ExecutionEngine::new();
+    let fuel_limit = 100_000;
+
+    let consumed_for_len = |len| {
+        let mut store = RwasmStore::<()>::default();
+        let mut result = [];
+        store.reset_fuel(fuel_limit);
+        engine
+            .execute(&mut store, &module, &[Value::I32(len)], &mut result)
+            .unwrap();
+        fuel_limit - store.remaining_fuel().unwrap()
+    };
+
+    assert!(consumed_for_len(128) > consumed_for_len(1));
+}
