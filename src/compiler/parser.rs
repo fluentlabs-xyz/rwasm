@@ -16,7 +16,6 @@ use core::{
     ops::Range,
 };
 use hashbrown::HashMap;
-use rwasm_fuel_policy::FuelCosts;
 use wasmparser::{
     CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind,
     ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType, FunctionBody,
@@ -128,13 +127,6 @@ impl ModuleParser {
                 .get(entrypoint_name)
                 .copied()
                 .ok_or(CompilationError::MissingEntrypoint)?;
-            if self.config.consume_fuel {
-                self.allocations
-                    .translation
-                    .segment_builder
-                    .entrypoint_bytecode
-                    .op_consume_fuel(FuelCosts::CALL);
-            }
             self.allocations
                 .translation
                 .emit_function_call(func_idx, true, true);
@@ -254,13 +246,10 @@ impl ModuleParser {
             entrypoint_bytecode.op_local_get(1u32);
             entrypoint_bytecode.op_i32_const(*state_value);
             entrypoint_bytecode.op_i32_eq();
-            entrypoint_bytecode.op_br_if_eqz(if self.config.consume_fuel { 4 } else { 3 });
+            entrypoint_bytecode.op_br_if_eqz(3);
             // it's super important to drop the original state from the stack
             // because input params might be passed though the stack
             entrypoint_bytecode.op_drop();
-            if self.config.consume_fuel {
-                entrypoint_bytecode.op_consume_fuel(FuelCosts::CALL);
-            }
             self.allocations
                 .translation
                 .emit_function_call(func_idx, true, true);

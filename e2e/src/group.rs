@@ -178,19 +178,14 @@ impl TestingInstanceGroup {
         let mut instance = self.wasmtime.borrow_mut();
         let res2 = instance.execute(func_name, params, &mut wasmtime_result);
         drop(instance);
-        // Make sure that both executions agree on success or trap. Wasmtime and
-        // rWasm intentionally use different fuel metering models here.
-        match (&res1, &res2) {
-            (Ok(_), Ok(_)) => {}
-            (Err(left), Err(right)) => assert_eq!(left, right),
-            _ => assert_eq!(res1, res2),
-        }
+        // Make sure that both results are the same (it also compares fuel consumed)
+        assert_eq!(res1, res2);
         // If the result is trap code, then return it
         res1?;
         res2?;
         // Compare output results
         assert_eq!(rwasm_result.len(), wasmtime_result.len());
-        for (left, right) in wasmtime_result.iter().zip(wasmtime_result.iter()) {
+        for (left, right) in rwasm_result.iter().zip(wasmtime_result.iter()) {
             match (left, right) {
                 // A special cases for NaN comparison (NaN != NaN)
                 (Value::F64(left), Value::F64(right))
