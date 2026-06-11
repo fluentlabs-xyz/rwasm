@@ -61,9 +61,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn maps_unsupported_wasmtime_traps_to_illegal_opcode() {
-        let trap = wasmtime::Error::new(Trap::AlwaysTrapAdapter);
-        assert_eq!(map_wasmtime_error(trap), TrapCode::IllegalOpcode);
+    fn maps_wasmtime_traps_to_rwasm_traps() {
+        let trap = wasmtime::Error::new(Trap::OutOfFuel);
+        assert_eq!(map_wasmtime_error(trap), TrapCode::OutOfFuel);
     }
 
     #[test]
