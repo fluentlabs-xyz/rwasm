@@ -467,7 +467,16 @@ impl ValueStackPtr {
     /// convert stack pointer to the address number
     #[cfg(feature = "tracing")]
     pub fn to_relative_address(&self) -> u32 {
-        crate::mem_index::SP_START - (self.ptr as u32 - self.src as u32)
+        let offset = (self.ptr as usize)
+            .checked_sub(self.src as usize)
+            .unwrap_or_else(|| unreachable!("stack pointer is below stack base"));
+        let offset = offset / size_of::<UntypedValue>();
+        let offset = (offset as u32)
+            .checked_mul(crate::mem_index::UNIT)
+            .unwrap_or_else(|| unreachable!("stack pointer offset exceeds u32"));
+        crate::mem_index::SP_START
+            .checked_sub(offset)
+            .unwrap_or_else(|| unreachable!("stack pointer exceeds trace stack range"))
     }
 
     /// Pushes the `T` to the end of the [`ValueStack`].
