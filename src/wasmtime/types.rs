@@ -2,12 +2,12 @@ use crate::TrapCode;
 use wasmparser::ValType;
 use wasmtime::Trap;
 
-/// Maps `anyhow::Error` coming from Wasmtime into an rWasm `TrapCode`.
+/// Maps errors coming from Wasmtime into an rWasm `TrapCode`.
 ///
 /// - If the error is a Wasmtime `Trap`, it is mapped into the closest `TrapCode`.
 /// - If the error already contains a `TrapCode`, it is returned as-is.
 /// - Otherwise the error is treated as an illegal opcode (fallback).
-pub(super) fn map_anyhow_error(err: anyhow::Error) -> TrapCode {
+pub(super) fn map_wasmtime_error(err: wasmtime::Error) -> TrapCode {
     if let Some(trap) = err.downcast_ref::<Trap>() {
         #[cfg(feature = "debug-print")]
         eprintln!("wasmtime trap: {:?}", trap);
@@ -32,7 +32,7 @@ pub(super) fn map_anyhow_error(err: anyhow::Error) -> TrapCode {
             _ => TrapCode::IllegalOpcode,
         }
     } else if let Some(trap) = err.downcast_ref::<TrapCode>() {
-        // Our own trap code was propagated through anyhow; pass it through.
+        // Our own trap code was propagated through Wasmtime; pass it through.
         *trap
     } else {
         #[cfg(feature = "debug-print")]
@@ -62,13 +62,13 @@ mod tests {
 
     #[test]
     fn maps_unsupported_wasmtime_traps_to_illegal_opcode() {
-        let trap = anyhow::Error::new(Trap::AlwaysTrapAdapter);
-        assert_eq!(map_anyhow_error(trap), TrapCode::IllegalOpcode);
+        let trap = wasmtime::Error::new(Trap::AlwaysTrapAdapter);
+        assert_eq!(map_wasmtime_error(trap), TrapCode::IllegalOpcode);
     }
 
     #[test]
-    fn maps_unknown_anyhow_error_to_illegal_opcode() {
-        let trap = anyhow::anyhow!("unknown wasmtime error");
-        assert_eq!(map_anyhow_error(trap), TrapCode::IllegalOpcode);
+    fn maps_unknown_wasmtime_error_to_illegal_opcode() {
+        let trap = wasmtime::Error::msg("unknown wasmtime error");
+        assert_eq!(map_wasmtime_error(trap), TrapCode::IllegalOpcode);
     }
 }

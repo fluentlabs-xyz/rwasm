@@ -136,7 +136,8 @@ fn test_memory_fill_fuel_scales_with_length() {
     .unwrap();
     let config = CompilationConfig::default()
         .with_entrypoint_name("entry".into())
-        .with_consume_fuel(true);
+        .with_consume_fuel(true)
+        .with_consume_fuel_for_bulk_ops(true);
     let (module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     let engine = ExecutionEngine::new();
     let fuel_limit = 100_000;
@@ -152,6 +153,50 @@ fn test_memory_fill_fuel_scales_with_length() {
     };
 
     assert!(consumed_for_len(128) > consumed_for_len(1));
+}
+
+#[test]
+fn test_bulk_fuel_checks_are_disabled_by_default() {
+    let wasm_binary = wat::parse_str(
+        r#"
+        (module
+          (memory (export "memory") 1)
+          (func (export "entry") (param i32)
+            i32.const 1
+            memory.grow
+            drop
+            i32.const 0
+            i32.const 7
+            local.get 0
+            memory.fill
+          )
+        )
+        "#,
+    )
+    .unwrap();
+    let base_config = CompilationConfig::default()
+        .with_entrypoint_name("entry".into())
+        .with_consume_fuel(true);
+    let engine = ExecutionEngine::new();
+    let fuel_limit = 100_000;
+
+    let consumed_for_len = |config: CompilationConfig, len| {
+        let (module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+        let mut store = RwasmStore::<()>::default();
+        let mut result = [];
+        store.reset_fuel(fuel_limit);
+        engine
+            .execute(&mut store, &module, &[Value::I32(len)], &mut result)
+            .unwrap();
+        fuel_limit - store.remaining_fuel().unwrap()
+    };
+
+    let default_short = consumed_for_len(base_config.clone(), 1);
+    let default_long = consumed_for_len(base_config.clone(), 128);
+    let checked_long = consumed_for_len(base_config.with_consume_fuel_for_bulk_ops(true), 128);
+
+    assert_eq!(default_short, default_long);
+    assert!(checked_long > default_long);
 }
 
 #[test]
@@ -186,7 +231,8 @@ fn test_table_bulk_ops_compile_with_fuel_metering() {
     .unwrap();
     let config = CompilationConfig::default()
         .with_entrypoint_name("entry".into())
-        .with_consume_fuel(true);
+        .with_consume_fuel(true)
+        .with_consume_fuel_for_bulk_ops(true);
 
     let (module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
     let fuel_limit = 10_000;

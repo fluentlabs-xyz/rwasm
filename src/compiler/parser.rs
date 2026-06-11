@@ -482,6 +482,7 @@ impl ModuleParser {
                 allocations.translation,
                 self.config.consume_fuel,
                 self.config.code_snippets,
+                self.config.consume_fuel_for_bulk_ops,
                 self.config.consume_fuel_for_params_and_locals,
                 self.config.max_allowed_memory_pages,
             );
@@ -885,6 +886,7 @@ impl ModuleParser {
             allocations.translation,
             self.config.consume_fuel,
             self.config.code_snippets,
+            self.config.consume_fuel_for_bulk_ops,
             self.config.consume_fuel_for_params_and_locals,
             self.config.max_allowed_memory_pages,
         )

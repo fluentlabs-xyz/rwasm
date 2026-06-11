@@ -10,13 +10,13 @@ use wasmtime::Val;
 /// Maps input params and results between Wasmtime (`Val`) and rWasm (`Value`),
 /// then calls `invoke_runtime_handler` with a `CallerAdapter` providing memory/context access.
 ///
-/// Returns `Ok(())` on success, or an `anyhow::Error` that may wrap a trap.
+/// Returns `Ok(())` on success, or a Wasmtime error that may wrap a trap.
 pub fn wasmtime_syscall_handler<'a, T: 'static>(
     sys_func_idx: u32,
     caller: wasmtime::Caller<'a, WrappedContext<T>>,
     params: &[Val],
     result: &mut [Val],
-) -> anyhow::Result<()> {
+) -> wasmtime::Result<()> {
     // Convert input values from Wasmtime format into rWasm format.
     let mut buffer = SmallVec::<[Value; 32]>::new();
     buffer.extend(params.iter().map(|x| match x {
@@ -43,13 +43,16 @@ pub fn wasmtime_syscall_handler<'a, T: 'static>(
     );
 
     // Treat `ExecutionHalted` as a controlled termination rather than a hard error.
-    let should_terminate = syscall_result.map(|_| false).or_else(|trap_code| {
-        if trap_code == TrapCode::ExecutionHalted {
-            Ok(true)
-        } else {
-            Err(trap_code)
-        }
-    })?;
+    let should_terminate = syscall_result
+        .map(|_| false)
+        .or_else(|trap_code| {
+            if trap_code == TrapCode::ExecutionHalted {
+                Ok(true)
+            } else {
+                Err(trap_code)
+            }
+        })
+        .map_err(wasmtime::Error::new)?;
 
     // Map all values back to Wasmtime format.
     for (i, value) in mapped_result.iter().enumerate() {
@@ -64,7 +67,7 @@ pub fn wasmtime_syscall_handler<'a, T: 'static>(
 
     // Terminate execution if requested.
     if should_terminate {
-        return Err(TrapCode::ExecutionHalted.into());
+        return Err(wasmtime::Error::new(TrapCode::ExecutionHalted));
     }
 
     Ok(())

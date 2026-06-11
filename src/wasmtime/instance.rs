@@ -1,6 +1,6 @@
 use crate::{
     checked_memory_range_end,
-    wasmtime::{types::map_anyhow_error, wasmtime_import_linker, WrappedContext},
+    wasmtime::{types::map_wasmtime_error, wasmtime_import_linker, WrappedContext},
     ImportLinker, SyscallHandler, TrapCode, Value, F32, F64, N_BYTES_PER_MEMORY_PAGE,
     N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES,
 };
@@ -157,7 +157,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
         let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
         entrypoint
             .call(self.store.as_context_mut(), mapped_params, mapped_result)
-            .map_err(map_anyhow_error)
+            .map_err(map_wasmtime_error)
             .or_else(|trap_code| {
                 if trap_code == TrapCode::ExecutionHalted {
                     Ok(())

@@ -165,6 +165,8 @@ pub struct InstructionTranslator {
     pub(crate) locals: LocalsRegistry,
     /// Enable translation with optimized code snippets
     pub(crate) with_code_snippets: bool,
+    /// Emit extra dynamic fuel checks for bulk memory/table operations.
+    pub(crate) consume_fuel_for_bulk_ops: bool,
     /// Max allowed memory pages
     pub(crate) max_allowed_memory_pages: u32,
 }
@@ -174,6 +176,7 @@ impl InstructionTranslator {
         alloc: FuncTranslatorAllocations,
         with_consume_fuel: bool,
         with_code_snippets: bool,
+        consume_fuel_for_bulk_ops: bool,
         consume_fuel_for_params_and_locals: bool,
         max_allowed_memory_pages: u32,
     ) -> Self {
@@ -184,6 +187,7 @@ impl InstructionTranslator {
             with_consume_fuel,
             locals: Default::default(),
             with_code_snippets,
+            consume_fuel_for_bulk_ops,
             consume_fuel_for_params_and_locals,
             max_allowed_memory_pages,
         }
@@ -1539,11 +1543,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .and_then(|v| u32::try_from(v).ok())
                 .filter(|v| *v <= builder.max_allowed_memory_pages)
                 .unwrap_or(builder.max_allowed_memory_pages);
-            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            let inject_fuel_check =
+                builder.consume_fuel_for_bulk_ops && builder.is_fuel_metering_enabled();
             builder
                 .alloc
                 .instruction_set
-                .op_memory_grow_checked(Some(max_pages), is_fuel_metering_enabled);
+                .op_memory_grow_checked(Some(max_pages), inject_fuel_check);
             // make sure types are correct
             let popped_type = builder.alloc.stack_types.pop().unwrap();
             debug_assert_eq!(popped_type, ValType::I32);
@@ -2352,7 +2357,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             let data_segment_index: DataSegmentIdx = data_segment_index;
-            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            let inject_fuel_check =
+                builder.consume_fuel_for_bulk_ops && builder.is_fuel_metering_enabled();
             let (ib, rb) = (
                 &mut builder.alloc.instruction_set,
                 &mut builder.alloc.segment_builder,
@@ -2370,7 +2376,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 Some(offset),
                 Some(length),
                 data_segment_index + 1,
-                is_fuel_metering_enabled,
+                inject_fuel_check,
             );
             Ok(())
         })
@@ -2397,11 +2403,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            let inject_fuel_check =
+                builder.consume_fuel_for_bulk_ops && builder.is_fuel_metering_enabled();
             builder
                 .alloc
                 .instruction_set
-                .op_memory_copy_checked(is_fuel_metering_enabled);
+                .op_memory_copy_checked(inject_fuel_check);
             Ok(())
         })
     }
@@ -2416,18 +2423,20 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            let inject_fuel_check =
+                builder.consume_fuel_for_bulk_ops && builder.is_fuel_metering_enabled();
             builder
                 .alloc
                 .instruction_set
-                .op_memory_fill_checked(is_fuel_metering_enabled);
+                .op_memory_fill_checked(inject_fuel_check);
             Ok(())
         })
     }
 
     fn visit_table_init(&mut self, segment_index: u32, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            let inject_fuel_check =
+                builder.consume_fuel_for_bulk_ops && builder.is_fuel_metering_enabled();
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
@@ -2447,7 +2456,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 TableIdx::try_from(table_index).unwrap(),
                 length,
                 offset,
-                is_fuel_metering_enabled,
+                inject_fuel_check,
             );
             builder
                 .stack_height
@@ -2473,7 +2482,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_table_copy(&mut self, dst_table: u32, src_table: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            let inject_fuel_check =
+                builder.consume_fuel_for_bulk_ops && builder.is_fuel_metering_enabled();
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             builder
                 .stack_height
@@ -2488,7 +2498,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.instruction_set.op_table_copy_checked(
                 TableIdx::try_from(dst_table).unwrap(),
                 TableIdx::try_from(src_table).unwrap(),
-                is_fuel_metering_enabled,
+                inject_fuel_check,
             );
             Ok(())
         })
@@ -2496,7 +2506,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_table_fill(&mut self, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            let inject_fuel_check =
+                builder.consume_fuel_for_bulk_ops && builder.is_fuel_metering_enabled();
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             builder
                 .stack_height
@@ -2508,10 +2519,10 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
-            builder.alloc.instruction_set.op_table_fill_checked(
-                TableIdx::try_from(table_index).unwrap(),
-                is_fuel_metering_enabled,
-            );
+            builder
+                .alloc
+                .instruction_set
+                .op_table_fill_checked(TableIdx::try_from(table_index).unwrap(), inject_fuel_check);
             Ok(())
         })
     }
@@ -2542,7 +2553,8 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
     fn visit_table_grow(&mut self, table_index: u32) -> Self::Output {
         self.translate_if_reachable(|builder| {
-            let is_fuel_metering_enabled = builder.is_fuel_metering_enabled();
+            let inject_fuel_check =
+                builder.consume_fuel_for_bulk_ops && builder.is_fuel_metering_enabled();
             builder.bump_fuel_consumption(|| FuelCosts::ENTITY)?;
             builder.alloc.stack_types.pop().unwrap();
             builder.alloc.stack_types.pop().unwrap();
@@ -2557,7 +2569,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             ib.op_table_grow_checked(
                 TableIdx::try_from(table_index).unwrap(),
                 Some(max_table_elements),
-                is_fuel_metering_enabled,
+                inject_fuel_check,
             );
             builder
                 .stack_height

@@ -29,7 +29,7 @@ pub type WasmtimeLinker<T> = wasmtime::Linker<WrappedContext<T>>;
 pub fn deserialize_wasmtime_module(
     compilation_config: CompilationConfig,
     wasmtime_binary: impl AsRef<[u8]>,
-) -> anyhow::Result<WasmtimeModule> {
+) -> wasmtime::Result<WasmtimeModule> {
     #[cfg(feature = "debug-print")]
     print!("parsing wasmtime module... ");
     let start = Instant::now();
@@ -43,7 +43,7 @@ pub fn deserialize_wasmtime_module(
 pub fn compile_wasmtime_module(
     compilation_config: CompilationConfig,
     wasm_binary: impl AsRef<[u8]>,
-) -> anyhow::Result<WasmtimeModule> {
+) -> wasmtime::Result<WasmtimeModule> {
     #[cfg(feature = "debug-print")]
     print!("compiling wasmtime module... ");
     let start = Instant::now();
@@ -60,7 +60,7 @@ pub fn compile_wasmtime_module_cached(
     compilation_config: CompilationConfig,
     wasm_binary: impl AsRef<[u8]>,
     module_caching_key: [u8; 32],
-) -> anyhow::Result<WasmtimeModule> {
+) -> wasmtime::Result<WasmtimeModule> {
     static COMPILED_MODULES: OnceLock<Mutex<LruCache<[u8; 32], WasmtimeModule>>> = OnceLock::new();
     let compiled_modules = COMPILED_MODULES.get_or_init(|| {
         Mutex::new(LruCache::new(

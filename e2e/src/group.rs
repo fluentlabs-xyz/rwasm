@@ -145,6 +145,7 @@ impl TestingInstanceGroup {
                 opcode: Some(Opcode::Call(FUNC_GET_STATE)),
             })
             .with_consume_fuel(true)
+            .with_consume_fuel_for_bulk_ops(true)
             .with_consume_fuel_for_params_and_locals(false);
 
         let rwasm = TestingInstanceRwasm::new(config.clone(), wasm_binary, exports)?;
