@@ -162,6 +162,7 @@ fn test_table_bulk_ops_compile_with_fuel_metering() {
           (type $t (func))
           (func $f)
           (table 4 funcref)
+          (export "table" (table 0))
           (elem funcref (ref.func $f))
           (func (export "entry")
             i32.const 0
@@ -187,5 +188,17 @@ fn test_table_bulk_ops_compile_with_fuel_metering() {
         .with_entrypoint_name("entry".into())
         .with_consume_fuel(true);
 
-    RwasmModule::compile(config, &wasm_binary).unwrap();
+    let (module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+    let fuel_limit = 10_000;
+    let mut store = RwasmStore::<()>::default();
+    let mut result = [];
+    let engine = ExecutionEngine::new();
+    engine.entrypoint(&mut store, &module).unwrap();
+    store.reset_fuel(fuel_limit);
+    engine
+        .execute(&mut store, &module, &[], &mut result)
+        .unwrap();
+
+    let consumed = fuel_limit - store.remaining_fuel().unwrap();
+    assert!(consumed > FuelCosts::BASE as u64);
 }

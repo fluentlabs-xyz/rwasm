@@ -265,6 +265,24 @@ fn test_wasmtime_caller_missing_memory_returns_trap() {
 }
 
 #[test]
+fn test_wasmtime_snapshot_missing_memory_returns_trap() {
+    let (module, import_linker) = get_test_module_without_memory();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        Vec::new(),
+        read_memory_syscall,
+        Some(100_000),
+        None,
+    );
+
+    assert_eq!(
+        wasmtime_worker.snapshot_memory().unwrap_err(),
+        TrapCode::MemoryOutOfBounds
+    );
+}
+
+#[test]
 fn test_wasmtime_executor_memory_read_into_vec_checks_bounds_before_allocating() {
     let (module, import_linker) = get_test_memory_module();
     let mut wasmtime_worker = WasmtimeExecutor::new(
