@@ -17,11 +17,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     pub(crate) fn visit_table_grow(&mut self, table_idx: TableIdx) -> Result<(), TrapCode> {
         let (init, delta) = self.sp.pop2();
         let delta: u32 = delta.into();
-        let table = self
-            .store
-            .tables
-            .entry(table_idx)
-            .or_default();
+        let table = self.store.tables.entry(table_idx).or_default();
         let result = table.grow_untyped(delta, init);
         self.sp.push_as(result);
         #[cfg(feature = "tracing")]

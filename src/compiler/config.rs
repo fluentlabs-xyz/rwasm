@@ -42,6 +42,11 @@ pub struct CompilationConfig {
     pub consume_fuel: bool,
     /// Enable replacement with optimized code snippets
     pub code_snippets: bool,
+    /// Enable extra dynamic fuel checks for bulk memory/table instructions.
+    ///
+    /// Keep this disabled for Wasmtime replacement paths unless the Wasmtime
+    /// fork charges the same dynamic fuel.
+    pub consume_fuel_for_bulk_ops: bool,
     /// Enable fuel metering for params and locals
     ///
     /// Note: This flag is not supported by wasmtime
@@ -69,6 +74,7 @@ impl Default for CompilationConfig {
             builtins_consume_fuel: false,
             default_imported_global_value: None,
             consume_fuel: true,
+            consume_fuel_for_bulk_ops: false,
             consume_fuel_for_params_and_locals: true,
             code_snippets: true,
             allow_func_ref_function_types: false,
@@ -133,9 +139,15 @@ impl CompilationConfig {
     pub fn with_consume_fuel(mut self, consume_fuel: bool) -> Self {
         self.consume_fuel = consume_fuel;
         if !consume_fuel {
+            self.consume_fuel_for_bulk_ops = false;
             self.consume_fuel_for_params_and_locals = false;
             self.builtins_consume_fuel = false;
         }
+        self
+    }
+
+    pub fn with_consume_fuel_for_bulk_ops(mut self, v: bool) -> Self {
+        self.consume_fuel_for_bulk_ops = self.consume_fuel && v;
         self
     }
 

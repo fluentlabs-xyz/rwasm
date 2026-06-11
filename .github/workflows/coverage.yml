@@ -53,6 +53,15 @@ jobs:
           cargo install cargo-llvm-cov grcov
           make coverage
 
+      - name: Import Codecov CLI verification key
+        env:
+          CODECOV_PGP_FINGERPRINT: "27034E7FDB850E0BBC2C62FF806BB28AED779869"
+        run: |
+          curl -fsSL https://keybase.io/codecovsecops/pgp_keys.asc -o codecov.asc
+          fingerprint="$(gpg --show-keys --with-colons codecov.asc | awk -F: '/^fpr:/ { print $10; exit }')"
+          test "$fingerprint" = "$CODECOV_PGP_FINGERPRINT"
+          gpg --import codecov.asc
+
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v7.0.0
         with:

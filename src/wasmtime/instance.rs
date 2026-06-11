@@ -1,8 +1,8 @@
 use crate::{
     checked_memory_range_end,
-    wasmtime::{types::map_anyhow_error, wasmtime_import_linker, WrappedContext},
+    wasmtime::{types::map_wasmtime_error, wasmtime_import_linker, WrappedContext},
     ImportLinker, SyscallHandler, TrapCode, Value, F32, F64, N_BYTES_PER_MEMORY_PAGE,
-    N_DEFAULT_MAX_MEMORY_PAGES,
+    N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES,
 };
 use std::sync::Arc;
 use wasmtime::{AsContext, AsContextMut, StoreContext, StoreContextMut};
@@ -28,6 +28,13 @@ impl<T: 'static> AsContextMut for WasmtimeExecutor<T> {
 }
 
 impl<T: 'static> WasmtimeExecutor<T> {
+    fn exported_memory(&mut self) -> Result<wasmtime::Memory, TrapCode> {
+        self.instance
+            .get_export(self.store.as_context_mut(), "memory")
+            .and_then(|export| export.into_memory())
+            .ok_or(TrapCode::MemoryOutOfBounds)
+    }
+
     pub fn new(
         module: wasmtime::Module,
         import_linker: Arc<ImportLinker>,
@@ -36,11 +43,14 @@ impl<T: 'static> WasmtimeExecutor<T> {
         fuel_limit: Option<u64>,
         max_allowed_memory_pages: Option<u32>,
     ) -> Self {
+        let memory_pages = max_allowed_memory_pages
+            .unwrap_or(N_DEFAULT_MAX_MEMORY_PAGES)
+            .min(N_MAX_ALLOWED_MEMORY_PAGES);
+        let memory_size_limit = (memory_pages as usize)
+            .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
+            .expect("wasmtime: memory limit is bounded by N_MAX_ALLOWED_MEMORY_PAGES");
         let resource_limiter = wasmtime::StoreLimitsBuilder::new()
-            .memory_size(
-                (max_allowed_memory_pages.unwrap_or(N_DEFAULT_MAX_MEMORY_PAGES)
-                    * N_BYTES_PER_MEMORY_PAGE) as usize,
-            )
+            .memory_size(memory_size_limit)
             .build();
 
         let context = WrappedContext {
@@ -118,7 +128,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
         let entrypoint = self
             .instance
             .get_func(self.store.as_context_mut(), func_name)
-            .unwrap_or_else(|| unreachable!("wasmtime: missing entrypoint: {}", func_name));
+            .ok_or(TrapCode::UnknownExternalFunction)?;
         let mut buffer = Vec::<Val>::default();
         for (i, value) in params.iter().enumerate() {
             let value = match value {
@@ -147,7 +157,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
         let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
         entrypoint
             .call(self.store.as_context_mut(), mapped_params, mapped_result)
-            .map_err(map_anyhow_error)
+            .map_err(map_wasmtime_error)
             .or_else(|trap_code| {
                 if trap_code == TrapCode::ExecutionHalted {
                     Ok(())
@@ -184,31 +194,23 @@ impl<T: 'static> WasmtimeExecutor<T> {
         unimplemented!("wasmtime: resume is not implemented yet");
     }
 
-    pub fn snapshot_memory(&mut self) -> Vec<u8> {
-        let instance = self.instance;
-        let global_memory = instance
-            .get_export(self.store.as_context_mut(), "memory")
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
-            .into_memory()
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
-        let memory_size =
-            global_memory.size(self.store.as_context_mut()) * N_BYTES_PER_MEMORY_PAGE as u64;
+    pub fn snapshot_memory(&mut self) -> Result<Vec<u8>, TrapCode> {
+        let global_memory = self.exported_memory()?;
+        let memory_size = global_memory
+            .size(self.store.as_context_mut())
+            .checked_mul(N_BYTES_PER_MEMORY_PAGE as u64)
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
         let mut snapshot = vec![0; memory_size as usize];
         global_memory
             .read(self.store.as_context_mut(), 0, &mut snapshot)
-            .unwrap();
-        snapshot
+            .map_err(|_| TrapCode::MemoryOutOfBounds)?;
+        Ok(snapshot)
     }
 }
 
 impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        let instance = self.instance;
-        let global_memory = instance
-            .get_export(self.store.as_context_mut(), "memory")
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
-            .into_memory()
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        let global_memory = self.exported_memory()?;
         global_memory
             .read(self.store.as_context(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)
@@ -216,12 +218,7 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
 
     fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
         let end = checked_memory_range_end(offset, length)?;
-        let instance = self.instance;
-        let global_memory = instance
-            .get_export(self.store.as_context_mut(), "memory")
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
-            .into_memory()
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        let global_memory = self.exported_memory()?;
         let memory_size = (global_memory.size(self.store.as_context_mut()) as usize)
             .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
             .ok_or(TrapCode::MemoryOutOfBounds)?;
@@ -234,12 +231,7 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        let instance = self.instance;
-        let global_memory = instance
-            .get_export(self.store.as_context_mut(), "memory")
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
-            .into_memory()
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        let global_memory = self.exported_memory()?;
         global_memory
             .write(self.store.as_context_mut(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)

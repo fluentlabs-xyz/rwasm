@@ -24,6 +24,7 @@ impl<'a> FuncBuilder<'a> {
         allocations: FuncTranslatorAllocations,
         with_consume_fuel: bool,
         with_code_snippets: bool,
+        consume_fuel_for_bulk_ops: bool,
         consume_fuel_for_params_and_locals: bool,
         max_allowed_memory_pages: u32,
     ) -> Self {
@@ -35,6 +36,7 @@ impl<'a> FuncBuilder<'a> {
                 allocations,
                 with_consume_fuel,
                 with_code_snippets,
+                consume_fuel_for_bulk_ops,
                 consume_fuel_for_params_and_locals,
                 max_allowed_memory_pages,
             ),

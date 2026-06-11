@@ -22,16 +22,18 @@ impl<'a, T: 'static> WasmtimeCaller<'a, T> {
     pub fn unwrap(self) -> wasmtime::Caller<'a, WrappedContext<T>> {
         self.caller
     }
+
+    fn exported_memory(&mut self) -> Result<wasmtime::Memory, TrapCode> {
+        self.caller
+            .get_export("memory")
+            .and_then(|export| export.into_memory())
+            .ok_or(TrapCode::MemoryOutOfBounds)
+    }
 }
 
 impl<'a, T: 'static> StoreTr<T> for WasmtimeCaller<'a, T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        let global_memory = self
-            .caller
-            .get_export("memory")
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
-            .into_memory()
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        let global_memory = self.exported_memory()?;
         global_memory
             .read(self.caller.as_context(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)
@@ -39,13 +41,8 @@ impl<'a, T: 'static> StoreTr<T> for WasmtimeCaller<'a, T> {
 
     fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
         let end = checked_memory_range_end(offset, length)?;
-        let memory_size = (self
-            .caller
-            .get_export("memory")
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
-            .into_memory()
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
-            .size(self.caller.as_context()) as usize)
+        let global_memory = self.exported_memory()?;
+        let memory_size = (global_memory.size(self.caller.as_context()) as usize)
             .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
             .ok_or(TrapCode::MemoryOutOfBounds)?;
         if end > memory_size {
@@ -57,12 +54,7 @@ impl<'a, T: 'static> StoreTr<T> for WasmtimeCaller<'a, T> {
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        let global_memory = self
-            .caller
-            .get_export("memory")
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"))
-            .into_memory()
-            .unwrap_or_else(|| unreachable!("wasmtime: missing memory export, it's not possible"));
+        let global_memory = self.exported_memory()?;
         global_memory
             .write(self.caller.as_context_mut(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)

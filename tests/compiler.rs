@@ -7,6 +7,45 @@ fn test_compilation(wat_str: &str) -> Result<(RwasmModule, ConstructorParams), C
 }
 
 #[test]
+fn test_bulk_op_fuel_requires_fuel_metering() {
+    let config = CompilationConfig::default()
+        .with_consume_fuel(false)
+        .with_consume_fuel_for_bulk_ops(true);
+
+    assert!(!config.consume_fuel);
+    assert!(!config.consume_fuel_for_bulk_ops);
+}
+
+#[test]
+fn test_memory_init_missing_data_segment_returns_error() {
+    // DataCount declares one passive segment, but the Data section is absent.
+    // wasmparser's per-operator validation accepts `memory.init 0`; final
+    // validation rejects the module. rWasm must return an error instead of
+    // panicking while translating the buffered code section.
+    const WASM: &[u8] = &[
+        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, // magic + version
+        0x01, 0x04, 0x01, 0x60, 0x00, 0x00, // type: () -> ()
+        0x03, 0x02, 0x01, 0x00, // function section
+        0x05, 0x03, 0x01, 0x00, 0x01, // memory section: min 1
+        0x07, 0x09, 0x01, 0x05, b'e', b'n', b't', b'r', b'y', 0x00, 0x00, // export "entry"
+        0x0c, 0x01, 0x01, // DataCount section: 1 segment
+        0x0a, 0x0e, 0x01, 0x0c, 0x00, // code section + body locals
+        0x41, 0x00, // i32.const 0 dest
+        0x41, 0x00, // i32.const 0 src
+        0x41, 0x00, // i32.const 0 len
+        0xfc, 0x08, 0x00, 0x00, // memory.init 0 0
+        0x0b, // end
+    ];
+
+    let config = CompilationConfig::default().with_entrypoint_name("entry".into());
+    let err = RwasmModule::compile(config, WASM).expect_err("module must be rejected");
+    assert!(matches!(
+        err,
+        CompilationError::MemoryOutOfBounds | CompilationError::MalformedWasmBinary(_)
+    ));
+}
+
+#[test]
 fn test_i64_type_split_into_2_x_i32_bug() {
     const WAT: &str = r#"
         (module

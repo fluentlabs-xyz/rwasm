@@ -2,6 +2,35 @@ use rwasm::{CompilationConfig, ExecutionEngine, RwasmModule, RwasmStore, StoreTr
 use rwasm_fuel_policy::FuelCosts;
 
 #[test]
+fn test_entrypoint_call_consumes_fuel() {
+    let wasm_binary = wat::parse_str(
+        r#"
+        (module
+          (func (export "entry"))
+        )
+        "#,
+    )
+    .unwrap();
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("entry".into())
+        .with_consume_fuel(true)
+        .with_consume_fuel_for_params_and_locals(false);
+    let (module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+
+    let fuel_limit = 100;
+    let mut store = RwasmStore::<()>::default();
+    store.reset_fuel(fuel_limit);
+    ExecutionEngine::new()
+        .execute(&mut store, &module, &[], &mut [])
+        .unwrap();
+
+    assert_eq!(
+        fuel_limit - store.remaining_fuel().unwrap(),
+        FuelCosts::BASE as u64
+    );
+}
+
+#[test]
 fn test_locals_consume_fuel() {
     let fuel_limit = 9999;
     let basic_fuel_consumption = 2;
@@ -84,4 +113,138 @@ fn test_locals_consume_fuel() {
             assert_eq!(result[0].i32().unwrap(), 111);
         }
     }
+}
+
+#[test]
+fn test_memory_fill_fuel_scales_with_length() {
+    let wasm_binary = wat::parse_str(
+        r#"
+        (module
+          (memory (export "memory") 1)
+          (func (export "entry") (param i32)
+            i32.const 1
+            memory.grow
+            drop
+            i32.const 0
+            i32.const 7
+            local.get 0
+            memory.fill
+          )
+        )
+        "#,
+    )
+    .unwrap();
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("entry".into())
+        .with_consume_fuel(true)
+        .with_consume_fuel_for_bulk_ops(true);
+    let (module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+    let engine = ExecutionEngine::new();
+    let fuel_limit = 100_000;
+
+    let consumed_for_len = |len| {
+        let mut store = RwasmStore::<()>::default();
+        let mut result = [];
+        store.reset_fuel(fuel_limit);
+        engine
+            .execute(&mut store, &module, &[Value::I32(len)], &mut result)
+            .unwrap();
+        fuel_limit - store.remaining_fuel().unwrap()
+    };
+
+    assert!(consumed_for_len(128) > consumed_for_len(1));
+}
+
+#[test]
+fn test_bulk_fuel_checks_are_disabled_by_default() {
+    let wasm_binary = wat::parse_str(
+        r#"
+        (module
+          (memory (export "memory") 1)
+          (func (export "entry") (param i32)
+            i32.const 1
+            memory.grow
+            drop
+            i32.const 0
+            i32.const 7
+            local.get 0
+            memory.fill
+          )
+        )
+        "#,
+    )
+    .unwrap();
+    let base_config = CompilationConfig::default()
+        .with_entrypoint_name("entry".into())
+        .with_consume_fuel(true);
+    let engine = ExecutionEngine::new();
+    let fuel_limit = 100_000;
+
+    let consumed_for_len = |config: CompilationConfig, len| {
+        let (module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+        let mut store = RwasmStore::<()>::default();
+        let mut result = [];
+        store.reset_fuel(fuel_limit);
+        engine
+            .execute(&mut store, &module, &[Value::I32(len)], &mut result)
+            .unwrap();
+        fuel_limit - store.remaining_fuel().unwrap()
+    };
+
+    let default_short = consumed_for_len(base_config.clone(), 1);
+    let default_long = consumed_for_len(base_config.clone(), 128);
+    let checked_long = consumed_for_len(base_config.with_consume_fuel_for_bulk_ops(true), 128);
+
+    assert_eq!(default_short, default_long);
+    assert!(checked_long > default_long);
+}
+
+#[test]
+fn test_table_bulk_ops_compile_with_fuel_metering() {
+    let wasm_binary = wat::parse_str(
+        r#"
+        (module
+          (type $t (func))
+          (func $f)
+          (table 4 funcref)
+          (export "table" (table 0))
+          (elem funcref (ref.func $f))
+          (func (export "entry")
+            i32.const 0
+            i32.const 0
+            i32.const 1
+            table.init 0 0
+
+            i32.const 1
+            i32.const 0
+            i32.const 1
+            table.copy 0 0
+
+            i32.const 2
+            ref.func $f
+            i32.const 1
+            table.fill 0
+          )
+        )
+        "#,
+    )
+    .unwrap();
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("entry".into())
+        .with_consume_fuel(true)
+        .with_consume_fuel_for_bulk_ops(true);
+
+    let (module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+    let fuel_limit = 10_000;
+    let mut store = RwasmStore::<()>::default();
+    let mut result = [];
+    let engine = ExecutionEngine::new();
+    engine.entrypoint(&mut store, &module).unwrap();
+    store.reset_fuel(fuel_limit);
+    engine
+        .execute(&mut store, &module, &[], &mut result)
+        .unwrap();
+
+    let consumed = fuel_limit - store.remaining_fuel().unwrap();
+    assert!(consumed > FuelCosts::BASE as u64);
 }

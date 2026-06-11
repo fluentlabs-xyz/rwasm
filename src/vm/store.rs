@@ -96,7 +96,7 @@ impl<T: 'static> StoreTr<T> for RwasmStore<T> {
     }
 
     fn remaining_fuel(&self) -> Option<u64> {
-        Some(self.fuel_limit? - self.consumed_fuel)
+        Some(self.fuel_limit?.saturating_sub(self.consumed_fuel))
     }
 
     fn reset_fuel(&mut self, new_fuel_limit: u64) {

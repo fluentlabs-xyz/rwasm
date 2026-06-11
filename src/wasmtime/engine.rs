@@ -27,7 +27,6 @@ pub fn wasmtime_engine(compilation_config: &CompilationConfig) -> Engine {
     // cfg.memory_reservation(...);
     // cfg.memory_guard_size(...);
 
-    cfg.async_support(false);
     cfg.wasm_memory64(false);
     cfg.memory_init_cow(false);
     cfg.cranelift_opt_level(OptLevel::Speed);

@@ -57,15 +57,21 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     pub fn program_counter(&self) -> u32 {
-        let diff = self.ip.ptr as i32 - self.module.code_section.as_ptr() as i32;
-        if diff < 0 {
+        let ip = self.ip.ptr as usize;
+        let base = self.module.code_section.as_ptr() as usize;
+        if ip < base {
             unreachable!(
-                "program counter negative: diff={diff}, ip={:?}, base={:?}",
+                "program counter negative: ip={:?}, base={:?}",
                 self.ip,
                 self.module.code_section.as_ptr()
             );
         }
-        (diff as u32) / size_of::<Opcode>() as u32
+        let diff = ip - base;
+        debug_assert_eq!(diff % size_of::<Opcode>(), 0);
+        let pc = diff / size_of::<Opcode>();
+        debug_assert!(pc <= self.module.code_section.len());
+        pc.try_into()
+            .unwrap_or_else(|_| unreachable!("program counter exceeds u32: {pc}"))
     }
 
     pub fn run(&mut self, params: &[Value], result: &mut [Value]) -> Result<(), TrapCode> {

@@ -2,13 +2,14 @@ use crate::TrapCode;
 use wasmparser::ValType;
 use wasmtime::Trap;
 
-/// Maps `anyhow::Error` coming from Wasmtime into an rWasm `TrapCode`.
+/// Maps errors coming from Wasmtime into an rWasm `TrapCode`.
 ///
 /// - If the error is a Wasmtime `Trap`, it is mapped into the closest `TrapCode`.
 /// - If the error already contains a `TrapCode`, it is returned as-is.
 /// - Otherwise the error is treated as an illegal opcode (fallback).
-pub(super) fn map_anyhow_error(err: anyhow::Error) -> TrapCode {
+pub(super) fn map_wasmtime_error(err: wasmtime::Error) -> TrapCode {
     if let Some(trap) = err.downcast_ref::<Trap>() {
+        #[cfg(feature = "debug-print")]
         eprintln!("wasmtime trap: {:?}", trap);
 
         // Map Wasmtime trap codes into rWasm trap codes.
@@ -25,22 +26,16 @@ pub(super) fn map_anyhow_error(err: anyhow::Error) -> TrapCode {
             Trap::BadConversionToInteger => TrapCode::BadConversionToInteger,
             Trap::UnreachableCodeReached => TrapCode::UnreachableCodeReached,
             Trap::Interrupt => TrapCode::InterruptionCalled,
-            Trap::AlwaysTrapAdapter => unreachable!("component model is not supported"),
             Trap::OutOfFuel => TrapCode::OutOfFuel,
-            Trap::AtomicWaitNonSharedMemory => unreachable!("atomics are not supported"),
             Trap::NullReference => TrapCode::IndirectCallToNull,
-            Trap::ArrayOutOfBounds | Trap::AllocationTooLarge => {
-                unreachable!("GC is not supported")
-            }
             Trap::CastFailure => TrapCode::BadConversionToInteger,
-            Trap::CannotEnterComponent => unreachable!("component model is not supported"),
-            Trap::NoAsyncResult => unreachable!("async mode must be disabled"),
-            _ => unreachable!("unknown Wasmtime trap"),
+            _ => TrapCode::IllegalOpcode,
         }
     } else if let Some(trap) = err.downcast_ref::<TrapCode>() {
-        // Our own trap code was propagated through anyhow; pass it through.
+        // Our own trap code was propagated through Wasmtime; pass it through.
         *trap
     } else {
+        #[cfg(feature = "debug-print")]
         eprintln!("wasmtime: unknown error: {:?}", err);
 
         // TODO(dmitry123): Decide which trap code is the best fallback for unknown Wasmtime errors.
@@ -58,5 +53,22 @@ pub(super) fn map_val_type(val_type: ValType) -> wasmtime::ValType {
         ValType::F32 => wasmtime::ValType::F32,
         ValType::F64 => wasmtime::ValType::F64,
         _ => unreachable!("wasmtime: unsupported type: {:?}", val_type),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_wasmtime_traps_to_rwasm_traps() {
+        let trap = wasmtime::Error::new(Trap::OutOfFuel);
+        assert_eq!(map_wasmtime_error(trap), TrapCode::OutOfFuel);
+    }
+
+    #[test]
+    fn maps_unknown_wasmtime_error_to_illegal_opcode() {
+        let trap = wasmtime::Error::msg("unknown wasmtime error");
+        assert_eq!(map_wasmtime_error(trap), TrapCode::IllegalOpcode);
     }
 }

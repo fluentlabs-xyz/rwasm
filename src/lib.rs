@@ -17,6 +17,8 @@ pub mod wasmtime;
 
 pub use compiler::*;
 #[cfg(test)]
+use anyhow as _;
+#[cfg(test)]
 use hex_literal as _;
 pub use isa::*;
 use libm as _;

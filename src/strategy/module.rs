@@ -236,9 +236,9 @@ impl<T: 'static> StrategyExecutor<T> {
         }
     }
 
-    pub fn snapshot_memory(&mut self) -> Vec<u8> {
+    pub fn snapshot_memory(&mut self) -> Result<Vec<u8>, TrapCode> {
         match self {
-            StrategyExecutor::Rwasm { store, .. } => store.memory_snapshot(),
+            StrategyExecutor::Rwasm { store, .. } => Ok(store.memory_snapshot()),
             #[cfg(feature = "wasmtime")]
             StrategyExecutor::Wasmtime { executor } => executor.snapshot_memory(),
         }

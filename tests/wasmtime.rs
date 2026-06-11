@@ -15,7 +15,7 @@ where
     let mut store = Store::new(&engine, ());
     let instance = Instance::new(&mut store, &module, &[])?;
     let run: TypedFunc<(), Results> = instance.get_typed_func(&mut store, "main")?;
-    run.call(&mut store, ())
+    Ok(run.call(&mut store, ())?)
 }
 
 #[test]

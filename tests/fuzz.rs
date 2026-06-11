@@ -12,7 +12,7 @@ fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value], result
         .with_consume_fuel_for_params_and_locals(false)
         .with_allow_func_ref_function_types(false)
         .with_max_allowed_memory_pages(4096);
-    let (module, _) = RwasmModule::compile(config.clone(), &wasm_binary).unwrap();
+    let (module, _) = RwasmModule::compile(config.clone(), wasm_binary).unwrap();
     println!("{}", module);
     let fuel_consumed = for_each_strategy(
         |strategy| {
@@ -28,14 +28,14 @@ fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value], result
             let fuel_before = executor.remaining_fuel().unwrap();
             let trap_code = executor.execute("", params, result).err();
             let fuel_consumed = fuel_before - executor.remaining_fuel().unwrap();
-            let memory_snapshot = executor.snapshot_memory().len();
+            let memory_snapshot = executor.snapshot_memory()?.len();
             Ok((trap_code, fuel_consumed, memory_snapshot))
         },
         config,
-        &wasm_binary,
+        wasm_binary,
     )
     .unwrap();
-    let value_should_be = fuel_consumed[0].clone();
+    let value_should_be = fuel_consumed[0];
     for x in fuel_consumed {
         assert_eq!(x, value_should_be);
     }
