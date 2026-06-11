@@ -147,7 +147,7 @@ impl CompilationConfig {
     }
 
     pub fn with_consume_fuel_for_bulk_ops(mut self, v: bool) -> Self {
-        self.consume_fuel_for_bulk_ops = v;
+        self.consume_fuel_for_bulk_ops = self.consume_fuel && v;
         self
     }
 

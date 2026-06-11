@@ -7,6 +7,16 @@ fn test_compilation(wat_str: &str) -> Result<(RwasmModule, ConstructorParams), C
 }
 
 #[test]
+fn test_bulk_op_fuel_requires_fuel_metering() {
+    let config = CompilationConfig::default()
+        .with_consume_fuel(false)
+        .with_consume_fuel_for_bulk_ops(true);
+
+    assert!(!config.consume_fuel);
+    assert!(!config.consume_fuel_for_bulk_ops);
+}
+
+#[test]
 fn test_memory_init_missing_data_segment_returns_error() {
     // DataCount declares one passive segment, but the Data section is absent.
     // wasmparser's per-operator validation accepts `memory.init 0`; final
