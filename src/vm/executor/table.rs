@@ -87,7 +87,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
             let [src, dst] = self
                 .store
                 .tables
-                .get_many_mut([&src_table_idx, &dst_table_idx])
+                .get_disjoint_mut([&src_table_idx, &dst_table_idx])
                 .map(|v| v.expect("rwasm: unresolved table segment"));
             TableEntity::copy(dst, dst_index, src, src_index, len)?;
         } else {
