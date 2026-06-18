@@ -1,18 +1,6 @@
 use crate::{
-    ArithmeticOps,
-    ExtendInto,
-    Float,
-    Integer,
-    LittleEndianConvert,
-    LoadInto,
-    SignExtendFrom,
-    StoreFrom,
-    TrapCode,
-    TruncateSaturateInto,
-    TryTruncateInto,
-    WrapInto,
-    F32,
-    F64,
+    ArithmeticOps, ExtendInto, Float, Integer, LittleEndianConvert, LoadInto, SignExtendFrom,
+    StoreFrom, TrapCode, TruncateSaturateInto, TryTruncateInto, WrapInto, F32, F64,
 };
 use bincode::{Decode, Encode};
 use core::{
@@ -93,8 +81,28 @@ macro_rules! impl_from_unsigned_prim {
 }
 #[rustfmt::skip]
 impl_from_unsigned_prim!(
-    bool, u8, u16, u32, u64, usize,
+    bool, u8, u16, u32,
 );
+
+impl From<u64> for UntypedValue {
+    fn from(value: u64) -> Self {
+        debug_assert!(
+            value <= u32::MAX as u64,
+            "u64 value does not fit into UntypedValue"
+        );
+        Self { bits: value as _ }
+    }
+}
+
+impl From<usize> for UntypedValue {
+    fn from(value: usize) -> Self {
+        debug_assert!(
+            value <= u32::MAX as usize,
+            "usize value does not fit into UntypedValue"
+        );
+        Self { bits: value as _ }
+    }
+}
 
 macro_rules! impl_from_signed_prim {
     ( $( $prim:ty as $base:ty ),* $(,)? ) => {
@@ -973,6 +981,10 @@ impl UntypedValue {
 
 impl UntypedValue {
     pub fn as_u16(self) -> u16 {
+        debug_assert!(
+            self.bits <= u16::MAX as u32,
+            "UntypedValue does not fit into u16"
+        );
         u16::from(self)
     }
 
