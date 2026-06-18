@@ -1,7 +1,7 @@
 use crate::{
     CallStack, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, RwasmModule,
     SignatureIdx, StoreTr, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue,
-    ValueStack, N_DEFAULT_MAX_MEMORY_PAGES,
+    ValueStack, N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES,
 };
 use alloc::{sync::Arc, vec::Vec};
 use bitvec::{order::Lsb0, vec::BitVec};
@@ -115,10 +115,11 @@ impl<T: 'static> RwasmStore<T> {
         fuel_limit: Option<u64>,
         max_allowed_memory_pages: Option<u32>,
     ) -> Self {
-        let global_memory = GlobalMemory::new(
-            Pages::new_unchecked(0),
-            Pages::new_unchecked(max_allowed_memory_pages.unwrap_or(N_DEFAULT_MAX_MEMORY_PAGES)),
-        );
+        let memory_pages = max_allowed_memory_pages
+            .unwrap_or(N_DEFAULT_MAX_MEMORY_PAGES)
+            .min(N_MAX_ALLOWED_MEMORY_PAGES);
+        let global_memory =
+            GlobalMemory::new(Pages::new_unchecked(0), Pages::new_unchecked(memory_pages));
         Self {
             consumed_fuel: 0,
             global_memory,
@@ -233,5 +234,27 @@ impl<T: 'static> RwasmStore<T> {
             .copied()
             .unwrap_or_default()
             .to_bits()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::always_failing_syscall_handler;
+
+    #[test]
+    fn clamps_runtime_memory_limit_to_global_maximum() {
+        let store = RwasmStore::new(
+            Arc::new(ImportLinker::default()),
+            (),
+            always_failing_syscall_handler,
+            None,
+            Some(N_MAX_ALLOWED_MEMORY_PAGES + 1),
+        );
+
+        assert_eq!(
+            u32::from(store.global_memory.max_allowed_memory_pages),
+            N_MAX_ALLOWED_MEMORY_PAGES
+        );
     }
 }

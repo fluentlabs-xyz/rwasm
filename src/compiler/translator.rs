@@ -2450,7 +2450,7 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .element_sections
                 .get(&elem_segment_index)
                 .copied()
-                .expect("can't resolve an element segment by index");
+                .ok_or(CompilationError::TableOutOfBounds)?;
             ib.op_table_init_checked(
                 segment_index + 1,
                 TableIdx::try_from(table_index).unwrap(),
