@@ -11,6 +11,9 @@ use bincode::{
 };
 use core::ops::Deref;
 
+mod verification;
+pub use verification::{RwasmModuleError, RwasmModuleVerificationError};
+
 /// Represents a compiled rWasm module.
 ///
 /// An `RwasmModule` encapsulates the executable code, static data, and element (function/table
@@ -74,6 +77,20 @@ impl RwasmModule {
         if bytes_read != sink.len() {
             return Err(DecodeError::Other("rwasm: trailing bytes after module"));
         }
+        Ok(module)
+    }
+
+    /// Decodes and explicitly verifies one rWasm module.
+    pub fn new_verified(sink: &[u8]) -> Result<(Self, usize), RwasmModuleError> {
+        let (module, bytes_read) = Self::new_checked(sink)?;
+        module.verify()?;
+        Ok((module, bytes_read))
+    }
+
+    /// Decodes and explicitly verifies exactly one rWasm module, rejecting trailing bytes.
+    pub fn new_verified_exact(sink: &[u8]) -> Result<Self, RwasmModuleError> {
+        let module = Self::new_checked_exact(sink)?;
+        module.verify()?;
         Ok(module)
     }
 
@@ -253,15 +270,14 @@ impl RwasmModuleBuilder {
     }
 
     pub fn build(self) -> RwasmModule {
-        RwasmModule {
-            inner: Arc::new(RwasmModuleInner {
-                code_section: self.code_section,
-                data_section: self.data_section,
-                elem_section: self.elem_section,
-                hint_section: self.hint_section,
-                source_pc: self.source_pc,
-            }),
+        RwasmModuleInner {
+            code_section: self.code_section,
+            data_section: self.data_section,
+            elem_section: self.elem_section,
+            hint_section: self.hint_section,
+            source_pc: self.source_pc,
         }
+        .into()
     }
 }
 
@@ -288,9 +304,9 @@ mod tests {
                 Drop
             },
             data_section: Default::default(),
-            elem_section: vec![5, 6, 7, 8, 9],
+            elem_section: vec![],
             hint_section: vec![],
-            source_pc: u32::MAX,
+            source_pc: 0,
         }
     }
 
