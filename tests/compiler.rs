@@ -7,6 +7,14 @@ fn test_compilation(wat_str: &str) -> Result<(RwasmModule, ConstructorParams), C
 }
 
 #[test]
+fn test_bulk_op_fuel_is_enabled_by_default() {
+    let config = CompilationConfig::default();
+
+    assert!(config.consume_fuel);
+    assert!(config.consume_fuel_for_bulk_ops);
+}
+
+#[test]
 fn test_bulk_op_fuel_requires_fuel_metering() {
     let config = CompilationConfig::default()
         .with_consume_fuel(false)

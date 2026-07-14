@@ -44,8 +44,9 @@ pub struct CompilationConfig {
     pub code_snippets: bool,
     /// Enable extra dynamic fuel checks for bulk memory/table instructions.
     ///
-    /// Keep this disabled for Wasmtime replacement paths unless the Wasmtime
-    /// fork charges the same dynamic fuel.
+    /// Secure production configs enable this with fuel metering. Wasmtime
+    /// replacement paths must either charge the same dynamic fuel or opt out
+    /// explicitly after rejecting the divergent config at a higher layer.
     pub consume_fuel_for_bulk_ops: bool,
     /// Enable fuel metering for params and locals
     ///
@@ -74,7 +75,7 @@ impl Default for CompilationConfig {
             builtins_consume_fuel: false,
             default_imported_global_value: None,
             consume_fuel: true,
-            consume_fuel_for_bulk_ops: false,
+            consume_fuel_for_bulk_ops: true,
             consume_fuel_for_params_and_locals: true,
             code_snippets: true,
             allow_func_ref_function_types: false,

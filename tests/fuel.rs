@@ -156,7 +156,7 @@ fn test_memory_fill_fuel_scales_with_length() {
 }
 
 #[test]
-fn test_bulk_fuel_checks_are_disabled_by_default() {
+fn test_bulk_fuel_checks_are_enabled_by_default() {
     let wasm_binary = wat::parse_str(
         r#"
         (module
@@ -193,10 +193,10 @@ fn test_bulk_fuel_checks_are_disabled_by_default() {
 
     let default_short = consumed_for_len(base_config.clone(), 1);
     let default_long = consumed_for_len(base_config.clone(), 128);
-    let checked_long = consumed_for_len(base_config.with_consume_fuel_for_bulk_ops(true), 128);
+    let unchecked_long = consumed_for_len(base_config.with_consume_fuel_for_bulk_ops(false), 128);
 
-    assert_eq!(default_short, default_long);
-    assert!(checked_long > default_long);
+    assert!(default_long > default_short);
+    assert!(default_long > unchecked_long);
 }
 
 #[test]
