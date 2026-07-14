@@ -68,6 +68,15 @@ impl RwasmModule {
         Ok((inner.into(), bytes_read))
     }
 
+    /// Decodes exactly one rWasm module and rejects trailing bytes.
+    pub fn new_checked_exact(sink: &[u8]) -> Result<Self, DecodeError> {
+        let (module, bytes_read) = Self::new_checked(sink)?;
+        if bytes_read != sink.len() {
+            return Err(DecodeError::Other("rwasm: trailing bytes after module"));
+        }
+        Ok(module)
+    }
+
     pub fn serialize(&self) -> Vec<u8> {
         bincode::encode_to_vec(&*self.inner, bincode::config::legacy())
             .unwrap_or_else(|_| unreachable!("rwasm: failed to serialize module"))
@@ -162,11 +171,9 @@ impl<Context> Decode<Context> for RwasmModuleInner {
         let source_pc: u32 = match Decode::decode(decoder) {
             Ok(source_pc) => source_pc,
             Err(DecodeError::UnexpectedEnd { additional }) => {
-                debug_assert_eq!(
-                    additional,
-                    size_of::<u32>(),
-                    "rwasm: unexpected end of source_pc decoding, expected 4 bytes"
-                );
+                if additional != size_of::<u32>() {
+                    return Err(DecodeError::UnexpectedEnd { additional });
+                }
                 // This field is optional if it's not presented, then fallback to 0
                 0
             }
@@ -266,12 +273,12 @@ impl From<RwasmModuleBuilder> for RwasmModule {
 
 #[cfg(test)]
 mod tests {
-    use crate::{instruction_set, RwasmModuleInner};
+    use crate::{instruction_set, RwasmModule, RwasmModuleInner};
+    use bincode::error::DecodeError;
     use hex_literal::hex;
 
-    #[test]
-    fn test_module_encoding() {
-        let module = RwasmModuleInner {
+    fn test_module() -> RwasmModuleInner {
+        RwasmModuleInner {
             code_section: instruction_set! {
                 I32Const(100)
                 I32Const(20)
@@ -284,13 +291,19 @@ mod tests {
             elem_section: vec![5, 6, 7, 8, 9],
             hint_section: vec![],
             source_pc: u32::MAX,
-        };
+        }
+    }
+
+    #[test]
+    fn test_module_encoding() {
+        let module = test_module();
         let encoded_module = bincode::encode_to_vec(&module, bincode::config::legacy()).unwrap();
         println!("{}", hex::encode(&encoded_module));
         let module2: RwasmModuleInner;
         (module2, _) =
             bincode::decode_from_slice(&encoded_module, bincode::config::legacy()).unwrap();
         assert_eq!(module, module2);
+        assert_eq!(encoded_module, RwasmModule::from(module2).serialize());
     }
 
     #[test]
@@ -300,6 +313,40 @@ mod tests {
         (module2, _) =
             bincode::decode_from_slice(LEGACY_MODULE, bincode::config::legacy()).unwrap();
         assert_eq!(module2.source_pc, 0);
+    }
+
+    #[test]
+    fn test_decode_rejects_partial_source_pc() {
+        let module = test_module();
+        let encoded_module = bincode::encode_to_vec(&module, bincode::config::legacy()).unwrap();
+        for missing in 1..size_of::<u32>() {
+            let truncated_len = encoded_module.len() - missing;
+            let err = bincode::decode_from_slice::<RwasmModuleInner, _>(
+                &encoded_module[..truncated_len],
+                bincode::config::legacy(),
+            )
+            .expect_err("partial source_pc must be rejected");
+            assert!(
+                matches!(err, DecodeError::UnexpectedEnd { .. }),
+                "expected UnexpectedEnd for missing {missing} bytes, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_decode_exact_rejects_trailing_garbage() {
+        let module = test_module();
+        let mut encoded_module =
+            bincode::encode_to_vec(&module, bincode::config::legacy()).unwrap();
+        encoded_module.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+
+        let (_, bytes_read) = RwasmModule::new_checked(&encoded_module)
+            .expect("streaming decode returns consumed length");
+        assert_eq!(bytes_read, encoded_module.len() - 4);
+
+        let err = RwasmModule::new_checked_exact(&encoded_module)
+            .expect_err("exact decode must reject trailing bytes");
+        assert!(matches!(err, DecodeError::Other(_)));
     }
 
     #[test]
