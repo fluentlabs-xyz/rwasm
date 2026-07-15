@@ -34,6 +34,7 @@ impl RwasmInstance {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        self.engine.resume(store, params, result)
+        self.engine
+            .resume_for_module(store, &self.module, params, result)
     }
 }

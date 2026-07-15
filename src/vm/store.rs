@@ -1,7 +1,7 @@
 use crate::{
-    CallStack, GlobalIdx, GlobalMemory, ImportLinker, InstructionPtr, Pages, RwasmModule,
-    SignatureIdx, StoreTr, SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue,
-    ValueStack, N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES,
+    CallStack, GlobalIdx, GlobalMemory, ImportLinker, Pages, RwasmModule, SignatureIdx, StoreTr,
+    SyscallHandler, TableEntity, TableIdx, TrapCode, UntypedValue, ValueStack,
+    N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES,
 };
 use alloc::{sync::Arc, vec::Vec};
 use bitvec::{order::Lsb0, vec::BitVec};
@@ -43,7 +43,7 @@ pub struct RwasmStore<T: 'static> {
 pub struct ReusableContext {
     pub module: RwasmModule,
     pub call_stack: CallStack,
-    pub ip: InstructionPtr,
+    pub instruction_index: u32,
     pub value_stack: ValueStack,
 }
 
@@ -140,6 +140,8 @@ impl<T: 'static> RwasmStore<T> {
 
     /// Resets the state of the current execution context.
     pub fn reset(&mut self, keep_flags: bool) {
+        // Reset also cancels suspended execution so stale stacks cannot be resumed later.
+        self.resumable_context = None;
         // reset consumed fuel to 0
         self.consumed_fuel = 0;
         // we might want to keep data/elem flags between calls, it's required for e2e tests

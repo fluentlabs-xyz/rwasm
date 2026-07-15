@@ -23,6 +23,10 @@ pub enum TrapCode {
     // a special trap code for interrupting an execution,
     // it saves the latest registers for IP and SP in the call stack
     InterruptionCalled = 0x0c,
+    AlreadySuspended = 0x0d,
+    NotSuspended = 0x0e,
+    WrongInstance = 0x0f,
+    IncompatibleModule = 0x10,
     // this trap code is only used for external calls to terminate the execution,
     // but this error can't be returned from an execution cycle
     ExecutionHalted = 0xff,
@@ -47,6 +51,10 @@ impl core::fmt::Display for TrapCode {
             TrapCode::UnknownExternalFunction => write!(f, "unknown external function"),
             TrapCode::IllegalOpcode => write!(f, "illegal opcode"),
             TrapCode::InterruptionCalled => write!(f, "interruption called"),
+            TrapCode::AlreadySuspended => write!(f, "execution is already suspended"),
+            TrapCode::NotSuspended => write!(f, "execution is not suspended"),
+            TrapCode::WrongInstance => write!(f, "suspended execution belongs to another instance"),
+            TrapCode::IncompatibleModule => write!(f, "suspended execution module is incompatible"),
             TrapCode::ExecutionHalted => write!(f, "execution halted"),
         }
     }

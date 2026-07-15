@@ -29,6 +29,10 @@ fn _check() {
 }
 
 impl RwasmModule {
+    pub(crate) fn has_same_identity(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
     pub fn new_or_empty(sink: &[u8]) -> (Self, usize) {
         if sink.is_empty() {
             (Self::empty(), 0)

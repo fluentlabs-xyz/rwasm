@@ -64,6 +64,81 @@ fn test_interrupted_call_rwasm() {
 }
 
 #[test]
+fn resume_rejects_wrong_instance_without_losing_context() {
+    let interrupted_module = RwasmModuleBuilder::new(instruction_set! {
+        Call(0xff)
+        Return
+    })
+    .build();
+    let other_module = RwasmModuleBuilder::new(instruction_set! {
+        Nop
+        Return
+    })
+    .build();
+    let mut store = RwasmStore::new(
+        default_import_linker(),
+        (),
+        interrupting_syscall_handler,
+        None,
+        None,
+    );
+    let engine = ExecutionEngine::new();
+    let interrupted_instance =
+        rwasm::RwasmInstance::new(&mut store, engine.clone(), interrupted_module).unwrap();
+    let other_instance = rwasm::RwasmInstance::new(&mut store, engine, other_module).unwrap();
+
+    assert_eq!(
+        interrupted_instance.execute(&mut store, &[], &mut []),
+        Err(TrapCode::InterruptionCalled)
+    );
+    assert_eq!(
+        other_instance.resume(&mut store, &[], &mut []),
+        Err(TrapCode::WrongInstance)
+    );
+    assert_eq!(
+        interrupted_instance.resume(&mut store, &[], &mut []),
+        Ok(())
+    );
+}
+
+#[test]
+fn suspended_execution_preconditions_are_typed_errors() {
+    let module = RwasmModuleBuilder::new(instruction_set! {
+        Call(0xff)
+        Return
+    })
+    .build();
+    let mut store = RwasmStore::new(
+        default_import_linker(),
+        (),
+        interrupting_syscall_handler,
+        None,
+        None,
+    );
+    let engine = ExecutionEngine::new();
+    let instance = rwasm::RwasmInstance::new(&mut store, engine, module).unwrap();
+
+    assert_eq!(
+        instance.resume(&mut store, &[], &mut []),
+        Err(TrapCode::NotSuspended)
+    );
+    assert_eq!(
+        instance.execute(&mut store, &[], &mut []),
+        Err(TrapCode::InterruptionCalled)
+    );
+    assert_eq!(
+        instance.execute(&mut store, &[], &mut []),
+        Err(TrapCode::AlreadySuspended)
+    );
+
+    store.reset(false);
+    assert_eq!(
+        instance.resume(&mut store, &[], &mut []),
+        Err(TrapCode::NotSuspended)
+    );
+}
+
+#[test]
 fn test_interrupted_call_rwasm_with_syscall() {
     let wasm_binary = wat::parse_str(
         r#"
