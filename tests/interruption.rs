@@ -71,7 +71,6 @@ fn resume_rejects_wrong_instance_without_losing_context() {
     })
     .build();
     let other_module = RwasmModuleBuilder::new(instruction_set! {
-        Nop
         Return
     })
     .build();
