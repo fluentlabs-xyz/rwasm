@@ -37,7 +37,7 @@ jobs:
             command: cargo +nightly-2025-09-20 clippy --manifest-path=./snippets/Cargo.toml --lib --all-features
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
