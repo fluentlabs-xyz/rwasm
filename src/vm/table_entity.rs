@@ -47,7 +47,12 @@ impl TableEntity {
         if desired > N_MAX_TABLE_SIZE {
             return u32::MAX;
         }
-        self.elements.resize(desired as usize, init.to_bits());
+        let desired_len = desired as usize;
+        let additional_elements = desired_len.saturating_sub(self.elements.len());
+        if self.elements.try_reserve(additional_elements).is_err() {
+            return u32::MAX;
+        }
+        self.elements.resize(desired_len, init.to_bits());
         current
     }
 

@@ -1,13 +1,12 @@
 use crate::types::{Pages, TrapCode};
-use alloc::vec::Vec;
-use bytes::BytesMut;
+use alloc::{vec, vec::Vec};
 
 /// Shared linear memory backing store for a running module.
 /// Tracks current size in Wasm pages and provides bounds-checked read/write helpers.
 /// The buffer is pre-reserved and grown in page-sized steps.
 pub struct GlobalMemory {
     /// Underlying byte buffer for the linear memory.
-    pub shared_memory: BytesMut,
+    pub shared_memory: Vec<u8>,
     /// Current logical size of the linear memory in pages.
     pub current_pages: Pages,
     /// The maximum allowed size of the linear memory in pages.
@@ -22,8 +21,7 @@ impl GlobalMemory {
         if initial_len > max_allowed_memory_pages.to_bytes().unwrap() {
             unreachable!("rwasm: initial memory size is greater than the maximum");
         }
-        let mut shared_memory = BytesMut::with_capacity(initial_len);
-        shared_memory.resize(initial_len, 0);
+        let shared_memory = vec![0; initial_len];
         Self {
             shared_memory,
             current_pages: initial_pages,
@@ -58,7 +56,10 @@ impl GlobalMemory {
         let new_size = desired_pages
             .to_bytes()
             .expect("rwasm: not supported target pointer width");
-        assert!(new_size >= self.shared_memory.len());
+        let additional_bytes = new_size.checked_sub(self.shared_memory.len())?;
+        if self.shared_memory.try_reserve_exact(additional_bytes).is_err() {
+            return None;
+        }
         self.shared_memory.resize(new_size, 0);
         self.current_pages = desired_pages;
         Some(current_pages)
