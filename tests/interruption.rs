@@ -41,7 +41,8 @@ fn test_interrupted_call_rwasm() {
         Return
     })
     .with_source_pc(1)
-    .build();
+    .build()
+    .unwrap();
     let import_linker = default_import_linker();
     let mut store = RwasmStore::<()>::new(
         import_linker,
@@ -252,7 +253,8 @@ fn test_call_stack_empty_after_trap_in_nested_call() {
         Call(0xff)
         Trap(TrapCode::UnreachableCodeReached)
     })
-    .build();
+    .build()
+    .unwrap();
     let import_linker = default_import_linker();
     let mut store = RwasmStore::<()>::new(
         import_linker,
@@ -291,7 +293,8 @@ fn test_memory_write_during_interruption() {
         Return
     })
     .with_source_pc(1)
-    .build();
+    .build()
+    .unwrap();
     let import_linker = default_import_linker();
 
     let test_strategy = |strategy: StrategyDefinition| {

@@ -62,7 +62,7 @@ use std::{
 
 fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Result<(Vec<u32>, u32), TrapCode> {
     is.op_return();
-    let rwasm_module = RwasmModuleBuilder::new(is).build();
+    let rwasm_module = RwasmModuleBuilder::new(is).build().unwrap();
     let mut value_stack = ValueStack::default();
     assert_eq!(value_stack.max_stack_height(), 0);
     value_stack.reserve(10)?;

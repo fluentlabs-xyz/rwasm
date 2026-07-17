@@ -81,6 +81,13 @@ impl RwasmModuleInner {
 }
 
 impl RwasmModule {
+    pub(crate) fn from_verified_inner(
+        inner: RwasmModuleInner,
+    ) -> Result<Self, RwasmModuleVerificationError> {
+        inner.verify()?;
+        Ok(inner.into())
+    }
+
     pub fn verify(&self) -> Result<(), RwasmModuleVerificationError> {
         self.inner.verify()
     }
@@ -322,17 +329,28 @@ mod tests {
     }
 
     #[test]
-    fn regular_construction_does_not_verify() {
+    fn direct_construction_does_not_verify() {
         let module: RwasmModule = module_with_code(InstructionSet::new()).into();
         assert_eq!(
             module.verify(),
             Err(RwasmModuleVerificationError::EmptyCodeSection)
         );
+    }
 
-        let module = RwasmModuleBuilder::new(InstructionSet::new()).build();
+    #[test]
+    fn builder_propagates_verification_errors() {
         assert_eq!(
-            module.verify(),
+            RwasmModuleBuilder::new(InstructionSet::new()).build(),
             Err(RwasmModuleVerificationError::EmptyCodeSection)
+        );
+        assert_eq!(
+            RwasmModuleBuilder::new(instruction_set! { Return })
+                .with_source_pc(1)
+                .build(),
+            Err(RwasmModuleVerificationError::SourcePcOutOfBounds {
+                source_pc: 1,
+                code_len: 1,
+            })
         );
     }
 

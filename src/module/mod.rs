@@ -269,20 +269,21 @@ impl RwasmModuleBuilder {
         self
     }
 
-    pub fn build(self) -> RwasmModule {
-        RwasmModuleInner {
+    pub fn build(self) -> Result<RwasmModule, RwasmModuleVerificationError> {
+        RwasmModule::from_verified_inner(RwasmModuleInner {
             code_section: self.code_section,
             data_section: self.data_section,
             elem_section: self.elem_section,
             hint_section: self.hint_section,
             source_pc: self.source_pc,
-        }
-        .into()
+        })
     }
 }
 
-impl From<RwasmModuleBuilder> for RwasmModule {
-    fn from(val: RwasmModuleBuilder) -> Self {
+impl TryFrom<RwasmModuleBuilder> for RwasmModule {
+    type Error = RwasmModuleVerificationError;
+
+    fn try_from(val: RwasmModuleBuilder) -> Result<Self, Self::Error> {
         val.build()
     }
 }

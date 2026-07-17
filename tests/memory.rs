@@ -43,7 +43,8 @@ fn test_memory_fuel_ddos_not_possible() {
     };
     let rwasm_module = RwasmModuleBuilder::new(code_section)
         .with_data_section(&[0x01, 0x02, 0x03])
-        .build();
+        .build()
+        .unwrap();
     println!("{}", rwasm_module);
     let fuel_consumed = execute_module(&rwasm_module);
     assert_eq!(fuel_consumed, 3);
