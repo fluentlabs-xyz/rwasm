@@ -11,7 +11,8 @@ fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value], result
         .with_consume_fuel(true)
         .with_consume_fuel_for_params_and_locals(false)
         .with_allow_func_ref_function_types(false)
-        .with_max_allowed_memory_pages(4096);
+        .with_max_allowed_memory_pages(4096)
+        .with_consume_fuel_for_bulk_ops(false);
     let (module, _) = RwasmModule::compile(config.clone(), wasm_binary).unwrap();
     println!("{}", module);
     let fuel_consumed = for_each_strategy(
@@ -156,6 +157,38 @@ fn test_fuel_memory_oom() {
   (export "memory" (memory 0))
   (export "3" (global 0))
   (func (;0;) (type 0))
+)
+"#,
+        )
+        .unwrap(),
+        &[],
+        &mut [],
+    );
+}
+
+#[test]
+fn test_fuel_large_initial_memory_with_recursive_calls() {
+    run_rwasm_vs_wasmtime_fuel_check(
+        &wat::parse_str(
+            r#"
+(module
+  (type (;0;) (func))
+  (memory (;0;) 1023)
+  (global (;0;) (mut i32) i32.const 1024)
+  (export "" (func 0))
+  (export "memory" (memory 0))
+  (func (;0;) (type 0)
+    global.get 0
+    i32.eqz
+    if
+      return
+    end
+    global.get 0
+    i32.const 1
+    i32.sub
+    global.set 0
+    return_call 0
+  )
 )
 "#,
         )
