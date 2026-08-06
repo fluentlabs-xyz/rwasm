@@ -73,10 +73,10 @@ impl SegmentBuilder {
         &mut self,
         initial_pages: u32,
         max_allowed_memory_pages: u32,
+        consume_fuel_for_bulk_ops: bool,
     ) -> Result<(), CompilationError> {
         // there is a hard limit of max possible memory used (~64 mB)
-        let next_pages = self
-            .total_allocated_pages.saturating_add(initial_pages);
+        let next_pages = self.total_allocated_pages.saturating_add(initial_pages);
         if next_pages >= max_allowed_memory_pages {
             return Err(CompilationError::MaxReadonlyDataReached);
         }
@@ -84,7 +84,8 @@ impl SegmentBuilder {
         if initial_pages > 0 {
             // TODO(dmitry123): "add stack height check?"
             self.entrypoint_bytecode.op_i32_const(initial_pages);
-            self.entrypoint_bytecode.op_memory_grow_checked(None, false);
+            self.entrypoint_bytecode
+                .op_memory_grow_checked(None, consume_fuel_for_bulk_ops);
             // there is no need to verify for a potential trap because it can't overflow,
             // we have this check upper during the compilation time
             self.entrypoint_bytecode.op_drop();

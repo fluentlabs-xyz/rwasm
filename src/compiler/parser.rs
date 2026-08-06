@@ -598,7 +598,11 @@ impl ModuleParser {
             self.allocations
                 .translation
                 .segment_builder
-                .add_memory_pages(initial_memory, self.config.max_allowed_memory_pages)?;
+                .add_memory_pages(
+                    initial_memory,
+                    self.config.max_allowed_memory_pages,
+                    self.config.consume_fuel_for_bulk_ops,
+                )?;
         }
         Ok(())
     }

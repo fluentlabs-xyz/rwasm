@@ -31,6 +31,43 @@ fn test_entrypoint_call_consumes_fuel() {
 }
 
 #[test]
+fn test_initial_memory_fuel_respects_bulk_ops_config() {
+    const INITIAL_MEMORY_PAGES: u64 = 2;
+
+    let wasm_binary = wat::parse_str(
+        r#"
+        (module
+          (memory 2)
+          (func (export "entry"))
+        )
+        "#,
+    )
+    .unwrap();
+    let fuel_limit = 100_000;
+
+    let consumed_by_entrypoint = |consume_fuel_for_bulk_ops| {
+        let config = CompilationConfig::default()
+            .with_entrypoint_name("entry".into())
+            .with_consume_fuel(true)
+            .with_consume_fuel_for_bulk_ops(consume_fuel_for_bulk_ops);
+        let (module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+        let mut store = RwasmStore::<()>::default();
+        store.reset_fuel(fuel_limit);
+        ExecutionEngine::new()
+            .entrypoint(&mut store, &module)
+            .unwrap();
+        fuel_limit - store.remaining_fuel().unwrap()
+    };
+
+    assert_eq!(
+        consumed_by_entrypoint(true),
+        INITIAL_MEMORY_PAGES * rwasm::N_BYTES_PER_MEMORY_PAGE as u64
+            / rwasm_fuel_policy::MEMORY_BYTES_PER_FUEL as u64
+    );
+    assert_eq!(consumed_by_entrypoint(false), 0);
+}
+
+#[test]
 fn test_locals_consume_fuel() {
     let fuel_limit = 9999;
     let basic_fuel_consumption = 2;
