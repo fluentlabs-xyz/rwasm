@@ -157,8 +157,13 @@ impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_data_drop(&mut self, data_segment_idx: DataSegmentIdx) {
         let empty_data_segments = &mut self.store.empty_data_segments;
-        empty_data_segments.resize(data_segment_idx as usize + 1, false);
-        empty_data_segments.set(data_segment_idx as usize, true);
+        // grow only, `resize` would truncate the bitset and forget previously dropped segments
+        // with a higher index
+        let idx = data_segment_idx as usize;
+        if idx >= empty_data_segments.len() {
+            empty_data_segments.resize(idx + 1, false);
+        }
+        empty_data_segments.set(idx, true);
         self.ip.add(1);
     }
 }
