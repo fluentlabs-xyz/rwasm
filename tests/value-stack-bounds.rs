@@ -1,8 +1,12 @@
 //! Regression tests for out-of-bounds value stack accesses driven by hand-crafted bytecode.
 //!
-//! Every module below is rejected by `RwasmModule::new_verified`; the tests additionally run the
-//! bytecode through the interpreter to prove that the value stack itself refuses the access, even
-//! when the module was decoded through a path that does not verify.
+//! Every test runs its bytecode through the interpreter to prove that the value stack refuses the
+//! access, which is the guarantee that holds however the module was decoded. Where the module is
+//! statically invalid as well, the test also asserts that `RwasmModule::new_verified` rejects it.
+//!
+//! The two are not the same set. A callee legitimately reads its parameters from below its own
+//! entry stack pointer, so verification cannot reject a shallow underflow without rejecting valid
+//! code; those cases are caught by the runtime bounds checks alone.
 
 use rwasm::{
     instruction_set, ExecutionEngine, ImportLinker, InstructionSet, RwasmModule,
@@ -98,12 +102,15 @@ fn popping_below_the_stack_base_traps() {
 
 #[test]
 fn pushing_past_the_reserved_stack_window_traps() {
-    // `StackCheck` only reserves a single cell, so the second push leaves the value stack.
+    // `StackCheck` reserves a single cell, so the pushes run out of stack long before the last
+    // one. Verification is coarser and only rejects the push that leaves the addressable window,
+    // which is floored at `N_MAX_STACK_SIZE` no matter how little the module reserves.
     let mut code = instruction_set! { StackCheck(1) };
     for _ in 0..(rwasm::N_MAX_STACK_SIZE + 1) {
         code.op_i32_const(1);
     }
     code.op_return();
+    assert!(verify(code.clone()).is_err());
     assert_eq!(execute(code), Err(TrapCode::StackOverflow));
 }
 
