@@ -3,6 +3,21 @@ use crate::{
 };
 use rwasm_fuel_policy::{MEMORY_BYTES_PER_FUEL, MEMORY_BYTES_PER_FUEL_LOG2};
 
+// SAFETY NOTE on `MEMORY_BYTES_PER_FUEL`, applies to every bulk prologue in this file.
+//
+// Fuel is charged as `(n + MEMORY_BYTES_PER_FUEL - 1) >> MEMORY_BYTES_PER_FUEL_LOG2`, where the
+// `i32.add` wraps for `n >= 2^32 - (MEMORY_BYTES_PER_FUEL - 1)`. For such `n` the round-up wraps
+// to a tiny value, so a nominally multi-gigabyte request is charged (almost) nothing.
+//
+// This is not a metering bypass today: a memory is capped at `N_MAX_ALLOWED_MEMORY_PAGES` pages
+// (2 GiB), so any `n` large enough to wrap traps on the runtime bounds check before a single byte
+// is touched, and the undercharged operation never performs work. The correctness of the charge
+// therefore rests entirely on that bounds check, not on this arithmetic. Growing
+// `MEMORY_BYTES_PER_FUEL` toward `u32::MAX`, or admitting bulk operations whose length is not
+// bounded by the memory limit, would make this exploitable — in that case replace the round-up
+// with an overflow-safe form such as `(n >> LOG2) + ((n & MASK) != 0)`, or do the arithmetic in
+// 64 bits.
+
 impl InstructionSet {
     pub const MSH_I64_LOAD: u32 = 2;
     pub const MSH_I64_LOAD8_S: u32 = 1;
@@ -118,6 +133,16 @@ impl InstructionSet {
     }
 
     /// Max stack height: 2
+    ///
+    /// # Safety
+    ///
+    /// The limit check below is a *signed* compare over quantities that are unsigned by
+    /// construction, and the sum `memory_size+d` uses a wrapping `i32.add`. A delta close to
+    /// `i32::MAX` therefore produces a negative sum that passes the guard. That is harmless only
+    /// because `memory.grow` itself re-checks the resulting page count against
+    /// [`crate::N_MAX_ALLOWED_MEMORY_PAGES`] and fails (returning `u32::MAX`) for every input that
+    /// can wrap. Do not treat this guard as the bounds check — see the note on
+    /// [`crate::N_MAX_ALLOWED_MEMORY_PAGES`] before raising any of the limits it depends on.
     pub fn op_memory_grow_checked(&mut self, max_pages: Option<u32>, inject_fuel_check: bool) {
         // we must do max memory check before an execution
         if let Some(max_pages) = max_pages {
@@ -125,19 +150,21 @@ impl InstructionSet {
             self.op_memory_size(); // memory_size
             self.op_i32_add(); // memory_size+d
             self.op_i32_const(max_pages); // max_pages
-            self.op_i32_gt_s(); // memory_size+d>max_pages
+            self.op_i32_gt_s(); // memory_size+d>max_pages, signed: see the note above
             self.op_br_if_eqz(4);
             self.op_drop();
             self.op_i32_const(u32::MAX);
             self.op_br(if inject_fuel_check { 8 } else { 2 });
         }
-        // now we know that pages can't exceed i32::MAX,
-        // so we can safely multiply the num of pages to the page size
-        // to calculate fuel required for memory to grow
+        // fuel for the growth is charged from the requested number of pages;
+        // note that the guard above does NOT establish that `n` is small: a wrapped `n` reaches
+        // this code, and `n*65536` wraps too, so the charge can be far below the nominal size.
+        // it is not a metering bypass because the `memory.grow` below rejects every such `n`
+        // without allocating anything, so no undercharged work is ever performed
         if inject_fuel_check {
             self.op_local_get(1); // n
             self.op_i32_const(N_BYTES_PER_MEMORY_PAGE); // size of each memory page
-            self.op_i32_mul(); // overflow is impossible here (we pass max pages in trustless mode)
+            self.op_i32_mul(); // wrapping, see the note above
             self.op_i32_const(MEMORY_BYTES_PER_FUEL_LOG2); // 2^6=64
             self.op_i32_shr_u(); // delta/64
             self.op_consume_fuel_stack();
@@ -152,7 +179,7 @@ impl InstructionSet {
         if inject_fuel_check {
             self.op_local_get(1); // n
             self.op_i32_const(MEMORY_BYTES_PER_FUEL - 1); // upper round
-            self.op_i32_add();
+            self.op_i32_add(); // wrapping, see the SAFETY NOTE at the top of this file
             self.op_i32_const(MEMORY_BYTES_PER_FUEL_LOG2); // 2^6=64
             self.op_i32_shr_u(); // delta/64
             self.op_consume_fuel_stack();
@@ -167,7 +194,7 @@ impl InstructionSet {
         if inject_fuel_check {
             self.op_local_get(1); // n
             self.op_i32_const(MEMORY_BYTES_PER_FUEL - 1); // upper round
-            self.op_i32_add();
+            self.op_i32_add(); // wrapping, see the SAFETY NOTE at the top of this file
             self.op_i32_const(MEMORY_BYTES_PER_FUEL_LOG2); // 2^6=64
             self.op_i32_shr_u(); // delta/64
             self.op_consume_fuel_stack();
@@ -218,13 +245,16 @@ impl InstructionSet {
         data_segment_index: DataSegmentIdx,
         inject_fuel_check: bool,
     ) {
-        // do an overflow check
+        // do an overflow check;
+        // note that this compare is signed and `n + s` wraps, so operands close to `i32::MAX`
+        // slip past it — the data segment bounds check inside `memory.init` below is what
+        // actually rejects them, this guard only turns the common case into an early trap
         if let Some(length) = rewrite_length.filter(|v| *v > 0) {
             self.op_local_get(1); // n
             self.op_local_get(3); // s
             self.op_i32_add(); // n + s
             self.op_i32_const(length);
-            self.op_i32_gt_s(); // n + s > length
+            self.op_i32_gt_s(); // n + s > length, signed: see the note above
             self.op_br_if_eqz(2);
             self.op_trap(TrapCode::MemoryOutOfBounds);
         }
@@ -239,7 +269,7 @@ impl InstructionSet {
         if inject_fuel_check {
             self.op_local_get(1); // n
             self.op_i32_const(MEMORY_BYTES_PER_FUEL - 1); // upper round
-            self.op_i32_add();
+            self.op_i32_add(); // wrapping, see the SAFETY NOTE at the top of this file
             self.op_i32_const(MEMORY_BYTES_PER_FUEL_LOG2); // 2^6=64
             self.op_i32_shr_u(); // delta/64
             self.op_consume_fuel_stack();

@@ -47,6 +47,22 @@ pub const N_DEFAULT_MAX_MEMORY_PAGES: u32 = 1024;
 
 /// A hard limit on the maximum number of memory pages that can be allocated.
 /// This value is driven from a Wasm standard, the maximum number of memory pages is 32,768.
+///
+/// # Safety
+///
+/// The compiler-injected prologues for `memory.grow`/`memory.init` (see [`crate::InstructionSet`]
+/// in `src/isa/memory.rs`) compare `size + delta` against this limit with a *signed* `i32.gt_s`
+/// and compute fuel with a *wrapping* `i32.add` round-up. Both can be defeated by an operand
+/// close to `i32::MAX`/`u32::MAX`: the sum wraps negative and passes the guard, and the fuel
+/// round-up wraps down to (nearly) zero fuel.
+///
+/// This is currently not exploitable only because such inputs always trap on the runtime bounds
+/// check that runs behind the guard: `32768 * 65536` fits in `u32`, so no reachable page count
+/// can make the wrapped path touch memory or skip metering for work actually performed.
+/// Raising this constant, or otherwise letting the guards see values that overflow `i32`, would
+/// turn those prologues into a real bounds/metering bypass with no visible change to this code.
+/// Change it only together with switching the guards to unsigned comparisons and overflow-safe
+/// fuel arithmetic.
 pub const N_MAX_ALLOWED_MEMORY_PAGES: u32 = 32768;
 
 /// A default memory index in a Wasm binary.
@@ -79,6 +95,16 @@ pub const N_MAX_TABLES: u32 = 100;
 ///
 /// The original standard allows `100_000` element segments with an unlimited number of elements
 /// inside.
+///
+/// # Safety
+///
+/// The same caveat as for [`N_MAX_ALLOWED_MEMORY_PAGES`] applies: the injected prologues for
+/// `table.grow`/`table.init` (`src/isa/table.rs`) use signed `i32.gt_s` on `size + delta` and a
+/// wrapping `i32.add` for the fuel round-up. With this limit the guarded sums stay far below
+/// `i32::MAX`, so the signedness and the wrap are unobservable, and any input large enough to
+/// wrap traps on the runtime table bounds check anyway. Raising this constant to anything near
+/// `i32::MAX` requires switching those guards to unsigned comparisons and overflow-safe fuel
+/// arithmetic first.
 pub const N_MAX_TABLE_SIZE: u32 = 1024;
 
 pub type InstrLoc = u32;
