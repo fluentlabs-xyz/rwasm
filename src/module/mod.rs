@@ -1,4 +1,5 @@
 use crate::{
+    types::codec::{decode_section_bytes, decode_section_vec},
     CompilationConfig, CompilationError, ConstructorParams, HintType, InstructionSet, ModuleParser,
     Opcode,
 };
@@ -182,9 +183,9 @@ impl<Context> Decode<Context> for RwasmModuleInner {
             return Err(DecodeError::Other("rwasm: not supported version"));
         }
         let code_section: InstructionSet = Decode::decode(decoder)?;
-        let data_section: Vec<u8> = Decode::decode(decoder)?;
-        let elem_section: Vec<u32> = Decode::decode(decoder)?;
-        let wasm_section: Vec<u8> = Decode::decode(decoder)?;
+        let data_section = decode_section_bytes(decoder)?;
+        let elem_section: Vec<u32> = decode_section_vec(decoder)?;
+        let wasm_section = decode_section_bytes(decoder)?;
         let source_pc: u32 = match Decode::decode(decoder) {
             Ok(source_pc) => source_pc,
             Err(DecodeError::UnexpectedEnd { additional }) => {
@@ -289,7 +290,10 @@ impl From<RwasmModuleBuilder> for RwasmModule {
 
 #[cfg(test)]
 mod tests {
-    use crate::{instruction_set, RwasmModule, RwasmModuleInner};
+    use crate::{
+        instruction_set, RwasmModule, RwasmModuleInner, RWASM_MAGIC_BYTE_0, RWASM_MAGIC_BYTE_1,
+        RWASM_VERSION_V1,
+    };
     use bincode::error::DecodeError;
     use hex_literal::hex;
 
@@ -363,6 +367,48 @@ mod tests {
         let err = RwasmModule::new_checked_exact(&encoded_module)
             .expect_err("exact decode must reject trailing bytes");
         assert!(matches!(err, DecodeError::Other(_)));
+    }
+
+    /// Every section length is attacker-controlled, so a truncated header must be rejected without
+    /// allocating the announced capacity. Before the fix these inputs panicked with
+    /// `capacity overflow`, or aborted through `handle_alloc_error` for large non-overflowing
+    /// lengths.
+    #[test]
+    fn test_decode_rejects_oversized_section_lengths() {
+        // Number of empty sections preceding the one under test, in encoding order:
+        // code, data, elem, hint.
+        for preceding_sections in 0..4 {
+            for bogus_length in [u64::MAX, 1u64 << 40] {
+                let mut sink = vec![RWASM_MAGIC_BYTE_0, RWASM_MAGIC_BYTE_1, RWASM_VERSION_V1];
+                for _ in 0..preceding_sections {
+                    sink.extend_from_slice(&0u64.to_le_bytes());
+                }
+                sink.extend_from_slice(&bogus_length.to_le_bytes());
+
+                let err = RwasmModule::new_checked(&sink)
+                    .expect_err("section length larger than the remaining input must be rejected");
+                assert!(
+                    matches!(
+                        err,
+                        DecodeError::UnexpectedEnd { .. } | DecodeError::OutsideUsizeRange(_)
+                    ),
+                    "unexpected error for section {preceding_sections} \
+                     with length {bogus_length}: {err:?}"
+                );
+            }
+        }
+    }
+
+    /// A section length that fits the input must still decode, so the bound above cannot be a
+    /// blanket size limit.
+    #[test]
+    fn test_decode_accepts_large_hint_section() {
+        let mut module = test_module();
+        module.hint_section = vec![0xab; 512 * 1024];
+        let encoded_module = bincode::encode_to_vec(&module, bincode::config::legacy()).unwrap();
+        let (decoded, _): (RwasmModuleInner, usize) =
+            bincode::decode_from_slice(&encoded_module, bincode::config::legacy()).unwrap();
+        assert_eq!(module, decoded);
     }
 
     #[test]
