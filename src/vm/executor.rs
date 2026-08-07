@@ -410,6 +410,15 @@ impl<'a, T> RwasmExecutor<'a, T> {
         Ok(())
     }
 
+    /// Invokes a syscall by its index.
+    ///
+    /// An index that the import linker can't resolve is a fatal error, not a trap: the number of
+    /// stack params and results is taken from the linker, so an unresolved index leaves us with no
+    /// way to know how many values to pop, and any guess would desynchronize the value stack.
+    /// zkVM proving requires the same execution trace on every run, so the caller must supply an
+    /// import linker that resolves every syscall the module can reach — restricting the reachable
+    /// set is the linker's responsibility, and [`crate::always_failing_syscall_handler`] is the way
+    /// to reject a syscall that is declared but must not be executed.
     pub(crate) fn invoke_syscall(&mut self, sys_func_idx: SysFuncIdx) -> Result<(), TrapCode> {
         let (params, result) = self
             .store
