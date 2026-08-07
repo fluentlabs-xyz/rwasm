@@ -123,6 +123,12 @@ impl<'a, T> RwasmExecutor<'a, T> {
         for x in result.iter_mut().rev() {
             *x = self.sp.pop_value(x.ty());
         }
+        if self.sp.is_out_of_bounds() {
+            self.value_stack.reset();
+            self.call_stack.reset();
+            self.store.last_signature = None;
+            return Err(TrapCode::StackOverflow);
+        }
         self.value_stack.sync_stack_ptr(self.sp);
         // Execution is over, make sure the stack is clear (it's guaranteed by wasm validation)
         debug_assert_eq!(
@@ -192,8 +198,24 @@ impl<'a, T> RwasmExecutor<'a, T> {
         }
     }
 
+    /// Executes a single `instr` and reports whether the outermost `Return` was reached.
+    ///
+    /// # Errors
+    ///
+    /// With [`TrapCode::StackOverflow`] if `instr` addressed a cell outside the value stack. The
+    /// offending access itself was already suppressed by [`ValueStackPtr`], this only stops the
+    /// execution from carrying on with a corrupted stack.
     #[inline(always)]
     pub fn step(&mut self, instr: Opcode) -> Result<bool, TrapCode> {
+        let return_reached = self.execute(instr)?;
+        if self.sp.is_out_of_bounds() {
+            return Err(TrapCode::StackOverflow);
+        }
+        Ok(return_reached)
+    }
+
+    #[inline(always)]
+    fn execute(&mut self, instr: Opcode) -> Result<bool, TrapCode> {
         use Opcode::*;
         match instr {
             Unreachable => self.visit_unreachable()?,
