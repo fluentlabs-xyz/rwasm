@@ -1,4 +1,5 @@
 mod block_fuel;
+mod codegen_identity;
 mod compiled_expr;
 mod config;
 mod control_flow;
@@ -17,6 +18,7 @@ mod utils;
 mod value_stack;
 
 pub use self::{
+    codegen_identity::{codegen_feature_set, CODEGEN_FEATURE_FPU},
     config::{CompilationConfig, StateRouterConfig},
     error::CompilationError,
     parser::ModuleParser,

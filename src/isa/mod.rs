@@ -78,6 +78,18 @@ macro_rules! impl_basic_opcode {
     };
 }
 
+/// Emits a float opcode, or `Trap(IllegalOpcode)` when the `fpu` feature is off.
+///
+/// WARNING: floating point is NOT officially supported by rwasm. The `fpu` feature exists only for
+/// the e2e testing suite (`e2e/Cargo.toml`) and the fuzzer (`fuzz/Cargo.toml`), which need real
+/// float semantics to run the wasm spec tests and to compare against wasmtime. It is deliberately
+/// absent from `default` and must never be enabled in a production build.
+///
+/// The substitution happens at *compile* time, so the feature changes the emitted bytecode, not
+/// just runtime behaviour: an `fpu` build and a default build produce different modules (and
+/// different module hashes) for the same float-using wasm input. The matching runtime split lives
+/// in `src/vm/executor.rs`. `CompilationConfig::codegen_identity` folds the feature into a
+/// fingerprint so hosts can detect the mismatch instead of silently executing foreign bytecode.
 macro_rules! impl_fpu_opcode {
     ($opcode:ident($data_type:ident)) => {
         paste::paste! {

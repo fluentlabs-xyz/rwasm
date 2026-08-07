@@ -58,9 +58,19 @@ serde = [
 ]
 tracing = ["serde"]
 debug-print = []
+# Floating point support. NOT officially supported and NOT for production builds: this exists only
+# for the e2e testing suite and the fuzzer, which need real float semantics for the wasm spec tests
+# and for wasmtime differential runs.
+#
+# WARNING: this feature changes emitted bytecode, not just runtime behaviour. Without it every
+# float instruction is compiled to `Trap(IllegalOpcode)`, so an `fpu` build and a default build
+# produce different modules (and different module hashes) for the same wasm input. See
+# `impl_fpu_opcode!` in `src/isa/mod.rs` and `CompilationConfig::codegen_identity`.
 fpu = []
 wasmtime = ["dep:wasmtime", "dep:lru"]
 cache-compiled-artifacts = ["wasmtime", "dep:directories"]
+# Relaxations required by the e2e testing suite (spectest globals, funcref/externref values).
+# Test-only, never for production builds.
 e2e = []
 pooling-allocator = []
 full-wasm-mode = ["wasmtime?/full-wasm-mode"]

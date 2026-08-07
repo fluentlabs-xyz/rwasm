@@ -284,6 +284,10 @@ impl<'a, T> RwasmExecutor<'a, T> {
             TableInit(imm) => self.visit_table_init(imm)?,
             ElemDrop(imm) => self.visit_element_drop(imm),
 
+            // Floating point is not officially supported: the `fpu` feature is only for the e2e
+            // testing suite and the fuzzer, and a default build traps on every float opcode. Note
+            // that the compiler applies the same split (see `impl_fpu_opcode!` in
+            // `src/isa/mod.rs`), so a default build never even emits these opcodes.
             #[cfg(feature = "fpu")]
             opcode => self.exec_fpu_opcode(opcode)?,
             #[cfg(not(feature = "fpu"))]
