@@ -205,13 +205,19 @@ impl<'a, T> RwasmExecutor<'a, T> {
     /// With [`TrapCode::StackOverflow`] if `instr` addressed a cell outside the value stack. The
     /// offending access itself was already suppressed by [`ValueStackPtr`], this only stops the
     /// execution from carrying on with a corrupted stack.
+    ///
+    /// An out-of-bounds access outranks whatever `instr` reported on its own: that trap is an
+    /// artifact of the values the suppressed access substituted. The check therefore runs before
+    /// the instruction's own error is propagated — otherwise every exit that carries an error out
+    /// of [`RwasmExecutor::run`] would drop the flag, and [`TrapCode::ExecutionHalted`] returned by
+    /// a host function would even turn the run into a success.
     #[inline(always)]
     pub fn step(&mut self, instr: Opcode) -> Result<bool, TrapCode> {
-        let return_reached = self.execute(instr)?;
+        let result = self.execute(instr);
         if self.sp.is_out_of_bounds() {
             return Err(TrapCode::StackOverflow);
         }
-        Ok(return_reached)
+        result
     }
 
     #[inline(always)]
@@ -454,6 +460,11 @@ impl<'a, T> RwasmExecutor<'a, T> {
         buffer.resize(params.len() + result.len(), Value::I32(0));
         for (i, x) in params.iter().enumerate() {
             buffer[params.len() - i - 1] = self.sp.pop_value(*x);
+        }
+        // A parameter popped from outside the value stack is a fabricated zero. The host must not
+        // observe it: its side effects would happen before `step` gets to see the flag.
+        if self.sp.is_out_of_bounds() {
+            return Err(TrapCode::StackOverflow);
         }
         for (i, x) in result.iter().enumerate() {
             buffer[params.len() + i] = Value::default(*x);
