@@ -65,6 +65,14 @@ impl RwasmModule {
         Self::new_checked(sink).unwrap_or_else(|_| unreachable!("rwasm: malformed rwasm binary"))
     }
 
+    /// Decodes one rWasm module and returns the number of bytes consumed.
+    ///
+    /// # Note
+    ///
+    /// "Checked" refers to the binary encoding only: this performs **no** structural validation of
+    /// the decoded module. Branch targets, call targets, segment indices, and stack offsets are all
+    /// taken at face value, so a module accepted here can still trap at any point during execution.
+    /// Use [`RwasmModule::new_verified`] for bytecode that this crate did not produce itself.
     pub fn new_checked(sink: &[u8]) -> Result<(Self, usize), DecodeError> {
         let (inner, bytes_read): (RwasmModuleInner, usize) =
             bincode::decode_from_slice(sink, bincode::config::legacy())?;
@@ -72,6 +80,11 @@ impl RwasmModule {
     }
 
     /// Decodes exactly one rWasm module and rejects trailing bytes.
+    ///
+    /// # Note
+    ///
+    /// Just like [`RwasmModule::new_checked`], this validates the encoding but not the structure
+    /// of the decoded module.
     pub fn new_checked_exact(sink: &[u8]) -> Result<Self, DecodeError> {
         let (module, bytes_read) = Self::new_checked(sink)?;
         if bytes_read != sink.len() {

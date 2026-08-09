@@ -28,6 +28,14 @@ pub struct ValueStack {
     maximum_len: usize,
     /// The maximum stack height
     max_stack_height: usize,
+    /// Sticky flag raised once an operation tried to address a cell outside the value stack.
+    ///
+    /// # Note
+    ///
+    /// The flag travels with the [`ValueStackPtr`] handed out by [`ValueStack::stack_ptr`] and
+    /// comes back through [`ValueStack::sync_stack_ptr`], so the interpreter observes it no
+    /// matter how often it re-derives its stack pointer.
+    out_of_bounds: bool,
 }
 
 impl Debug for ValueStack {
@@ -78,7 +86,18 @@ impl ValueStack {
             stack_ptr: 0,
             maximum_len: 0,
             max_stack_height: 0,
+            out_of_bounds: false,
         }
+    }
+
+    /// Returns `true` if some operation tried to address a cell outside the value stack.
+    ///
+    /// # Note
+    ///
+    /// The offending access was suppressed, so this only reports that the executed bytecode is
+    /// invalid and that execution has to be aborted with [`TrapCode::StackOverflow`].
+    pub fn is_out_of_bounds(&self) -> bool {
+        self.out_of_bounds
     }
 
     pub fn max_stack_height(&self) -> usize {
@@ -117,7 +136,8 @@ impl ValueStack {
             self.stack_ptr,
             self.capacity()
         );
-        unsafe { self.entries.get_unchecked_mut(..self.stack_ptr) }.to_vec()
+        let len = self.stack_ptr.min(self.capacity());
+        self.entries[..len].to_vec()
     }
 
     /// Returns the base [`ValueStackPtr`] of `self`.
@@ -125,7 +145,12 @@ impl ValueStack {
     /// The returned [`ValueStackPtr`] points to the first value on the [`ValueStack`].
     #[inline]
     fn base_ptr(&mut self) -> ValueStackPtr {
-        ValueStackPtr::new(self.entries.as_mut_ptr())
+        let capacity = self.entries.len();
+        let mut base = ValueStackPtr::new(self.entries.as_mut_ptr(), capacity);
+        if self.out_of_bounds {
+            base.mark_out_of_bounds();
+        }
+        base
     }
 
     /// Synchronizes [`ValueStack`] with the new [`ValueStackPtr`].
@@ -133,7 +158,8 @@ impl ValueStack {
     pub fn sync_stack_ptr(&mut self, new_sp: ValueStackPtr) {
         let offset = new_sp.offset_from(self.base_ptr());
         debug_assert!(offset >= 0, "stack underflow: {}", offset);
-        self.stack_ptr = offset as usize;
+        self.out_of_bounds |= new_sp.is_out_of_bounds();
+        self.stack_ptr = offset.max(0) as usize;
         #[cfg(debug_assertions)]
         if self.stack_ptr > self.max_stack_height {
             self.max_stack_height = self.stack_ptr;
@@ -175,37 +201,20 @@ impl ValueStack {
             stack_ptr: 0,
             maximum_len,
             max_stack_height: 0,
+            out_of_bounds: false,
         }
     }
 
-    /// Returns the [`UntypedValue`] at the given `index`.
-    ///
-    /// # Note
-    ///
-    /// This is an optimized convenience method that only asserts
-    /// that the index is within bounds in `debug` mode.
-    ///
-    /// # Safety
-    ///
-    /// This is safe since all rwasm bytecode has been validated
-    /// during translation and therefore cannot result in out-of-bounds accesses.
-    ///
-    /// # Panics (Debug)
-    ///
-    /// If the `index` is out of bounds.
-    #[inline]
-    fn get_release_unchecked_mut(&mut self, index: usize) -> &mut UntypedValue {
-        debug_assert!(index < self.capacity());
-        // Safety: This is safe since all rwasm bytecode has been validated
-        //         during translation and therefore cannot result in out of
-        //         bounds accesses.
-        unsafe { self.entries.get_unchecked_mut(index) }
-    }
-
-    /// Drops the last value on the [`ValueStack`].
+    /// Drops the last `depth` values on the [`ValueStack`].
     #[inline]
     pub fn drop(&mut self, depth: usize) {
-        self.stack_ptr -= depth;
+        match self.stack_ptr.checked_sub(depth) {
+            Some(stack_ptr) => self.stack_ptr = stack_ptr,
+            None => {
+                self.stack_ptr = 0;
+                self.out_of_bounds = true;
+            }
+        }
     }
 
     /// Pushes the [`UntypedValue`] to the end of the [`ValueStack`].
@@ -218,7 +227,11 @@ impl ValueStack {
     ///   before function call prevents this procedure from panicking.
     #[inline]
     pub fn push(&mut self, entry: UntypedValue) {
-        *self.get_release_unchecked_mut(self.stack_ptr) = entry;
+        let Some(cell) = self.entries.get_mut(self.stack_ptr) else {
+            self.out_of_bounds = true;
+            return;
+        };
+        *cell = entry;
         self.stack_ptr += 1;
         #[cfg(test)]
         if self.stack_ptr > self.max_stack_height {
@@ -228,9 +241,20 @@ impl ValueStack {
 
     #[inline]
     pub fn pop(&mut self) -> UntypedValue {
-        debug_assert!(self.stack_ptr > 0);
-        self.stack_ptr -= 1;
-        *self.get_release_unchecked_mut(self.stack_ptr)
+        let entry = self
+            .stack_ptr
+            .checked_sub(1)
+            .and_then(|index| self.entries.get(index).copied());
+        match entry {
+            Some(entry) => {
+                self.stack_ptr -= 1;
+                entry
+            }
+            None => {
+                self.out_of_bounds = true;
+                UntypedValue::default()
+            }
+        }
     }
 
     /// Returns the capacity of the [`ValueStack`].
@@ -307,7 +331,10 @@ impl ValueStack {
     /// Returns an exclusive slice to the last `depth` entries in the value stack.
     #[inline]
     pub fn peek_as_slice_mut(&mut self, depth: usize) -> &mut [UntypedValue] {
-        let start = self.stack_ptr - depth;
+        let Some(start) = self.stack_ptr.checked_sub(depth) else {
+            self.out_of_bounds = true;
+            return &mut [];
+        };
         let end = self.stack_ptr;
         &mut self.entries[start..end]
     }
@@ -324,6 +351,7 @@ impl ValueStack {
     pub fn reset(&mut self) {
         self.stack_ptr = 0;
         self.max_stack_height = 0;
+        self.out_of_bounds = false;
     }
 }
 
@@ -331,53 +359,108 @@ impl ValueStack {
 ///
 /// Allows for efficient mutable access to the values of the [`ValueStack`].
 ///
+/// # Note
+///
+/// Every operation is bounds-checked against the `[src, end)` window of the underlying
+/// [`ValueStack`] in **all** build profiles. Bytecode reaching outside that window neither reads
+/// nor writes memory: the pointer is parked on the stack base and [`ValueStackPtr::
+/// is_out_of_bounds`] starts reporting `true`, which the interpreter turns into a
+/// [`TrapCode::StackOverflow`] before the next instruction runs. Relying on the translator to only
+/// emit valid stack offsets is not enough here, because [`RwasmModule::new_verified`] exists to
+/// accept bytecode this crate did not produce.
+///
 /// [`ValueStack`]: super::ValueStack
+/// [`RwasmModule::new_verified`]: crate::RwasmModule::new_verified
 #[derive(Debug, Copy, Clone)]
 pub struct ValueStackPtr {
     src: *mut UntypedValue,
     ptr: *mut UntypedValue,
+    end: *mut UntypedValue,
+    out_of_bounds: bool,
 }
 
 unsafe impl Send for ValueStackPtr {}
 
-impl From<*mut UntypedValue> for ValueStackPtr {
-    #[inline]
-    fn from(ptr: *mut UntypedValue) -> Self {
-        Self { src: ptr, ptr }
-    }
-}
-
 impl ValueStackPtr {
-    pub fn new(ptr: *mut UntypedValue) -> ValueStackPtr {
-        Self { ptr, src: ptr }
+    /// Creates a [`ValueStackPtr`] addressing the `capacity` cells starting at `ptr`.
+    pub fn new(ptr: *mut UntypedValue, capacity: usize) -> ValueStackPtr {
+        Self {
+            src: ptr,
+            ptr,
+            end: ptr.wrapping_add(capacity),
+            out_of_bounds: false,
+        }
+    }
+
+    /// Returns `true` if some operation tried to address a cell outside the value stack.
+    #[inline]
+    pub fn is_out_of_bounds(self) -> bool {
+        self.out_of_bounds
+    }
+
+    /// Records an out-of-bounds access and parks the pointer on the stack base.
+    ///
+    /// # Note
+    ///
+    /// Parking keeps every follow-up operation harmless until the interpreter observes the flag
+    /// and traps.
+    #[cold]
+    #[inline]
+    pub(crate) fn mark_out_of_bounds(&mut self) {
+        self.out_of_bounds = true;
+        self.ptr = self.src;
+    }
+
+    /// Returns the number of cells between the stack base and the current pointer.
+    #[inline]
+    fn len(self) -> usize {
+        (self.ptr as usize - self.src as usize) / size_of::<UntypedValue>()
+    }
+
+    /// Returns the number of cells between the current pointer and the end of the stack.
+    #[inline]
+    fn spare(self) -> usize {
+        (self.end as usize - self.ptr as usize) / size_of::<UntypedValue>()
+    }
+
+    /// Returns the cell `depth` entries below the current pointer if it is addressable.
+    #[inline]
+    fn cell_back(&mut self, depth: usize) -> Option<*mut UntypedValue> {
+        if depth == 0 || depth > self.len() {
+            self.mark_out_of_bounds();
+            return None;
+        }
+        Some(self.ptr.wrapping_sub(depth))
     }
 
     /// Calculates the distance between two [`ValueStackPtr] in units of [`UntypedValue`].
     #[inline]
     pub fn offset_from(self, other: Self) -> isize {
-        // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `rwasm` codegen to never run out
-        //         of valid bounds using this method.
-        unsafe { self.ptr.offset_from(other.ptr) }
+        let distance = self.ptr as isize - other.ptr as isize;
+        distance / size_of::<UntypedValue>() as isize
     }
 
     /// Returns the [`UntypedValue`] at the current stack pointer.
     #[must_use]
     #[inline]
-    fn get(self) -> UntypedValue {
-        // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `rwasm` codegen to never run out
-        //         of valid bounds using this method.
+    fn get(&mut self) -> UntypedValue {
+        if self.ptr >= self.end {
+            self.mark_out_of_bounds();
+            return UntypedValue::default();
+        }
+        // SAFETY: the check above proves that `ptr` addresses a live cell of the value stack.
         unsafe { *self.ptr }
     }
 
     /// Writes `value` to the cell pointed at by [`ValueStackPtr`].
     #[inline]
-    fn set(self, value: UntypedValue) {
-        // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `rwasm` codegen to never run out
-        //         of valid bounds using this method.
-        *unsafe { &mut *self.ptr } = value;
+    fn set(&mut self, value: UntypedValue) {
+        if self.ptr >= self.end {
+            self.mark_out_of_bounds();
+            return;
+        }
+        // SAFETY: the check above proves that `ptr` addresses a live cell of the value stack.
+        unsafe { *self.ptr = value };
     }
 
     /// Returns a [`ValueStackPtr`] with a pointer value increased by `delta`.
@@ -413,7 +496,7 @@ impl ValueStackPtr {
     /// [`ValueStack`]: super::ValueStack
     #[inline]
     #[must_use]
-    pub fn last(self) -> UntypedValue {
+    pub fn last(&mut self) -> UntypedValue {
         self.nth_back(1)
     }
 
@@ -423,11 +506,16 @@ impl ValueStackPtr {
     ///
     /// Given a `depth` of 1 has the same effect as [`ValueStackPtr::last`].
     ///
-    /// A `depth` of 0 is invalid and undefined.
+    /// A `depth` of 0, or a depth reaching below the stack base, marks the pointer as out of
+    /// bounds and yields a default value instead of reading memory.
     #[inline]
     #[must_use]
-    pub fn nth_back(self, depth: usize) -> UntypedValue {
-        self.into_sub(depth).get()
+    pub fn nth_back(&mut self, depth: usize) -> UntypedValue {
+        match self.cell_back(depth) {
+            // SAFETY: `cell_back` only yields pointers to live cells of the value stack.
+            Some(cell) => unsafe { *cell },
+            None => UntypedValue::default(),
+        }
     }
 
     /// Writes `value` to the n-th [`UntypedValue`] from the back.
@@ -436,32 +524,34 @@ impl ValueStackPtr {
     ///
     /// Given a `depth` of 1 has the same effect as mutating [`ValueStackPtr::last`].
     ///
-    /// A `depth` of 0 is invalid and undefined.
+    /// A `depth` of 0, or a depth reaching below the stack base, marks the pointer as out of
+    /// bounds and discards the write.
     #[inline]
-    pub fn set_nth_back(self, depth: usize, value: UntypedValue) {
-        self.into_sub(depth).set(value)
+    pub fn set_nth_back(&mut self, depth: usize, value: UntypedValue) {
+        // SAFETY: `cell_back` only yields pointers to live cells of the value stack.
+        if let Some(cell) = self.cell_back(depth) {
+            unsafe { *cell = value }
+        }
     }
 
-    /// Bumps the [`ValueStackPtr`] of `self` by one.
+    /// Bumps the [`ValueStackPtr`] of `self` by `delta`.
     #[inline]
     fn inc_by(&mut self, delta: usize) {
-        // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `rwasm` codegen to never run out
-        //         of valid bounds using this method.
-        self.ptr = unsafe { self.ptr.add(delta) };
-        debug_assert!(self.ptr >= self.src, "stack underflow: {}", delta);
+        if delta > self.spare() {
+            self.mark_out_of_bounds();
+            return;
+        }
+        self.ptr = self.ptr.wrapping_add(delta);
     }
 
-    /// Decreases the [`ValueStackPtr`] of `self` by one.
+    /// Decreases the [`ValueStackPtr`] of `self` by `delta`.
     #[inline]
     fn dec_by(&mut self, delta: usize) {
-        // SAFETY: Within Wasm bytecode execution we are guaranteed by
-        //         Wasm validation and `rwasm` codegen to never run out
-        //         of valid bounds using this method.
-        self.ptr = unsafe { self.ptr.sub(delta) };
-        if self.ptr < self.src {
-            debug_assert!(self.ptr >= self.src, "stack underflow");
+        if delta > self.len() {
+            self.mark_out_of_bounds();
+            return;
         }
+        self.ptr = self.ptr.wrapping_sub(delta);
     }
 
     /// convert stack pointer to the address number
@@ -593,8 +683,8 @@ impl ValueStackPtr {
     where
         F: FnOnce(UntypedValue) -> UntypedValue,
     {
-        let last = self.into_sub(1);
-        last.set(f(last.get()))
+        let last = self.nth_back(1);
+        self.set_nth_back(1, f(last))
     }
 
     /// Evaluates the given closure `f` for the 2 top most stack values.
@@ -604,9 +694,8 @@ impl ValueStackPtr {
         F: FnOnce(UntypedValue, UntypedValue) -> UntypedValue,
     {
         let rhs = self.pop();
-        let last = self.into_sub(1);
-        let lhs = last.get();
-        last.set(f(lhs, rhs));
+        let lhs = self.nth_back(1);
+        self.set_nth_back(1, f(lhs, rhs));
     }
 
     /// Evaluates the given closure `f` for the 3 top most stack values.
@@ -616,9 +705,8 @@ impl ValueStackPtr {
         F: FnOnce(UntypedValue, UntypedValue, UntypedValue) -> UntypedValue,
     {
         let (e2, e3) = self.pop2();
-        let last = self.into_sub(1);
-        let e1 = last.get();
-        last.set(f(e1, e2, e3));
+        let e1 = self.nth_back(1);
+        self.set_nth_back(1, f(e1, e2, e3));
     }
 
     /// Evaluates the given fallible closure `f` for the top most stack value.
@@ -631,8 +719,8 @@ impl ValueStackPtr {
     where
         F: FnOnce(UntypedValue) -> Result<UntypedValue, TrapCode>,
     {
-        let last = self.into_sub(1);
-        last.set(f(last.get())?);
+        let last = self.nth_back(1);
+        self.set_nth_back(1, f(last)?);
         Ok(())
     }
 
@@ -647,9 +735,8 @@ impl ValueStackPtr {
         F: FnOnce(UntypedValue, UntypedValue) -> Result<UntypedValue, TrapCode>,
     {
         let rhs = self.pop();
-        let last = self.into_sub(1);
-        let lhs = last.get();
-        last.set(f(lhs, rhs)?);
+        let lhs = self.nth_back(1);
+        self.set_nth_back(1, f(lhs, rhs)?);
         Ok(())
     }
 
