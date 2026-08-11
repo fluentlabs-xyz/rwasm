@@ -87,8 +87,18 @@ impl Default for CompilationConfig {
 
 impl CompilationConfig {
     /// Returns the WebAssembly features configuration for the current instance.
+    ///
+    /// Every field is listed explicitly and `..Default::default()` is deliberately not used. The
+    /// validator decides which language the compiler is handed, and the translator implements a
+    /// strictly smaller set: an operator that validates but has no translation is skipped silently
+    /// and leaves the emulated value stack out of sync with the emitted code, which yields wrong
+    /// `DropKeep` amounts and `local.get`/`local.set` depths rather than an error. Inheriting
+    /// defaults would let a `wasmparser` upgrade that promotes a proposal to on-by-default widen
+    /// the accepted language without a change here; spelling the fields out means such an upgrade
+    /// fails to compile instead, and a new field has to be considered explicitly.
     pub fn wasm_features(&self) -> WasmFeatures {
         WasmFeatures {
+            // Proposals the translator implements
             mutable_global: true,
             saturating_float_to_int: true,
             sign_extension: true,
@@ -97,7 +107,18 @@ impl CompilationConfig {
             reference_types: true,
             tail_call: true,
             extended_const: true,
-            ..Default::default()
+            // Not a proposal: floats are translated, so they stay enabled
+            floats: true,
+            // Proposals the translator does not implement. `simd` in particular is on by default
+            // in wasmparser, which is what let `v128` operators reach the translator unhandled.
+            simd: false,
+            relaxed_simd: false,
+            threads: false,
+            multi_memory: false,
+            memory64: false,
+            exceptions: false,
+            component_model: false,
+            memory_control: false,
         }
     }
 

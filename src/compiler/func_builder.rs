@@ -202,9 +202,18 @@ macro_rules! impl_visit_operator {
     };
     ( @$proposal:ident $op:ident $({ $($arg:ident: $argty:ty),* })? => $visit:ident $($rest:tt)* ) => {
         // Wildcard match arm for all the other (yet) unsupported Wasm proposals.
-        fn $visit(&mut self $($(, $arg: $argty)*)?) -> Self::Output {
-            let offset = self.pos;
-            self.validator.visitor(offset).$visit($($($arg),*)?).map_err(::core::convert::Into::into)
+        //
+        // These operators are rejected rather than validated, because validating one without
+        // translating it advances the validator's operand stack while emitting no code and no
+        // `stack_height`/`stack_types` update. The desync is silent: it surfaces either as a panic
+        // in `compute_drop_keep` or, on a path that happens not to assert, as a wrong `DropKeep`
+        // and wrong local depths in an otherwise valid-looking module.
+        //
+        // `wasm_features` already denies every proposal that reaches this arm, so this is the
+        // second of two gates. It is what keeps the two lists from drifting apart again: any
+        // proposal enabled there but not implemented here fails loudly instead of miscompiling.
+        fn $visit(&mut self $($(, _: $argty)*)?) -> Self::Output {
+            Err(CompilationError::NotSupportedOpcode)
         }
         impl_visit_operator!($($rest)*);
     };
