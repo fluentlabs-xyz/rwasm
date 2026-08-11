@@ -87,10 +87,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let func_index: u32 = self.sp.pop_as();
         self.store.last_signature = Some(signature_idx);
         let instr_ref: u32 = self
-            .store
-            .tables
-            .get(&table)
-            .expect("rwasm: unresolved table index")
+            .resolve_table(table)
             .get_untyped(func_index)
             .ok_or(TrapCode::TableOutOfBounds)?
             .into();
@@ -141,10 +138,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let func_index: u32 = self.sp.pop_as();
         self.store.last_signature = Some(signature_idx);
         let instr_ref = self
-            .store
-            .tables
-            .get(&table)
-            .expect("rwasm: unresolved table index")
+            .resolve_table(table)
             .get_untyped(func_index)
             .map(|v| v.as_u32())
             .ok_or(TrapCode::TableOutOfBounds)?;

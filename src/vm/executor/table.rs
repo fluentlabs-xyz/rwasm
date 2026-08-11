@@ -1,14 +1,21 @@
 use crate::{ElementSegmentIdx, RwasmExecutor, TableEntity, TableIdx, TrapCode};
 
 impl<'a, T> RwasmExecutor<'a, T> {
+    /// Resolves a table by its index, materializing an empty one if it doesn't exist yet.
+    ///
+    /// Tables enter the store only when the module executes `TableGrow` (the translator emits one
+    /// per declared table), but a module is free to reference a table index it never grows, and
+    /// verification can't reject that because table indices carry no declaration.
+    /// Such a table is treated as a zero-length table, which matches Wasm semantics: `table.size`
+    /// returns 0 and every element access is bound-checked into `TrapCode::TableOutOfBounds`.
+    #[inline(always)]
+    pub(crate) fn resolve_table(&mut self, table_idx: TableIdx) -> &mut TableEntity {
+        self.store.tables.entry(table_idx).or_default()
+    }
+
     #[inline(always)]
     pub(crate) fn visit_table_size(&mut self, table_idx: TableIdx) {
-        let table_size = self
-            .store
-            .tables
-            .get(&table_idx)
-            .expect("rwasm: unresolved table segment")
-            .size();
+        let table_size = self.resolve_table(table_idx).size();
         self.sp.push_as(table_size);
         self.ip.add(1);
     }
@@ -17,7 +24,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     pub(crate) fn visit_table_grow(&mut self, table_idx: TableIdx) -> Result<(), TrapCode> {
         let (init, delta) = self.sp.pop2();
         let delta: u32 = delta.into();
-        let table = self.store.tables.entry(table_idx).or_default();
+        let table = self.resolve_table(table_idx);
         let result = table.grow_untyped(delta, init);
         self.sp.push_as(result);
         #[cfg(feature = "tracing")]
@@ -31,10 +38,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_table_fill(&mut self, table_idx: TableIdx) -> Result<(), TrapCode> {
         let (i, val, n) = self.sp.pop3();
-        self.store
-            .tables
-            .get_mut(&table_idx)
-            .expect("rwasm: missing table")
+        self.resolve_table(table_idx)
             .fill_untyped(i.into(), val, n.into())?;
         self.ip.add(1);
         Ok(())
@@ -44,10 +48,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     pub(crate) fn visit_table_get(&mut self, table_idx: TableIdx) -> Result<(), TrapCode> {
         let index = self.sp.pop();
         let value = self
-            .store
-            .tables
-            .get_mut(&table_idx)
-            .expect("rwasm: missing table")
+            .resolve_table(table_idx)
             .get_untyped(index.into())
             .ok_or(TrapCode::TableOutOfBounds)?;
         self.sp.push(value);
@@ -58,10 +59,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_table_set(&mut self, table_idx: TableIdx) -> Result<(), TrapCode> {
         let (index, value) = self.sp.pop2();
-        self.store
-            .tables
-            .get_mut(&table_idx)
-            .expect("rwasm: missing table")
+        self.resolve_table(table_idx)
             .set_untyped(index.into(), value)
             .map_err(|_| TrapCode::TableOutOfBounds)?;
         #[cfg(feature = "tracing")]
@@ -84,18 +82,19 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let dst_index = u32::from(d);
         // Query both tables and check if they are the same:
         if src_table_idx != dst_table_idx {
-            let [src, dst] = self
+            self.resolve_table(src_table_idx);
+            self.resolve_table(dst_table_idx);
+            // Both tables are materialized above, so the disjoint lookup always succeeds
+            let [Some(src), Some(dst)] = self
                 .store
                 .tables
                 .get_disjoint_mut([&src_table_idx, &dst_table_idx])
-                .map(|v| v.expect("rwasm: unresolved table segment"));
+            else {
+                return Err(TrapCode::TableOutOfBounds);
+            };
             TableEntity::copy(dst, dst_index, src, src_index, len)?;
         } else {
-            let src = self
-                .store
-                .tables
-                .get_mut(&src_table_idx)
-                .expect("rwasm: unresolved table segment");
+            let src = self.resolve_table(src_table_idx);
             src.copy_within(dst_index, src_index, len)?;
         }
         self.ip.add(1);
@@ -135,11 +134,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         if is_empty_segment {
             module_elements_section = &[];
         }
-        let table = self
-            .store
-            .tables
-            .get_mut(&table_idx)
-            .expect("rwasm: missing table");
+        let table = self.resolve_table(table_idx);
         table.init_untyped(dst_index, module_elements_section, src_index, len)?;
 
         self.ip.add(2);
