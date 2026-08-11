@@ -159,6 +159,10 @@ fn execute_one(data: &[u8]) -> Result<()> {
     gen_cfg.max_tables = 1;
     // Keep wasm-smith table limits inside rwasm runtime hard cap.
     gen_cfg.max_table_elements = rwasm::N_MAX_TABLE_SIZE as u64;
+    // Force several segments so `data.drop`/`elem.drop` sequences with descending indices
+    // are reachable, they used to truncate the dropped-segment bitset.
+    gen_cfg.min_data_segments = 4;
+    gen_cfg.min_element_segments = 4;
     gen_cfg.export_everything = true;
 
     STATS.wasm_smith_modules.fetch_add(1, SeqCst);
