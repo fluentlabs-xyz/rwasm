@@ -12,9 +12,9 @@ mod table;
 
 use crate::{
     types::{
-        AddressOffset, BlockFuel, BranchOffset, BranchTableTargets, CompiledFunc, DataSegmentIdx,
-        ElementSegmentIdx, GlobalIdx, LocalDepth, MaxStackHeight, Opcode, SignatureIdx, TableIdx,
-        UntypedValue,
+        codec::decode_section_vec, AddressOffset, BlockFuel, BranchOffset, BranchTableTargets,
+        CompiledFunc, DataSegmentIdx, ElementSegmentIdx, GlobalIdx, LocalDepth, MaxStackHeight,
+        Opcode, SignatureIdx, TableIdx, UntypedValue,
     },
     CompilationError, NumLocals, SysFuncIdx, TrapCode,
 };
@@ -393,12 +393,7 @@ impl Encode for InstructionSet {
 
 impl<Context> Decode<Context> for InstructionSet {
     fn decode<D: Decoder<Context = Context>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let length: u64 = Decode::decode(decoder)?;
-        let mut instr: Vec<Opcode> = Vec::with_capacity(length as usize);
-        for _ in 0..length as usize {
-            let opcode: Opcode = Decode::decode(decoder)?;
-            instr.push(opcode);
-        }
+        let instr = decode_section_vec(decoder)?;
         Ok(Self { instr })
     }
 }

@@ -1,4 +1,5 @@
 mod branch_offset;
+pub(crate) mod codec;
 mod constructor_params;
 mod error;
 mod func_ref;
