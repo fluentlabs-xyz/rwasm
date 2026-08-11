@@ -1,6 +1,6 @@
 [package]
 name = "rwasm"
-version = "0.4.6"
+version = "0.4.7"
 edition = "2021"
 description = "ZK-friendly WebAssembly runtime optimized for blockchain and zero-knowledge applications"
 license = "Apache-2.0"
@@ -73,6 +73,7 @@ cache-compiled-artifacts = ["wasmtime", "dep:directories"]
 # Test-only, never for production builds.
 e2e = []
 pooling-allocator = []
+# Using of full WASM mode doesn't guarantee execution equvivalence between rWasm and Wasmtime
 full-wasm-mode = ["wasmtime?/full-wasm-mode"]
 
 [[bench]]
