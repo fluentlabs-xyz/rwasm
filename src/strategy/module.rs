@@ -19,6 +19,13 @@ pub enum StrategyDefinition {
 }
 
 impl StrategyDefinition {
+    /// Compiles a wasm binary with whichever strategy the crate was built with (Wasmtime when the
+    /// `wasmtime` feature is on, the rwasm VM otherwise).
+    ///
+    /// Because the strategy is a build-time choice, pass a config whose fuel semantics don't
+    /// depend on it — [`CompilationConfig::default_strategy_compatible`] — rather than
+    /// [`CompilationConfig::default`], which enables rwasm-only fuel injections that the Wasmtime
+    /// path silently ignores.
     pub fn new(
         compilation_config: CompilationConfig,
         wasm_binary: impl AsRef<[u8]>,
@@ -41,6 +48,16 @@ impl StrategyDefinition {
         })
     }
 
+    /// Compiles a wasm binary for the Wasmtime strategy.
+    ///
+    /// # Panics
+    ///
+    /// Panics if Wasmtime rejects the binary. This is deliberate fail-fast on API misuse rather
+    /// than a recoverable error: the caller is expected to have run this crate's own
+    /// validation/compilation rules over the binary first (rwasm accepts a strict subset of what
+    /// Wasmtime accepts), so a binary that reaches this point and still fails to compile means the
+    /// caller skipped validation, and we'd rather crash loudly than let unvalidated input flow
+    /// further. Feed untrusted wasm through the rwasm validation path before calling this.
     #[cfg(feature = "wasmtime")]
     pub fn new_as_wasmtime(
         compilation_config: CompilationConfig,

@@ -35,6 +35,16 @@ impl<T: 'static> WasmtimeExecutor<T> {
             .ok_or(TrapCode::MemoryOutOfBounds)
     }
 
+    /// Creates an executor by instantiating an already-compiled Wasmtime module.
+    ///
+    /// # Panics
+    ///
+    /// Panics if linking or instantiation fails. This is deliberate fail-fast on API misuse: a
+    /// module produced by this crate's own compile path has already been validated against the
+    /// import linker, and start sections (the one way a valid module can trap during
+    /// instantiation) are rejected by default at compile time. So a failure here means the caller
+    /// paired a module with the wrong import linker or bypassed compilation/validation, and we'd
+    /// rather crash loudly than continue with a half-linked instance.
     pub fn new(
         module: wasmtime::Module,
         import_linker: Arc<ImportLinker>,

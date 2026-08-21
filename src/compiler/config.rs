@@ -47,10 +47,14 @@ pub struct CompilationConfig {
     /// Secure production configs enable this with fuel metering. Wasmtime
     /// replacement paths must either charge the same dynamic fuel or opt out
     /// explicitly after rejecting the divergent config at a higher layer.
+    ///
+    /// Note: This flag is not supported by wasmtime; see
+    /// [`CompilationConfig::default_strategy_compatible`].
     pub consume_fuel_for_bulk_ops: bool,
     /// Enable fuel metering for params and locals
     ///
-    /// Note: This flag is not supported by wasmtime
+    /// Note: This flag is not supported by wasmtime; see
+    /// [`CompilationConfig::default_strategy_compatible`].
     pub consume_fuel_for_params_and_locals: bool,
     /// Allow function types with funcref and externref (needed only for e2e testing suite, but
     /// practically inside a blockchain environment it's not possible)
@@ -65,6 +69,10 @@ pub struct CompilationConfig {
     pub max_allowed_memory_pages: u32,
 }
 
+/// The default config maximizes rwasm-side metering: it enables
+/// `consume_fuel_for_bulk_ops` and `consume_fuel_for_params_and_locals`, which only the rwasm
+/// translator implements. Use [`CompilationConfig::default_strategy_compatible`] when the module
+/// may execute on either strategy and fuel accounting must not depend on which one was picked.
 impl Default for CompilationConfig {
     fn default() -> Self {
         Self {
@@ -86,6 +94,35 @@ impl Default for CompilationConfig {
 }
 
 impl CompilationConfig {
+    /// Like [`CompilationConfig::default`], but with identical fuel semantics on the rwasm and
+    /// Wasmtime strategies.
+    ///
+    /// The plain default enables two fuel injections that only the rwasm translator implements:
+    /// dynamic bulk-op fuel (`consume_fuel_for_bulk_ops`) and params/locals fuel
+    /// (`consume_fuel_for_params_and_locals`). The Wasmtime engine ignores both — its
+    /// `rwasm-fuel-policy` schedule charges bulk ops a flat entity cost and charges nothing for
+    /// locals — so under [`crate::StrategyDefinition::new`] the same module burns different fuel
+    /// depending on which strategy the crate was built with. This constructor disables the
+    /// rwasm-only injections so both strategies charge from the same schedule.
+    ///
+    /// Use this whenever the produced module may run on either strategy (consensus-critical
+    /// paths); use [`CompilationConfig::default`] only when execution is pinned to the rwasm VM
+    /// and the extra metering is wanted.
+    pub fn default_strategy_compatible() -> Self {
+        Self {
+            consume_fuel_for_bulk_ops: false,
+            consume_fuel_for_params_and_locals: false,
+            ..Self::default()
+        }
+    }
+
+    /// Returns `true` if this config charges the same fuel on the rwasm and Wasmtime strategies.
+    ///
+    /// See [`CompilationConfig::default_strategy_compatible`] for which flags diverge.
+    pub fn is_strategy_compatible(&self) -> bool {
+        !self.consume_fuel_for_bulk_ops && !self.consume_fuel_for_params_and_locals
+    }
+
     /// Returns the WebAssembly features configuration for the current instance.
     ///
     /// Every field is listed explicitly and `..Default::default()` is deliberately not used. The

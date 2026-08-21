@@ -285,3 +285,27 @@ fn test_table_bulk_ops_compile_with_fuel_metering() {
     let consumed = fuel_limit - store.remaining_fuel().unwrap();
     assert!(consumed > FuelCosts::BASE as u64);
 }
+
+#[test]
+fn test_strategy_compatible_config_disables_rwasm_only_fuel() {
+    let default_config = CompilationConfig::default();
+    assert!(default_config.consume_fuel_for_bulk_ops);
+    assert!(default_config.consume_fuel_for_params_and_locals);
+    assert!(!default_config.is_strategy_compatible());
+
+    let compatible = CompilationConfig::default_strategy_compatible();
+    assert!(!compatible.consume_fuel_for_bulk_ops);
+    assert!(!compatible.consume_fuel_for_params_and_locals);
+    assert!(compatible.is_strategy_compatible());
+    // Everything the Wasmtime path does implement stays at the plain default.
+    assert_eq!(compatible.consume_fuel, default_config.consume_fuel);
+    assert_eq!(
+        compatible.builtins_consume_fuel,
+        default_config.builtins_consume_fuel
+    );
+    assert_eq!(compatible.code_snippets, default_config.code_snippets);
+    assert_eq!(
+        compatible.max_allowed_memory_pages,
+        default_config.max_allowed_memory_pages
+    );
+}
