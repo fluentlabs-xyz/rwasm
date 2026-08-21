@@ -62,6 +62,16 @@ impl RwasmModule {
         .into()
     }
 
+    /// Decodes one rWasm module from a trusted binary.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the binary doesn't decode. This is deliberate fail-fast on API misuse: this
+    /// entry point is for binaries this crate serialized itself, where a decode failure means the
+    /// caller corrupted or mixed up the payload, and crashing loudly beats propagating a
+    /// half-decoded module. For bytecode from outside sources use [`RwasmModule::new_checked`]
+    /// (encoding errors as `Result`) or [`RwasmModule::new_verified`] (encoding + structural
+    /// verification).
     pub fn new(sink: &[u8]) -> (Self, usize) {
         Self::new_checked(sink).unwrap_or_else(|_| unreachable!("rwasm: malformed rwasm binary"))
     }
@@ -108,6 +118,14 @@ impl RwasmModule {
         Ok(module)
     }
 
+    /// Serializes the module to its binary encoding.
+    ///
+    /// # Panics
+    ///
+    /// Panics if encoding fails, which is unreachable for any constructible module: every field
+    /// is a plain owned value with an infallible `bincode` encoding. Kept as a fail-fast guard so
+    /// that if a future field ever breaks that property, it crashes loudly here instead of
+    /// silently producing a truncated binary.
     pub fn serialize(&self) -> Vec<u8> {
         bincode::encode_to_vec(&*self.inner, bincode::config::legacy())
             .unwrap_or_else(|_| unreachable!("rwasm: failed to serialize module"))
