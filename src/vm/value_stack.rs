@@ -365,12 +365,9 @@ impl ValueStack {
 /// [`ValueStack`] in **all** build profiles. Bytecode reaching outside that window neither reads
 /// nor writes memory: the pointer is parked on the stack base and [`ValueStackPtr::
 /// is_out_of_bounds`] starts reporting `true`, which the interpreter turns into a
-/// [`TrapCode::StackOverflow`] before the next instruction runs. Relying on the translator to only
-/// emit valid stack offsets is not enough here, because [`RwasmModule::new_verified`] exists to
-/// accept bytecode this crate did not produce.
+/// [`TrapCode::StackOverflow`] before the next instruction runs.
 ///
 /// [`ValueStack`]: super::ValueStack
-/// [`RwasmModule::new_verified`]: crate::RwasmModule::new_verified
 #[derive(Debug, Copy, Clone)]
 pub struct ValueStackPtr {
     src: *mut UntypedValue,

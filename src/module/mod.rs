@@ -12,9 +12,6 @@ use bincode::{
 };
 use core::ops::Deref;
 
-mod verification;
-pub use verification::{RwasmModuleError, RwasmModuleVerificationError};
-
 /// Represents a compiled rWasm module.
 ///
 /// An `RwasmModule` encapsulates the executable code, static data, and element (function/table
@@ -69,9 +66,8 @@ impl RwasmModule {
     /// Panics if the binary doesn't decode. This is deliberate fail-fast on API misuse: this
     /// entry point is for binaries this crate serialized itself, where a decode failure means the
     /// caller corrupted or mixed up the payload, and crashing loudly beats propagating a
-    /// half-decoded module. For bytecode from outside sources use [`RwasmModule::new_checked`]
-    /// (encoding errors as `Result`) or [`RwasmModule::new_verified`] (encoding + structural
-    /// verification).
+    /// half-decoded module. For bytecode that should report encoding errors as `Result`, use
+    /// [`RwasmModule::new_checked`].
     pub fn new(sink: &[u8]) -> (Self, usize) {
         Self::new_checked(sink).unwrap_or_else(|_| unreachable!("rwasm: malformed rwasm binary"))
     }
@@ -83,7 +79,6 @@ impl RwasmModule {
     /// "Checked" refers to the binary encoding only: this performs **no** structural validation of
     /// the decoded module. Branch targets, call targets, segment indices, and stack offsets are all
     /// taken at face value, so a module accepted here can still trap at any point during execution.
-    /// Use [`RwasmModule::new_verified`] for bytecode that this crate did not produce itself.
     pub fn new_checked(sink: &[u8]) -> Result<(Self, usize), DecodeError> {
         let (inner, bytes_read): (RwasmModuleInner, usize) =
             bincode::decode_from_slice(sink, bincode::config::legacy())?;
@@ -101,20 +96,6 @@ impl RwasmModule {
         if bytes_read != sink.len() {
             return Err(DecodeError::Other("rwasm: trailing bytes after module"));
         }
-        Ok(module)
-    }
-
-    /// Decodes and explicitly verifies one rWasm module.
-    pub fn new_verified(sink: &[u8]) -> Result<(Self, usize), RwasmModuleError> {
-        let (module, bytes_read) = Self::new_checked(sink)?;
-        module.verify()?;
-        Ok((module, bytes_read))
-    }
-
-    /// Decodes and explicitly verifies exactly one rWasm module, rejecting trailing bytes.
-    pub fn new_verified_exact(sink: &[u8]) -> Result<Self, RwasmModuleError> {
-        let module = Self::new_checked_exact(sink)?;
-        module.verify()?;
         Ok(module)
     }
 

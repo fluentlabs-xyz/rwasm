@@ -20,6 +20,18 @@ normal execution and proving-oriented pipelines.
 
 ---
 
+## Trust boundary
+
+Serialized rWasm modules are an internal artifact of the trusted compilation pipeline. The VM assumes rWasm bytecode was
+produced from validated Wasm by a trusted rWasm compiler, with the expected feature set, import linker, fuel policy, and
+codegen identity.
+
+Do not accept arbitrary serialized rWasm bytes from users or network peers as a security boundary. For untrusted programs,
+validate and compile the original Wasm input through the rWasm compilation path, then distribute or execute only that
+trusted output.
+
+---
+
 ## Documentation
 
 Start with [`docs/README.md`](./docs/README.md).

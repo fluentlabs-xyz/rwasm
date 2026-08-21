@@ -3,21 +3,20 @@
 
 use rwasm::{
     always_failing_syscall_handler, instruction_set, ExecutionEngine, ImportLinker, InstructionSet,
-    RwasmModule, RwasmModuleBuilder, RwasmStore, TrapCode, Value,
+    RwasmModuleBuilder, RwasmStore, TrapCode, Value,
 };
 
 /// The index of a table that no test module ever grows.
 const UNGROWN_TABLE: u16 = 3;
 
-fn verified_module(code_section: InstructionSet, elem_section: &[u32]) -> RwasmModule {
-    let module = RwasmModuleBuilder::new(code_section)
+fn module(code_section: InstructionSet, elem_section: &[u32]) -> rwasm::RwasmModule {
+    RwasmModuleBuilder::new(code_section)
         .with_elem_section(elem_section)
-        .build();
-    RwasmModule::new_verified_exact(&module.serialize()).expect("module must pass verification")
+        .build()
 }
 
 fn execute(code_section: InstructionSet, result: &mut [Value]) -> Result<(), TrapCode> {
-    let module = verified_module(code_section, &[]);
+    let module = module(code_section, &[]);
     let engine = ExecutionEngine::new();
     let mut store = RwasmStore::new(
         ImportLinker::default().into(),
@@ -137,7 +136,7 @@ fn test_table_copy_within_ungrown_table_traps() {
 
 #[test]
 fn test_table_init_into_ungrown_table_traps() {
-    let module = verified_module(
+    let module = module(
         instruction_set! {
             I32Const(0) // d
             I32Const(0) // s
