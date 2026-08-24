@@ -16,16 +16,16 @@ use rand::Rng;
 /// | op_i64_rotl           |     +   |
 /// | op_i64_rotr           |     +   |
 /// | op_i64_eqz            |     +   |
-/// | op_i64_eq             |         |
-/// | op_i64_ne             |         |
-/// | op_i64_lt_s           |         |
-/// | op_i64_lt_u           |         |
-/// | op_i64_gt_s           |         |
-/// | op_i64_gt_u           |         |
-/// | op_i64_le_s           |         |
+/// | op_i64_eq             |     +   |
+/// | op_i64_ne             |     +   |
+/// | op_i64_lt_s           |     +   |
+/// | op_i64_lt_u           |     +   |
+/// | op_i64_gt_s           |     +   |
+/// | op_i64_gt_u           |     +   |
+/// | op_i64_le_s           |     +   |
 /// | op_i64_le_u           |     +   |
-/// | op_i64_ge_s           |         |
-/// | op_i64_ge_u           |         |
+/// | op_i64_ge_s           |     +   |
+/// | op_i64_ge_u           |     +   |
 /// | op_i32_wrap_i64       |         |
 /// | op_i64_extend_i32_s   |     +   |
 /// | op_i64_extend_i32_u   |     +   |
@@ -116,6 +116,31 @@ fn run_unary_test_case(
     assert_eq!(output.len(), 2);
     let r = (output[1] as u64) << 32 | output[0] as u64;
     assert_eq!(c, r);
+    assert!(
+        max_stack_height <= msh_allowed,
+        "MSH: {max_stack_height} <= {msh_allowed}"
+    );
+    Ok(())
+}
+
+fn run_binary_cmp_test_case(
+    is: &InstructionSet,
+    a: u64,
+    b: u64,
+    c: bool,
+    msh_allowed: u32,
+) -> Result<(), TrapCode> {
+    let (output, max_stack_height) = run_vm_instr(
+        is.clone(),
+        vec![a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32],
+    )?;
+    assert_eq!(output.len(), 1);
+    let r = output[0];
+    assert_eq!(
+        c as u32, r,
+        "f({a:#018x}, {b:#018x})={r}, but expected {}",
+        c as u32
+    );
     assert!(
         max_stack_height <= msh_allowed,
         "MSH: {max_stack_height} <= {msh_allowed}"
@@ -279,39 +304,72 @@ fn test_i64_sub() {
     test_case_u64(0xDEAD_BEEF_DEAD_BEEF, 0xCAFEBABE_CAFEBABE);
 }
 
-#[test]
-fn test_i64_le_u() {
-    let mut is = InstructionSet::new();
-    is.op_i64_le_u();
-
-    let test_case_u64 = |a: u64, b: u64| {
-        let c = (a <= b) as u64;
-        let (output, msh) = run_vm_instr(
-            is.clone(),
-            vec![a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32],
-        )
-        .unwrap();
-        assert_eq!(output.len(), 1);
-        let r = output[0] as u64;
-        assert_eq!(c, r);
-        assert!(msh <= InstructionSet::MSH_I64_LE_U);
-    };
-
-    // test_case_u64(0, 0); // 0 - 0 = 0
-    test_case_u64(1, 0); // 1 - 0 = 1
-    test_case_u64(0, 1); // 0 - 1 = underflow (wraps to max)
-    test_case_u64(0xFFFF_FFFFu64, 1); // lo only, no borrow
-    test_case_u64(0x1_0000_0000, 1); // hi only, low borrows
-    test_case_u64(u64::MAX, 1); // max - 1 = max - 1
-    test_case_u64(u64::MAX, u64::MAX); // max - max = 0
-    test_case_u64(0x8000_0000_0000_0000, 1); // min signed - 1
-    test_case_u64(0x8000_0000_0000_0000, 0x7FFF_FFFF_FFFF_FFFF);
-    test_case_u64(0x1_0000_0000, 0xFFFF_FFFF); // (2^32) - (2^32-1) = 1
-    test_case_u64(0x1_0000_0001, 0x1_0000_0000); // cross 32-bit boundary
-    test_case_u64(0x1234_5678_9ABC_DEF0, 0x1111_1111_1111_1111);
-    test_case_u64(0, u64::MAX); // 0 - max = 1 (wrap)
-    test_case_u64(0xDEAD_BEEF_DEAD_BEEF, 0xCAFEBABE_CAFEBABE);
+/// Deterministic boundary matrix for i64 comparisons: equal-hi/equal-lo pairs, sign boundaries
+/// at `i64::MIN`/`i64::MAX` and at `i32::MIN`/`i32::MAX` limb values, and `u32::MAX` lo limbs.
+fn i64_cmp_boundary_values() -> Vec<u64> {
+    vec![
+        0x0000_0000_0000_0000, // zero
+        0x0000_0000_0000_0001, // one
+        0x0000_0000_0000_0002,
+        0xFFFF_FFFF_FFFF_FFFF, // -1 / u64::MAX
+        0xFFFF_FFFF_FFFF_FFFE, // -2
+        0x8000_0000_0000_0000, // i64::MIN
+        0x8000_0000_0000_0001, // i64::MIN + 1
+        0x7FFF_FFFF_FFFF_FFFF, // i64::MAX
+        0x7FFF_FFFF_FFFF_FFFE, // i64::MAX - 1
+        0x0000_0000_FFFF_FFFF, // hi = 0, lo = u32::MAX
+        0x0000_0000_8000_0000, // hi = 0, lo = i32::MIN pattern
+        0x0000_0000_7FFF_FFFF, // hi = 0, lo = i32::MAX
+        0x0000_0001_0000_0000, // hi = 1, lo = 0
+        0x0000_0001_FFFF_FFFF, // hi = 1, lo = u32::MAX
+        0xFFFF_FFFF_0000_0000, // hi = -1, lo = 0
+        0xFFFF_FFFF_7FFF_FFFF, // hi = -1, lo = i32::MAX
+        0xFFFF_FFFF_8000_0000, // hi = -1, lo = i32::MIN pattern
+        0x8000_0000_FFFF_FFFF, // hi = i32::MIN pattern, lo = u32::MAX
+        0x7FFF_FFFF_0000_0000, // hi = i32::MAX, lo = 0
+        0x1234_5678_0000_0000, // equal-hi group with different lo limbs
+        0x1234_5678_9ABC_DEF0,
+        0x1234_5678_FFFF_FFFF,
+    ]
 }
+
+/// Every pair from the boundary matrix plus random values near points of interest.
+fn i64_cmp_test_values() -> Vec<u64> {
+    let mut values = i64_cmp_boundary_values();
+    values.extend(generate_random_numbers(8));
+    values.sort_unstable();
+    values.dedup();
+    values
+}
+
+macro_rules! test_i64_cmp {
+    ($test_name:ident, $op:ident, $msh:ident, |$a:ident, $b:ident| $expected:expr) => {
+        #[test]
+        fn $test_name() {
+            let mut is = InstructionSet::new();
+            is.$op();
+            let test_case = |$a: u64, $b: u64| {
+                run_binary_cmp_test_case(&is, $a, $b, $expected, InstructionSet::$msh).unwrap();
+            };
+            pairwise_fuzzing_test(test_case, i64_cmp_test_values());
+        }
+    };
+}
+
+test_i64_cmp!(test_i64_eq, op_i64_eq, MSH_I64_EQ, |a, b| a == b);
+test_i64_cmp!(test_i64_ne, op_i64_ne, MSH_I64_NE, |a, b| a != b);
+test_i64_cmp!(test_i64_lt_s, op_i64_lt_s, MSH_I64_LT_S, |a, b| (a as i64)
+    < (b as i64));
+test_i64_cmp!(test_i64_lt_u, op_i64_lt_u, MSH_I64_LT_U, |a, b| a < b);
+test_i64_cmp!(test_i64_gt_s, op_i64_gt_s, MSH_I64_GT_S, |a, b| (a as i64)
+    > (b as i64));
+test_i64_cmp!(test_i64_gt_u, op_i64_gt_u, MSH_I64_GT_U, |a, b| a > b);
+test_i64_cmp!(test_i64_le_s, op_i64_le_s, MSH_I64_LE_S, |a, b| (a as i64)
+    <= (b as i64));
+test_i64_cmp!(test_i64_le_u, op_i64_le_u, MSH_I64_LE_U, |a, b| a <= b);
+test_i64_cmp!(test_i64_ge_s, op_i64_ge_s, MSH_I64_GE_S, |a, b| (a as i64)
+    >= (b as i64));
+test_i64_cmp!(test_i64_ge_u, op_i64_ge_u, MSH_I64_GE_U, |a, b| a >= b);
 
 #[test]
 fn test_i64_add() {
@@ -1310,6 +1368,65 @@ fn run_i64_comparation_op(op: &str, a: i64, b: i64, expected: bool) {
         a,
         b
     );
+}
+
+/// Runs every i64 compare through the full wasm -> rwasm pipeline (default config, so the
+/// snippet-call path) over the boundary matrix, checking against native Rust semantics.
+#[test]
+fn test_i64_compares_e2e_boundary_matrix() {
+    type CmpFn = fn(i64, i64) -> bool;
+    let ops: &[(&str, CmpFn)] = &[
+        ("i64.eq", |a, b| a == b),
+        ("i64.ne", |a, b| a != b),
+        ("i64.lt_s", |a, b| a < b),
+        ("i64.lt_u", |a, b| (a as u64) < (b as u64)),
+        ("i64.gt_s", |a, b| a > b),
+        ("i64.gt_u", |a, b| (a as u64) > (b as u64)),
+        ("i64.le_s", |a, b| a <= b),
+        ("i64.le_u", |a, b| (a as u64) <= (b as u64)),
+        ("i64.ge_s", |a, b| a >= b),
+        ("i64.ge_u", |a, b| (a as u64) >= (b as u64)),
+    ];
+    let values = i64_cmp_boundary_values();
+    for (op, expected_fn) in ops {
+        let wat_source = format!(
+            r#"
+(module
+  (func (export "main") (param i64 i64) (result i32)
+    local.get 0
+    local.get 1
+    {op}
+  )
+)
+"#,
+        );
+        let wasm_binary = wat::parse_str(&wat_source).unwrap();
+        let config = CompilationConfig::default()
+            .with_entrypoint_name("main".into())
+            .with_allow_malformed_entrypoint_func_type(true);
+        let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+        let mut store = RwasmStore::<()>::default();
+        let engine = ExecutionEngine::default();
+        for &a in &values {
+            for &b in &values {
+                let (a, b) = (a as i64, b as i64);
+                let mut result = [Value::I32(0); 1];
+                engine
+                    .execute(
+                        &mut store,
+                        &rwasm_module,
+                        &[Value::I64(a), Value::I64(b)],
+                        &mut result,
+                    )
+                    .unwrap();
+                assert_eq!(
+                    result[0].i32().unwrap(),
+                    expected_fn(a, b) as i32,
+                    "mismatch for {op} with inputs ({a:#018x}, {b:#018x})"
+                );
+            }
+        }
+    }
 }
 
 #[test]
