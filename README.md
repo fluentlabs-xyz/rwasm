@@ -2,11 +2,12 @@
 
 [![codecov](https://codecov.io/gh/fluentlabs-xyz/rwasm/graph/badge.svg?token=9T2PLQQW4L)](https://codecov.io/gh/fluentlabs-xyz/rwasm)
 
-`rwasm` is a deterministic reduced WebAssembly format + runtime stack for execution environments that care about *
-*performance**, **predictability**, and **proof-friendliness**.
+rWasm is a reduced WebAssembly format and runtime stack for execution environments that care about **performance**,
+**predictability**, and **proof-friendliness**.
 
-It is designed to be **ZK-friendly**: execution semantics and representation choices aim to stay efficient both for
-normal execution and proving-oriented pipelines.
+Given identical rWasm bytecode, inputs, and runtime limits, the VM core executes deterministically when host imports are
+deterministic. It is designed to be **ZK-friendly**: execution semantics and representation choices aim to remain
+efficient for both ordinary execution and proving-oriented pipelines.
 
 ---
 
@@ -14,21 +15,22 @@ normal execution and proving-oriented pipelines.
 
 - Wasm → rWasm compilation pipeline
 - rWasm opcode model and module encoding
-- native rWasm VM runtime with fuel support
-- strategy abstraction for native execution and optional Wasmtime backend
-- host import/syscall integration surfaces
+- built-in rWasm interpreter with fuel support
+- execution strategy abstraction for the rWasm VM and Wasmtime backend (`wasmtime` is enabled by default)
+- interfaces for host imports and syscalls
 
 ---
 
 ## Trust boundary
 
-Serialized rWasm modules are an internal artifact of the trusted compilation pipeline. The VM assumes rWasm bytecode was
-produced from validated Wasm by a trusted rWasm compiler, with the expected feature set, import linker, fuel policy, and
-codegen identity.
+Serialized rWasm modules are trusted artifacts of the compilation pipeline. The VM assumes rWasm bytecode was produced
+from validated Wasm by a trusted rWasm compiler using the expected feature set, import linker, fuel policy, and codegen
+identity.
 
-Do not accept arbitrary serialized rWasm bytes from users or network peers as a security boundary. For untrusted programs,
-validate and compile the original Wasm input through the rWasm compilation path, then distribute or execute only that
-trusted output.
+Do not treat arbitrary serialized rWasm bytes received from users or network peers as trusted input. Decoding validates
+only the binary encoding, not the module structure, and the codegen identity is not embedded in the wire format. For
+untrusted programs, validate and compile the original Wasm input locally. If a compiled rWasm module is distributed, the
+host must verify its integrity and provenance and check its accompanying codegen identity before execution.
 
 ---
 
@@ -52,16 +54,17 @@ Core docs:
 
 ### Prerequisites
 
-- Rust stable
-- Rust nightly `nightly-2025-09-20`
-- wasm target `wasm32-unknown-unknown` on both toolchains
-- `clang`, `libclang-dev`, `pkg-config`
-- initialized git submodules
+- `rustup` with the `1.93` and `nightly-2025-09-20` toolchains installed
+- the `wasm32-unknown-unknown` target installed for both toolchains
+- a POSIX-compatible environment with `make`
+- `clang`, `libclang`, and `pkg-config` (package names vary by platform; on Debian and Ubuntu, the `libclang`
+  development package is named `libclang-dev`)
+- Git
 
 ### Setup
 
 ```bash
-rustup target add wasm32-unknown-unknown
+rustup +1.93 target add wasm32-unknown-unknown
 rustup +nightly-2025-09-20 target add wasm32-unknown-unknown
 git submodule update --init --recursive
 ```
@@ -80,23 +83,31 @@ make test
 
 `Cargo.toml` defines the runtime surface via features. Important points:
 
-- default enables `std`, `wasmtime`
-- `fpu` exists as a feature-gated surface in code
-- FPU opcodes are currently not treated as production-facing opcode surface in docs (kept mainly for testsuite/internal
-  compatibility)
+- The default feature set enables `std` and `wasmtime`; `StrategyDefinition::new` therefore selects Wasmtime by default.
+- Consensus-sensitive integrations that may execute with either backend must use a strategy-compatible configuration,
+  such as `CompilationConfig::default_strategy_compatible()`, so fuel accounting does not depend on the selected
+  strategy.
+- `fpu` is a test/fuzz-only feature that enables compiler emission and execution of floating-point opcodes. It is
+  disabled by default and must not be enabled in production. Enabling it can change emitted rWasm bytecode and module
+  hashes.
 
-When integrating in production, pin exact feature set and toolchain.
+When integrating in production, pin the exact Cargo feature set, toolchain, compilation configuration, and codegen
+identity.
 
 ---
 
 ## Repository layout
 
-- `src/` — compiler, module model, opcode types, VM, strategy layer
-- `e2e/` — end-to-end harnesses and testsuite integration
-- `snippets/` — snippet fixtures/tests (nightly path)
-- `examples/` — sample modules/programs
+- `src/` — compiler, module model, opcode types, VM, strategy layer, and Wasmtime integration
+- `tests/` — integration and regression tests
+- `e2e/` — end-to-end harnesses and WebAssembly testsuite integration
+- `snippets/` — snippet fixtures and tests using the pinned nightly toolchain
+- `fuzz/` — fuzzing targets
+- `examples/` — sample modules and programs
 - `benches/` — Criterion benchmarks
-- `.github/workflows/` — CI/CD workflows
+- `docs/` — technical documentation
+- `audits/` — historical audit reports
+- `.github/workflows/` — CI and publishing workflows
 
 ---
 
