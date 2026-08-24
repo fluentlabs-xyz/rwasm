@@ -78,6 +78,27 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.sp.push_i64(res);
         self.ip.add(1);
     }
+
+    pub(crate) fn visit_i32_and64(&mut self) {
+        let rhs = self.sp.pop_i64();
+        let lhs = self.sp.pop_i64();
+        self.sp.push_i64(lhs & rhs);
+        self.ip.add(1);
+    }
+
+    pub(crate) fn visit_i32_or64(&mut self) {
+        let rhs = self.sp.pop_i64();
+        let lhs = self.sp.pop_i64();
+        self.sp.push_i64(lhs | rhs);
+        self.ip.add(1);
+    }
+
+    pub(crate) fn visit_i32_xor64(&mut self) {
+        let rhs = self.sp.pop_i64();
+        let lhs = self.sp.pop_i64();
+        self.sp.push_i64(lhs ^ rhs);
+        self.ip.add(1);
+    }
 }
 
 macro_rules! impl_visit_fallible_binary {
