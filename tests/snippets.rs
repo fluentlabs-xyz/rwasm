@@ -732,6 +732,69 @@ fn test_i64_shl() {
     test_case_u64(0x7FFFFFFFFFFFFFFF, 1);
 }
 
+/// Exhaustive shift-amount sweep for every shift/rotate op: all amounts 0..=127 (covering the
+/// modulo-64 masking) plus amounts with a non-zero high limb, against native u64 semantics.
+#[test]
+fn test_i64_shift_rotate_exhaustive() {
+    let patterns: [u64; 10] = [
+        0,
+        1,
+        u64::MAX,
+        0x8000000000000000,
+        0x0000000180000001,
+        0x123456789ABCDEF0,
+        0xAAAAAAAAAAAAAAAA,
+        0x00000000FFFFFFFF,
+        0xFFFFFFFF00000000,
+        0xDEADBEEFCAFEBABE,
+    ];
+    type ShiftOp = (fn(&mut InstructionSet), fn(u64, u32) -> u64, u32);
+    let ops: [ShiftOp; 5] = [
+        (
+            InstructionSet::op_i64_shl,
+            |a, n| a.wrapping_shl(n),
+            InstructionSet::MSH_I64_SHL,
+        ),
+        (
+            InstructionSet::op_i64_shr_u,
+            |a, n| a.wrapping_shr(n),
+            InstructionSet::MSH_I64_SHR_U,
+        ),
+        (
+            InstructionSet::op_i64_shr_s,
+            |a, n| (a as i64).wrapping_shr(n) as u64,
+            InstructionSet::MSH_I64_SHR_S,
+        ),
+        (
+            InstructionSet::op_i64_rotl,
+            |a, n| a.rotate_left(n & 0x3F),
+            InstructionSet::MSH_I64_ROTL,
+        ),
+        (
+            InstructionSet::op_i64_rotr,
+            |a, n| a.rotate_right(n & 0x3F),
+            InstructionSet::MSH_I64_ROTR,
+        ),
+    ];
+    for (emitter, native, msh) in ops {
+        let mut is = InstructionSet::new();
+        emitter(&mut is);
+        let test_case = |a: u64, b: u64| {
+            let c = native(a, (b & 0x3F) as u32);
+            run_binary_test_case(&is, a, b, c, msh).unwrap();
+        };
+        for a in patterns {
+            for b in 0..=127u64 {
+                test_case(a, b);
+            }
+            // the high limb of the shift amount must be ignored
+            test_case(a, 0x0000000100000005);
+            test_case(a, 0xFFFFFFFF00000021);
+            test_case(a, u64::MAX);
+        }
+    }
+}
+
 #[test]
 fn test_i64_clz() {
     let mut is = InstructionSet::new();
