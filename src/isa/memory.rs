@@ -1,5 +1,6 @@
 use crate::{
-    AddressOffset, DataSegmentIdx, I64ValueSplit, InstructionSet, TrapCode, N_BYTES_PER_MEMORY_PAGE,
+    AddressOffset, DataSegmentIdx, I64ValueSplit, InstructionSet, Opcode, TrapCode, UntypedValue,
+    N_BYTES_PER_MEMORY_PAGE,
 };
 use rwasm_fuel_policy::{MEMORY_BYTES_PER_FUEL, MEMORY_BYTES_PER_FUEL_LOG2};
 
@@ -128,8 +129,17 @@ impl InstructionSet {
     /// Max stack height: 2
     pub fn op_i64_const(&mut self, value: i64) {
         let (lo, hi) = value.split_into_i32_tuple();
-        self.op_i32_const(lo); // [lo]
-        self.op_i32_const(hi); // [hi, lo]
+        let lo_imm = UntypedValue::from_bits(lo as u32);
+        // constants whose high limb is derivable from the low one fit a single 8-byte opcode;
+        // only full-width 64-bit constants keep the two-instruction lowering
+        if hi == lo >> 31 {
+            self.push(Opcode::I64Const32S(lo_imm));
+        } else if hi == 0 {
+            self.push(Opcode::I64Const32U(lo_imm));
+        } else {
+            self.op_i32_const(lo); // [lo]
+            self.op_i32_const(hi); // [hi, lo]
+        }
     }
 
     /// Max stack height: 2

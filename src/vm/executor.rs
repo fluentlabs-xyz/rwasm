@@ -250,6 +250,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
             GlobalSet(imm) => self.visit_global_set(imm),
             RefFunc(imm) => self.visit_ref_func(imm),
             I32Const(imm) => self.visit_i32_const(imm),
+            I64Const32S(imm) => self.visit_i64_const32_s(imm),
+            I64Const32U(imm) => self.visit_i64_const32_u(imm),
 
             I32Eqz => self.visit_i32_eqz(),
             I32Eq => self.visit_i32_eq(),

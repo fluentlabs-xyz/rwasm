@@ -54,6 +54,21 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     #[inline(always)]
+    pub(crate) fn visit_i64_const32_s(&mut self, lo: UntypedValue) {
+        let hi = ((lo.to_bits() as i32) >> 31) as u32;
+        self.sp.push(lo);
+        self.sp.push(UntypedValue::from_bits(hi));
+        self.ip.add(1);
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_i64_const32_u(&mut self, lo: UntypedValue) {
+        self.sp.push(lo);
+        self.sp.push(UntypedValue::from_bits(0));
+        self.ip.add(1);
+    }
+
+    #[inline(always)]
     pub(crate) fn visit_bulk_const(&mut self, imm: NumLocals) {
         // TODO(dmitry123): We can optimize it, but need to support bulk stack reset
         for _ in 0..imm {
