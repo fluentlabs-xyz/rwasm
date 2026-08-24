@@ -4044,7 +4044,7 @@ impl InstructionTranslator {
             if max_stack_height > 0 {
                 builder.stack_height.pop_n(max_stack_height);
             }
-            snippet.emit(&mut builder.alloc.instruction_set);
+            snippet.emit_inline(&mut builder.alloc.instruction_set);
             Ok(())
         })
     }

@@ -1,13 +1,11 @@
 mod add_sub;
+pub(crate) mod asm;
 mod bitwise;
 mod compare;
 mod conv;
-mod div_s;
-mod div_u;
+mod div_rem;
 mod memory;
 mod mul;
-mod rem_s;
-mod rem_u;
 mod table;
 
 use crate::{
