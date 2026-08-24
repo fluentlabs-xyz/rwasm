@@ -119,6 +119,9 @@ This document is the canonical opcode inventory for `rwasm`.
 | 81 | `I32Add64` | — | — |
 | 82 | `BulkConst` | `NumLocals` | — |
 | 83 | `BulkDrop` | `NumLocals` | — |
+| 84 | `I32And64` | — | — |
+| 85 | `I32Or64` | — | — |
+| 86 | `I32Xor64` | — | — |
 
 ### fpu
 

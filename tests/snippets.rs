@@ -80,7 +80,8 @@ fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Result<(Vec<u32>, u
         .iter()
         .map(|v| v.as_u32())
         .collect::<Vec<_>>();
-    let msh = value_stack.max_stack_height() - inputs_len;
+    // an in-place body can keep the stack at or below the input height for its whole run
+    let msh = value_stack.max_stack_height().saturating_sub(inputs_len);
     Ok((output, msh as u32))
 }
 

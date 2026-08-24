@@ -183,6 +183,9 @@ define_opcode_enum! {
     I32Add64 => 81u32,
     BulkConst(locals: NumLocals) => 82u32,
     BulkDrop(locals: NumLocals) => 83u32,
+    I32And64 => 84u32,
+    I32Or64 => 85u32,
+    I32Xor64 => 86u32,
 
     // fpu
     @fpu F32Load(offset: AddressOffset) => 0u32,
@@ -625,6 +628,9 @@ mod tests {
             Opcode::I32Add64,
             Opcode::BulkConst(3),
             Opcode::BulkDrop(3),
+            Opcode::I32And64,
+            Opcode::I32Or64,
+            Opcode::I32Xor64,
         ];
         for (expected, opcode) in opcodes.iter().enumerate() {
             assert_eq!(opcode.code(), expected as u32, "{opcode:#}");

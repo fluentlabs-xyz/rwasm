@@ -4,9 +4,9 @@ impl InstructionSet {
     pub const MSH_I64_CLZ: u32 = 3;
     pub const MSH_I64_CTZ: u32 = 3;
     pub const MSH_I64_POPCNT: u32 = 1;
-    pub const MSH_I64_AND: u32 = 1;
-    pub const MSH_I64_OR: u32 = 1;
-    pub const MSH_I64_XOR: u32 = 1;
+    pub const MSH_I64_AND: u32 = 0;
+    pub const MSH_I64_OR: u32 = 0;
+    pub const MSH_I64_XOR: u32 = 0;
     pub const MSH_I64_SHL: u32 = 9;
     pub const MSH_I64_SHR_S: u32 = 21;
     pub const MSH_I64_SHR_U: u32 = 21;
@@ -54,34 +54,19 @@ impl InstructionSet {
         self.op_i32_const(0);
     }
 
-    /// Max stack height: 1
+    /// Max stack height: 0
     pub fn op_i64_and(&mut self) {
-        self.op_local_get(3);
-        self.op_i32_and();
-        self.op_local_set(2);
-        self.op_local_get(3);
-        self.op_i32_and();
-        self.op_local_set(2);
+        self.op_i32_and64();
     }
 
-    /// Max stack height: 1
+    /// Max stack height: 0
     pub fn op_i64_or(&mut self) {
-        self.op_local_get(3);
-        self.op_i32_or();
-        self.op_local_set(2);
-        self.op_local_get(3);
-        self.op_i32_or();
-        self.op_local_set(2);
+        self.op_i32_or64();
     }
 
-    /// Max stack height: 1
+    /// Max stack height: 0
     pub fn op_i64_xor(&mut self) {
-        self.op_local_get(3);
-        self.op_i32_xor();
-        self.op_local_set(2);
-        self.op_local_get(3);
-        self.op_i32_xor();
-        self.op_local_set(2);
+        self.op_i32_xor64();
     }
 
     /// Max stack height: 9
