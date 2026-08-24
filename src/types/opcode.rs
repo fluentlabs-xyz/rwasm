@@ -554,6 +554,18 @@ mod tests {
     }
 
     #[test]
+    fn test_i64_const32_display() {
+        assert_eq!(
+            format!("{}", Opcode::I64Const32S(5u32.into())),
+            "I64Const32S(5)"
+        );
+        assert_eq!(
+            format!("{}", Opcode::I64Const32U(5u32.into())),
+            "I64Const32U(5)"
+        );
+    }
+
+    #[test]
     fn test_i64_const32_opcode_encoding() {
         for (opcode, code) in [
             (Opcode::I64Const32S(0xAABB_CCDDu32.into()), 88u32),
