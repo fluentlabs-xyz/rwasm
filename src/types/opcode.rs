@@ -186,6 +186,7 @@ define_opcode_enum! {
     I32And64 => 84u32,
     I32Or64 => 85u32,
     I32Xor64 => 86u32,
+    I32Sub64 => 87u32,
 
     // fpu
     @fpu F32Load(offset: AddressOffset) => 0u32,
@@ -631,6 +632,7 @@ mod tests {
             Opcode::I32And64,
             Opcode::I32Or64,
             Opcode::I32Xor64,
+            Opcode::I32Sub64,
         ];
         for (expected, opcode) in opcodes.iter().enumerate() {
             assert_eq!(opcode.code(), expected as u32, "{opcode:#}");
