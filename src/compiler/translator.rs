@@ -4013,9 +4013,45 @@ impl InstructionTranslator {
         })
     }
 
+    /// Expands a snippet body inline when code snippets are disabled.
+    ///
+    /// The stack effect must follow the snippet's function type: the comparison
+    /// snippets consume two `i64` values but produce an `i32`, so modeling them
+    /// as a plain binary operator (result type = operand type) corrupts
+    /// `stack_types` and every `local.*` depth derived from it afterward.
+    fn translate_inline_snippet(&mut self, snippet: Snippet) -> Result<(), CompilationError> {
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+            let func_type = snippet.orig_func_type();
+            for param in func_type.params().iter().rev() {
+                let popped_type = builder.alloc.stack_types.pop().unwrap();
+                debug_assert_eq!(*param, popped_type);
+            }
+            for result in func_type.results() {
+                builder.alloc.stack_types.push(*result);
+            }
+            // the inline body needs scratch space on top of its operands
+            let max_stack_height = snippet.max_stack_height();
+            if max_stack_height > 0 {
+                builder.stack_height.push_n(max_stack_height);
+            }
+            for param in func_type.params() {
+                builder.stack_height.pop_type(*param);
+            }
+            for result in func_type.results() {
+                builder.stack_height.push_type(*result);
+            }
+            if max_stack_height > 0 {
+                builder.stack_height.pop_n(max_stack_height);
+            }
+            snippet.emit(&mut builder.alloc.instruction_set);
+            Ok(())
+        })
+    }
+
     fn translate_to_snippet_call(&mut self, snippet: Snippet) -> Result<(), CompilationError> {
         if !self.with_code_snippets {
-            return self.translate_binary(snippet.emitter(), snippet.max_stack_height());
+            return self.translate_inline_snippet(snippet);
         }
 
         self.translate_if_reachable(|builder| {
