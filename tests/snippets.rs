@@ -48,8 +48,8 @@ use rand::Rng;
 /// | op_i64_const          |     +   |
 /// | op_memory_grow_checked|         |
 /// | op_i64_mul            |         |
-/// | op_i64_rem_s          |         |
-/// | op_i64_rem_u          |         |
+/// | op_i64_rem_s          |     +   |
+/// | op_i64_rem_u          |     +   |
 /// |-----------------------|---------|
 use rwasm::{
     CallStack, CompilationConfig, ExecutionEngine, InstructionSet, RwasmExecutor, RwasmModule,
@@ -59,6 +59,25 @@ use std::{
     fmt::Debug,
     ops::{BitAnd, BitOr, BitXor, Shl, Shr},
 };
+
+/// Links a body that calls the shared `udivmod64` snippet: appends the core body after the
+/// wrapper and patches the unresolved `CallInternal` placeholders to its instruction offset
+/// (in a hand-built module, `CallInternal` immediates are raw code offsets). The core's final
+/// `Return` is appended by `run_vm_instr`.
+fn link_udivmod64(mut is: InstructionSet) -> InstructionSet {
+    use rwasm::{Opcode, SNIPPET_FUNC_IDX_UNRESOLVED};
+    is.op_return();
+    let core_offset = is.len() as u32;
+    is.op_udivmod64();
+    for opcode in is.iter_mut() {
+        if let Opcode::CallInternal(func_idx) = opcode {
+            if *func_idx == SNIPPET_FUNC_IDX_UNRESOLVED {
+                *func_idx = core_offset;
+            }
+        }
+    }
+    is
+}
 
 fn run_vm_instr(mut is: InstructionSet, inputs: Vec<u32>) -> Result<(Vec<u32>, u32), TrapCode> {
     is.op_return();
@@ -403,6 +422,7 @@ fn test_i64_add() {
 fn test_i64_div_s() {
     let mut is = InstructionSet::new();
     is.op_i64_div_s();
+    let is = link_udivmod64(is);
 
     let test_case_i64 = |a: i64, b: i64| {
         let c = a.wrapping_div(b);
@@ -463,12 +483,28 @@ fn test_i64_div_s() {
     test_case_i64(100, -7);
     test_case_i64(i64::MIN, i64::MIN);
     test_case_i64(i64::MAX, i64::MAX);
+    // 2^32 +/- 1 boundaries, mixed signs
+    test_case_i64(0x1_0000_0001, 0xFFFF_FFFF);
+    test_case_i64(-0x1_0000_0001, 0xFFFF_FFFF);
+    test_case_i64(0x1_0000_0001, -0xFFFF_FFFF);
+    test_case_i64(-0x1_0000_0001, -0xFFFF_FFFF);
+    test_case_i64(-0x1_0000_0000, 0x1_0000_0000);
+
+    pairwise_fuzzing_test(
+        |a, b| {
+            if b != 0 && !(a == i64::MIN && b == -1) {
+                test_case_i64(a, b)
+            }
+        },
+        generate_random_numbers(30).iter().map(|v| *v as i64),
+    );
 }
 
 #[test]
 fn test_i64_div_u() {
     let mut is = InstructionSet::new();
     is.op_i64_div_u();
+    let is = link_udivmod64(is);
 
     let test_case_i64 = |a: u64, b: u64| {
         let c = a.wrapping_div(b);
@@ -501,12 +537,35 @@ fn test_i64_div_u() {
     test_case_i64(0x0000_0001_0000_0000, 0x100);
     test_case_i64(9223372036854775807, 3707827967);
     test_case_i64(15602808788219557311, 9181438499313657906);
+    // 2^32 +/- 1 boundaries
+    test_case_i64(0xFFFF_FFFF, 0xFFFF_FFFF);
+    test_case_i64(0x1_0000_0000, 0xFFFF_FFFF);
+    test_case_i64(0x1_0000_0001, 0xFFFF_FFFF);
+    test_case_i64(0xFFFF_FFFF, 0x1_0000_0000);
+    test_case_i64(0xFFFF_FFFF, 0x1_0000_0001);
+    test_case_i64(0x1_0000_0000, 0x1_0000_0000);
+    test_case_i64(0x1_0000_0001, 0x1_0000_0000);
+    test_case_i64(0x1_0000_0000, 0x1_0000_0001);
+    test_case_i64(u64::MAX, 0xFFFF_FFFF);
+    test_case_i64(u64::MAX, 0x1_0000_0000);
+    test_case_i64(u64::MAX, 0x1_0000_0001);
+    test_case_i64(u64::MAX - 1, u64::MAX - 1);
+
+    pairwise_fuzzing_test(
+        |a, b| {
+            if b != 0 {
+                test_case_i64(a, b)
+            }
+        },
+        generate_random_numbers(30),
+    );
 }
 
 #[test]
 fn test_i64_rem_s() {
     let mut is = InstructionSet::new();
     is.op_i64_rem_s();
+    let is = link_udivmod64(is);
 
     let test_case_i64 = |a: i64, b: i64| {
         let c = a.wrapping_rem(b);
@@ -546,15 +605,74 @@ fn test_i64_rem_s() {
     test_case_i64(i64::MIN, 2);
     test_case_i64(i64::MIN, -1); // a special: Rust defines MIN % -1 = ;
     test_case_i64(i64::MIN, i64::MAX);
+    test_case_i64(i64::MIN, 1);
+    test_case_i64(i64::MIN + 1, -1);
+    test_case_i64(i64::MAX, i64::MIN);
+    // 2^32 +/- 1 boundaries, mixed signs
+    test_case_i64(0x1_0000_0001, 0xFFFF_FFFF);
+    test_case_i64(-0x1_0000_0001, 0xFFFF_FFFF);
+    test_case_i64(0x1_0000_0001, -0xFFFF_FFFF);
+    test_case_i64(-0x1_0000_0001, -0xFFFF_FFFF);
     test_case_i64_trap(0, 0, TrapCode::IntegerDivisionByZero);
     test_case_i64_trap(1, 0, TrapCode::IntegerDivisionByZero);
     test_case_i64_trap(-1, 0, TrapCode::IntegerDivisionByZero);
+
+    pairwise_fuzzing_test(
+        |a, b| {
+            if b != 0 {
+                test_case_i64(a, b)
+            }
+        },
+        generate_random_numbers(30).iter().map(|v| *v as i64),
+    );
+}
+
+#[test]
+fn test_udivmod64() {
+    let mut is = InstructionSet::new();
+    is.op_udivmod64();
+
+    let test_case = |n: u64, d: u64| {
+        let inputs = vec![n as u32, (n >> 32) as u32, d as u32, (d >> 32) as u32];
+        let (output, max_stack_height) = run_vm_instr(is.clone(), inputs).unwrap();
+        assert_eq!(output.len(), 4);
+        let q = (output[1] as u64) << 32 | output[0] as u64;
+        let r = (output[3] as u64) << 32 | output[2] as u64;
+        assert_eq!(q, n / d, "quotient of {n} / {d}");
+        assert_eq!(r, n % d, "remainder of {n} % {d}");
+        assert!(max_stack_height <= InstructionSet::MSH_UDIVMOD64);
+    };
+
+    test_case(0, 1);
+    test_case(1, 1);
+    test_case(100, 7);
+    test_case(u64::MAX, 1);
+    test_case(u64::MAX, u64::MAX);
+    test_case(0xFFFF_FFFF, 0x1_0000_0000);
+    test_case(0x1_0000_0000, 0xFFFF_FFFF);
+    test_case(0x1_0000_0001, 0x1_0000_0000);
+    test_case(u64::MAX, 0x1_0000_0001);
+    test_case(12345678901234567890, 1234567890);
+    assert_eq!(
+        run_vm_instr(is.clone(), vec![1, 0, 0, 0]).unwrap_err(),
+        TrapCode::IntegerDivisionByZero
+    );
+
+    pairwise_fuzzing_test(
+        |a, b| {
+            if b != 0 {
+                test_case(a, b)
+            }
+        },
+        generate_random_numbers(30),
+    );
 }
 
 #[test]
 fn test_i64_rem_u() {
     let mut is = InstructionSet::new();
     is.op_i64_rem_u();
+    let is = link_udivmod64(is);
 
     let test_case_i64 = |a: u64, b: u64| {
         let c = a.wrapping_rem(b);
@@ -582,9 +700,30 @@ fn test_i64_rem_u() {
     test_case_i64(0x8000_0000_0000_0000, 2);
     test_case_i64(0x8000_0000_0000_0001, 2);
     test_case_i64(0x0000_0001_0000_0000, 0x100);
+    // 2^32 +/- 1 boundaries
+    test_case_i64(0xFFFF_FFFF, 0xFFFF_FFFF);
+    test_case_i64(0x1_0000_0000, 0xFFFF_FFFF);
+    test_case_i64(0x1_0000_0001, 0xFFFF_FFFF);
+    test_case_i64(0xFFFF_FFFF, 0x1_0000_0000);
+    test_case_i64(0xFFFF_FFFF, 0x1_0000_0001);
+    test_case_i64(0x1_0000_0000, 0x1_0000_0000);
+    test_case_i64(0x1_0000_0001, 0x1_0000_0000);
+    test_case_i64(0x1_0000_0000, 0x1_0000_0001);
+    test_case_i64(u64::MAX, 0xFFFF_FFFF);
+    test_case_i64(u64::MAX, 0x1_0000_0000);
+    test_case_i64(u64::MAX, 0x1_0000_0001);
     test_case_i64_trap(0, 0, TrapCode::IntegerDivisionByZero);
     test_case_i64_trap(1, 0, TrapCode::IntegerDivisionByZero);
     test_case_i64_trap(u64::MAX, 0, TrapCode::IntegerDivisionByZero);
+
+    pairwise_fuzzing_test(
+        |a, b| {
+            if b != 0 {
+                test_case_i64(a, b)
+            }
+        },
+        generate_random_numbers(30),
+    );
 }
 
 #[test]
@@ -1276,6 +1415,28 @@ fn pairwise_fuzzing_test<T: Clone + Debug, F: Fn(T, T)>(f: F, values: impl IntoI
 }
 
 fn run_i64_binary_op(op: &str, a: i64, b: i64, expected: i64) {
+    run_i64_binary_op_with_config(op, a, b, expected, CompilationConfig::default());
+}
+
+/// Same as [`run_i64_binary_op`] with snippets disabled, so the i64 lowering is spliced inline
+/// at the call site (exercises the `Snippet::inline_emitter` path).
+fn run_i64_binary_op_inline(op: &str, a: i64, b: i64, expected: i64) {
+    run_i64_binary_op_with_config(
+        op,
+        a,
+        b,
+        expected,
+        CompilationConfig::default().with_code_snippets(false),
+    );
+}
+
+fn run_i64_binary_op_with_config(
+    op: &str,
+    a: i64,
+    b: i64,
+    expected: i64,
+    config: CompilationConfig,
+) {
     let wat_source = format!(
         r#"
 (module
@@ -1291,7 +1452,7 @@ fn run_i64_binary_op(op: &str, a: i64, b: i64, expected: i64) {
 
     let wasm_binary = wat::parse_str(&wat_source).unwrap();
 
-    let config = CompilationConfig::default()
+    let config = config
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true);
 
@@ -1427,6 +1588,22 @@ fn test_i64_compares_e2e_boundary_matrix() {
             }
         }
     }
+}
+
+#[test]
+fn test_i64_div_rem_inline_mode() {
+    run_i64_binary_op_inline("i64.div_s", 732, 33, 732 / 33);
+    run_i64_binary_op_inline("i64.div_s", -732, 33, -732 / 33);
+    run_i64_binary_op_inline("i64.div_u", 732, 33, (732u64 / 33u64) as i64);
+    run_i64_binary_op_inline("i64.rem_s", -732, 33, -732 % 33);
+    run_i64_binary_op_inline("i64.rem_u", 732, 33, (732u64 % 33u64) as i64);
+    run_i64_binary_op_inline(
+        "i64.div_u",
+        0x1_0000_0001,
+        0xFFFF_FFFF,
+        ((0x1_0000_0001u64) / 0xFFFF_FFFFu64) as i64,
+    );
+    run_i64_binary_op_inline("i64.rem_s", i64::MIN, -1, 0);
 }
 
 #[test]

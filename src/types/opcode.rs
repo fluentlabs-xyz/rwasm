@@ -636,4 +636,130 @@ mod tests {
             assert_eq!(opcode.code(), expected as u32, "{opcode:#}");
         }
     }
+
+    /// `aux_value` is the single accessor tracers and circuit backends use to read an opcode's
+    /// immediate, so every variant carrying one must surface it (and immediate-less opcodes must
+    /// report 0 rather than garbage).
+    #[test]
+    fn aux_value_surfaces_every_immediate() {
+        let cases: &[(Opcode, u32)] = &[
+            (
+                Opcode::Trap(TrapCode::IntegerOverflow),
+                TrapCode::IntegerOverflow as u32,
+            ),
+            (Opcode::LocalGet(3), 3),
+            (Opcode::LocalSet(4), 4),
+            (Opcode::LocalTee(5), 5),
+            (Opcode::Br((-2i32).into()), (-2i32) as u32),
+            (Opcode::BrIfEqz(6i32.into()), 6),
+            (Opcode::BrIfNez(7i32.into()), 7),
+            (Opcode::BrTable(8), 8),
+            (Opcode::ConsumeFuel(9), 9),
+            (Opcode::ReturnCallInternal(10), 10),
+            (Opcode::ReturnCall(SysFuncIdx::from(11u32)), 11),
+            (Opcode::ReturnCallIndirect(12), 12),
+            (Opcode::CallInternal(13), 13),
+            (Opcode::Call(SysFuncIdx::from(14u32)), 14),
+            (Opcode::CallIndirect(15), 15),
+            (Opcode::SignatureCheck(16), 16),
+            (Opcode::StackCheck(17), 17),
+            (Opcode::RefFunc(18), 18),
+            (
+                Opcode::I32Const(UntypedValue::from(19i32)),
+                UntypedValue::from(19i32).to_bits(),
+            ),
+            (Opcode::GlobalGet(20), 20),
+            (Opcode::GlobalSet(21), 21),
+            (Opcode::I32Load(22), 22),
+            (Opcode::I32Load8S(23), 23),
+            (Opcode::I32Load8U(24), 24),
+            (Opcode::I32Load16S(25), 25),
+            (Opcode::I32Load16U(26), 26),
+            (Opcode::I32Store(27), 27),
+            (Opcode::I32Store8(28), 28),
+            (Opcode::I32Store16(29), 29),
+            (Opcode::MemoryInit(30), 30),
+            (Opcode::DataDrop(31), 31),
+            (Opcode::TableSize(32), 32),
+            (Opcode::TableGrow(33), 33),
+            (Opcode::TableFill(34), 34),
+            (Opcode::TableGet(35), 35),
+            (Opcode::TableSet(36), 36),
+            (Opcode::TableCopy(3, 7), (3u32 << 16) | 7),
+            (Opcode::TableInit(38), 38),
+            (Opcode::ElemDrop(39), 39),
+            // Opcodes without an immediate report 0.
+            (Opcode::I32Add, 0),
+            (Opcode::Return, 0),
+            (Opcode::Drop, 0),
+        ];
+        for (opcode, expected) in cases {
+            assert_eq!(opcode.aux_value(), *expected, "{opcode:?}");
+        }
+    }
+
+    #[test]
+    fn opcode_class_predicates() {
+        assert!(Opcode::I32Eq.is_alu_instruction());
+        assert!(Opcode::I32Rotr.is_alu_instruction());
+        assert!(!Opcode::I32Load(0).is_alu_instruction());
+
+        assert!(Opcode::Br(1i32.into()).is_nullary());
+        assert!(Opcode::I32Const(UntypedValue::from(0i32)).is_nullary());
+        assert!(!Opcode::I32Add.is_nullary());
+
+        assert!(Opcode::CallInternal(1).is_call_instruction());
+        assert!(Opcode::CallIndirect(1).is_call_instruction());
+        assert!(Opcode::ReturnCallInternal(1).is_call_instruction());
+        assert!(Opcode::ReturnCallIndirect(1).is_call_instruction());
+        assert!(Opcode::Return.is_call_instruction());
+        assert!(!Opcode::Call(SysFuncIdx::from(1u32)).is_call_instruction());
+
+        assert!(Opcode::I32Const(UntypedValue::from(0i32)).is_const_instruction());
+        assert!(Opcode::RefFunc(0).is_const_instruction());
+        assert!(!Opcode::I32Add.is_const_instruction());
+
+        assert!(Opcode::LocalGet(0).is_local_instruction());
+        assert!(Opcode::LocalSet(0).is_local_instruction());
+        assert!(Opcode::LocalTee(0).is_local_instruction());
+        assert!(!Opcode::GlobalGet(0).is_local_instruction());
+    }
+
+    /// The default `Display` spells out immediates (branch offsets as signed values); the
+    /// alternate form prints the bare variant name, which the disassembler uses for headings.
+    #[test]
+    fn display_renders_immediates_and_bare_names() {
+        assert_eq!(
+            format!("{}", Opcode::I32Const(UntypedValue::from(5i32))),
+            "I32Const(5)"
+        );
+        assert_eq!(format!("{}", Opcode::ConsumeFuel(9)), "ConsumeFuel(9)");
+        assert_eq!(format!("{}", Opcode::Br((-3i32).into())), "Br(-3)");
+        assert_eq!(format!("{}", Opcode::BrIfEqz(2i32.into())), "BrIfEqz(2)");
+        assert_eq!(
+            format!("{}", Opcode::BrIfNez((-4i32).into())),
+            "BrIfNez(-4)"
+        );
+        assert_eq!(format!("{}", Opcode::I32Add), "I32Add");
+        assert_eq!(format!("{:#}", Opcode::LocalGet(3)), "LocalGet");
+        assert_eq!(format!("{:#}", Opcode::I32Add), "I32Add");
+    }
+
+    #[test]
+    fn update_branch_offset_rewrites_every_branch_kind() {
+        for mut opcode in [
+            Opcode::Br(0i32.into()),
+            Opcode::BrIfEqz(0i32.into()),
+            Opcode::BrIfNez(0i32.into()),
+        ] {
+            opcode.update_branch_offset(-12i32);
+            assert_eq!(opcode.aux_value(), (-12i32) as u32);
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn update_branch_offset_rejects_non_branch() {
+        Opcode::I32Add.update_branch_offset(1i32);
+    }
 }

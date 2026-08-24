@@ -26,23 +26,44 @@ pub enum Snippet {
     I64ShrU,
     I64RotL,
     I64RotR,
+    /// Shared unsigned 64-bit divide-and-remainder core. Never emitted for a wasm opcode
+    /// directly; the four div/rem snippets call into it (see [`Snippet::dependencies`]).
+    UDivMod64,
 }
 
 #[derive(Debug)]
 struct SnippetDefinition {
     pub emitter: fn(&mut InstructionSet),
+    /// Emitter for the snippets-off mode, where the body is spliced at the call site and
+    /// therefore must not contain unresolved snippet-to-snippet calls. Identical to `emitter`
+    /// for self-contained snippets.
+    pub inline_emitter: fn(&mut InstructionSet),
     pub max_stack_height: u32,
     pub orig_params: &'static [ValType],
     pub orig_results: &'static [ValType],
+    /// Snippets this snippet's body calls via `CallInternal`; resolved by `emit_snippets`.
+    pub dependencies: &'static [Snippet],
 }
 
 macro_rules! define_snippet {
-    ($emitter:ident, $max_stack_height:ident, $params:expr, $results:expr) => {{
+    ($emitter:ident, $max_stack_height:ident, $params:expr, $results:expr) => {
+        define_snippet!(
+            $emitter,
+            $emitter,
+            $max_stack_height,
+            $params,
+            $results,
+            &[]
+        )
+    };
+    ($emitter:ident, $inline_emitter:ident, $max_stack_height:ident, $params:expr, $results:expr, $dependencies:expr) => {{
         static DEF: SnippetDefinition = SnippetDefinition {
             emitter: InstructionSet::$emitter,
+            inline_emitter: InstructionSet::$inline_emitter,
             max_stack_height: InstructionSet::$max_stack_height,
             orig_params: $params,
             orig_results: $results,
+            dependencies: $dependencies,
         };
         &DEF
     }};
@@ -66,15 +87,44 @@ impl Snippet {
             I64Add => define_snippet!(op_i64_add, MSH_I64_ADD, &[I64, I64], &[I64]),
             I64Sub => define_snippet!(op_i64_sub, MSH_I64_SUB, &[I64, I64], &[I64]),
             I64Mul => define_snippet!(op_i64_mul, MSH_I64_MUL, &[I64, I64], &[I64]),
-            I64DivS => define_snippet!(op_i64_div_s, MSH_I64_DIV_S, &[I64, I64], &[I64]),
-            I64DivU => define_snippet!(op_i64_div_u, MSH_I64_DIV_U, &[I64, I64], &[I64]),
-            I64RemS => define_snippet!(op_i64_rem_s, MSH_I64_REM_S, &[I64, I64], &[I64]),
-            I64RemU => define_snippet!(op_i64_rem_u, MSH_I64_REM_U, &[I64, I64], &[I64]),
+            I64DivS => define_snippet!(
+                op_i64_div_s,
+                op_i64_div_s_inline,
+                MSH_I64_DIV_S,
+                &[I64, I64],
+                &[I64],
+                &[UDivMod64]
+            ),
+            I64DivU => define_snippet!(
+                op_i64_div_u,
+                op_i64_div_u_inline,
+                MSH_I64_DIV_U,
+                &[I64, I64],
+                &[I64],
+                &[UDivMod64]
+            ),
+            I64RemS => define_snippet!(
+                op_i64_rem_s,
+                op_i64_rem_s_inline,
+                MSH_I64_REM_S,
+                &[I64, I64],
+                &[I64],
+                &[UDivMod64]
+            ),
+            I64RemU => define_snippet!(
+                op_i64_rem_u,
+                op_i64_rem_u_inline,
+                MSH_I64_REM_U,
+                &[I64, I64],
+                &[I64],
+                &[UDivMod64]
+            ),
             I64Shl => define_snippet!(op_i64_shl, MSH_I64_SHL, &[I64, I64], &[I64]),
             I64ShrS => define_snippet!(op_i64_shr_s, MSH_I64_SHR_S, &[I64, I64], &[I64]),
             I64ShrU => define_snippet!(op_i64_shr_u, MSH_I64_SHR_U, &[I64, I64], &[I64]),
             I64RotL => define_snippet!(op_i64_rotl, MSH_I64_ROTL, &[I64, I64], &[I64]),
             I64RotR => define_snippet!(op_i64_rotr, MSH_I64_ROTR, &[I64, I64], &[I64]),
+            UDivMod64 => define_snippet!(op_udivmod64, MSH_UDIVMOD64, &[I64, I64], &[I64, I64]),
         }
     }
 
@@ -82,8 +132,19 @@ impl Snippet {
         self.definition().emitter
     }
 
+    /// Snippets this snippet's body calls via unresolved `CallInternal` placeholders.
+    pub fn dependencies(&self) -> &'static [Snippet] {
+        self.definition().dependencies
+    }
+
     pub fn emit(&self, instruction_set: &mut InstructionSet) {
         (self.definition().emitter)(instruction_set);
+    }
+
+    /// Emits the snippets-off body: self-contained, so it never leaves an unresolved
+    /// snippet-to-snippet `CallInternal` behind at the splice site.
+    pub fn emit_inline(&self, instruction_set: &mut InstructionSet) {
+        (self.definition().inline_emitter)(instruction_set);
     }
 
     pub fn max_stack_height(&self) -> u32 {

@@ -271,20 +271,8 @@ impl ModuleParser {
 
         let snippet_calls = self.allocations.translation.snippet_calls.clone();
         for snippet_call in snippet_calls {
-            let snippet = snippet_call.snippet;
-
-            let snippet_func_idx = *emitted_snippets.entry(snippet).or_insert_with(|| {
-                let new_func_idx = self.next_func();
-                let alloc = &mut self.allocations.translation;
-                let func_offset = alloc.instruction_set.len() as u32;
-                alloc.func_offsets.push(func_offset);
-                alloc
-                    .instruction_set
-                    .op_stack_check(snippet.max_stack_height());
-                snippet.emit(&mut alloc.instruction_set);
-                alloc.instruction_set.op_return();
-                new_func_idx
-            });
+            let snippet_func_idx =
+                self.emit_snippet_func(&mut emitted_snippets, snippet_call.snippet);
 
             let loc = snippet_call.loc;
             let alloc = &mut self.allocations.translation;
@@ -301,6 +289,49 @@ impl ModuleParser {
                 }
             }
         }
+    }
+
+    /// Emits the function body for `snippet` (once per snippet) and returns its func index.
+    ///
+    /// A snippet body may itself call other snippets (e.g. the div/rem wrappers call the shared
+    /// `UDivMod64` core) via `CallInternal(SNIPPET_FUNC_IDX_UNRESOLVED)` placeholders; those
+    /// dependencies are emitted recursively and the placeholders inside the body are patched to
+    /// the dependency's func index.
+    fn emit_snippet_func(
+        &mut self,
+        emitted_snippets: &mut HashMap<Snippet, FuncIdx>,
+        snippet: Snippet,
+    ) -> FuncIdx {
+        if let Some(func_idx) = emitted_snippets.get(&snippet) {
+            return *func_idx;
+        }
+        let new_func_idx = self.next_func();
+        emitted_snippets.insert(snippet, new_func_idx);
+        let (body_start, body_end) = {
+            let alloc = &mut self.allocations.translation;
+            let func_offset = alloc.instruction_set.len() as u32;
+            alloc.func_offsets.push(func_offset);
+            alloc
+                .instruction_set
+                .op_stack_check(snippet.max_stack_height());
+            snippet.emit(&mut alloc.instruction_set);
+            alloc.instruction_set.op_return();
+            (func_offset as usize, alloc.instruction_set.len())
+        };
+        // With a single dependency, every unresolved placeholder in the body targets it.
+        assert!(snippet.dependencies().len() <= 1);
+        for dependency in snippet.dependencies() {
+            let dependency_func_idx = self.emit_snippet_func(emitted_snippets, *dependency);
+            let alloc = &mut self.allocations.translation;
+            for opcode in alloc.instruction_set.instr[body_start..body_end].iter_mut() {
+                if let Opcode::CallInternal(func_idx) = opcode {
+                    if *func_idx == SNIPPET_FUNC_IDX_UNRESOLVED {
+                        *func_idx = dependency_func_idx + 1;
+                    }
+                }
+            }
+        }
+        new_func_idx
     }
 
     /// Processes the `wasmparser` payload.
