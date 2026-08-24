@@ -35,10 +35,10 @@ clippy: ensure-wasm-targets
 .PHONY: coverage
 coverage: build
 	# Run the unit and integration suites with production-code coverage.
-	cargo llvm-cov --lcov --features=wasmtime --manifest-path=./Cargo.toml > lcov1.info
+	cargo llvm-cov --lcov --ignore-filename-regex='/tests/' --features=wasmtime --manifest-path=./Cargo.toml > lcov1.info
 	# Instrument rwasm as an e2e dependency, then export both crates from that run.
 	cargo llvm-cov --no-report --manifest-path=./e2e/Cargo.toml --dep-coverage rwasm
-	cd e2e && cargo llvm-cov report --lcov > ../lcov2.info
+	cd e2e && cargo llvm-cov report --lcov --ignore-filename-regex='/tests/' > ../lcov2.info
 	# Merge all LCOV files and enforce coverage for production sources.
 	grcov --llvm ./lcov1.info ./lcov2.info > lcov.info
 	rm lcov1.info lcov2.info
