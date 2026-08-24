@@ -187,6 +187,13 @@ define_opcode_enum! {
     I32Or64 => 85u32,
     I32Xor64 => 86u32,
     I32Sub64 => 87u32,
+    // push a 64-bit constant whose value fits the single 32-bit immediate: the immediate is
+    // pushed as the low limb, then the derived high limb (top of stack = hi), matching the
+    // layout two consecutive `I32Const` pushes produce; `S` sign-extends the immediate into
+    // the high limb, `U` zero-extends it. Constants needing all 64 bits keep the two-`I32Const`
+    // lowering, so `Opcode` stays 8 bytes in memory
+    I64Const32S(value: UntypedValue) => 88u32,
+    I64Const32U(value: UntypedValue) => 89u32,
 
     // fpu
     @fpu F32Load(offset: AddressOffset) => 0u32,
@@ -270,6 +277,8 @@ impl core::fmt::Display for Opcode {
         } else {
             match self {
                 Opcode::I32Const(value) => write!(f, "I32Const({})", value),
+                Opcode::I64Const32S(value) => write!(f, "I64Const32S({})", value),
+                Opcode::I64Const32U(value) => write!(f, "I64Const32U({})", value),
                 Opcode::ConsumeFuel(value) => write!(f, "ConsumeFuel({})", value),
                 Opcode::Br(value) => write!(f, "Br({})", value.to_i32()),
                 Opcode::BrIfEqz(value) => write!(f, "BrIfEqz({})", value.to_i32()),
@@ -415,7 +424,10 @@ impl Opcode {
     }
 
     pub fn is_nullary(&self) -> bool {
-        matches!(self, Opcode::Br(_) | Opcode::I32Const(_))
+        matches!(
+            self,
+            Opcode::Br(_) | Opcode::I32Const(_) | Opcode::I64Const32S(_) | Opcode::I64Const32U(_)
+        )
     }
 
     pub fn is_call_instruction(self) -> bool {
@@ -484,6 +496,8 @@ impl Opcode {
             }
             Opcode::TableInit(ele_seg_id) => *ele_seg_id,
             Opcode::ElemDrop(ele_seg_id) => *ele_seg_id,
+            Opcode::I64Const32S(value) => value.to_bits(),
+            Opcode::I64Const32U(value) => value.to_bits(),
             _ => 0,
         }
     }
@@ -539,7 +553,39 @@ mod tests {
 
     #[test]
     fn test_opcode_size() {
+        // every opcode must keep fitting a single 64-bit register: widening any variant beyond
+        // one 32-bit immediate grows every in-memory instruction slot and slows dispatch
         assert_eq!(size_of::<Opcode>(), 8);
+    }
+
+    #[test]
+    fn test_i64_const32_display() {
+        assert_eq!(
+            format!("{}", Opcode::I64Const32S(5u32.into())),
+            "I64Const32S(5)"
+        );
+        assert_eq!(
+            format!("{}", Opcode::I64Const32U(5u32.into())),
+            "I64Const32U(5)"
+        );
+    }
+
+    #[test]
+    fn test_i64_const32_opcode_encoding() {
+        for (opcode, code) in [
+            (Opcode::I64Const32S(0xAABB_CCDDu32.into()), 88u32),
+            (Opcode::I64Const32U(0xAABB_CCDDu32.into()), 89u32),
+        ] {
+            let data = bincode::encode_to_vec(opcode, bincode::config::legacy()).unwrap();
+            assert_eq!(data.len(), 8);
+            assert_eq!(&data[..4], &code.to_le_bytes());
+            assert_eq!(&data[4..8], &0xAABB_CCDDu32.to_le_bytes());
+
+            let (decoded, decoded_len): (Opcode, usize) =
+                bincode::decode_from_slice(&data, bincode::config::legacy()).unwrap();
+            assert_eq!(decoded, opcode);
+            assert_eq!(decoded_len, data.len());
+        }
     }
 
     #[test]
@@ -633,6 +679,8 @@ mod tests {
             Opcode::I32Or64,
             Opcode::I32Xor64,
             Opcode::I32Sub64,
+            Opcode::I64Const32S(42.into()),
+            Opcode::I64Const32U(42.into()),
         ];
         for (expected, opcode) in opcodes.iter().enumerate() {
             assert_eq!(opcode.code(), expected as u32, "{opcode:#}");
@@ -690,6 +738,14 @@ mod tests {
             (Opcode::TableCopy(3, 7), (3u32 << 16) | 7),
             (Opcode::TableInit(38), 38),
             (Opcode::ElemDrop(39), 39),
+            (
+                Opcode::I64Const32S(UntypedValue::from_bits(0xDEAD_BEEF)),
+                0xDEAD_BEEF,
+            ),
+            (
+                Opcode::I64Const32U(UntypedValue::from_bits(0xDEAD_BEEF)),
+                0xDEAD_BEEF,
+            ),
             // Opcodes without an immediate report 0.
             (Opcode::I32Add, 0),
             (Opcode::Return, 0),
@@ -708,6 +764,8 @@ mod tests {
 
         assert!(Opcode::Br(1i32.into()).is_nullary());
         assert!(Opcode::I32Const(UntypedValue::from(0i32)).is_nullary());
+        assert!(Opcode::I64Const32S(UntypedValue::from(0i32)).is_nullary());
+        assert!(Opcode::I64Const32U(UntypedValue::from(0i32)).is_nullary());
         assert!(!Opcode::I32Add.is_nullary());
 
         assert!(Opcode::CallInternal(1).is_call_instruction());
