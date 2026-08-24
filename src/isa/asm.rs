@@ -236,6 +236,11 @@ impl<'a> SnippetAsm<'a> {
     }
 
     /// Resolves all branches and returns the maximum stack height the body can reach.
+    ///
+    /// # Panics
+    ///
+    /// - If any branch targets a label that was never defined.
+    /// - If a recorded fixup site no longer holds a branch opcode.
     pub fn finish(self) -> u32 {
         assert!(
             self.pending_heights.is_empty(),
@@ -253,5 +258,108 @@ impl<'a> SnippetAsm<'a> {
             }
         }
         self.max_height
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Slots resolve to depths relative to the *current* height, so the same name must yield a
+    /// different `LocalGet` depth once more values sit above it.
+    #[test]
+    fn slot_depth_tracks_stack_growth() {
+        let mut is = InstructionSet::new();
+        let mut asm = SnippetAsm::new(&mut is, &["a", "b"]);
+        asm.get("a");
+        asm.i32_const(7);
+        asm.get("a");
+        asm.finish();
+        assert_eq!(
+            is.instr,
+            vec![
+                Opcode::LocalGet(2),
+                Opcode::I32Const(7.into()),
+                Opcode::LocalGet(4),
+            ]
+        );
+    }
+
+    /// A backward branch gets a negative offset, a forward branch a positive one, both relative
+    /// to the branch instruction itself.
+    #[test]
+    fn labels_resolve_to_relative_offsets() {
+        let mut is = InstructionSet::new();
+        let mut asm = SnippetAsm::new(&mut is, &["a"]);
+        asm.label("top");
+        asm.get("a");
+        asm.br_if_nez("top");
+        asm.get("a");
+        asm.br("done");
+        asm.i32_const(0);
+        asm.drop();
+        asm.label("done");
+        let max_height = asm.finish();
+        assert_eq!(is.instr[1], Opcode::BrIfNez((-1i32).into()));
+        assert_eq!(is.instr[3], Opcode::Br(3i32.into()));
+        // Peak height, reached by the `i32_const` that the `drop` then pops.
+        assert_eq!(max_height, 3);
+    }
+
+    #[test]
+    fn max_height_is_the_peak_not_the_final_height() {
+        let mut is = InstructionSet::new();
+        let mut asm = SnippetAsm::new(&mut is, &["a"]);
+        asm.i32_const(1);
+        asm.i32_const(2);
+        asm.i32_add();
+        asm.drop();
+        assert_eq!(asm.finish(), 3);
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown snippet slot `nope`")]
+    fn unknown_slot_panics() {
+        let mut is = InstructionSet::new();
+        let mut asm = SnippetAsm::new(&mut is, &["a"]);
+        asm.get("nope");
+    }
+
+    #[test]
+    #[should_panic(expected = "undefined snippet labels")]
+    fn undefined_label_panics() {
+        let mut is = InstructionSet::new();
+        let mut asm = SnippetAsm::new(&mut is, &["a"]);
+        asm.get("a");
+        asm.br_if_nez("never_defined");
+        asm.finish();
+    }
+
+    /// A live fall-through into a label must agree with the height promised by branches to it;
+    /// disagreement means one path leaves the stack unbalanced.
+    #[test]
+    #[should_panic(expected = "mismatched stack heights")]
+    fn mismatched_label_height_panics() {
+        let mut is = InstructionSet::new();
+        let mut asm = SnippetAsm::new(&mut is, &["a"]);
+        asm.get("a");
+        asm.br_if_nez("join");
+        asm.i32_const(1);
+        asm.label("join");
+        asm.finish();
+    }
+
+    /// The fixup sites recorded by the assembler must still hold branch opcodes; rewriting the
+    /// buffer underneath it is a programming error, not a silently-wrong encoding.
+    #[test]
+    #[should_panic(expected = "is not a branch")]
+    fn fixup_over_non_branch_panics() {
+        let mut is = InstructionSet::new();
+        let mut asm = SnippetAsm::new(&mut is, &["a"]);
+        asm.get("a");
+        asm.br_if_nez("done");
+        asm.label("done");
+        asm.is.instr[1] = Opcode::Drop;
+        asm.finish();
     }
 }
