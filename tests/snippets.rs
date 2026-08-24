@@ -289,6 +289,9 @@ fn test_i64_sub() {
     };
 
     test_case_u64(0, 0); // 0 - 0 = 0
+    test_case_u64(0x1234_5678_0000_0000, 0x9ABC_DEF0_0000_0000); // equal (zero) low limbs, hi differs
+    test_case_u64(0x0000_0000_8000_0000, 0x0000_0000_8000_0000); // equal limbs → 0
+    test_case_u64(0x0000_0000_0000_0001, 0x0000_0000_8000_0000); // lo_l < lo_r borrow
     test_case_u64(1, 0); // 1 - 0 = 1
     test_case_u64(0, 1); // 0 - 1 = underflow (wraps to max)
     test_case_u64(0xFFFF_FFFFu64, 1); // lo only, no borrow
@@ -302,6 +305,8 @@ fn test_i64_sub() {
     test_case_u64(0x1234_5678_9ABC_DEF0, 0x1111_1111_1111_1111);
     test_case_u64(0, u64::MAX); // 0 - max = 1 (wrap)
     test_case_u64(0xDEAD_BEEF_DEAD_BEEF, 0xCAFEBABE_CAFEBABE);
+
+    pairwise_fuzzing_test(test_case_u64, generate_random_numbers(30));
 }
 
 /// Deterministic boundary matrix for i64 comparisons: equal-hi/equal-lo pairs, sign boundaries

@@ -99,6 +99,15 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.sp.push_i64(lhs ^ rhs);
         self.ip.add(1);
     }
+
+    pub(crate) fn visit_i32_sub64(&mut self) {
+        let (lhs, rhs) = self.sp.pop2();
+        // widened difference of the two u32 limbs: low limb holds the 32-bit
+        // difference, high limb is the borrow mask (0 or -1)
+        let res = lhs.as_u64().wrapping_sub(rhs.as_u64());
+        self.sp.push_i64(res as i64);
+        self.ip.add(1);
+    }
 }
 
 macro_rules! impl_visit_fallible_binary {

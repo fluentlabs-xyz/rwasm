@@ -259,6 +259,7 @@ impl InstructionSet {
     impl_basic_opcode!(I32And64);
     impl_basic_opcode!(I32Or64);
     impl_basic_opcode!(I32Xor64);
+    impl_basic_opcode!(I32Sub64);
 
     // bulk opcodes
     impl_basic_opcode!(BulkConst(NumLocals));

@@ -122,6 +122,7 @@ This document is the canonical opcode inventory for `rwasm`.
 | 84 | `I32And64` | — | — |
 | 85 | `I32Or64` | — | — |
 | 86 | `I32Xor64` | — | — |
+| 87 | `I32Sub64` | — | — |
 
 ### fpu
 

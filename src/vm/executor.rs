@@ -288,6 +288,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
             I32And64 => self.visit_i32_and64(),
             I32Or64 => self.visit_i32_or64(),
             I32Xor64 => self.visit_i32_xor64(),
+            I32Sub64 => self.visit_i32_sub64(),
             BulkConst(imm) => self.visit_bulk_const(imm),
             BulkDrop(imm) => self.visit_bulk_drop(imm),
 
