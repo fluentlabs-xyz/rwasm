@@ -424,7 +424,10 @@ impl Opcode {
     }
 
     pub fn is_nullary(&self) -> bool {
-        matches!(self, Opcode::Br(_) | Opcode::I32Const(_))
+        matches!(
+            self,
+            Opcode::Br(_) | Opcode::I32Const(_) | Opcode::I64Const32S(_) | Opcode::I64Const32U(_)
+        )
     }
 
     pub fn is_call_instruction(self) -> bool {
@@ -493,6 +496,8 @@ impl Opcode {
             }
             Opcode::TableInit(ele_seg_id) => *ele_seg_id,
             Opcode::ElemDrop(ele_seg_id) => *ele_seg_id,
+            Opcode::I64Const32S(value) => value.to_bits(),
+            Opcode::I64Const32U(value) => value.to_bits(),
             _ => 0,
         }
     }
@@ -733,6 +738,14 @@ mod tests {
             (Opcode::TableCopy(3, 7), (3u32 << 16) | 7),
             (Opcode::TableInit(38), 38),
             (Opcode::ElemDrop(39), 39),
+            (
+                Opcode::I64Const32S(UntypedValue::from_bits(0xDEAD_BEEF)),
+                0xDEAD_BEEF,
+            ),
+            (
+                Opcode::I64Const32U(UntypedValue::from_bits(0xDEAD_BEEF)),
+                0xDEAD_BEEF,
+            ),
             // Opcodes without an immediate report 0.
             (Opcode::I32Add, 0),
             (Opcode::Return, 0),
@@ -751,6 +764,8 @@ mod tests {
 
         assert!(Opcode::Br(1i32.into()).is_nullary());
         assert!(Opcode::I32Const(UntypedValue::from(0i32)).is_nullary());
+        assert!(Opcode::I64Const32S(UntypedValue::from(0i32)).is_nullary());
+        assert!(Opcode::I64Const32U(UntypedValue::from(0i32)).is_nullary());
         assert!(!Opcode::I32Add.is_nullary());
 
         assert!(Opcode::CallInternal(1).is_call_instruction());
