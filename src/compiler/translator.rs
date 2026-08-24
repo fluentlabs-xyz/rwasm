@@ -4115,3 +4115,7 @@ impl InstructionTranslator {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/compiler/translator_tests.rs"]
+mod tests;

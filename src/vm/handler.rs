@@ -113,3 +113,7 @@ pub(crate) fn simple_call_handler_syscall_handler(
         _ => unreachable!("rwasm: unknown function ({})", func_idx),
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/vm/handler_tests.rs"]
+mod tests;
