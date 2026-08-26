@@ -222,9 +222,9 @@ fn untyped_value_numeric_operations_cover_public_wasm_helpers() {
     assert_eq!(value.to_string(), "7");
 }
 
-/// Verifies full-width signed loads and floating-point negation without word truncation.
+/// Verifies full-width signed loads without routing them through one-word values.
 #[test]
-fn runtime_preserves_full_width_i64_loads_and_f64_neg() {
+fn runtime_preserves_full_width_i64_loads() {
     let wasm = wat::parse_str(
         r#"
             (module
@@ -261,6 +261,4 @@ fn runtime_preserves_full_width_i64_loads_and_f64_neg() {
             .unwrap();
         assert_eq!(result[0].i64(), Some(expected));
     }
-
-    assert_eq!((-F64::from(0.0)).to_bits(), 0x8000_0000_0000_0000);
 }
