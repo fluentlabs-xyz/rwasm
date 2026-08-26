@@ -51,3 +51,35 @@ fn simple_call_handler_exercises_host_state_and_memory() {
     );
     assert_eq!(caller.data().exit_code, 7);
 }
+
+#[test]
+fn typed_rwasm_caller_exposes_store_operations_and_accessors() {
+    let mut store = RwasmStore::new(
+        Arc::new(ImportLinker::default()),
+        7_u32,
+        always_failing_syscall_handler,
+        Some(100),
+        Some(1),
+    );
+    assert_eq!(
+        store.global_memory.grow(Pages::new(1).unwrap()),
+        Some(Pages::default())
+    );
+    let mut caller = TypedCaller::Rwasm(RwasmCaller::new(&mut store));
+
+    assert_eq!(caller.as_rwasm_ref().data(), &7);
+    *caller.as_rwasm_mut().data_mut() = 8;
+    caller.memory_write(4, &[1, 2, 3, 4]).unwrap();
+    let mut buffer = [0_u8; 4];
+    caller.memory_read(4, &mut buffer).unwrap();
+    assert_eq!(buffer, [1, 2, 3, 4]);
+    assert_eq!(caller.memory_read_into_vec(5, 2).unwrap(), [2, 3]);
+    assert_eq!(caller.remaining_fuel(), Some(100));
+    caller.try_consume_fuel(9).unwrap();
+    assert_eq!(caller.remaining_fuel(), Some(91));
+    caller.reset_fuel(50);
+    assert_eq!(caller.remaining_fuel(), Some(50));
+
+    let caller = caller.into_rwasm();
+    assert_eq!(caller.data(), &8);
+}
