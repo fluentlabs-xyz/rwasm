@@ -2,6 +2,7 @@ use super::*;
 use crate::{always_failing_syscall_handler, ImportLinker, Pages, RwasmCaller, RwasmStore};
 use alloc::sync::Arc;
 
+/// Covers the syscall handler's host-state and memory operations.
 #[test]
 fn simple_call_handler_exercises_host_state_and_memory() {
     let context = SimpleCallContext {
@@ -52,6 +53,7 @@ fn simple_call_handler_exercises_host_state_and_memory() {
     assert_eq!(caller.data().exit_code, 7);
 }
 
+/// Covers the rWasm typed-caller accessors and delegated store operations.
 #[test]
 fn typed_rwasm_caller_exposes_store_operations_and_accessors() {
     let mut store = RwasmStore::new(

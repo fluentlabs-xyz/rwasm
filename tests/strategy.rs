@@ -17,12 +17,14 @@ const STRATEGY_WAT: &str = r#"
     )
 "#;
 
+/// Returns a configuration accepted by both execution strategies.
 fn strategy_config() -> CompilationConfig {
     CompilationConfig::default_strategy_compatible()
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true)
 }
 
+/// Checks the common store contract through a strategy-neutral type.
 fn exercise_store<T: StoreTr<u32>>(store: &mut T) {
     assert_eq!(store.data(), &7);
     *store.data_mut() = 8;
@@ -43,6 +45,7 @@ fn exercise_store<T: StoreTr<u32>>(store: &mut T) {
     assert_eq!(store.remaining_fuel(), Some(50));
 }
 
+/// Checks execution and memory snapshots through a strategy executor.
 fn exercise_executor(mut executor: StrategyExecutor<u32>) {
     exercise_store(&mut executor);
     let mut result = [Value::I32(0)];
@@ -52,6 +55,7 @@ fn exercise_executor(mut executor: StrategyExecutor<u32>) {
     assert_eq!(&snapshot[4..8], &[1, 2, 3, 4]);
 }
 
+/// Checks Wasmtime caller delegation from inside an imported host call.
 fn exercise_wasmtime_caller(
     caller: &mut TypedCaller<u32>,
     _sys_func_idx: u32,
@@ -74,6 +78,7 @@ fn exercise_wasmtime_caller(
     Ok(())
 }
 
+/// Covers strategy constructors and executor delegation for both engines.
 #[test]
 fn strategy_definitions_and_executors_delegate_store_operations() {
     let wasm = wat::parse_str(STRATEGY_WAT).unwrap();
@@ -124,6 +129,7 @@ fn strategy_definitions_and_executors_delegate_store_operations() {
     assert!(matches!(executor, StrategyExecutor::Wasmtime { .. }));
 }
 
+/// Covers rWasm store snapshots, reset behavior, and typed delegation.
 #[test]
 fn typed_store_delegates_to_rwasm_store() {
     let wasm = wat::parse_str(STRATEGY_WAT).unwrap();
@@ -162,6 +168,7 @@ fn typed_store_delegates_to_rwasm_store() {
     exercise_store(&mut store);
 }
 
+/// Covers Wasmtime typed-store and typed-caller delegation.
 #[test]
 fn typed_store_and_caller_delegate_to_wasmtime() {
     let wasm = wat::parse_str(STRATEGY_WAT).unwrap();
@@ -217,6 +224,7 @@ fn typed_store_and_caller_delegate_to_wasmtime() {
     assert_eq!(executor.data(), &8);
 }
 
+/// Covers constant and quadratic syscall-fuel block compilation.
 #[test]
 fn compiler_emits_constant_and_quadratic_syscall_fuel_blocks() {
     let wasm = wat::parse_str(
