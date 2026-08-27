@@ -224,8 +224,12 @@ impl<T: 'static> RwasmStore<T> {
     /// Returns the raw 32-bit "global word" at the given internal index.
     ///
     /// rwasm stores globals as 32-bit words. `i64`/`f64` globals occupy **two** words:
-    /// - low word at `global_index * 2`
-    /// - high word at `global_index * 2 + 1`
+    /// - high word at `global_index * 2`
+    /// - low word at `global_index * 2 + 1`
+    ///
+    /// The ordering is inherited from `SegmentBuilder::add_global_variable`, which pushes
+    /// `(lower, upper)` and therefore stores `upper` first; `visit_global_get`/`visit_global_set`
+    /// follow the same convention.
     ///
     /// This accessor is intended for differential fuzzing/oracles.
     pub fn global_word_bits(&self, global_word_index: u32) -> u32 {
