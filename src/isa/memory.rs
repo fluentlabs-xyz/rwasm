@@ -259,7 +259,7 @@ impl InstructionSet {
         // note that this compare is signed and `n + s` wraps, so operands close to `i32::MAX`
         // slip past it — the data segment bounds check inside `memory.init` below is what
         // actually rejects them, this guard only turns the common case into an early trap
-        if let Some(length) = rewrite_length.filter(|v| *v > 0) {
+        if let Some(length) = rewrite_length {
             self.op_local_get(1); // n
             self.op_local_get(3); // s
             self.op_i32_add(); // n + s
