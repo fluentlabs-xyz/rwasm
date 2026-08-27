@@ -1,4 +1,7 @@
-use rwasm::{CompilationConfig, CompilationError, ConstructorParams, RwasmModule};
+use rwasm::{
+    always_failing_syscall_handler, CompilationConfig, CompilationError, ConstructorParams,
+    ExecutionEngine, ImportLinker, RwasmModule, RwasmStore, Value,
+};
 
 fn test_compilation(wat_str: &str) -> Result<(RwasmModule, ConstructorParams), CompilationError> {
     let wasm = wat::parse_str(wat_str).expect("valid WAT");
@@ -165,4 +168,52 @@ fn test_max_locals_single_func() {
         output_size,
         output_size as f64 / 1_000_000.0
     );
+}
+
+/// The compile-time initial-memory limit is inclusive, exactly like the runtime one enforced by
+/// `GlobalMemory::grow` and by the guard injected for `memory.grow`.
+#[test]
+fn test_initial_memory_at_max_allowed_pages_is_accepted() {
+    const MAX_PAGES: u32 = 4;
+
+    fn memory_size_module(initial_pages: u32) -> Vec<u8> {
+        wat::parse_str(format!(
+            r#"
+(module
+  (memory {initial_pages})
+  (func (export "t") (result i32) (memory.size))
+)
+"#
+        ))
+        .expect("valid WAT")
+    }
+    fn config() -> CompilationConfig {
+        CompilationConfig::default()
+            .with_max_allowed_memory_pages(MAX_PAGES)
+            .with_entrypoint_name("t".into())
+            .with_allow_malformed_entrypoint_func_type(true)
+    }
+
+    // exactly the limit is accepted, one page above it is not
+    let (rwasm_module, _) = RwasmModule::compile(config(), &memory_size_module(MAX_PAGES))
+        .expect("initial memory equal to the limit must compile");
+    assert!(matches!(
+        RwasmModule::compile(config(), &memory_size_module(MAX_PAGES + 1)),
+        Err(CompilationError::MaxReadonlyDataReached),
+    ));
+
+    // and the accepted module really gets its declared memory at runtime
+    let mut store = RwasmStore::new(
+        ImportLinker::default().into(),
+        (),
+        always_failing_syscall_handler,
+        None,
+        Some(MAX_PAGES),
+    );
+    let instance = ImportLinker::default()
+        .instantiate(&mut store, ExecutionEngine::new(), rwasm_module)
+        .unwrap();
+    let mut result = [Value::I32(0); 1];
+    instance.execute(&mut store, &[], &mut result).unwrap();
+    assert_eq!(result[0].i32().unwrap(), MAX_PAGES as i32);
 }
