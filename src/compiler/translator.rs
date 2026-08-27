@@ -1211,7 +1211,9 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             builder.stack_height.pop1();
             builder.alloc.stack_types.pop().unwrap();
             let mut drop_keep = builder.drop_keep_return_call(func_type)?;
-            // TODO(dmitry123): "why? is there a bug in [drop_keep_return_call]?"
+            // `keep` covers the callee params; re-add the func index that the `pop1()` above
+            // removed from the emulated height but that `ReturnCallIndirect` still pops at
+            // runtime, after the drop/keep shuffle has already run
             drop_keep.keep += 1;
             builder.bump_fuel_consumption(|| FuelCosts::CALL)?;
             drop_keep.translate_drop_keep(
