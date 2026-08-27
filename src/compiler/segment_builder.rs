@@ -120,11 +120,13 @@ impl SegmentBuilder {
 
     pub fn add_active_memory(&mut self, segment_idx: DataSegmentIdx, offset: u32, bytes: &[u8]) {
         // don't allow growing default memory if there are no enough pages allocated
+        // `None` means the page arithmetic overflowed `u32`, which is itself proof that the
+        // segment is out of range, so the caller below must treat it as an overflow
         let has_memory_overflow = || -> Option<bool> {
             let max_affected_page = offset
                 .checked_add(bytes.len() as u32)?
                 .checked_add(N_BYTES_PER_MEMORY_PAGE - 1)?
-                .checked_div(N_BYTES_PER_MEMORY_PAGE)?;
+                / N_BYTES_PER_MEMORY_PAGE;
             Some(max_affected_page > self.total_allocated_pages)
         };
         // expand default memory
@@ -134,7 +136,7 @@ impl SegmentBuilder {
         // default memory is just a passive section with force memory init
         self.entrypoint_bytecode.op_i32_const(offset);
         self.entrypoint_bytecode.op_i32_const(data_offset);
-        if has_memory_overflow().unwrap_or_default() {
+        if has_memory_overflow().unwrap_or(true) {
             self.entrypoint_bytecode.op_i32_const(u32::MAX);
         } else {
             self.entrypoint_bytecode.op_i32_const(data_length);
