@@ -1,6 +1,6 @@
 use rwasm::{
-    always_failing_syscall_handler, instruction_set, ExecutionEngine, ImportLinker, RwasmModule,
-    RwasmModuleBuilder, RwasmStore,
+    always_failing_syscall_handler, instruction_set, CompilationConfig, ExecutionEngine,
+    ImportLinker, RwasmModule, RwasmModuleBuilder, RwasmStore, TrapCode, Value,
 };
 
 fn execute_module(module: &RwasmModule) -> u64 {
@@ -47,4 +47,101 @@ fn test_memory_fuel_ddos_not_possible() {
     println!("{}", rwasm_module);
     let fuel_consumed = execute_module(&rwasm_module);
     assert_eq!(fuel_consumed, 3);
+}
+
+/// Compiles a WAT module exporting a `test` function with an `i32` result and runs it.
+fn execute_wat(wat_str: &str) -> Result<i32, TrapCode> {
+    let wasm_binary = wat::parse_str(wat_str).expect("valid WAT");
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("test".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+    let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
+    println!("{}", rwasm_module);
+    let mut store = RwasmStore::<()>::default();
+    let instance = ImportLinker::default()
+        .instantiate(&mut store, ExecutionEngine::new(), rwasm_module)
+        .unwrap();
+    let mut result = [Value::I32(0); 1];
+    instance.execute(&mut store, &[], &mut result)?;
+    Ok(result[0].i32().unwrap())
+}
+
+/// `memory.init x` must trap when `s + n > len(data[x])`, so any `n > 0` on an empty
+/// passive segment always traps. All data segments are merged into one flat data section,
+/// so without the injected per-segment guard an empty segment reads its neighbor's bytes.
+#[test]
+fn test_memory_init_empty_first_segment_traps() {
+    assert_eq!(
+        execute_wat(
+            r#"
+(module
+  (memory 1)
+  (data "")          ;; segment 0, empty
+  (data "ABCD")
+  (func (export "test") (result i32)
+    (memory.init 0 (i32.const 0) (i32.const 0) (i32.const 4))
+    (i32.load (i32.const 0))))
+"#
+        ),
+        Err(TrapCode::MemoryOutOfBounds),
+    );
+}
+
+/// Same as above, but the empty segment is not first: the offset rewrite applies, so a
+/// missing length guard leaks the *following* segment's bytes instead of the first one's.
+#[test]
+fn test_memory_init_empty_middle_segment_traps() {
+    assert_eq!(
+        execute_wat(
+            r#"
+(module
+  (memory 1)
+  (data "WXYZ")
+  (data "")          ;; segment 1, empty
+  (data "1234")
+  (func (export "test") (result i32)
+    (memory.init 1 (i32.const 0) (i32.const 0) (i32.const 4))
+    (i32.load (i32.const 0))))
+"#
+        ),
+        Err(TrapCode::MemoryOutOfBounds),
+    );
+}
+
+/// A zero-length `memory.init` on an empty segment is well-defined and must not trap.
+#[test]
+fn test_memory_init_empty_segment_zero_length_is_ok() {
+    assert_eq!(
+        execute_wat(
+            r#"
+(module
+  (memory 1)
+  (data "")          ;; segment 0, empty
+  (data "ABCD")
+  (func (export "test") (result i32)
+    (memory.init 0 (i32.const 0) (i32.const 0) (i32.const 0))
+    (i32.load (i32.const 0))))
+"#
+        ),
+        Ok(0),
+    );
+}
+
+/// Control: a non-empty segment still initializes memory from its own bytes.
+#[test]
+fn test_memory_init_non_empty_segment_still_copies() {
+    assert_eq!(
+        execute_wat(
+            r#"
+(module
+  (memory 1)
+  (data "WXYZ")
+  (data "1234")
+  (func (export "test") (result i32)
+    (memory.init 1 (i32.const 0) (i32.const 0) (i32.const 4))
+    (i32.load (i32.const 0))))
+"#
+        ),
+        Ok(0x34333231),
+    );
 }
