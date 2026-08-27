@@ -75,9 +75,11 @@ impl SegmentBuilder {
         max_allowed_memory_pages: u32,
         consume_fuel_for_bulk_ops: bool,
     ) -> Result<(), CompilationError> {
-        // there is a hard limit of max possible memory used (~64 mB)
+        // there is a hard limit of max possible memory used (~64 mB); the limit is inclusive,
+        // matching what the runtime permits: `GlobalMemory::grow` and the guard injected by
+        // `op_memory_grow_checked` both reject only a page count strictly above the limit
         let next_pages = self.total_allocated_pages.saturating_add(initial_pages);
-        if next_pages >= max_allowed_memory_pages {
+        if next_pages > max_allowed_memory_pages {
             return Err(CompilationError::MaxReadonlyDataReached);
         }
         // it makes no sense to grow memory with 0 pages
