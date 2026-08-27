@@ -28,8 +28,6 @@ impl CallStack {
     }
 
     pub fn reset(&mut self) {
-        unsafe {
-            self.buf.set_len(0);
-        }
+        self.buf.clear();
     }
 }
