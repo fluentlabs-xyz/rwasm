@@ -145,3 +145,79 @@ fn test_memory_init_non_empty_segment_still_copies() {
         Ok(0x34333231),
     );
 }
+
+/// The compile-time page check in `SegmentBuilder::add_memory_pages` bounds the module's initial
+/// memory by `CompilationConfig::max_allowed_memory_pages`, but the `memory.grow` it emits into the
+/// entrypoint prologue is bounded at runtime by `RwasmStore::max_allowed_memory_pages` — an
+/// independent knob. When the store's limit is the smaller of the two, that grow fails, and the
+/// failure used to be dropped unchecked: instantiation reported success and the module then ran on
+/// a 0-page memory, so `memory.size` silently read 0 instead of the declared page count.
+///
+/// Found by the differential fuzzer (`fuzz/artifacts/differential/crash-d87768b3f90ac…`), where
+/// wasmtime instantiated the same module and rwasm reported `MemoryOutOfBounds` from an unrelated
+/// later access.
+mod initial_memory_exceeding_store_limit {
+    use rwasm::{
+        always_failing_syscall_handler, CompilationConfig, ExecutionEngine, ImportLinker,
+        RwasmModule, RwasmStore, TrapCode, Value, N_DEFAULT_MAX_MEMORY_PAGES,
+    };
+    use std::sync::Arc;
+
+    /// One page more than the store's default cap, so the prologue grow cannot succeed on a
+    /// default store. The compiler is configured to allow exactly this many pages, so the module
+    /// compiles and only the store's independent limit stands in the way.
+    const PAGES: u32 = N_DEFAULT_MAX_MEMORY_PAGES + 1;
+
+    fn compile() -> RwasmModule {
+        let wat = format!(
+            r#"(module (memory {PAGES}) (func (export "size") (result i32) memory.size))"#
+        );
+        let wasm = wat::parse_str(wat).expect("valid WAT");
+        let config = CompilationConfig::default()
+            .with_entrypoint_name("size".into())
+            .with_allow_malformed_entrypoint_func_type(true)
+            .with_max_allowed_memory_pages(PAGES);
+        let (module, _) = RwasmModule::compile(config, &wasm).expect("module compiles");
+        module
+    }
+
+    fn store(max_allowed_memory_pages: Option<u32>) -> RwasmStore<()> {
+        RwasmStore::new(
+            Arc::new(ImportLinker::default()),
+            (),
+            always_failing_syscall_handler,
+            None,
+            max_allowed_memory_pages,
+        )
+    }
+
+    #[test]
+    fn entrypoint_traps_instead_of_leaving_memory_unallocated() {
+        let module = compile();
+        let engine = ExecutionEngine::new();
+        let mut store = store(None);
+
+        assert_eq!(
+            engine.entrypoint(&mut store, &module),
+            Err(TrapCode::MemoryOutOfBounds),
+            "instantiation must fail when the initial memory exceeds the store's page limit"
+        );
+    }
+
+    #[test]
+    fn memory_is_fully_materialized_when_the_store_allows_it() {
+        let module = compile();
+        let engine = ExecutionEngine::new();
+        let mut store = store(Some(PAGES));
+
+        engine
+            .entrypoint(&mut store, &module)
+            .expect("instantiation succeeds when the store's limit covers the initial memory");
+
+        let mut result = [Value::I32(0); 1];
+        engine
+            .execute(&mut store, &module, &[], &mut result)
+            .expect("memory.size does not trap");
+        assert_eq!(result[0].i32(), Some(PAGES as i32));
+    }
+}
