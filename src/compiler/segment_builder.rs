@@ -1,7 +1,7 @@
 use crate::{
     instruction_set, CompilationError, DataSegmentIdx, ElementSegmentIdx, GlobalIdx,
-    GlobalVariable, I64ValueSplit, InstructionSet, TableIdx, DEFAULT_MEMORY_INDEX, NULL_FUNC_IDX,
-    N_BYTES_PER_MEMORY_PAGE,
+    GlobalVariable, I64ValueSplit, InstructionSet, TableIdx, TrapCode, DEFAULT_MEMORY_INDEX,
+    NULL_FUNC_IDX, N_BYTES_PER_MEMORY_PAGE,
 };
 use alloc::{vec, vec::Vec};
 use hashbrown::HashMap;
@@ -88,9 +88,16 @@ impl SegmentBuilder {
             self.entrypoint_bytecode.op_i32_const(initial_pages);
             self.entrypoint_bytecode
                 .op_memory_grow_checked(None, consume_fuel_for_bulk_ops);
-            // there is no need to verify for a potential trap because it can't overflow,
-            // we have this check upper during the compilation time
-            self.entrypoint_bytecode.op_drop();
+            // the check above bounds `initial_pages` by the *compiler's* limit, but the grow we
+            // just emitted is bounded at runtime by the *store's* `max_allowed_memory_pages`,
+            // which is an independent knob and can be smaller. so the result must be verified:
+            // `memory.grow` reports failure as `u32::MAX`, and dropping it unchecked would leave
+            // the module running on a 0-page memory with instantiation reported as successful
+            // (`memory.size` reads 0, every access traps at some arbitrary later point).
+            self.entrypoint_bytecode.op_i32_const(u32::MAX);
+            self.entrypoint_bytecode.op_i32_eq();
+            self.entrypoint_bytecode.op_br_if_eqz(2);
+            self.entrypoint_bytecode.op_trap(TrapCode::MemoryOutOfBounds);
         }
         // increase the total number of pages allocated
         self.total_allocated_pages = next_pages;
