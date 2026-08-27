@@ -42,16 +42,23 @@ fn main() -> anyhow::Result<()> {
     gen_cfg.shared_everything_threads_enabled = false;
     gen_cfg.gc_enabled = false;
     gen_cfg.exceptions_enabled = false;
+    // see `fuzz_targets/differential.rs`: the wasmtime oracle cannot execute float opcodes.
+    gen_cfg.allow_floats = false;
 
     // Keep generated modules inside the currently supported differential subset.
     gen_cfg.max_imports = 0;
     gen_cfg.max_memories = 1;
     gen_cfg.min_memories = 1;
+    gen_cfg.max_memory32_bytes = 512 * rwasm::N_BYTES_PER_MEMORY_PAGE as u64;
     gen_cfg.min_tables = 1;
     // Keep table model inside currently stable rwasm differential subset.
     gen_cfg.max_tables = 1;
     // Keep wasm-smith table limits inside rwasm runtime hard cap.
     gen_cfg.max_table_elements = rwasm::N_MAX_TABLE_SIZE as u64;
+    // keep in sync with `fuzz_targets/differential.rs`, otherwise the same artifact bytes
+    // reproduce a *different* module than the one the fuzz target generated.
+    gen_cfg.min_data_segments = 4;
+    gen_cfg.min_element_segments = 4;
     gen_cfg.export_everything = true;
 
     let module = smith::Module::new(gen_cfg, &mut u)

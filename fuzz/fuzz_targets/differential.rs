@@ -9,18 +9,17 @@
 //!
 //! Reference: `https://raw.githubusercontent.com/bytecodealliance/wasmtime/main/fuzz/fuzz_targets/differential.rs`
 
-use anyhow::Context;
 use libfuzzer_sys::{
     arbitrary::{self, Result, Unstructured},
     fuzz_target,
 };
 use rwasm::{
-    CompilationConfig, ExecutionEngine, ExternRef, FuncRef, RwasmModule, RwasmStore, StoreTr,
-    TrapCode, Value,
+    CompilationConfig, ExecutionEngine, ExternRef, FuncRef, ImportLinker, RwasmModule, RwasmStore,
+    StoreTr, TrapCode, Value,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering::SeqCst},
-    Once,
+    Arc, Once,
 };
 use wasm_smith as smith;
 use wasmparser::{Parser, Payload, ValType as ParserValType};
@@ -36,6 +35,20 @@ const MAX_EXPORTS: usize = 8;
 ///
 /// We compare *remaining* fuel after execution, which implies consumed fuel must match too.
 const FUEL_LIMIT: u64 = 50_000_000;
+
+/// Page cap applied to *both* the compiler config and the store; see `run_rwasm_one`.
+///
+/// These are two independent knobs in rwasm and the harness must keep them equal: the compiler
+/// bounds a module's initial memory by its own limit, while the `memory.grow` it emits into the
+/// entrypoint prologue is bounded by the store's. If the store's is the smaller one, every module
+/// declaring more pages than it fails instantiation in rwasm while wasmtime runs it fine.
+const MAX_MEMORY_PAGES: u32 = rwasm::N_DEFAULT_MAX_MEMORY_PAGES;
+
+/// Upper bound on generated linear memory, kept well under [`MAX_MEMORY_PAGES`] so that generated
+/// modules land inside the comparable subset rather than being skipped as `MaxReadonlyDataReached`.
+/// It also bounds the harness's own RSS: a fresh store is built per invocation and each one
+/// materializes its memory for real, so raising this trades directly against libFuzzer's rss limit.
+const MAX_GENERATED_MEMORY_PAGES: u64 = 512;
 
 /// How many table elements we compare (nullness only) for each exported table.
 ///
@@ -150,10 +163,16 @@ fn execute_one(data: &[u8]) -> Result<()> {
     gen_cfg.gc_enabled = false;
     gen_cfg.exceptions_enabled = false;
 
+    // this wasmtime-rwasm build has pulley's float opcodes compiled out, so the oracle traps with
+    // "pulley opcode disabled at compile time" on *every* float operation while rwasm (built with
+    // `fpu`) executes it fine. generating floats would therefore report a mismatch per float module.
+    gen_cfg.allow_floats = false;
+
     // Keep generated modules inside the currently supported differential subset.
     gen_cfg.max_imports = 0;
     gen_cfg.max_memories = 1;
     gen_cfg.min_memories = 1;
+    gen_cfg.max_memory32_bytes = MAX_GENERATED_MEMORY_PAGES * rwasm::N_BYTES_PER_MEMORY_PAGE as u64;
     gen_cfg.min_tables = 1;
     // Keep table model inside currently stable rwasm differential subset.
     gen_cfg.max_tables = 1;
@@ -394,7 +413,7 @@ fn run_rwasm_one(
         .with_consume_fuel(true)
         .with_consume_fuel_for_params_and_locals(false)
         .with_allow_func_ref_function_types(false)
-        .with_max_allowed_memory_pages(4096);
+        .with_max_allowed_memory_pages(MAX_MEMORY_PAGES);
 
     let (module, _) = match RwasmModule::compile(config, wasm) {
         Ok(x) => x,
@@ -406,7 +425,17 @@ fn run_rwasm_one(
     };
 
     let engine = ExecutionEngine::default();
-    let mut store = RwasmStore::<()>::default();
+    // the store's page cap is independent of the compiler's, and defaults to
+    // `N_DEFAULT_MAX_MEMORY_PAGES` (1024). it must match `with_max_allowed_memory_pages` above,
+    // or every module declaring more than 1024 initial pages fails instantiation in rwasm while
+    // wasmtime happily runs it.
+    let mut store = RwasmStore::<()>::new(
+        Arc::new(ImportLinker::default()),
+        (),
+        rwasm::always_failing_syscall_handler,
+        None,
+        Some(MAX_MEMORY_PAGES),
+    );
 
     // Materialize module runtime state (tables/memory/data/elements/start path) before invoking
     // exported function body, mirroring Wasmtime instantiation semantics.
@@ -707,7 +736,7 @@ struct RawWasmtimeInstance {
 impl RawWasmtimeInstance {
     fn new(mut store: Store<()>, module: Module) -> anyhow::Result<Self> {
         let instance = Instance::new(&mut store, &module, &[])
-            .context("unable to instantiate module in wasmtime")?;
+            .map_err(|e| anyhow::anyhow!("unable to instantiate module in wasmtime: {e}"))?;
         // Keep differential fuel accounting call-scoped (exclude instantiation/start side costs).
         store
             .set_fuel(FUEL_LIMIT)
