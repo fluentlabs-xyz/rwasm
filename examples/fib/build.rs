@@ -43,10 +43,21 @@ fn main() {
     // cargo b --bin fib --release --target=wasm32-unknown-unknown --no-default-features
     //
     // NOTE: "cargo b" is likely an alias; here we call "cargo build".
+    // `fib` is pure integer arithmetic and never spills to the shadow stack, so we size that stack
+    // to zero. Otherwise wasm-ld reserves its default 1 MiB, which reaches the module as a 16-page
+    // minimum memory that every instantiation must allocate and zero (~4 us), swamping the ~300 ns
+    // of execution the benchmark is meant to measure.
+    //
+    // This holds only while `main.rs` stays free of stack-allocated data: anything that spills will
+    // trap against a zero-page linear memory.
     let status = Command::new("cargo")
         .current_dir(&manifest_dir)
         .env(GUARD, "1")
         .env("CARGO_TARGET_DIR", &inner_target_dir)
+        // Cargo hands build scripts a `CARGO_ENCODED_RUSTFLAGS` that would take precedence over
+        // `RUSTFLAGS` in the inner build, so drop it first.
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env("RUSTFLAGS", "-C link-arg=-zstack-size=0")
         .arg("build")
         .arg("--bin")
         .arg("fib")
