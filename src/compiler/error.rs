@@ -24,6 +24,7 @@ pub enum CompilationError {
     MemoryOutOfBounds,
     TableOutOfBounds,
     StartSectionsAreNotAllowed,
+    TooManyFunctionTypes { count: u32, limit: u32 },
 }
 
 impl core::error::Error for CompilationError {}
@@ -65,6 +66,12 @@ impl core::fmt::Display for CompilationError {
             CompilationError::TableOutOfBounds => write!(f, "out of bounds table access"),
             CompilationError::StartSectionsAreNotAllowed => {
                 write!(f, "start sections are not allowed")
+            }
+            CompilationError::TooManyFunctionTypes { count, limit } => {
+                write!(
+                    f,
+                    "function type count {count} exceeds compilation limit {limit}"
+                )
             }
         }
     }
