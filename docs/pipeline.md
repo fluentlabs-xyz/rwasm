@@ -18,6 +18,23 @@ Key responsibilities:
 - emit compact opcode stream (`Opcode` enum)
 - emit metadata needed for runtime (signatures, globals, segments)
 
+`CompilationConfig::max_allowed_function_types` limits the declared type-section entry count to
+4,096 by default, including duplicate signatures. `ModuleParser` checks this before wasmparser
+allocates type storage and before rWasm's signature deduplication scans earlier entries. Oversized
+sections return `CompilationError::TooManyFunctionTypes { count, limit }`; exactly the limit is
+accepted. The default bounds deduplication to at most 8,386,560 signature comparisons per module.
+
+Hosts can set an explicit limit with `with_max_allowed_function_types(...)`; raising it requires a
+matching compilation resource budget. The rule applies to all rWasm compilation and export-parsing
+entrypoints, independently of runtime fuel metering. Accepted modules retain their generated
+bytecode and codegen identity: this is an input-validation rule, not a code-generation change.
+The Wasmtime adapter still requires callers to validate untrusted input with rWasm's compilation
+rules first, as documented on `StrategyDefinition::new_as_wasmtime`.
+
+Integrations adopting this compiler must coordinate the new default as an input-compatibility
+change. On-chain compilers must be rebuilt and upgraded to activate it; already compiled rWasm
+artifacts are unchanged.
+
 ## 3) Module construction
 
 `src/module/**` materializes `RwasmModule` / builder outputs:

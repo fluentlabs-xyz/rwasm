@@ -67,6 +67,11 @@ pub struct CompilationConfig {
     pub allow_start_section: bool,
     /// The maximum number of memory pages that can be allocated by the module.
     pub max_allowed_memory_pages: u32,
+    /// Maximum entries in the Wasm function-type section, including duplicates (default: 4096).
+    /// Checked before type validation allocates memory or signature deduplication runs.
+    /// Increasing this limit permits more quadratic compilation work and should be coordinated
+    /// with the host's compilation budget. It does not change emitted bytecode.
+    pub max_allowed_function_types: u32,
 }
 
 /// The default config maximizes rwasm-side metering: it enables
@@ -89,6 +94,7 @@ impl Default for CompilationConfig {
             allow_func_ref_function_types: false,
             allow_start_section: false,
             max_allowed_memory_pages: N_DEFAULT_MAX_MEMORY_PAGES,
+            max_allowed_function_types: 4096,
         }
     }
 }
@@ -235,6 +241,11 @@ impl CompilationConfig {
 
     pub fn with_max_allowed_memory_pages(mut self, max_allowed_memory_pages: u32) -> Self {
         self.max_allowed_memory_pages = max_allowed_memory_pages;
+        self
+    }
+
+    pub fn with_max_allowed_function_types(mut self, max_allowed_function_types: u32) -> Self {
+        self.max_allowed_function_types = max_allowed_function_types;
         self
     }
 }
