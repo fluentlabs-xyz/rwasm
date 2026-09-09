@@ -333,3 +333,140 @@ fn test_wasmtime_caller_memory_read_into_vec_checks_bounds_before_allocating() {
         TrapCode::MemoryOutOfBounds
     );
 }
+
+fn get_test_module_without_engine_fuel() -> (Module, Arc<ImportLinker>) {
+    let wasm_binary = wat::parse_str(
+        r#"
+            (module
+              (memory (export "memory") 1)
+              (func (export "main"))
+            )
+            "#,
+    )
+    .unwrap();
+    let import_linker = Arc::new(ImportLinker::default());
+    let compilation_config = CompilationConfig::default()
+        .with_consume_fuel(false)
+        .with_import_linker(import_linker.clone());
+    (
+        compile_wasmtime_module(compilation_config, wasm_binary).unwrap(),
+        import_linker,
+    )
+}
+
+#[test]
+fn test_wasmtime_fuel_accessors_use_engine_metering_when_enabled() {
+    let (module, import_linker) = get_test_wasmtime_module();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        (),
+        |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
+        Some(100_000),
+        None,
+    );
+
+    assert_eq!(wasmtime_worker.remaining_fuel(), Some(100_000));
+    wasmtime_worker.try_consume_fuel(10).unwrap();
+    assert_eq!(wasmtime_worker.store.get_fuel().unwrap(), 99_990);
+    assert_eq!(wasmtime_worker.remaining_fuel(), Some(99_990));
+    assert_eq!(
+        wasmtime_worker.try_consume_fuel(100_000).unwrap_err(),
+        TrapCode::OutOfFuel
+    );
+    wasmtime_worker.reset_fuel(5);
+    assert_eq!(wasmtime_worker.store.get_fuel().unwrap(), 5);
+    assert_eq!(wasmtime_worker.remaining_fuel(), Some(5));
+}
+
+#[test]
+fn test_wasmtime_fuel_accessors_use_soft_counter_when_engine_metering_is_off() {
+    let (module, import_linker) = get_test_module_without_engine_fuel();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        (),
+        |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
+        Some(1_000),
+        None,
+    );
+
+    assert!(wasmtime_worker.store.get_fuel().is_err());
+    assert_eq!(wasmtime_worker.remaining_fuel(), Some(1_000));
+    wasmtime_worker.try_consume_fuel(600).unwrap();
+    assert_eq!(wasmtime_worker.remaining_fuel(), Some(400));
+    assert_eq!(
+        wasmtime_worker.try_consume_fuel(401).unwrap_err(),
+        TrapCode::OutOfFuel
+    );
+    wasmtime_worker.reset_fuel(7);
+    assert_eq!(wasmtime_worker.remaining_fuel(), Some(7));
+    wasmtime_worker.execute("main", &[], &mut []).unwrap();
+    assert_eq!(wasmtime_worker.remaining_fuel(), Some(7));
+}
+
+#[test]
+fn test_wasmtime_executor_exports_follow_the_instance() {
+    let (memory_module, import_linker) = get_test_memory_module();
+    let module_without_memory = Module::new(
+        memory_module.engine(),
+        wat::parse_str(
+            r#"
+            (module
+              (func $read (import "host" "read") (param i32 i32))
+              (func (export "read_missing_memory")
+                (i32.const 0)
+                (i32.const 1)
+                (call $read)
+              )
+            )
+            "#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        memory_module.clone(),
+        import_linker,
+        Vec::new(),
+        read_memory_syscall,
+        Some(100_000),
+        None,
+    );
+    wasmtime_worker.execute("read_ok", &[], &mut []).unwrap();
+    assert_eq!(wasmtime_worker.data(), &[1, 2, 3, 4]);
+
+    // Re-instantiating through the executor swaps both the function table and the memory.
+    wasmtime_worker.instantiate(&module_without_memory).unwrap();
+    assert_eq!(
+        wasmtime_worker
+            .execute("read_missing_memory", &[], &mut [])
+            .unwrap_err(),
+        TrapCode::MemoryOutOfBounds
+    );
+    assert_eq!(
+        wasmtime_worker
+            .execute("read_ok", &[], &mut [])
+            .unwrap_err(),
+        TrapCode::UnknownExternalFunction
+    );
+    assert_eq!(
+        wasmtime_worker.memory_read_into_vec(0, 1).unwrap_err(),
+        TrapCode::MemoryOutOfBounds
+    );
+
+    // Replacing the public `instance` field directly must resolve the new exports as well.
+    let instance_pre = wasmtime_worker
+        .linker
+        .instantiate_pre(&memory_module)
+        .unwrap();
+    wasmtime_worker.instance = instance_pre
+        .instantiate(&mut wasmtime_worker.store)
+        .unwrap();
+    wasmtime_worker.execute("read_ok", &[], &mut []).unwrap();
+    assert_eq!(wasmtime_worker.data(), &[1, 2, 3, 4, 1, 2, 3, 4]);
+    assert_eq!(
+        wasmtime_worker.memory_read_into_vec(0, 4).unwrap(),
+        vec![1, 2, 3, 4]
+    );
+}
