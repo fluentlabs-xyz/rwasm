@@ -338,13 +338,23 @@ fn get_test_module_without_engine_fuel() -> (Module, Arc<ImportLinker>) {
     let wasm_binary = wat::parse_str(
         r#"
             (module
+              (func $probe (import "host" "probe"))
               (memory (export "memory") 1)
               (func (export "main"))
+              (func (export "probe") (call $probe))
             )
             "#,
     )
     .unwrap();
-    let import_linker = Arc::new(ImportLinker::default());
+    let mut import_linker = ImportLinker::default();
+    import_linker.insert_function(
+        ImportName::new("host", "probe"),
+        0xef,
+        SyscallFuelParams::default(),
+        &[],
+        &[],
+    );
+    let import_linker = Arc::new(import_linker);
     let compilation_config = CompilationConfig::default()
         .with_consume_fuel(false)
         .with_import_linker(import_linker.clone());
@@ -492,6 +502,9 @@ fn get_test_numeric_marshalling_module() -> (Module, Arc<ImportLinker>) {
               (func (export "widen") (param i32) (result i64)
                 (i64.extend_i32_s (local.get 0))
               )
+              (func (export "mix_params") (param i32 i64) (result i64)
+                (call $mix (local.get 0) (local.get 1) (f32.const 0) (f64.const 0))
+              )
             )
             "#,
     )
@@ -636,4 +649,121 @@ fn test_wasmtime_raw_import_halt_is_a_controlled_exit() {
 
     let mut result = [Value::I64(0)];
     wasmtime_worker.execute("main", &[], &mut result).unwrap();
+    assert_eq!(result[0], Value::I64(0));
+
+    // The halted export never wrote its result, so the caller must not see the parameter bits
+    // that are still in the shared slots.
+    let mut result = [Value::I64(0)];
+    wasmtime_worker
+        .execute("mix_params", &[Value::I32(-1), Value::I64(5)], &mut result)
+        .unwrap();
+    assert_eq!(result[0], Value::I64(0));
+}
+
+#[test]
+fn test_wasmtime_caller_fuel_accessors_use_engine_metering_when_enabled() {
+    let (module, import_linker) = get_test_wasmtime_module();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        (),
+        |caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> {
+            let before = caller.remaining_fuel().unwrap();
+            caller.try_consume_fuel(1_000)?;
+            assert_eq!(caller.remaining_fuel(), Some(before - 1_000));
+            caller.reset_fuel(500);
+            assert_eq!(caller.remaining_fuel(), Some(500));
+            // Overspending the engine counter is reported, not saturated.
+            assert_eq!(
+                caller.try_consume_fuel(501).unwrap_err(),
+                TrapCode::OutOfFuel
+            );
+            Ok(())
+        },
+        Some(100_000),
+        None,
+    );
+
+    wasmtime_worker.execute("main", &[], &mut []).unwrap();
+    // Only the instructions after the import call are charged against the reset budget.
+    let remaining = wasmtime_worker.store.get_fuel().unwrap();
+    assert!(
+        (450..=500).contains(&remaining),
+        "remaining fuel {remaining}"
+    );
+}
+
+#[test]
+fn test_wasmtime_caller_fuel_accessors_use_soft_counter_when_engine_metering_is_off() {
+    let (module, import_linker) = get_test_module_without_engine_fuel();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        0u32,
+        |caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> {
+            match *caller.data() {
+                0 => {
+                    assert_eq!(caller.remaining_fuel(), Some(1_000));
+                    caller.try_consume_fuel(600)?;
+                    assert_eq!(caller.remaining_fuel(), Some(400));
+                    caller.reset_fuel(7);
+                    assert_eq!(caller.remaining_fuel(), Some(7));
+                    *caller.data_mut() = 1;
+                    Ok(())
+                }
+                _ => caller.try_consume_fuel(8),
+            }
+        },
+        Some(1_000),
+        None,
+    );
+
+    wasmtime_worker.execute("probe", &[], &mut []).unwrap();
+    assert_eq!(wasmtime_worker.remaining_fuel(), Some(7));
+    // The second probe overspends the soft counter, which surfaces as an out-of-fuel trap.
+    assert_eq!(
+        wasmtime_worker.execute("probe", &[], &mut []).unwrap_err(),
+        TrapCode::OutOfFuel
+    );
+}
+
+#[test]
+fn test_wasmtime_executor_reports_instantiation_errors() {
+    let (module, import_linker) = get_test_memory_module();
+    let unlinked_module = Module::new(
+        module.engine(),
+        wat::parse_str(
+            r#"
+            (module
+              (func $missing (import "missing" "import"))
+              (func (export "main") (call $missing))
+            )
+            "#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
+    assert!(WasmtimeExecutor::try_new(
+        unlinked_module.clone(),
+        import_linker.clone(),
+        Vec::new(),
+        read_memory_syscall,
+        Some(100_000),
+        None,
+    )
+    .is_err());
+
+    // A failed re-instantiation leaves the executor on its previous instance.
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        Vec::new(),
+        read_memory_syscall,
+        Some(100_000),
+        None,
+    );
+    assert!(wasmtime_worker.instantiate(&unlinked_module).is_err());
+    wasmtime_worker.execute("read_ok", &[], &mut []).unwrap();
+    assert_eq!(wasmtime_worker.data(), &[1, 2, 3, 4]);
 }

@@ -277,21 +277,21 @@ impl<T: 'static> WasmtimeExecutor<T> {
         // SAFETY: `slots` holds one initialized value per parameter, of the types recorded from
         // the function's own type when the export was cached, and has room for every result. The
         // function is numeric only, so no reference types need rooting.
-        unsafe { function.func.call_unchecked(&mut *store, &mut slots[..]) }
+        let halted = match unsafe { function.func.call_unchecked(&mut *store, &mut slots[..]) }
             .map_err(map_wasmtime_error)
-            .or_else(|trap_code| {
-                if trap_code == TrapCode::ExecutionHalted {
-                    Ok(())
-                } else {
-                    Err(trap_code)
-                }
-            })?;
+        {
+            Ok(()) => false,
+            Err(TrapCode::ExecutionHalted) => true,
+            Err(trap_code) => return Err(trap_code),
+        };
         for ((slot, out), ty) in slots.iter().zip(result.iter_mut()).zip(&function.results) {
+            // A halted call never wrote its results, so the slots still hold parameter bits;
+            // report zeros of the declared types instead of reinterpreting them.
             *out = match ty {
-                ValType::I32 => Value::I32(slot.get_i32()),
-                ValType::I64 => Value::I64(slot.get_i64()),
-                ValType::F32 => Value::F32(F32::from_bits(slot.get_f32())),
-                ValType::F64 => Value::F64(F64::from_bits(slot.get_f64())),
+                ValType::I32 => Value::I32(if halted { 0 } else { slot.get_i32() }),
+                ValType::I64 => Value::I64(if halted { 0 } else { slot.get_i64() }),
+                ValType::F32 => Value::F32(F32::from_bits(if halted { 0 } else { slot.get_f32() })),
+                ValType::F64 => Value::F64(F64::from_bits(if halted { 0 } else { slot.get_f64() })),
                 _ => unreachable!("wasmtime: raw call path taken for a non-numeric export"),
             };
         }
