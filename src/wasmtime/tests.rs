@@ -505,6 +505,9 @@ fn get_test_numeric_marshalling_module() -> (Module, Arc<ImportLinker>) {
               (func (export "mix_params") (param i32 i64) (result i64)
                 (call $mix (local.get 0) (local.get 1) (f32.const 0) (f64.const 0))
               )
+              (func (export "pass_f32") (param f32) (result f32)
+                (local.get 0)
+              )
             )
             "#,
     )
@@ -592,6 +595,19 @@ fn test_wasmtime_numeric_exports_marshal_params_and_results() {
         .execute("widen", &[Value::I32(-1)], &mut result)
         .unwrap();
     assert_eq!(result[0], Value::I64(-1));
+
+    let mut result = [Value::F32(crate::F32::from_bits(0))];
+    wasmtime_worker
+        .execute(
+            "pass_f32",
+            &[Value::F32(crate::F32::from_bits(1.5f32.to_bits()))],
+            &mut result,
+        )
+        .unwrap();
+    assert_eq!(
+        result[0],
+        Value::F32(crate::F32::from_bits(1.5f32.to_bits()))
+    );
 
     // Mismatched arity or types are rejected before the call, as the checked path did.
     let mut result = [Value::I32(0)];
@@ -766,4 +782,31 @@ fn test_wasmtime_executor_reports_instantiation_errors() {
     assert!(wasmtime_worker.instantiate(&unlinked_module).is_err());
     wasmtime_worker.execute("read_ok", &[], &mut []).unwrap();
     assert_eq!(wasmtime_worker.data(), &[1, 2, 3, 4]);
+}
+
+#[test]
+fn test_wasmtime_caller_writes_guest_memory_through_the_cached_handle() {
+    let (module, import_linker) = get_test_memory_module();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        Vec::new(),
+        |caller, _sys_func_idx, params, _result| -> Result<(), TrapCode> {
+            let offset = params[0].i32().unwrap() as usize;
+            caller.memory_write(offset, &[9, 8, 7, 6])?;
+            assert_eq!(
+                caller.memory_write(N_BYTES_PER_MEMORY_PAGE as usize, &[1]),
+                Err(TrapCode::MemoryOutOfBounds)
+            );
+            Ok(())
+        },
+        Some(100_000),
+        None,
+    );
+
+    wasmtime_worker.execute("read_ok", &[], &mut []).unwrap();
+    assert_eq!(
+        wasmtime_worker.memory_read_into_vec(0, 4).unwrap(),
+        vec![9, 8, 7, 6]
+    );
 }
