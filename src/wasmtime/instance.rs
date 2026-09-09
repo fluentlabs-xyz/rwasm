@@ -4,8 +4,19 @@ use crate::{
     ImportLinker, SyscallHandler, TrapCode, Value, F32, F64, N_BYTES_PER_MEMORY_PAGE,
     N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES,
 };
+use smallvec::SmallVec;
 use std::sync::Arc;
-use wasmtime::{AsContext, AsContextMut, Extern, StoreContext, StoreContextMut};
+use wasmtime::{AsContext, AsContextMut, Extern, StoreContext, StoreContextMut, ValRaw, ValType};
+
+/// Type of an exported function, recorded once so calls can marshal values without `Val`.
+struct ExportedFunction {
+    name: Box<str>,
+    func: wasmtime::Func,
+    params: Vec<ValType>,
+    results: Vec<ValType>,
+    /// Whether every parameter and result is numeric, which the raw call path requires.
+    numeric: bool,
+}
 
 pub struct WasmtimeExecutor<T: 'static> {
     pub linker: wasmtime::Linker<WrappedContext<T>>,
@@ -18,7 +29,7 @@ pub struct WasmtimeExecutor<T: 'static> {
     cached_instance: wasmtime::Instance,
     /// Exported functions of `cached_instance`, resolved once so calls don't look them up by
     /// name. Entry points are few, so a linear scan beats hashing the name.
-    functions: Vec<(Box<str>, wasmtime::Func)>,
+    functions: Vec<ExportedFunction>,
 }
 
 impl<T: 'static> AsContext for WasmtimeExecutor<T> {
@@ -49,18 +60,39 @@ impl<T: 'static> WasmtimeExecutor<T> {
 
     /// Resolves the exported functions and the exported memory of `instance` once.
     fn refresh_exports(&mut self) {
-        self.functions.clear();
+        let mut functions = Vec::new();
         let mut memory = None;
         for export in self.instance.exports(&mut self.store) {
             let name = export.name();
             match export.into_extern() {
-                Extern::Func(func) => self.functions.push((name.into(), func)),
+                Extern::Func(func) => functions.push((Box::<str>::from(name), func)),
                 Extern::Memory(exported_memory) if name == "memory" => {
                     memory = Some(exported_memory)
                 }
                 _ => {}
             }
         }
+        self.functions = functions
+            .into_iter()
+            .map(|(name, func)| {
+                let ty = func.ty(&self.store);
+                let params = ty.params().collect::<Vec<_>>();
+                let results = ty.results().collect::<Vec<_>>();
+                let numeric = params.iter().chain(&results).all(|ty| {
+                    matches!(
+                        ty,
+                        ValType::I32 | ValType::I64 | ValType::F32 | ValType::F64
+                    )
+                });
+                ExportedFunction {
+                    name,
+                    func,
+                    params,
+                    results,
+                    numeric,
+                }
+            })
+            .collect();
         self.store.data_mut().memory = memory;
         self.cached_instance = self.instance;
     }
@@ -166,12 +198,11 @@ impl<T: 'static> WasmtimeExecutor<T> {
     }
 
     /// Looks up an exported function in the cached export table.
-    fn exported_function(&mut self, func_name: &str) -> Option<wasmtime::Func> {
+    fn exported_function(&mut self, func_name: &str) -> Option<usize> {
         self.ensure_exports_current();
         self.functions
             .iter()
-            .find(|(name, _)| &**name == func_name)
-            .map(|(_, func)| *func)
+            .position(|function| &*function.name == func_name)
     }
 
     #[cfg(feature = "e2e")]
@@ -210,10 +241,71 @@ impl<T: 'static> WasmtimeExecutor<T> {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        use wasmtime::Val;
-        let entrypoint = self
+        let index = self
             .exported_function(func_name)
             .ok_or(TrapCode::UnknownExternalFunction)?;
+        let function = &self.functions[index];
+        if function.numeric {
+            return Self::execute_raw(&mut self.store, function, params, result);
+        }
+        self.execute_checked(function.func, params, result)
+    }
+
+    /// Calls a numeric-only export through raw value slots, skipping `Val` marshalling.
+    fn execute_raw(
+        store: &mut wasmtime::Store<WrappedContext<T>>,
+        function: &ExportedFunction,
+        params: &[Value],
+        result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        // The checked call path reports a signature mismatch as a generic wasmtime error, which
+        // `map_wasmtime_error` turns into `IllegalOpcode`; keep that mapping.
+        if params.len() != function.params.len() || result.len() != function.results.len() {
+            return Err(TrapCode::IllegalOpcode);
+        }
+        let mut slots = SmallVec::<[ValRaw; 8]>::new();
+        for (value, ty) in params.iter().zip(&function.params) {
+            slots.push(match (value, ty) {
+                (Value::I32(value), ValType::I32) => ValRaw::i32(*value),
+                (Value::I64(value), ValType::I64) => ValRaw::i64(*value),
+                (Value::F32(value), ValType::F32) => ValRaw::f32(value.to_bits()),
+                (Value::F64(value), ValType::F64) => ValRaw::f64(value.to_bits()),
+                _ => return Err(TrapCode::IllegalOpcode),
+            });
+        }
+        slots.resize(params.len().max(result.len()), ValRaw::i32(0));
+        // SAFETY: `slots` holds one initialized value per parameter, of the types recorded from
+        // the function's own type when the export was cached, and has room for every result. The
+        // function is numeric only, so no reference types need rooting.
+        unsafe { function.func.call_unchecked(&mut *store, &mut slots[..]) }
+            .map_err(map_wasmtime_error)
+            .or_else(|trap_code| {
+                if trap_code == TrapCode::ExecutionHalted {
+                    Ok(())
+                } else {
+                    Err(trap_code)
+                }
+            })?;
+        for ((slot, out), ty) in slots.iter().zip(result.iter_mut()).zip(&function.results) {
+            *out = match ty {
+                ValType::I32 => Value::I32(slot.get_i32()),
+                ValType::I64 => Value::I64(slot.get_i64()),
+                ValType::F32 => Value::F32(F32::from_bits(slot.get_f32())),
+                ValType::F64 => Value::F64(F64::from_bits(slot.get_f64())),
+                _ => unreachable!("wasmtime: raw call path taken for a non-numeric export"),
+            };
+        }
+        Ok(())
+    }
+
+    /// Calls an export through wasmtime's checked `Val` interface; needed for reference types.
+    fn execute_checked(
+        &mut self,
+        entrypoint: wasmtime::Func,
+        params: &[Value],
+        result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        use wasmtime::Val;
         let mut buffer = Vec::<Val>::default();
         for (i, value) in params.iter().enumerate() {
             let value = match value {

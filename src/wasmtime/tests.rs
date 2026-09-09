@@ -470,3 +470,170 @@ fn test_wasmtime_executor_exports_follow_the_instance() {
         vec![1, 2, 3, 4]
     );
 }
+
+fn get_test_numeric_marshalling_module() -> (Module, Arc<ImportLinker>) {
+    let wasm_binary = wat::parse_str(
+        r#"
+            (module
+              (func $mix (import "host" "mix") (param i32 i64 f32 f64) (result i64))
+              (func (export "main") (result i64)
+                (i32.const -7)
+                (i64.const 0x1_0000_0000)
+                (f32.const 1.5)
+                (f64.const -2.25)
+                (call $mix)
+              )
+              (func (export "add") (param i32 i32) (result i32)
+                (i32.add (local.get 0) (local.get 1))
+              )
+              (func (export "pass_f64") (param f64) (result f64)
+                (local.get 0)
+              )
+              (func (export "widen") (param i32) (result i64)
+                (i64.extend_i32_s (local.get 0))
+              )
+            )
+            "#,
+    )
+    .unwrap();
+    let mut import_linker = ImportLinker::default();
+    import_linker.insert_function(
+        ImportName::new("host", "mix"),
+        0xcd,
+        SyscallFuelParams::default(),
+        &[
+            wasmparser::ValType::I32,
+            wasmparser::ValType::I64,
+            wasmparser::ValType::F32,
+            wasmparser::ValType::F64,
+        ],
+        &[wasmparser::ValType::I64],
+    );
+    let import_linker = Arc::new(import_linker);
+    let compilation_config = CompilationConfig::default().with_import_linker(import_linker.clone());
+    (
+        compile_wasmtime_module(compilation_config, wasm_binary).unwrap(),
+        import_linker,
+    )
+}
+
+/// Folds every parameter into one `i64` so the test can check each value arrived intact.
+fn mix_syscall(
+    _caller: &mut TypedCaller<'_, ()>,
+    sys_func_idx: u32,
+    params: &[Value],
+    result: &mut [Value],
+) -> Result<(), TrapCode> {
+    assert_eq!(sys_func_idx, 0xcd);
+    let [Value::I32(a), Value::I64(b), Value::F32(c), Value::F64(d)] = params else {
+        panic!("unexpected parameter types: {params:?}");
+    };
+    assert_eq!(c.to_bits(), 1.5f32.to_bits());
+    assert_eq!(d.to_bits(), (-2.25f64).to_bits());
+    result[0] = Value::I64(*a as i64 + *b + c.to_bits() as i64 + d.to_bits() as i64);
+    Ok(())
+}
+
+#[test]
+fn test_wasmtime_numeric_imports_round_trip_through_raw_slots() {
+    let (module, import_linker) = get_test_numeric_marshalling_module();
+    let mut wasmtime_worker =
+        WasmtimeExecutor::new(module, import_linker, (), mix_syscall, Some(100_000), None);
+
+    let mut result = [Value::I64(0)];
+    wasmtime_worker.execute("main", &[], &mut result).unwrap();
+    assert_eq!(
+        result[0],
+        Value::I64(-7 + 0x1_0000_0000 + 1.5f32.to_bits() as i64 + (-2.25f64).to_bits() as i64)
+    );
+}
+
+#[test]
+fn test_wasmtime_numeric_exports_marshal_params_and_results() {
+    let (module, import_linker) = get_test_numeric_marshalling_module();
+    let mut wasmtime_worker =
+        WasmtimeExecutor::new(module, import_linker, (), mix_syscall, Some(100_000), None);
+
+    let mut result = [Value::I32(0)];
+    wasmtime_worker
+        .execute("add", &[Value::I32(40), Value::I32(2)], &mut result)
+        .unwrap();
+    assert_eq!(result[0], Value::I32(42));
+
+    // Float values pass through untouched (float arithmetic itself is disabled by the engine).
+    let mut result = [Value::F64(crate::F64::from_bits(0))];
+    wasmtime_worker
+        .execute(
+            "pass_f64",
+            &[Value::F64(crate::F64::from_bits((-2.25f64).to_bits()))],
+            &mut result,
+        )
+        .unwrap();
+    assert_eq!(
+        result[0],
+        Value::F64(crate::F64::from_bits((-2.25f64).to_bits()))
+    );
+
+    let mut result = [Value::I64(0)];
+    wasmtime_worker
+        .execute("widen", &[Value::I32(-1)], &mut result)
+        .unwrap();
+    assert_eq!(result[0], Value::I64(-1));
+
+    // Mismatched arity or types are rejected before the call, as the checked path did.
+    let mut result = [Value::I32(0)];
+    assert_eq!(
+        wasmtime_worker
+            .execute("add", &[Value::I32(1)], &mut result)
+            .unwrap_err(),
+        TrapCode::IllegalOpcode
+    );
+    assert_eq!(
+        wasmtime_worker
+            .execute("add", &[Value::I64(1), Value::I32(1)], &mut result)
+            .unwrap_err(),
+        TrapCode::IllegalOpcode
+    );
+}
+
+#[test]
+fn test_wasmtime_raw_import_rejects_mistyped_syscall_results() {
+    let (module, import_linker) = get_test_numeric_marshalling_module();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        (),
+        |_caller, _sys_func_idx, _params, result| -> Result<(), TrapCode> {
+            result[0] = Value::I32(1);
+            Ok(())
+        },
+        Some(100_000),
+        None,
+    );
+
+    let mut result = [Value::I64(0)];
+    assert_eq!(
+        wasmtime_worker
+            .execute("main", &[], &mut result)
+            .unwrap_err(),
+        TrapCode::BadSignature
+    );
+}
+
+#[test]
+fn test_wasmtime_raw_import_halt_is_a_controlled_exit() {
+    let (module, import_linker) = get_test_numeric_marshalling_module();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        (),
+        |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> {
+            Err(TrapCode::ExecutionHalted)
+        },
+        Some(100_000),
+        None,
+    );
+
+    let mut result = [Value::I64(0)];
+    wasmtime_worker.execute("main", &[], &mut result).unwrap();
+}

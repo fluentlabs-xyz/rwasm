@@ -1,8 +1,22 @@
 use crate::{
-    wasmtime::{context::WrappedContext, types::map_val_type, wasmtime_syscall_handler},
+    wasmtime::{
+        context::WrappedContext, syscall_handler::wasmtime_syscall_handler_raw,
+        types::map_val_type, wasmtime_syscall_handler,
+    },
     ImportLinker,
 };
 use std::sync::Arc;
+use wasmparser::ValType;
+
+/// Whether a signature can go through the raw trampoline, which handles numeric values only.
+fn is_numeric_signature(params: &[ValType], result: &[ValType]) -> bool {
+    params.iter().chain(result).all(|ty| {
+        matches!(
+            ty,
+            ValType::I32 | ValType::I64 | ValType::F32 | ValType::F64
+        )
+    })
+}
 
 /// Creates a Wasmtime linker from an rWasm `ImportLinker`.
 ///
@@ -33,8 +47,30 @@ pub fn wasmtime_import_linker<T: 'static>(
 
         let func_type = wasmtime::FuncType::new(engine, params, result);
 
-        linker
-            .func_new(
+        let linked = if is_numeric_signature(import_entity.params, import_entity.result) {
+            let sys_func_idx = import_entity.sys_func_idx;
+            let (param_types, result_types) = (import_entity.params, import_entity.result);
+            // SAFETY: `func_type` was built from exactly `param_types` and `result_types`,
+            // both numeric only, and the raw trampoline reads and writes the value slots
+            // according to those same slices.
+            unsafe {
+                linker.func_new_unchecked(
+                    import_name.module(),
+                    import_name.name(),
+                    func_type,
+                    move |caller, slots| {
+                        wasmtime_syscall_handler_raw(
+                            sys_func_idx,
+                            param_types,
+                            result_types,
+                            caller,
+                            slots,
+                        )
+                    },
+                )
+            }
+        } else {
+            linker.func_new(
                 import_name.module(),
                 import_name.name(),
                 func_type,
@@ -42,7 +78,8 @@ pub fn wasmtime_import_linker<T: 'static>(
                     wasmtime_syscall_handler(import_entity.sys_func_idx, caller, params, result)
                 },
             )
-            .unwrap_or_else(|_| panic!("function import collision: {}", import_name));
+        };
+        linked.unwrap_or_else(|_| panic!("function import collision: {}", import_name));
     }
 
     linker
