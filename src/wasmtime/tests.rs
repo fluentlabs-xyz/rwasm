@@ -790,7 +790,7 @@ fn test_wasmtime_caller_writes_guest_memory_through_the_cached_handle() {
     let mut wasmtime_worker = WasmtimeExecutor::new(
         module,
         import_linker,
-        Vec::new(),
+        Vec::<u8>::new(),
         |caller, _sys_func_idx, params, _result| -> Result<(), TrapCode> {
             let offset = params[0].i32().unwrap() as usize;
             caller.memory_write(offset, &[9, 8, 7, 6])?;
