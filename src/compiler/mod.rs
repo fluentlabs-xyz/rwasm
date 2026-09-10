@@ -14,6 +14,7 @@ mod parser;
 mod segment_builder;
 mod snippets;
 mod translator;
+mod type_stack;
 mod utils;
 mod value_stack;
 

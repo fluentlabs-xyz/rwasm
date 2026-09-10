@@ -66,3 +66,78 @@ fn test_max_number_of_locals() {
     // old locals: 15'728'970 bytes
     // new local: 1'130 bytes
 }
+
+/// Runs `main` of `wat` on the rwasm VM and returns its single `i64` result.
+fn run_main_i64(wat: &str) -> i64 {
+    use rwasm::{ExecutionEngine, ImportLinker, RwasmStore, Value};
+    let wasm = wat::parse_str(wat).expect("valid WAT");
+    let config = CompilationConfig::default()
+        .with_entrypoint_name("main".into())
+        .with_allow_malformed_entrypoint_func_type(true);
+    let (module, _) = RwasmModule::compile(config, &wasm).expect("module compiles");
+    let mut store = RwasmStore::<()>::default();
+    let instance = ImportLinker::default()
+        .instantiate(&mut store, ExecutionEngine::new(), module)
+        .unwrap();
+    let mut result = [Value::I64(0)];
+    instance.execute(&mut store, &[], &mut result).unwrap();
+    result[0].i64().unwrap()
+}
+
+/// Local accesses are lowered to value-stack slot depths, and `i64` locals take two slots. Mixed
+/// local widths, deep operand stacks and every `local.*` opcode must resolve to the right slots;
+/// the compiler computes those depths incrementally rather than by rescanning the type stack.
+#[test]
+fn test_mixed_width_locals_resolve_to_the_right_slots() {
+    const LOCALS: u32 = 300;
+    let mut wat = String::from("(module (func (export \"main\") (result i64)");
+    for i in 0..LOCALS {
+        wat.push_str(if i % 2 == 0 {
+            " (local i32)"
+        } else {
+            " (local i64)"
+        });
+    }
+    // local i := i, going through `local.tee` on odd indices
+    for i in 0..LOCALS {
+        if i % 2 == 0 {
+            wat.push_str(&format!(" i32.const {i} local.set {i}"));
+        } else {
+            wat.push_str(&format!(" i64.const {i} local.tee {i} drop"));
+        }
+    }
+    // sum every local with a deep operand stack: push all, then fold with `i64.add`
+    wat.push_str(" i64.const 0");
+    for i in 0..LOCALS {
+        if i % 2 == 0 {
+            wat.push_str(&format!(" local.get {i} i64.extend_i32_u"));
+        } else {
+            wat.push_str(&format!(" local.get {i}"));
+        }
+    }
+    for _ in 0..LOCALS {
+        wat.push_str(" i64.add");
+    }
+    wat.push_str("))");
+    let expected = (0..LOCALS as i64).sum::<i64>();
+    assert_eq!(run_main_i64(&wat), expected);
+}
+
+/// A body that declares many locals and touches one of them many times compiles in linear time.
+/// The local count stays below the VM's value-stack limit so the module also runs.
+#[test]
+fn test_many_locals_with_many_accesses_compile() {
+    const LOCALS: u32 = 4_000;
+    const ACCESSES: u32 = 40_000;
+    let mut wat = String::from("(module (func (export \"main\") (result i64) (local i64)");
+    for _ in 0..LOCALS - 2 {
+        wat.push_str(" (local i32)");
+    }
+    wat.push_str(" (local i64)");
+    wat.push_str(" i64.const 7 local.set 0");
+    for _ in 0..ACCESSES {
+        wat.push_str(&format!(" local.get 0 local.set {}", LOCALS - 1));
+    }
+    wat.push_str(&format!(" local.get {}))", LOCALS - 1));
+    assert_eq!(run_main_i64(&wat), 7);
+}
