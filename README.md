@@ -35,7 +35,8 @@ network.
   fails validation, and invalid execution traps instead of corrupting state.
 - **One fuel policy for both backends.** The interpreter and the Wasmtime backend share the
   [`rwasm-fuel-policy`](https://crates.io/crates/rwasm-fuel-policy) schedule and charge it eagerly per
-  straight-line region, so a trap leaves the same fuel counter behind on either engine.
+  straight-line region. A module compiled with a strategy-compatible configuration burns the same fuel on
+  either engine, and a trap leaves the same counter behind on both.
 - **Two backends, one API.** Run the interpreter for portability and `no_std`, or Wasmtime for native speed.
   The choice is a Cargo feature, not a code change.
 - **Compact, hashable modules.** A serialized rWasm module is self-contained, and its bytes are fully determined
@@ -51,6 +52,14 @@ network.
 rwasm = "0.5"
 ```
 
+The example runs the `fib` module from [`examples/fib`](./examples/fib), which exports `main: (i32) -> i32`.
+Build it and copy the output next to your source file, or substitute any Wasm module of your own:
+
+```bash
+cargo build --release --target wasm32-unknown-unknown --manifest-path examples/fib/Cargo.toml
+cp examples/fib/target/wasm32-unknown-unknown/release/fib.wasm .
+```
+
 ```rust
 use rwasm::{
     always_failing_syscall_handler, CompilationConfig, ImportLinker, StoreTr, StrategyDefinition,
@@ -59,7 +68,7 @@ use rwasm::{
 use std::sync::Arc;
 
 fn main() {
-    // Any valid Wasm module. This one exports `main: (i32) -> i32`, which computes fib(n).
+    // `fib.wasm` built above, or any Wasm module that exports `main: (i32) -> i32`.
     let wasm: &[u8] = include_bytes!("fib.wasm");
 
     // 1. Compile Wasm -> rWasm.
