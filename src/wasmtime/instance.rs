@@ -151,6 +151,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
             syscall_handler,
             fuel: None,
             fuel_enabled: false,
+            fuel_unbounded: false,
             memory: None,
             resource_limiter,
             data,
@@ -159,12 +160,14 @@ impl<T: 'static> WasmtimeExecutor<T> {
         store.limiter(|ctx| &mut ctx.resource_limiter);
         let fuel_enabled = store.get_fuel().is_ok();
         store.data_mut().fuel_enabled = fuel_enabled;
-        if let Some(fuel) = fuel_limit {
-            if fuel_enabled {
-                store.set_fuel(fuel)?;
-            } else {
-                store.data_mut().fuel = Some(fuel);
-            }
+        if fuel_enabled {
+            // A Wasmtime store starts with zero fuel, so leaving it untouched for `None` would
+            // trap on the first function entry where the rwasm VM runs unbounded. Fill the store
+            // and flag it unbounded instead.
+            store.set_fuel(fuel_limit.unwrap_or(u64::MAX))?;
+            store.data_mut().fuel_unbounded = fuel_limit.is_none();
+        } else {
+            store.data_mut().fuel = fuel_limit;
         }
         #[allow(unused_mut)]
         let mut linker = wasmtime_import_linker(module.engine(), &import_linker);

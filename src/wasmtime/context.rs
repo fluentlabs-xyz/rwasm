@@ -30,6 +30,9 @@ pub(crate) fn remaining_fuel<T: 'static>(
     ctx: impl AsContext<Data = WrappedContext<T>>,
 ) -> Option<u64> {
     let ctx = ctx.as_context();
+    if ctx.data().fuel_unbounded {
+        return None;
+    }
     if ctx.data().fuel_enabled {
         ctx.get_fuel().ok()
     } else {
@@ -45,6 +48,7 @@ pub(crate) fn reset_fuel<T: 'static>(
     let mut ctx = ctx.as_context_mut();
     if ctx.data().fuel_enabled {
         ctx.set_fuel(new_fuel_limit).expect(ENGINE_FUEL_EXPECTED);
+        ctx.data_mut().fuel_unbounded = false;
     } else {
         ctx.data_mut().fuel = Some(new_fuel_limit);
     }
@@ -60,6 +64,10 @@ pub struct WrappedContext<T: 'static> {
     /// error value each time metering is off, which is the common case for self-metered
     /// runtimes.
     pub(crate) fuel_enabled: bool,
+    /// Set when the executor was created without a fuel limit while the engine meters fuel:
+    /// the store then holds `u64::MAX` and reports no remaining fuel, like an rwasm store
+    /// without a limit.
+    pub(crate) fuel_unbounded: bool,
     /// The instance's exported memory, resolved once per instantiation so host calls don't
     /// look it up by name.
     pub(crate) memory: Option<wasmtime::Memory>,

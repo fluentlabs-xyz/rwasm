@@ -5,6 +5,8 @@ use wasmparser::BinaryReaderError;
 pub enum CompilationError {
     BranchOffsetOutOfBounds,
     BlockFuelOutOfBounds,
+    /// A syscall fuel policy points at a parameter the imported function does not have.
+    InvalidSyscallFuelParam,
     NotSupportedExtension,
     DropKeepOutOfBounds,
     BranchTableTargetsOutOfBounds,
@@ -40,6 +42,9 @@ impl core::fmt::Display for CompilationError {
         match self {
             CompilationError::BranchOffsetOutOfBounds => write!(f, "branch offset out of bounds"),
             CompilationError::BlockFuelOutOfBounds => write!(f, "block fuel out of bounds"),
+            CompilationError::InvalidSyscallFuelParam => {
+                write!(f, "syscall fuel parameter index is out of range")
+            }
             CompilationError::NotSupportedExtension => write!(f, "not supported extension"),
             CompilationError::DropKeepOutOfBounds => write!(f, "drop keep out of bounds"),
             CompilationError::BranchTableTargetsOutOfBounds => {

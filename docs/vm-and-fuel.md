@@ -37,6 +37,28 @@ Fuel is part of runtime policy and can be consumed by:
 - explicit fuel opcodes (`ConsumeFuel`, `ConsumeFuelStack`)
 - host/syscall operations through runtime wrappers/policies
 
+### Engine alignment
+
+The rwasm VM and the Wasmtime strategy (`wasmtime-rwasm`) implement one fuel policy; the
+per-operator schedule lives in the shared `rwasm-fuel-policy` crate. Both engines also agree on
+*when* fuel is charged and checked:
+
+- Metering is eager and region based. Each straight-line region (function entry, loop header,
+  `if` arm, `else` arm, the code after any `end`, the fall-through after `br_if`) is charged in
+  full before its first instruction runs. rwasm does this with one `ConsumeFuel` per region;
+  Wasmtime emits the same charge in native code. A trap therefore leaves the same counter behind
+  on both engines.
+- A charge that exceeds the remaining fuel is never applied: execution traps with `OutOfFuel` and
+  the remaining fuel stays what it was before the region.
+- `fuel_limit: None` is unbounded on both engines and `remaining_fuel()` returns `None`.
+- `LinearFuelParams::param_index` and `QuadraticFuelParams::local_depth` address the imported
+  function's parameters by position counted from the last parameter, independent of the stack
+  slots those parameters occupy.
+
+Only `consume_fuel_for_bulk_ops` and `consume_fuel_for_params_and_locals` remain rwasm-only; use
+`CompilationConfig::default_strategy_compatible` for modules that may run on either engine.
+`tests/fuel_alignment.rs` pins these invariants differentially.
+
 ## Traps and errors
 
 Typical trap categories include:

@@ -17,7 +17,8 @@ use crate::{
     },
     AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
     ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
-    Opcode, TableIdx, DEFAULT_MEMORY_INDEX, N_MAX_TABLE_SIZE, SNIPPET_FUNC_IDX_UNRESOLVED,
+    Opcode, TableIdx, TrapCode, DEFAULT_MEMORY_INDEX, N_MAX_TABLE_SIZE,
+    SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec::Vec};
 use bitvec::macros::internal::funty::Fundamental;
@@ -547,6 +548,23 @@ impl InstructionTranslator {
             .len()
             .checked_sub(1)
             .expect("the control flow frame stack must not be empty") as u32
+    }
+
+    /// Ends the current code path when the operator just emitted lowered to an unconditional
+    /// `Trap(IllegalOpcode)`.
+    ///
+    /// Without the `fpu` feature every float operator compiles to that trap (see
+    /// `impl_fpu_opcode!`). Nothing after it can execute, so translating the rest of the block
+    /// would only grow the bytecode and, with metering on, charge the dead tail to the region
+    /// that traps. Wasmtime marks the same operators unreachable, and both engines must charge
+    /// the same fuel up to the trap.
+    fn end_path_if_illegal_opcode(&mut self) {
+        if matches!(
+            self.alloc.instruction_set.instr.last(),
+            Some(Opcode::Trap(TrapCode::IllegalOpcode))
+        ) {
+            self.reachable = false;
+        }
     }
 
     /// Translates into `rwasm` bytecode if the current code path is reachable.
@@ -3916,6 +3934,7 @@ impl InstructionTranslator {
             builder.alloc.stack_types.push(loaded_type);
             let offset = AddressOffset::from(memarg.offset as u32);
             emitter(&mut builder.alloc.instruction_set, offset);
+            builder.end_path_if_illegal_opcode();
             Ok(())
         })
     }
@@ -3940,6 +3959,7 @@ impl InstructionTranslator {
             builder.stack_height.pop_n(max_stack_height);
             let offset = AddressOffset::from(memarg.offset as u32);
             emitter(&mut builder.alloc.instruction_set, offset);
+            builder.end_path_if_illegal_opcode();
             Ok(())
         })
     }
@@ -3965,6 +3985,7 @@ impl InstructionTranslator {
                 builder.stack_height.pop_n(max_stack_height);
             }
             emitter(&mut builder.alloc.instruction_set);
+            builder.end_path_if_illegal_opcode();
             Ok(())
         })
     }
@@ -4011,6 +4032,7 @@ impl InstructionTranslator {
             }
             // emit an instruction
             emitter(&mut builder.alloc.instruction_set);
+            builder.end_path_if_illegal_opcode();
             Ok(())
         })
     }
@@ -4107,6 +4129,7 @@ impl InstructionTranslator {
             }
             // emit an opcode
             emitter(&mut builder.alloc.instruction_set);
+            builder.end_path_if_illegal_opcode();
             Ok(())
         })
     }
@@ -4128,6 +4151,7 @@ impl InstructionTranslator {
             builder.stack_height.pop_n(max_stack_height);
             // emit instruction
             emitter(&mut builder.alloc.instruction_set);
+            builder.end_path_if_illegal_opcode();
             Ok(())
         })
     }
@@ -4149,6 +4173,7 @@ impl InstructionTranslator {
             builder.stack_height.pop_n(max_stack_height);
             // emit opcode
             emitter(&mut builder.alloc.instruction_set);
+            builder.end_path_if_illegal_opcode();
             Ok(())
         })
     }
