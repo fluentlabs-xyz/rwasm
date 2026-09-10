@@ -126,38 +126,74 @@ pub fn compile_wasmtime_module(
 
 const MAX_CACHED_COMPILED_MODULES: usize = 10_000;
 
-/// Like [`compile_wasmtime_module`], but memoizes the compiled module in a process-wide LRU cache
-/// under `module_caching_key`.
+/// Like [`compile_wasmtime_module`], but memoizes the compiled module in a process-wide LRU cache.
+///
+/// The entry is keyed by `module_caching_key` together with the config's
+/// [`CompilationConfig::codegen_identity`]. A compiled module embeds its engine, and the engine
+/// bakes in the config's fuel schedule, stack limit and syscall fuel parameters, so two callers
+/// sharing a key but not a config get two modules instead of the second silently running on the
+/// first caller's metering.
+///
+/// Entries made here are validated by Wasmtime only and never satisfy a lookup from
+/// [`crate::StrategyDefinition::new_as_wasmtime`], which caches under its own
+/// [`CachePolicy`].
 pub fn compile_wasmtime_module_cached(
     compilation_config: CompilationConfig,
     wasm_binary: impl AsRef<[u8]>,
     module_caching_key: [u8; 32],
 ) -> Result<WasmtimeModule, CompilationError> {
-    compile_wasmtime_module_cached_with(compilation_config, module_caching_key, |config| {
-        compile_wasmtime_module(config, wasm_binary)
-    })
+    compile_wasmtime_module_cached_with(
+        compilation_config,
+        module_caching_key,
+        CachePolicy::WasmtimeOnly,
+        |config| compile_wasmtime_module(config, wasm_binary),
+    )
 }
 
-/// Returns the module cached under `module_caching_key`, or compiles it with `compile` and caches
-/// the result. The cache lock is held across `compile`, so concurrent callers with the same key
-/// compile once.
+/// Which front end validated a cached module.
+///
+/// The policy is part of the cache key: a module that only Wasmtime validated must never be
+/// returned to a caller whose contract includes rwasm validation, or a module rwasm rejects (SIMD,
+/// a start section, a missing entrypoint) could be primed under a key by one caller and then
+/// accepted under the same key by the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum CachePolicy {
+    /// Validated by Wasmtime plus the rwasm compile-time resource caps only.
+    WasmtimeOnly,
+    /// Validated by the full rwasm front end before Wasmtime compiled it.
+    RwasmValidated,
+}
+
+/// The key of a cached module: the validation policy, the caller's key and the identity of the
+/// config it was compiled with.
+type ModuleCacheKey = (CachePolicy, [u8; 32], [u8; 32]);
+
+/// Returns the module cached under `module_caching_key`, `policy` and `compilation_config`, or
+/// compiles it with `compile` and caches the result. The cache lock is held across `compile`, so
+/// concurrent callers with the same key compile once.
 pub(crate) fn compile_wasmtime_module_cached_with<E>(
     compilation_config: CompilationConfig,
     module_caching_key: [u8; 32],
+    policy: CachePolicy,
     compile: impl FnOnce(CompilationConfig) -> Result<WasmtimeModule, E>,
 ) -> Result<WasmtimeModule, E> {
-    static COMPILED_MODULES: OnceLock<Mutex<LruCache<[u8; 32], WasmtimeModule>>> = OnceLock::new();
+    static COMPILED_MODULES: OnceLock<Mutex<LruCache<ModuleCacheKey, WasmtimeModule>>> =
+        OnceLock::new();
     let compiled_modules = COMPILED_MODULES.get_or_init(|| {
         Mutex::new(LruCache::new(
             NonZeroUsize::new(MAX_CACHED_COMPILED_MODULES).unwrap(),
         ))
     });
-    // P.S: We don't check config hash here for performance reasons, assuming it's handled by an external caching key
+    let cache_key = (
+        policy,
+        module_caching_key,
+        compilation_config.codegen_identity(),
+    );
     let mut guard = compiled_modules.lock().unwrap();
-    if let Some(module) = guard.get(&module_caching_key) {
+    if let Some(module) = guard.get(&cache_key) {
         return Ok(module.clone());
     }
     let module = compile(compilation_config)?;
-    guard.push(module_caching_key, module.clone());
+    guard.push(cache_key, module.clone());
     Ok(module)
 }

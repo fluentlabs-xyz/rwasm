@@ -365,6 +365,21 @@ mod accepted_language {
         ));
     }
 
+    /// `compile_wasmtime_module_cached` validates with Wasmtime only. A module it primed under a
+    /// key must not satisfy `new_as_wasmtime` under the same key, or the constructor's rwasm
+    /// validation could be skipped.
+    #[test]
+    fn wasmtime_only_cache_entries_do_not_bypass_rwasm_validation() {
+        let start = wat::parse_str(START_WAT).unwrap();
+        let key = [0x42; 32];
+        rwasm::wasmtime::compile_wasmtime_module_cached(strategy_config(), &start, key)
+            .expect("Wasmtime accepts a start section");
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(strategy_config(), &start, Some(key)),
+            Err(CompilationError::StartSectionsAreNotAllowed)
+        ));
+    }
+
     #[test]
     fn for_each_strategy_reports_compile_errors() {
         let result = rwasm::for_each_strategy(|_| Ok(()), strategy_config(), MALFORMED);

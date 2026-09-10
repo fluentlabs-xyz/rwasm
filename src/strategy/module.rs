@@ -86,7 +86,9 @@ impl StrategyDefinition {
         wasm_binary: impl AsRef<[u8]>,
         module_caching_key: Option<[u8; 32]>,
     ) -> Result<Self, CompilationError> {
-        use crate::wasmtime::{compile_wasmtime_module, compile_wasmtime_module_cached_with};
+        use crate::wasmtime::{
+            compile_wasmtime_module, compile_wasmtime_module_cached_with, CachePolicy,
+        };
         Self::ensure_strategy_compatible(&compilation_config)?;
         let wasm_binary = wasm_binary.as_ref();
         let compile = |config: CompilationConfig| -> Result<_, CompilationError> {
@@ -97,6 +99,7 @@ impl StrategyDefinition {
             Some(module_caching_key) => compile_wasmtime_module_cached_with(
                 compilation_config,
                 module_caching_key,
+                CachePolicy::RwasmValidated,
                 compile,
             )?,
             None => compile(compilation_config)?,

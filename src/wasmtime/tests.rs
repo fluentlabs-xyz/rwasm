@@ -1065,3 +1065,28 @@ fn test_initial_table_above_the_cap_is_table_out_of_bounds() {
     .expect("instantiation must fail");
     assert_eq!(err, TrapCode::TableOutOfBounds);
 }
+
+/// The module cache keys on the compilation config as well as the caller's key: a module carries
+/// the engine it was compiled with, so a cross-config hit would run on the first caller's fuel
+/// schedule.
+#[test]
+fn test_module_cache_distinguishes_configs_under_one_key() {
+    use crate::wasmtime::compile_wasmtime_module_cached;
+    let wasm = wat::parse_str(r#"(module (func (export "main")))"#).unwrap();
+    let key = [0x5a; 32];
+    let metered = CompilationConfig::default().with_consume_fuel(true);
+    let unmetered = CompilationConfig::default().with_consume_fuel(false);
+    let metered_module = compile_wasmtime_module_cached(metered.clone(), &wasm, key).unwrap();
+    let unmetered_module = compile_wasmtime_module_cached(unmetered, &wasm, key).unwrap();
+    // a store meters fuel only if the module's engine was configured to
+    let fuel_enabled =
+        |module: &Module| wasmtime::Store::new(module.engine(), ()).get_fuel().is_ok();
+    assert!(fuel_enabled(&metered_module));
+    assert!(!fuel_enabled(&unmetered_module));
+    // the same key with the same config is a cache hit
+    let again = compile_wasmtime_module_cached(metered, &wasm, key).unwrap();
+    assert!(wasmtime::Engine::same(
+        metered_module.engine(),
+        again.engine()
+    ));
+}
