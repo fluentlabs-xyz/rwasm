@@ -43,9 +43,3 @@ default = ["disable-signals"]
 disable-signals = []
 
 [workspace]
-
-# TEMPORARY: `wasmtime-rwasm` 45.0.0-rwasm.2 (region-based fuel metering aligned with the rwasm VM,
-# fluentlabs-xyz/wasmtime#11) is tagged but not yet on crates.io, so it is taken from the fork's
-# release tag. Remove this section once the crate is published.
-[patch.crates-io]
-wasmtime-rwasm = { git = "https://github.com/fluentlabs-xyz/wasmtime.git", tag = "v45.0.0-rwasm.2" }
