@@ -376,3 +376,100 @@ mod accepted_language {
         ));
     }
 }
+
+/// A config enabling the rwasm-only fuel injections charges different fuel on the two strategies,
+/// so the strategy-agnostic constructors reject it instead of silently under-metering on Wasmtime.
+/// The differential check pins that the strategy-compatible default charges identical fuel on the
+/// audit's counter-example (a function with locals doing a large `memory.fill`).
+mod strategy_compatibility {
+    use super::*;
+    use rwasm::{for_each_strategy, CompilationError, StrategyError};
+
+    const FILL_WAT: &str = r#"
+        (module
+            (memory 1)
+            (func (export "main") (result i32)
+                (local i32 i32 i32 i32 i64 i64 f32 f64)
+                i32.const 0
+                i32.const 42
+                i32.const 60000
+                memory.fill
+                local.get 0
+                i64.const 7
+                local.set 4
+                local.get 4
+                i32.wrap_i64
+                i32.add))
+    "#;
+
+    fn incompatible() -> CompilationConfig {
+        CompilationConfig::default()
+            .with_entrypoint_name("main".into())
+            .with_allow_malformed_entrypoint_func_type(true)
+    }
+
+    #[test]
+    fn strategy_agnostic_constructors_reject_incompatible_configs() {
+        let wasm = wat::parse_str(FILL_WAT).unwrap();
+        assert!(!incompatible().is_strategy_compatible());
+        assert!(matches!(
+            StrategyDefinition::new(incompatible(), &wasm, None),
+            Err(CompilationError::StrategyIncompatibleConfig)
+        ));
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(incompatible(), &wasm, Some([3; 32])),
+            Err(CompilationError::StrategyIncompatibleConfig)
+        ));
+        assert!(matches!(
+            for_each_strategy(|_| Ok(()), incompatible(), &wasm),
+            Err(StrategyError::CompilationError(
+                CompilationError::StrategyIncompatibleConfig
+            ))
+        ));
+        // each flag alone is enough to diverge
+        for config in [
+            strategy_config().with_consume_fuel_for_bulk_ops(true),
+            strategy_config().with_consume_fuel_for_params_and_locals(true),
+        ] {
+            assert!(matches!(
+                StrategyDefinition::new(config, &wasm, None),
+                Err(CompilationError::StrategyIncompatibleConfig)
+            ));
+        }
+        // the rwasm VM implements the injections, so the explicit rwasm constructor accepts them
+        StrategyDefinition::new_as_rwasm(incompatible(), &wasm).unwrap();
+        // and the compatible default is accepted everywhere
+        StrategyDefinition::new(strategy_config(), &wasm, None).unwrap();
+    }
+
+    #[test]
+    fn strategy_compatible_default_charges_identical_fuel() {
+        let wasm = wat::parse_str(FILL_WAT).unwrap();
+        let outcomes = for_each_strategy(
+            |strategy| {
+                let mut executor = strategy.create_executor(
+                    Arc::new(ImportLinker::default()),
+                    (),
+                    always_failing_syscall_handler,
+                    Some(1_000_000),
+                    None,
+                )?;
+                let fuel_before = executor.remaining_fuel().unwrap();
+                let mut result = [Value::I32(0)];
+                let trap = executor.execute("main", &[], &mut result).err();
+                let fuel_consumed = fuel_before - executor.remaining_fuel().unwrap();
+                Ok((trap, result[0].clone(), fuel_consumed))
+            },
+            strategy_config(),
+            &wasm,
+        )
+        .unwrap();
+        assert!(outcomes.len() >= 2, "both strategies must run");
+        assert_eq!(outcomes[0].0, None);
+        assert_eq!(outcomes[0].1, Value::I32(7));
+        assert!(outcomes[0].2 > 0);
+        for outcome in &outcomes[1..] {
+            assert_eq!(outcome, &outcomes[0]);
+        }
+    }
+}

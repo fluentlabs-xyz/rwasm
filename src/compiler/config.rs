@@ -126,6 +126,10 @@ impl CompilationConfig {
     /// Returns `true` if this config charges the same fuel on the rwasm and Wasmtime strategies.
     ///
     /// See [`CompilationConfig::default_strategy_compatible`] for which flags diverge.
+    /// [`crate::StrategyDefinition::new`], [`crate::StrategyDefinition::new_as_wasmtime`] and
+    /// [`crate::for_each_strategy`] reject a config for which this returns `false`; only
+    /// [`crate::StrategyDefinition::new_as_rwasm`] and [`crate::RwasmModule::compile`] accept the
+    /// rwasm-only injections, since the rwasm VM is the one strategy that implements them.
     pub fn is_strategy_compatible(&self) -> bool {
         !self.consume_fuel_for_bulk_ops && !self.consume_fuel_for_params_and_locals
     }

@@ -22,19 +22,36 @@ impl StrategyDefinition {
     /// Compiles a wasm binary with whichever strategy the crate was built with (Wasmtime when the
     /// `wasmtime` feature is on, the rwasm VM otherwise).
     ///
-    /// Because the strategy is a build-time choice, pass a config whose fuel semantics don't
-    /// depend on it — [`CompilationConfig::default_strategy_compatible`] — rather than
-    /// [`CompilationConfig::default`], which enables rwasm-only fuel injections that the Wasmtime
-    /// path silently ignores.
+    /// Because the strategy is a build-time choice, the config's fuel semantics must not depend
+    /// on it: a config that enables the rwasm-only fuel injections (the plain
+    /// [`CompilationConfig::default`]) is rejected with
+    /// [`CompilationError::StrategyIncompatibleConfig`] regardless of the feature set, so a
+    /// module never silently burns different fuel on the two strategies. Use
+    /// [`CompilationConfig::default_strategy_compatible`].
     pub fn new(
         compilation_config: CompilationConfig,
         wasm_binary: impl AsRef<[u8]>,
         #[allow(unused_variables)] module_caching_key: Option<[u8; 32]>,
     ) -> Result<Self, CompilationError> {
+        Self::ensure_strategy_compatible(&compilation_config)?;
         #[cfg(feature = "wasmtime")]
         return Self::new_as_wasmtime(compilation_config, wasm_binary, module_caching_key);
         #[cfg(not(feature = "wasmtime"))]
         return Self::new_as_rwasm(compilation_config, wasm_binary);
+    }
+
+    /// Rejects a config whose fuel accounting depends on the strategy.
+    ///
+    /// `is_strategy_compatible` used to be advisory only, so a divergent `default()` config was
+    /// accepted and the rwasm-only injections were silently dropped on the Wasmtime strategy.
+    pub(crate) fn ensure_strategy_compatible(
+        compilation_config: &CompilationConfig,
+    ) -> Result<(), CompilationError> {
+        if compilation_config.is_strategy_compatible() {
+            Ok(())
+        } else {
+            Err(CompilationError::StrategyIncompatibleConfig)
+        }
     }
 
     pub fn new_as_rwasm(
@@ -59,6 +76,10 @@ impl StrategyDefinition {
     /// [`CompilationError::WasmtimeCompilationFailed`] instead of a panic.
     ///
     /// With a `module_caching_key` the validation runs only on a cache miss.
+    ///
+    /// The Wasmtime engine does not implement `consume_fuel_for_bulk_ops` or
+    /// `consume_fuel_for_params_and_locals`, so a config enabling either is rejected with
+    /// [`CompilationError::StrategyIncompatibleConfig`] rather than silently under-metered.
     #[cfg(feature = "wasmtime")]
     pub fn new_as_wasmtime(
         compilation_config: CompilationConfig,
@@ -66,6 +87,7 @@ impl StrategyDefinition {
         module_caching_key: Option<[u8; 32]>,
     ) -> Result<Self, CompilationError> {
         use crate::wasmtime::{compile_wasmtime_module, compile_wasmtime_module_cached_with};
+        Self::ensure_strategy_compatible(&compilation_config)?;
         let wasm_binary = wasm_binary.as_ref();
         let compile = |config: CompilationConfig| -> Result<_, CompilationError> {
             RwasmModule::compile(config.clone(), wasm_binary)?;

@@ -30,6 +30,10 @@ pub enum CompilationError {
         count: u32,
         limit: u32,
     },
+    /// The config enables fuel injections that only the rwasm strategy implements, so the same
+    /// module would burn different fuel on the two strategies; see
+    /// [`crate::CompilationConfig::default_strategy_compatible`].
+    StrategyIncompatibleConfig,
     /// A table declares more initial elements than [`crate::N_MAX_TABLE_SIZE`] permits.
     TableSizeExceedsLimit {
         size: u32,
@@ -89,6 +93,11 @@ impl core::fmt::Display for CompilationError {
                     "function type count {count} exceeds compilation limit {limit}"
                 )
             }
+            CompilationError::StrategyIncompatibleConfig => write!(
+                f,
+                "compilation config enables rwasm-only fuel injections; use \
+                 CompilationConfig::default_strategy_compatible()"
+            ),
             CompilationError::TableSizeExceedsLimit { size, limit } => {
                 write!(f, "table size {size} exceeds compilation limit {limit}")
             }

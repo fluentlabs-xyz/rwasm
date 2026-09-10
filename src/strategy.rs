@@ -11,11 +11,19 @@ pub use store::*;
 pub use syscall_handler::*;
 pub use types::*;
 
+/// Compiles `wasm_binary` once per available strategy and runs `f` on each definition, in the
+/// order rwasm, then Wasmtime (when the feature is enabled).
+///
+/// The config must be strategy compatible (see
+/// [`CompilationConfig::default_strategy_compatible`]); otherwise the strategies would charge
+/// different fuel for the same module and the comparison would be meaningless, so such a config
+/// is rejected with [`crate::CompilationError::StrategyIncompatibleConfig`].
 pub fn for_each_strategy<R, F: FnMut(StrategyDefinition) -> Result<R, StrategyError>>(
     mut f: F,
     compilation_config: CompilationConfig,
     wasm_binary: &[u8],
 ) -> Result<Vec<R>, StrategyError> {
+    StrategyDefinition::ensure_strategy_compatible(&compilation_config)?;
     let mut result = Vec::new();
     // rwasm case
     {

@@ -144,8 +144,9 @@ The full walk-through lives in [pipeline.md](./docs/pipeline.md) and [architectu
 
 Anything consensus-critical that may run on either backend must be compiled with a strategy-compatible
 configuration such as `CompilationConfig::default_strategy_compatible()`. The plain `default()` enables two fuel
-injections that only the interpreter implements, so the same module would burn different fuel on the two engines.
-Details are in [vm-and-fuel.md](./docs/vm-and-fuel.md#engine-alignment).
+injections that only the interpreter implements, so the same module would burn different fuel on the two engines;
+`StrategyDefinition::new` and `new_as_wasmtime` reject such a config with `CompilationError::StrategyIncompatibleConfig`
+(`new_as_rwasm` accepts it). Details are in [vm-and-fuel.md](./docs/vm-and-fuel.md#engine-alignment).
 
 ## Fuel
 
