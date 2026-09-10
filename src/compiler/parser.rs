@@ -536,7 +536,8 @@ impl ModuleParser {
                 compile_block_params(
                     &mut translator.alloc.instruction_set,
                     import_linker_entity.syscall_fuel_param,
-                )
+                    import_linker_entity.params,
+                )?;
             }
 
             translator

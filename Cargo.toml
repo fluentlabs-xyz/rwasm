@@ -29,7 +29,7 @@ spin = "0.12.2"
 serde = { version = "1.0.219", features = ["derive", "rc"], optional = true }
 
 # wasmtime
-wasmtime = { version = "45.0.0-rwasm.1", package = "wasmtime-rwasm", optional = true, features = ["cache"] }
+wasmtime = { version = "45.0.0-rwasm.2", package = "wasmtime-rwasm", optional = true, features = ["cache"] }
 directories = { version = "6.0.0", optional = true }
 lru = { version = "0.16.3", optional = true }
 
@@ -79,3 +79,9 @@ full-wasm-mode = ["wasmtime?/full-wasm-mode"]
 [[bench]]
 name = "bench"
 harness = false
+
+# TEMPORARY: `wasmtime-rwasm` 45.0.0-rwasm.2 (region-based fuel metering aligned with the rwasm VM,
+# fluentlabs-xyz/wasmtime#11) is tagged but not yet on crates.io, so it is taken from the fork's
+# release tag. Remove this section once the crate is published.
+[patch.crates-io]
+wasmtime-rwasm = { git = "https://github.com/fluentlabs-xyz/wasmtime.git", tag = "v45.0.0-rwasm.2" }
