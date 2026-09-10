@@ -22,6 +22,7 @@ use std::{
     sync::{Mutex, OnceLock},
     time::Instant,
 };
+use wasmparser::{Parser, Payload};
 
 pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<WrappedContext<T>>;
@@ -40,16 +41,55 @@ pub fn deserialize_wasmtime_module(
     module
 }
 
+/// Applies the rwasm compile-time resource caps to a wasm binary before Wasmtime compiles it.
+///
+/// `RwasmModule::compile` rejects a module whose declared initial memory exceeds
+/// `config.max_allowed_memory_pages`. Wasmtime has no compile-time equivalent: its store limiter
+/// acts at instantiation, against a cap the runtime picks independently of the compiler. Without
+/// this check a deployment whose runtime cap exceeds the compile cap accepts a module on the
+/// Wasmtime strategy that the rwasm strategy rejects at compile time.
+///
+/// Only the section headers up to the code section are read, so this costs a fraction of the
+/// compilation itself.
+fn check_compile_limits(
+    config: &CompilationConfig,
+    wasm_binary: &[u8],
+) -> Result<(), CompilationError> {
+    let mut total_pages: u32 = 0;
+    for payload in Parser::new(0).parse_all(wasm_binary) {
+        match payload? {
+            Payload::MemorySection(section) => {
+                for memory_type in section.into_iter() {
+                    let initial_pages = u32::try_from(memory_type?.initial)
+                        .map_err(|_| CompilationError::MaxReadonlyDataReached)?;
+                    total_pages = total_pages.saturating_add(initial_pages);
+                    // inclusive, like `SegmentBuilder::add_memory_pages`
+                    if total_pages > config.max_allowed_memory_pages {
+                        return Err(CompilationError::MaxReadonlyDataReached);
+                    }
+                }
+            }
+            // every section this check cares about precedes the code section
+            Payload::CodeSectionStart { .. } | Payload::End(_) => break,
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 /// Compiles a wasm binary with the Wasmtime engine configured by `compilation_config`.
 ///
-/// This applies Wasmtime's own validation only. The rwasm strategy accepts a strict subset of
-/// what Wasmtime accepts (see [`crate::RwasmModule::compile`]); callers that need both strategies
-/// to agree on the accepted language go through [`crate::StrategyDefinition::new_as_wasmtime`],
-/// which runs the rwasm front end first.
+/// Beyond Wasmtime's own validation this only enforces the rwasm compile-time resource caps
+/// (see [`check_compile_limits`]). The rwasm strategy accepts a strict subset of what Wasmtime
+/// accepts (see [`crate::RwasmModule::compile`]); callers that need both strategies to agree on
+/// the accepted language go through [`crate::StrategyDefinition::new_as_wasmtime`], which runs
+/// the rwasm front end first.
 pub fn compile_wasmtime_module(
     compilation_config: CompilationConfig,
     wasm_binary: impl AsRef<[u8]>,
 ) -> Result<WasmtimeModule, CompilationError> {
+    let wasm_binary = wasm_binary.as_ref();
+    check_compile_limits(&compilation_config, wasm_binary)?;
     #[cfg(feature = "debug-print")]
     print!("compiling wasmtime module... ");
     let start = Instant::now();
