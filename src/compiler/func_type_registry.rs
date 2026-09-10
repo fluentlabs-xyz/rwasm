@@ -1,5 +1,6 @@
 use crate::{CompilationError, FuncTypeIdx, SignatureIdx};
 use alloc::vec::Vec;
+use hashbrown::HashMap;
 use wasmparser::{BlockType, FuncType, ValType};
 
 #[derive(Default, Debug)]
@@ -7,6 +8,13 @@ pub struct FuncTypeRegistry {
     original_func_types: Vec<FuncType>,
     func_types: Vec<FuncType>,
     original_signatures: Vec<SignatureIdx>,
+    /// Canonical signature index of every distinct original function type registered so far.
+    ///
+    /// Deduplication is one hash lookup per declared type. A linear scan over the registered
+    /// types would make the type section quadratic to process, and compilation runs before any
+    /// fuel is charged, so an adversarial module with many distinct types could burn seconds of
+    /// validator CPU.
+    signatures_by_type: HashMap<FuncType, SignatureIdx>,
 }
 
 impl FuncTypeRegistry {
@@ -56,17 +64,16 @@ impl FuncTypeRegistry {
                 _ => adjusted_result.push(*x),
             }
         }
-        let dedup_type_position = self
-            .original_func_types
-            .iter()
-            .position(|v| v == &func_type);
         let next_func_type_index = self.original_func_types.len();
+        // the first occurrence of a signature becomes its canonical index
+        let signature_index = *self
+            .signatures_by_type
+            .entry(func_type.clone())
+            .or_insert(next_func_type_index as SignatureIdx);
         self.original_func_types.push(func_type);
         let adjusted_func_type = FuncType::new(adjusted_params, adjusted_result);
         self.func_types.push(adjusted_func_type);
-        let dedup_type_position = dedup_type_position.unwrap_or(next_func_type_index);
-        self.original_signatures
-            .push(dedup_type_position as SignatureIdx);
+        self.original_signatures.push(signature_index);
         Ok(next_func_type_index as FuncTypeIdx)
     }
 
@@ -158,5 +165,30 @@ mod tests {
         assert_eq!(registry.original_func_types.len(), 3);
         assert_eq!(registry.func_types.len(), 3);
         assert_eq!(registry.original_signatures.len(), 3);
+    }
+
+    #[test]
+    fn deduplicates_interleaved_signatures_to_their_first_occurrence() {
+        let distinct = |n: u32| -> FuncType {
+            let params: Vec<ValType> = (0..8)
+                .map(|bit| if n & (1 << bit) == 0 { I32 } else { I64 })
+                .collect();
+            FuncType::new(params, [])
+        };
+        let mut types = Vec::new();
+        for n in 0..64 {
+            types.push(distinct(n));
+            // every type is declared a second time right after a different one
+            types.push(distinct(n / 2));
+        }
+        let registry = FuncTypeRegistry::new(types.clone()).unwrap();
+        for (index, func_type) in types.iter().enumerate() {
+            let first = types.iter().position(|v| v == func_type).unwrap();
+            assert_eq!(
+                registry.resolve_func_type_signature(index as FuncTypeIdx),
+                first as SignatureIdx
+            );
+        }
+        assert_eq!(registry.signatures_by_type.len(), 64);
     }
 }

@@ -425,8 +425,7 @@ impl ModuleParser {
     ///
     /// If the configured type count limit is exceeded or an unsupported function type is encountered.
     fn process_types(&mut self, section: TypeSectionReader) -> Result<(), CompilationError> {
-        // Validation reserves storage for the declared count; bound it before that allocation
-        // and before the registry's quadratic signature-deduplication scan.
+        // Validation reserves storage for the declared count; bound it before that allocation.
         if section.count() > self.config.max_allowed_function_types {
             return Err(CompilationError::TooManyFunctionTypes {
                 count: section.count(),

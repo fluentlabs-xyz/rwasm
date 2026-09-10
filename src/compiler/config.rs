@@ -68,9 +68,10 @@ pub struct CompilationConfig {
     /// The maximum number of memory pages that can be allocated by the module.
     pub max_allowed_memory_pages: u32,
     /// Maximum entries in the Wasm function-type section, including duplicates (default: 4096).
-    /// Checked before type validation allocates memory or signature deduplication runs.
-    /// Increasing this limit permits more quadratic compilation work and should be coordinated
-    /// with the host's compilation budget. It does not change emitted bytecode.
+    /// Checked before type validation allocates memory for the declared count. Every declared
+    /// type costs constant work in the compiler, so raising this limit scales compile time
+    /// linearly; coordinate it with the host's compilation budget. It does not change emitted
+    /// bytecode.
     pub max_allowed_function_types: u32,
 }
 
