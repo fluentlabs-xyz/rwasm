@@ -171,9 +171,9 @@ fn test_interrupted_call_rwasm_with_overflow() {
     assert_eq!(err, TrapCode::IntegerOverflow);
 }
 
+/// The rwasm engine resumes an interrupted call. The Wasmtime strategy does not support
+/// interruptions: its executor reports the interruption and refuses to resume.
 #[test]
-// Note: this test can't pass, because we don't support interruptions for wasmtime anymore
-#[ignore]
 fn test_interrupted_call_wasmtime() {
     let wasm_binary = wat::parse_str(
         r#"
@@ -238,10 +238,10 @@ fn test_interrupted_call_wasmtime() {
         .execute("main", &[], &mut result)
         .unwrap_err();
     assert_eq!(err, TrapCode::InterruptionCalled);
-    let err = wasmtime_worker.resume(&[], &mut result).unwrap_err();
-    assert_eq!(err, TrapCode::InterruptionCalled);
-    wasmtime_worker.resume(&[], &mut result).unwrap();
-    assert_eq!(result[0].i32().unwrap(), 123);
+    assert_eq!(
+        wasmtime_worker.resume(&[], &mut result),
+        Err(TrapCode::IllegalOpcode)
+    );
 }
 
 #[test]
@@ -320,4 +320,61 @@ fn test_memory_write_during_interruption() {
         module,
         engine: ExecutionEngine::acquire_shared(),
     });
+}
+
+/// `resume` without an interrupted execution is a host bug, but a reachable one; it must be an
+/// error rather than a panic, before any execution, after a completed one, and after the single
+/// resume an interruption allows.
+#[test]
+fn test_resume_without_interruption_is_an_error() {
+    let module = RwasmModuleBuilder::new(instruction_set! {
+        // entrypoint
+        Return
+        // function
+        Call(0xff)
+        Return
+    })
+    .with_source_pc(1)
+    .build();
+    let mut store = RwasmStore::<()>::new(
+        default_import_linker(),
+        (),
+        interrupting_syscall_handler,
+        None,
+        None,
+    );
+    let engine = ExecutionEngine::new();
+    assert_eq!(
+        engine.resume(&mut store, &[], &mut []),
+        Err(TrapCode::IllegalOpcode)
+    );
+    assert_eq!(
+        engine.execute(&mut store, &module, &[], &mut []),
+        Err(TrapCode::InterruptionCalled)
+    );
+    engine.resume(&mut store, &[], &mut []).unwrap();
+    assert_eq!(
+        engine.resume(&mut store, &[], &mut []),
+        Err(TrapCode::IllegalOpcode)
+    );
+
+    // the Wasmtime strategy does not support interruptions, so it reports the same error
+    let module = compile_wasmtime_module(
+        CompilationConfig::default().with_consume_fuel(false),
+        wat::parse_str(r#"(module (func (export "main")))"#).unwrap(),
+    )
+    .unwrap();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        default_import_linker(),
+        (),
+        interrupting_syscall_handler,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        wasmtime_worker.resume(&[], &mut []),
+        Err(TrapCode::IllegalOpcode)
+    );
 }

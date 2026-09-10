@@ -86,7 +86,14 @@ impl ExecutionEngine {
         }
     }
 
-    /// Resumes the execution of a WASM (WebAssembly) function that was previously interrupted.
+    /// Resumes an execution on `store` that returned [`TrapCode::InterruptionCalled`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TrapCode::IllegalOpcode`] when the store holds no interrupted execution: the
+    /// host called `resume` without a preceding interruption, or a second time after the resumed
+    /// execution finished. That is a host bug, but one a node cannot rule out from the outside,
+    /// so it is reported instead of aborting the process.
     #[inline(always)]
     pub fn resume<T>(
         &self,
@@ -99,9 +106,7 @@ impl ExecutionEngine {
             mut call_stack,
             ip,
             mut value_stack,
-        } = take(&mut store.resumable_context).unwrap_or_else(|| {
-            unreachable!("resume calling without a remaining call stack");
-        });
+        } = take(&mut store.resumable_context).ok_or(TrapCode::IllegalOpcode)?;
         let sp = value_stack.stack_ptr();
         let mut executor =
             RwasmExecutor::new(&module, &mut value_stack, sp, &mut call_stack, ip, store);

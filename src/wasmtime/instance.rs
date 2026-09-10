@@ -416,12 +416,15 @@ impl<T: 'static> WasmtimeExecutor<T> {
         Ok(())
     }
 
+    /// Interruptions are not supported on the Wasmtime strategy, so there is never an execution
+    /// to resume; this always fails with [`TrapCode::IllegalOpcode`], the same error the rwasm
+    /// engine reports for a `resume` without an interrupted execution.
     pub fn resume(
         &mut self,
         interruption_result: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        unimplemented!("wasmtime: resume is not implemented yet");
+        Err(TrapCode::IllegalOpcode)
     }
 
     pub fn snapshot_memory(&mut self) -> Result<Vec<u8>, TrapCode> {

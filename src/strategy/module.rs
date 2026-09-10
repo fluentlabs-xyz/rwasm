@@ -269,6 +269,10 @@ impl<T: 'static> StrategyExecutor<T> {
         }
     }
 
+    /// Resumes an execution interrupted with [`TrapCode::InterruptionCalled`].
+    ///
+    /// Fails with [`TrapCode::IllegalOpcode`] when there is nothing to resume (no interruption
+    /// happened, or the Wasmtime strategy, which does not support interruptions).
     pub fn resume(
         &mut self,
         interruption_result: &[Value],
