@@ -65,7 +65,8 @@ fn test_nitro_verifier_wasmtime() {
         fluentbase_syscall_handler,
         None,
         None,
-    );
+    )
+    .unwrap();
     worker.execute("main", &[], &mut []).unwrap();
 }
 

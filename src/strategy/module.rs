@@ -116,7 +116,7 @@ impl StrategyDefinition {
                     syscall_handler,
                     fuel_limit,
                     max_allowed_memory_pages,
-                );
+                )?;
                 Ok(StrategyExecutor::Wasmtime { executor })
             }
         }

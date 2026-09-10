@@ -231,7 +231,8 @@ fn test_interrupted_call_wasmtime() {
         interrupting_syscall_handler,
         None,
         None,
-    );
+    )
+    .unwrap();
     let mut result = [Value::I32(0); 1];
     let err = wasmtime_worker
         .execute("main", &[], &mut result)

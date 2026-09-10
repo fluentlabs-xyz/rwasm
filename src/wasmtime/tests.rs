@@ -85,7 +85,8 @@ fn test_call_with_charging_quadratic_wasmtime() {
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     wasmtime_worker
         .execute("main_with_quadratic", &[], &mut [])
@@ -107,7 +108,8 @@ fn test_call_with_charging_linear_wasmtime() {
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     wasmtime_worker.execute("main", &[], &mut []).unwrap();
     assert_eq!(
@@ -126,7 +128,8 @@ fn test_call_with_charging_param_overflow_wasmtime() {
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     let err = wasmtime_worker
         .execute("main_with_overflow", &[], &mut [])
@@ -148,7 +151,8 @@ fn test_wasmtime_executor_missing_entrypoint_returns_trap() {
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     let err = wasmtime_worker
         .execute("missing_export", &[], &mut [])
@@ -254,7 +258,8 @@ fn test_wasmtime_caller_missing_memory_returns_trap() {
         read_memory_syscall,
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         wasmtime_worker
@@ -274,7 +279,8 @@ fn test_wasmtime_snapshot_missing_memory_returns_trap() {
         read_memory_syscall,
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         wasmtime_worker.snapshot_memory().unwrap_err(),
@@ -292,7 +298,8 @@ fn test_wasmtime_executor_memory_read_into_vec_checks_bounds_before_allocating()
         read_memory_syscall,
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         wasmtime_worker.memory_read_into_vec(0, 4).unwrap(),
@@ -322,7 +329,8 @@ fn test_wasmtime_caller_memory_read_into_vec_checks_bounds_before_allocating() {
         read_memory_syscall,
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     wasmtime_worker.execute("read_ok", &[], &mut []).unwrap();
     assert_eq!(wasmtime_worker.data(), &[1, 2, 3, 4]);
@@ -374,7 +382,8 @@ fn test_wasmtime_fuel_accessors_use_engine_metering_when_enabled() {
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     assert_eq!(wasmtime_worker.remaining_fuel(), Some(100_000));
     wasmtime_worker.try_consume_fuel(10).unwrap();
@@ -399,7 +408,8 @@ fn test_wasmtime_fuel_accessors_use_soft_counter_when_engine_metering_is_off() {
         |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
         Some(1_000),
         None,
-    );
+    )
+    .unwrap();
 
     assert!(wasmtime_worker.store.get_fuel().is_err());
     assert_eq!(wasmtime_worker.remaining_fuel(), Some(1_000));
@@ -442,7 +452,8 @@ fn test_wasmtime_executor_exports_follow_the_instance() {
         read_memory_syscall,
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
     wasmtime_worker.execute("read_ok", &[], &mut []).unwrap();
     assert_eq!(wasmtime_worker.data(), &[1, 2, 3, 4]);
 
@@ -554,7 +565,7 @@ fn mix_syscall(
 fn test_wasmtime_numeric_imports_round_trip_through_raw_slots() {
     let (module, import_linker) = get_test_numeric_marshalling_module();
     let mut wasmtime_worker =
-        WasmtimeExecutor::new(module, import_linker, (), mix_syscall, Some(100_000), None);
+        WasmtimeExecutor::new(module, import_linker, (), mix_syscall, Some(100_000), None).unwrap();
 
     let mut result = [Value::I64(0)];
     wasmtime_worker.execute("main", &[], &mut result).unwrap();
@@ -568,7 +579,7 @@ fn test_wasmtime_numeric_imports_round_trip_through_raw_slots() {
 fn test_wasmtime_numeric_exports_marshal_params_and_results() {
     let (module, import_linker) = get_test_numeric_marshalling_module();
     let mut wasmtime_worker =
-        WasmtimeExecutor::new(module, import_linker, (), mix_syscall, Some(100_000), None);
+        WasmtimeExecutor::new(module, import_linker, (), mix_syscall, Some(100_000), None).unwrap();
 
     let mut result = [Value::I32(0)];
     wasmtime_worker
@@ -638,7 +649,8 @@ fn test_wasmtime_raw_import_rejects_mistyped_syscall_results() {
         },
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     let mut result = [Value::I64(0)];
     assert_eq!(
@@ -661,7 +673,8 @@ fn test_wasmtime_raw_import_halt_is_a_controlled_exit() {
         },
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     let mut result = [Value::I64(0)];
     wasmtime_worker.execute("main", &[], &mut result).unwrap();
@@ -698,7 +711,8 @@ fn test_wasmtime_caller_fuel_accessors_use_engine_metering_when_enabled() {
         },
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     wasmtime_worker.execute("main", &[], &mut []).unwrap();
     // Only the instructions after the import call are charged against the reset budget.
@@ -732,7 +746,8 @@ fn test_wasmtime_caller_fuel_accessors_use_soft_counter_when_engine_metering_is_
         },
         Some(1_000),
         None,
-    );
+    )
+    .unwrap();
 
     wasmtime_worker.execute("probe", &[], &mut []).unwrap();
     assert_eq!(wasmtime_worker.remaining_fuel(), Some(7));
@@ -778,7 +793,8 @@ fn test_wasmtime_executor_reports_instantiation_errors() {
         read_memory_syscall,
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
     assert!(wasmtime_worker.instantiate(&unlinked_module).is_err());
     wasmtime_worker.execute("read_ok", &[], &mut []).unwrap();
     assert_eq!(wasmtime_worker.data(), &[1, 2, 3, 4]);
@@ -802,7 +818,8 @@ fn test_wasmtime_caller_writes_guest_memory_through_the_cached_handle() {
         },
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     wasmtime_worker.execute("read_ok", &[], &mut []).unwrap();
     assert_eq!(
@@ -858,7 +875,8 @@ fn test_wasmtime_raw_imports_return_float_results() {
         },
         Some(100_000),
         None,
-    );
+    )
+    .unwrap();
 
     let mut result = [Value::F64(crate::F64::from_bits(0))];
     wasmtime_worker.execute("main", &[], &mut result).unwrap();
@@ -866,4 +884,152 @@ fn test_wasmtime_raw_imports_return_float_results() {
         result[0],
         Value::F64(crate::F64::from_bits((-2.25f64).to_bits()))
     );
+}
+
+/// A module whose instantiation fails must be reported as the trap the rwasm strategy raises for
+/// it, never as a panic: the input reaching `WasmtimeExecutor::new` is not pre-validated against
+/// the import linker or the store limits.
+mod instantiation_failures {
+    use super::*;
+    use crate::always_failing_syscall_handler;
+
+    fn compile(wat: &str, config: CompilationConfig) -> Module {
+        compile_wasmtime_module(config, wat::parse_str(wat).unwrap()).unwrap()
+    }
+
+    fn instantiate(module: Module, max_allowed_memory_pages: Option<u32>) -> Result<(), TrapCode> {
+        WasmtimeExecutor::new(
+            module,
+            Arc::new(ImportLinker::default()),
+            (),
+            always_failing_syscall_handler,
+            None,
+            max_allowed_memory_pages,
+        )
+        .map(|_| ())
+    }
+
+    #[test]
+    fn trapping_start_function_is_its_trap() {
+        let module = compile(
+            r#"(module (func $start unreachable) (start $start) (func (export "main")))"#,
+            CompilationConfig::default().with_allow_start_section(true),
+        );
+        assert_eq!(
+            instantiate(module, None),
+            Err(TrapCode::UnreachableCodeReached)
+        );
+    }
+
+    #[test]
+    fn unresolved_import_is_unknown_external_function() {
+        let module = compile(
+            r#"(module (func (import "host" "missing")) (func (export "main")))"#,
+            CompilationConfig::default(),
+        );
+        assert_eq!(
+            instantiate(module, None),
+            Err(TrapCode::UnknownExternalFunction)
+        );
+    }
+
+    #[test]
+    fn initial_memory_above_the_store_limit_is_memory_out_of_bounds() {
+        let module = compile(
+            r#"(module (memory 2) (func (export "main")))"#,
+            CompilationConfig::default(),
+        );
+        assert_eq!(
+            instantiate(module.clone(), Some(1)),
+            Err(TrapCode::MemoryOutOfBounds)
+        );
+        // the same module instantiates once the store permits its initial memory
+        assert_eq!(instantiate(module, Some(2)), Ok(()));
+    }
+
+    /// A refused grow inside the start function returns `-1` to the guest; a failure the function
+    /// raises afterwards for its own reason must not be relabelled as the denial.
+    #[test]
+    fn handled_grow_denial_does_not_relabel_a_later_trap() {
+        let module = compile(
+            r#"(module
+                (memory 1)
+                (func $start
+                    (drop (memory.grow (i32.const 16)))
+                    unreachable)
+                (start $start)
+                (func (export "main")))"#,
+            CompilationConfig::default().with_allow_start_section(true),
+        );
+        assert_eq!(
+            instantiate(module, Some(1)),
+            Err(TrapCode::UnreachableCodeReached)
+        );
+    }
+
+    #[test]
+    fn handled_grow_denial_does_not_relabel_a_host_error() {
+        let wasm = wat::parse_str(
+            r#"(module
+                (import "host" "fail" (func $fail))
+                (memory 1)
+                (func $start
+                    (drop (memory.grow (i32.const 16)))
+                    call $fail)
+                (start $start)
+                (func (export "main")))"#,
+        )
+        .unwrap();
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("host", "fail"),
+            0x01,
+            SyscallFuelParams::default(),
+            &[],
+            &[],
+        );
+        let import_linker = Arc::new(import_linker);
+        let module = compile_wasmtime_module(
+            CompilationConfig::default()
+                .with_allow_start_section(true)
+                .with_import_linker(import_linker.clone()),
+            wasm,
+        )
+        .unwrap();
+        let err = WasmtimeExecutor::new(
+            module,
+            import_linker,
+            (),
+            |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> {
+                Err(TrapCode::OutOfFuel)
+            },
+            None,
+            Some(1),
+        )
+        .err()
+        .expect("the start function fails");
+        assert_eq!(err, TrapCode::OutOfFuel);
+    }
+
+    #[test]
+    fn try_new_keeps_the_trap_code_as_error_context() {
+        let module = compile(
+            r#"(module (memory 2) (func (export "main")))"#,
+            CompilationConfig::default(),
+        );
+        let err = WasmtimeExecutor::try_new(
+            module,
+            Arc::new(ImportLinker::default()),
+            (),
+            always_failing_syscall_handler,
+            None,
+            Some(1),
+        )
+        .err()
+        .expect("instantiation must fail");
+        assert_eq!(
+            err.downcast_ref::<TrapCode>(),
+            Some(&TrapCode::MemoryOutOfBounds)
+        );
+    }
 }
