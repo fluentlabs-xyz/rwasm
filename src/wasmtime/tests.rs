@@ -1033,3 +1033,35 @@ mod instantiation_failures {
         );
     }
 }
+
+/// The Wasmtime store applies rwasm's table cap, so a module that reaches instantiation with an
+/// oversized table (bypassing `compile_wasmtime_module`, e.g. through deserialization) fails with
+/// the trap the rwasm prologue would raise.
+#[test]
+fn test_initial_table_above_the_cap_is_table_out_of_bounds() {
+    use crate::{always_failing_syscall_handler, N_MAX_TABLE_SIZE};
+    let engine = compile_wasmtime_module(
+        CompilationConfig::default(),
+        wat::parse_str("(module)").unwrap(),
+    )
+    .unwrap()
+    .engine()
+    .clone();
+    let wasm = wat::parse_str(format!(
+        r#"(module (table {} funcref) (func (export "main")))"#,
+        N_MAX_TABLE_SIZE + 1
+    ))
+    .unwrap();
+    let module = Module::new(&engine, &wasm).unwrap();
+    let err = WasmtimeExecutor::new(
+        module,
+        Arc::new(ImportLinker::default()),
+        (),
+        always_failing_syscall_handler,
+        None,
+        None,
+    )
+    .err()
+    .expect("instantiation must fail");
+    assert_eq!(err, TrapCode::TableOutOfBounds);
+}

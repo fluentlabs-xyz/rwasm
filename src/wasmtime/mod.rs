@@ -14,7 +14,7 @@ pub use self::{
 };
 use crate::{
     wasmtime::{context::WrappedContext, engine::wasmtime_engine},
-    CompilationConfig, CompilationError,
+    CompilationConfig, CompilationError, N_MAX_TABLE_SIZE,
 };
 use lru::LruCache;
 use std::{
@@ -44,10 +44,11 @@ pub fn deserialize_wasmtime_module(
 /// Applies the rwasm compile-time resource caps to a wasm binary before Wasmtime compiles it.
 ///
 /// `RwasmModule::compile` rejects a module whose declared initial memory exceeds
-/// `config.max_allowed_memory_pages`. Wasmtime has no compile-time equivalent: its store limiter
-/// acts at instantiation, against a cap the runtime picks independently of the compiler. Without
-/// this check a deployment whose runtime cap exceeds the compile cap accepts a module on the
-/// Wasmtime strategy that the rwasm strategy rejects at compile time.
+/// `config.max_allowed_memory_pages` or whose table declares more than [`N_MAX_TABLE_SIZE`]
+/// elements. Wasmtime has no compile-time equivalent: its store limiter acts at instantiation,
+/// against a cap the runtime picks independently of the compiler. Without this check a deployment
+/// whose runtime cap exceeds the compile cap accepts a module on the Wasmtime strategy that the
+/// rwasm strategy rejects at compile time.
 ///
 /// Only the section headers up to the code section are read, so this costs a fraction of the
 /// compilation itself.
@@ -66,6 +67,17 @@ fn check_compile_limits(
                     // inclusive, like `SegmentBuilder::add_memory_pages`
                     if total_pages > config.max_allowed_memory_pages {
                         return Err(CompilationError::MaxReadonlyDataReached);
+                    }
+                }
+            }
+            Payload::TableSection(section) => {
+                for table_type in section.into_iter() {
+                    let size = table_type?.initial;
+                    if size > N_MAX_TABLE_SIZE {
+                        return Err(CompilationError::TableSizeExceedsLimit {
+                            size,
+                            limit: N_MAX_TABLE_SIZE,
+                        });
                     }
                 }
             }

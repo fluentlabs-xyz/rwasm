@@ -30,6 +30,11 @@ pub enum CompilationError {
         count: u32,
         limit: u32,
     },
+    /// A table declares more initial elements than [`crate::N_MAX_TABLE_SIZE`] permits.
+    TableSizeExceedsLimit {
+        size: u32,
+        limit: u32,
+    },
     /// Wasmtime rejected a binary that passed rwasm validation.
     #[cfg(feature = "wasmtime")]
     WasmtimeCompilationFailed(wasmtime::Error),
@@ -83,6 +88,9 @@ impl core::fmt::Display for CompilationError {
                     f,
                     "function type count {count} exceeds compilation limit {limit}"
                 )
+            }
+            CompilationError::TableSizeExceedsLimit { size, limit } => {
+                write!(f, "table size {size} exceeds compilation limit {limit}")
             }
             #[cfg(feature = "wasmtime")]
             CompilationError::WasmtimeCompilationFailed(err) => {

@@ -5,7 +5,7 @@ use crate::{
         WrappedContext,
     },
     ImportLinker, SyscallHandler, TrapCode, Value, F32, F64, N_BYTES_PER_MEMORY_PAGE,
-    N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES,
+    N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES, N_MAX_TABLE_SIZE,
 };
 use smallvec::SmallVec;
 use std::sync::Arc;
@@ -152,9 +152,13 @@ impl<T: 'static> WasmtimeExecutor<T> {
         let memory_size_limit = (memory_pages as usize)
             .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
             .expect("wasmtime: memory limit is bounded by N_MAX_ALLOWED_MEMORY_PAGES");
+        // the rwasm VM caps every table at `N_MAX_TABLE_SIZE` elements (`TableEntity::grow_untyped`
+        // fails any grow beyond it); apply the same per-table cap here so `table.grow` reports
+        // the same failures on both strategies
         let resource_limiter = RecordingStoreLimits::new(
             wasmtime::StoreLimitsBuilder::new()
                 .memory_size(memory_size_limit)
+                .table_elements(N_MAX_TABLE_SIZE as usize)
                 .build(),
         );
 

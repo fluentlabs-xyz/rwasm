@@ -1,7 +1,7 @@
 use crate::{
     instruction_set, CompilationError, DataSegmentIdx, ElementSegmentIdx, GlobalIdx,
     GlobalVariable, I64ValueSplit, InstructionSet, TableIdx, TrapCode, DEFAULT_MEMORY_INDEX,
-    NULL_FUNC_IDX, N_BYTES_PER_MEMORY_PAGE,
+    NULL_FUNC_IDX, N_BYTES_PER_MEMORY_PAGE, N_MAX_TABLE_SIZE,
 };
 use alloc::{vec, vec::Vec};
 use hashbrown::HashMap;
@@ -104,11 +104,21 @@ impl SegmentBuilder {
         Ok(())
     }
 
+    /// Max stack height: 2
     pub fn emit_table_segment(
         &mut self,
         table_index: TableIdx,
         table_type: &TableType,
     ) -> Result<(), CompilationError> {
+        // the runtime caps every table at `N_MAX_TABLE_SIZE` and the grow below discards its
+        // result, so a larger declared size would leave the rwasm VM running on an empty table
+        // while Wasmtime honours the declaration; reject it here so the module never compiles
+        if table_type.initial > N_MAX_TABLE_SIZE {
+            return Err(CompilationError::TableSizeExceedsLimit {
+                size: table_type.initial,
+                limit: N_MAX_TABLE_SIZE,
+            });
+        }
         // Wasm validation guarantees that the number of table segments can't exceed 100 items,
         // that is why there is no need to check for potential overflow
         self.entrypoint_bytecode.op_ref_func(NULL_FUNC_IDX);
