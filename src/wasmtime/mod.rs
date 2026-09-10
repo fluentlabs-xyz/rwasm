@@ -27,7 +27,17 @@ use wasmparser::{Parser, Payload};
 pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<WrappedContext<T>>;
 
-pub fn deserialize_wasmtime_module(
+/// Loads a module from bytes produced by `wasmtime::Module::serialize` on a compatible build.
+///
+/// # Safety
+///
+/// This is a native-code load, not a parse. `wasmtime::Module::deserialize` trusts
+/// `wasmtime_binary` to be an artifact it produced itself and performs no authentication, so
+/// attacker-influenced bytes are arbitrary code execution rather than a decode error. The caller
+/// must guarantee that the bytes come from a trusted producer and reached this call with their
+/// integrity intact (for example, verified by a keyed MAC that the producer computed), and must
+/// never pass unauthenticated cache contents or any bytes received from a network peer.
+pub unsafe fn deserialize_wasmtime_module(
     compilation_config: CompilationConfig,
     wasmtime_binary: impl AsRef<[u8]>,
 ) -> wasmtime::Result<WasmtimeModule> {
@@ -35,6 +45,7 @@ pub fn deserialize_wasmtime_module(
     print!("parsing wasmtime module... ");
     let start = Instant::now();
     let engine = wasmtime_engine(&compilation_config);
+    // SAFETY: forwarded to the caller, see the function's safety contract.
     let module = unsafe { wasmtime::Module::deserialize(&engine, wasmtime_binary) };
     #[cfg(feature = "debug-print")]
     println!("{:?}", start.elapsed());
