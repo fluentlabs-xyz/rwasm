@@ -10,12 +10,14 @@ use wasmparser::ValType;
 
 /// Whether a signature can go through the raw trampoline, which handles numeric values only.
 fn is_numeric_signature(params: &[ValType], result: &[ValType]) -> bool {
-    params.iter().chain(result).all(|ty| {
-        matches!(
-            ty,
-            ValType::I32 | ValType::I64 | ValType::F32 | ValType::F64
-        )
-    })
+    params.iter().chain(result).all(is_numeric_type)
+}
+
+fn is_numeric_type(ty: &ValType) -> bool {
+    matches!(
+        ty,
+        ValType::I32 | ValType::I64 | ValType::F32 | ValType::F64
+    )
 }
 
 /// Creates a Wasmtime linker from an rWasm `ImportLinker`.

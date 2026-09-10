@@ -423,37 +423,14 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
-        if self.store.data().fuel_enabled {
-            let remaining_fuel = self.store.get_fuel().unwrap_or_else(|_| {
-                unreachable!("wasmtime: fuel metering was enabled at store creation")
-            });
-            let new_fuel = remaining_fuel
-                .checked_sub(delta)
-                .ok_or(TrapCode::OutOfFuel)?;
-            self.store.set_fuel(new_fuel).unwrap_or_else(|_| {
-                unreachable!("wasmtime: fuel metering was enabled at store creation")
-            });
-        } else if let Some(fuel) = self.store.data_mut().fuel.as_mut() {
-            *fuel = fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
-        }
-        Ok(())
+        crate::wasmtime::context::try_consume_fuel(&mut self.store, delta)
     }
 
     fn remaining_fuel(&self) -> Option<u64> {
-        if self.store.data().fuel_enabled {
-            self.store.get_fuel().ok()
-        } else {
-            self.store.data().fuel
-        }
+        crate::wasmtime::context::remaining_fuel(&self.store)
     }
 
     fn reset_fuel(&mut self, new_fuel_limit: u64) {
-        if self.store.data().fuel_enabled {
-            self.store.set_fuel(new_fuel_limit).unwrap_or_else(|_| {
-                unreachable!("wasmtime: fuel metering was enabled at store creation")
-            });
-        } else {
-            self.store.data_mut().fuel = Some(new_fuel_limit)
-        }
+        crate::wasmtime::context::reset_fuel(&mut self.store, new_fuel_limit)
     }
 }

@@ -810,3 +810,60 @@ fn test_wasmtime_caller_writes_guest_memory_through_the_cached_handle() {
         vec![9, 8, 7, 6]
     );
 }
+
+#[test]
+fn test_wasmtime_raw_imports_return_float_results() {
+    let wasm_binary = wat::parse_str(
+        r#"
+            (module
+              (func $f32r (import "host" "f32r") (result f32))
+              (func $f64r (import "host" "f64r") (result f64))
+              (func (export "main") (result f64)
+                (drop (call $f32r))
+                (call $f64r)
+              )
+            )
+            "#,
+    )
+    .unwrap();
+    let mut import_linker = ImportLinker::default();
+    import_linker.insert_function(
+        ImportName::new("host", "f32r"),
+        0x32,
+        SyscallFuelParams::default(),
+        &[],
+        &[wasmparser::ValType::F32],
+    );
+    import_linker.insert_function(
+        ImportName::new("host", "f64r"),
+        0x64,
+        SyscallFuelParams::default(),
+        &[],
+        &[wasmparser::ValType::F64],
+    );
+    let import_linker = Arc::new(import_linker);
+    let compilation_config = CompilationConfig::default().with_import_linker(import_linker.clone());
+    let module = compile_wasmtime_module(compilation_config, wasm_binary).unwrap();
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        (),
+        |_caller, sys_func_idx, _params, result| -> Result<(), TrapCode> {
+            result[0] = match sys_func_idx {
+                0x32 => Value::F32(crate::F32::from_bits(1.5f32.to_bits())),
+                0x64 => Value::F64(crate::F64::from_bits((-2.25f64).to_bits())),
+                _ => unreachable!(),
+            };
+            Ok(())
+        },
+        Some(100_000),
+        None,
+    );
+
+    let mut result = [Value::F64(crate::F64::from_bits(0))];
+    wasmtime_worker.execute("main", &[], &mut result).unwrap();
+    assert_eq!(
+        result[0],
+        Value::F64(crate::F64::from_bits((-2.25f64).to_bits()))
+    );
+}
