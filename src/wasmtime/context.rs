@@ -4,9 +4,65 @@ use crate::{
 };
 use wasmtime::{AsContext, AsContextMut, StoreLimits};
 
+const ENGINE_FUEL_EXPECTED: &str = "wasmtime: fuel metering was enabled at store creation";
+
+/// Charges `delta` fuel against the engine counter or, when the engine does not meter fuel,
+/// against the soft counter kept in the context.
+pub(crate) fn try_consume_fuel<T: 'static>(
+    mut ctx: impl AsContextMut<Data = WrappedContext<T>>,
+    delta: u64,
+) -> Result<(), TrapCode> {
+    let mut ctx = ctx.as_context_mut();
+    if ctx.data().fuel_enabled {
+        let remaining_fuel = ctx.get_fuel().expect(ENGINE_FUEL_EXPECTED);
+        let new_fuel = remaining_fuel
+            .checked_sub(delta)
+            .ok_or(TrapCode::OutOfFuel)?;
+        ctx.set_fuel(new_fuel).expect(ENGINE_FUEL_EXPECTED);
+    } else if let Some(fuel) = ctx.data_mut().fuel.as_mut() {
+        *fuel = fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
+    }
+    Ok(())
+}
+
+/// Returns the remaining fuel from whichever counter is active, if any.
+pub(crate) fn remaining_fuel<T: 'static>(
+    ctx: impl AsContext<Data = WrappedContext<T>>,
+) -> Option<u64> {
+    let ctx = ctx.as_context();
+    if ctx.data().fuel_enabled {
+        ctx.get_fuel().ok()
+    } else {
+        ctx.data().fuel
+    }
+}
+
+/// Resets whichever counter is active to `new_fuel_limit`.
+pub(crate) fn reset_fuel<T: 'static>(
+    mut ctx: impl AsContextMut<Data = WrappedContext<T>>,
+    new_fuel_limit: u64,
+) {
+    let mut ctx = ctx.as_context_mut();
+    if ctx.data().fuel_enabled {
+        ctx.set_fuel(new_fuel_limit).expect(ENGINE_FUEL_EXPECTED);
+    } else {
+        ctx.data_mut().fuel = Some(new_fuel_limit);
+    }
+}
+
 pub struct WrappedContext<T: 'static> {
     pub(crate) syscall_handler: SyscallHandler<T>,
+    /// Soft fuel counter used when the engine does not meter fuel itself.
     pub(crate) fuel: Option<u64>,
+    /// Whether the engine meters fuel for this store.
+    ///
+    /// Resolved once at store creation: probing `get_fuel()` on every fuel access builds an
+    /// error value each time metering is off, which is the common case for self-metered
+    /// runtimes.
+    pub(crate) fuel_enabled: bool,
+    /// The instance's exported memory, resolved once per instantiation so host calls don't
+    /// look it up by name.
+    pub(crate) memory: Option<wasmtime::Memory>,
     pub(crate) resource_limiter: StoreLimits,
     pub(crate) data: T,
 }
@@ -23,11 +79,8 @@ impl<'a, T: 'static> WasmtimeCaller<'a, T> {
         self.caller
     }
 
-    fn exported_memory(&mut self) -> Result<wasmtime::Memory, TrapCode> {
-        self.caller
-            .get_export("memory")
-            .and_then(|export| export.into_memory())
-            .ok_or(TrapCode::MemoryOutOfBounds)
+    fn exported_memory(&self) -> Result<wasmtime::Memory, TrapCode> {
+        self.caller.data().memory.ok_or(TrapCode::MemoryOutOfBounds)
     }
 }
 
@@ -69,34 +122,15 @@ impl<'a, T: 'static> StoreTr<T> for WasmtimeCaller<'a, T> {
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
-        if let Ok(remaining_fuel) = self.caller.get_fuel() {
-            let new_fuel = remaining_fuel
-                .checked_sub(delta)
-                .ok_or(TrapCode::OutOfFuel)?;
-            self.caller
-                .set_fuel(new_fuel)
-                .unwrap_or_else(|_| unreachable!("wasmtime: fuel mode is disabled in wasmtime"));
-        } else if let Some(fuel) = self.caller.data_mut().fuel.as_mut() {
-            *fuel = fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
-        }
-        Ok(())
+        try_consume_fuel(&mut self.caller, delta)
     }
 
     fn remaining_fuel(&self) -> Option<u64> {
-        if let Ok(fuel) = self.caller.get_fuel() {
-            Some(fuel)
-        } else {
-            self.caller.data().fuel.as_ref().copied()
-        }
+        remaining_fuel(&self.caller)
     }
 
     fn reset_fuel(&mut self, new_fuel_limit: u64) {
-        let has_fuel_enabled = self.caller.get_fuel().is_ok();
-        if has_fuel_enabled {
-            self.caller.set_fuel(new_fuel_limit).unwrap();
-        } else {
-            self.caller.data_mut().fuel = Some(new_fuel_limit)
-        }
+        reset_fuel(&mut self.caller, new_fuel_limit)
     }
 }
 

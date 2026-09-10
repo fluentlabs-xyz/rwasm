@@ -4,14 +4,32 @@ use crate::{
     ImportLinker, SyscallHandler, TrapCode, Value, F32, F64, N_BYTES_PER_MEMORY_PAGE,
     N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES,
 };
+use smallvec::SmallVec;
 use std::sync::Arc;
-use wasmtime::{AsContext, AsContextMut, StoreContext, StoreContextMut};
+use wasmtime::{AsContext, AsContextMut, Extern, StoreContext, StoreContextMut, ValRaw, ValType};
+
+/// Type of an exported function, recorded once so calls can marshal values without `Val`.
+struct ExportedFunction {
+    name: Box<str>,
+    func: wasmtime::Func,
+    params: Vec<ValType>,
+    results: Vec<ValType>,
+    /// Whether every parameter and result is numeric, which the raw call path requires.
+    numeric: bool,
+}
 
 pub struct WasmtimeExecutor<T: 'static> {
     pub linker: wasmtime::Linker<WrappedContext<T>>,
     pub store: wasmtime::Store<WrappedContext<T>>,
     pub instance_pre: wasmtime::InstancePre<WrappedContext<T>>,
     pub instance: wasmtime::Instance,
+    /// The instance whose exports are currently cached in `functions` and in the store's
+    /// memory handle. Compared against `instance` before every use, so swapping `instance`
+    /// directly still resolves the right exports.
+    cached_instance: wasmtime::Instance,
+    /// Exported functions of `cached_instance`, resolved once so calls don't look them up by
+    /// name. Entry points are few, so a linear scan beats hashing the name.
+    functions: Vec<ExportedFunction>,
 }
 
 impl<T: 'static> AsContext for WasmtimeExecutor<T> {
@@ -29,10 +47,54 @@ impl<T: 'static> AsContextMut for WasmtimeExecutor<T> {
 
 impl<T: 'static> WasmtimeExecutor<T> {
     fn exported_memory(&mut self) -> Result<wasmtime::Memory, TrapCode> {
-        self.instance
-            .get_export(self.store.as_context_mut(), "memory")
-            .and_then(|export| export.into_memory())
-            .ok_or(TrapCode::MemoryOutOfBounds)
+        self.ensure_exports_current();
+        self.store.data().memory.ok_or(TrapCode::MemoryOutOfBounds)
+    }
+
+    /// Re-resolves the cached exports when `instance` was replaced since the last use.
+    fn ensure_exports_current(&mut self) {
+        if self.cached_instance != self.instance {
+            self.refresh_exports();
+        }
+    }
+
+    /// Resolves the exported functions and the exported memory of `instance` once.
+    fn refresh_exports(&mut self) {
+        let mut functions = Vec::new();
+        let mut memory = None;
+        for export in self.instance.exports(&mut self.store) {
+            let name = export.name();
+            match export.into_extern() {
+                Extern::Func(func) => functions.push((Box::<str>::from(name), func)),
+                Extern::Memory(exported_memory) if name == "memory" => {
+                    memory = Some(exported_memory)
+                }
+                _ => {}
+            }
+        }
+        self.functions = functions
+            .into_iter()
+            .map(|(name, func)| {
+                let ty = func.ty(&self.store);
+                let params = ty.params().collect::<Vec<_>>();
+                let results = ty.results().collect::<Vec<_>>();
+                let numeric = params.iter().chain(&results).all(|ty| {
+                    matches!(
+                        ty,
+                        ValType::I32 | ValType::I64 | ValType::F32 | ValType::F64
+                    )
+                });
+                ExportedFunction {
+                    name,
+                    func,
+                    params,
+                    results,
+                    numeric,
+                }
+            })
+            .collect();
+        self.store.data_mut().memory = memory;
+        self.cached_instance = self.instance;
     }
 
     /// Creates an executor by instantiating an already-compiled Wasmtime module.
@@ -44,7 +106,8 @@ impl<T: 'static> WasmtimeExecutor<T> {
     /// import linker, and start sections (the one way a valid module can trap during
     /// instantiation) are rejected by default at compile time. So a failure here means the caller
     /// paired a module with the wrong import linker or bypassed compilation/validation, and we'd
-    /// rather crash loudly than continue with a half-linked instance.
+    /// rather crash loudly than continue with a half-linked instance. Use [`Self::try_new`] to
+    /// get the error instead.
     pub fn new(
         module: wasmtime::Module,
         import_linker: Arc<ImportLinker>,
@@ -53,6 +116,27 @@ impl<T: 'static> WasmtimeExecutor<T> {
         fuel_limit: Option<u64>,
         max_allowed_memory_pages: Option<u32>,
     ) -> Self {
+        Self::try_new(
+            module,
+            import_linker,
+            data,
+            syscall_handler,
+            fuel_limit,
+            max_allowed_memory_pages,
+        )
+        .unwrap_or_else(|err| panic!("wasmtime: can't instantiate module: {}", err))
+    }
+
+    /// Creates an executor by instantiating an already-compiled Wasmtime module, returning the
+    /// linking or instantiation error instead of panicking.
+    pub fn try_new(
+        module: wasmtime::Module,
+        import_linker: Arc<ImportLinker>,
+        data: T,
+        syscall_handler: SyscallHandler<T>,
+        fuel_limit: Option<u64>,
+        max_allowed_memory_pages: Option<u32>,
+    ) -> wasmtime::Result<Self> {
         let memory_pages = max_allowed_memory_pages
             .unwrap_or(N_DEFAULT_MAX_MEMORY_PAGES)
             .min(N_MAX_ALLOWED_MEMORY_PAGES);
@@ -66,14 +150,18 @@ impl<T: 'static> WasmtimeExecutor<T> {
         let context = WrappedContext {
             syscall_handler,
             fuel: None,
+            fuel_enabled: false,
+            memory: None,
             resource_limiter,
             data,
         };
         let mut store = wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context);
         store.limiter(|ctx| &mut ctx.resource_limiter);
+        let fuel_enabled = store.get_fuel().is_ok();
+        store.data_mut().fuel_enabled = fuel_enabled;
         if let Some(fuel) = fuel_limit {
-            if store.get_fuel().is_ok() {
-                store.set_fuel(fuel).expect("wasmtime: fuel is not enabled");
+            if fuel_enabled {
+                store.set_fuel(fuel)?;
             } else {
                 store.data_mut().fuel = Some(fuel);
             }
@@ -84,18 +172,37 @@ impl<T: 'static> WasmtimeExecutor<T> {
         {
             Self::link_spectest_globals(&mut linker, &mut store);
         }
-        let instance_pre = linker
-            .instantiate_pre(&module)
-            .unwrap_or_else(|err| panic!("wasmtime: can't pre-instantiate module: {}", err));
-        let instance = instance_pre
-            .instantiate(store.as_context_mut())
-            .unwrap_or_else(|err| panic!("wasmtime: can't instantiate module: {}", err));
-        Self {
+        let instance_pre = linker.instantiate_pre(&module)?;
+        let instance = instance_pre.instantiate(store.as_context_mut())?;
+        let mut executor = Self {
             linker,
             store,
             instance_pre,
             instance,
-        }
+            cached_instance: instance,
+            functions: Vec::new(),
+        };
+        executor.refresh_exports();
+        Ok(executor)
+    }
+
+    /// Instantiates `module` in this executor's store with its linker, replacing the current
+    /// instance and its cached exports.
+    pub fn instantiate(&mut self, module: &wasmtime::Module) -> wasmtime::Result<()> {
+        let instance_pre = self.linker.instantiate_pre(module)?;
+        let instance = instance_pre.instantiate(self.store.as_context_mut())?;
+        self.instance_pre = instance_pre;
+        self.instance = instance;
+        self.refresh_exports();
+        Ok(())
+    }
+
+    /// Looks up an exported function in the cached export table.
+    fn exported_function(&mut self, func_name: &str) -> Option<usize> {
+        self.ensure_exports_current();
+        self.functions
+            .iter()
+            .position(|function| &*function.name == func_name)
     }
 
     #[cfg(feature = "e2e")]
@@ -134,11 +241,71 @@ impl<T: 'static> WasmtimeExecutor<T> {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        use wasmtime::Val;
-        let entrypoint = self
-            .instance
-            .get_func(self.store.as_context_mut(), func_name)
+        let index = self
+            .exported_function(func_name)
             .ok_or(TrapCode::UnknownExternalFunction)?;
+        let function = &self.functions[index];
+        if function.numeric {
+            return Self::execute_raw(&mut self.store, function, params, result);
+        }
+        self.execute_checked(function.func, params, result)
+    }
+
+    /// Calls a numeric-only export through raw value slots, skipping `Val` marshalling.
+    fn execute_raw(
+        store: &mut wasmtime::Store<WrappedContext<T>>,
+        function: &ExportedFunction,
+        params: &[Value],
+        result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        // The checked call path reports a signature mismatch as a generic wasmtime error, which
+        // `map_wasmtime_error` turns into `IllegalOpcode`; keep that mapping.
+        if params.len() != function.params.len() || result.len() != function.results.len() {
+            return Err(TrapCode::IllegalOpcode);
+        }
+        let mut slots = SmallVec::<[ValRaw; 8]>::new();
+        for (value, ty) in params.iter().zip(&function.params) {
+            slots.push(match (value, ty) {
+                (Value::I32(value), ValType::I32) => ValRaw::i32(*value),
+                (Value::I64(value), ValType::I64) => ValRaw::i64(*value),
+                (Value::F32(value), ValType::F32) => ValRaw::f32(value.to_bits()),
+                (Value::F64(value), ValType::F64) => ValRaw::f64(value.to_bits()),
+                _ => return Err(TrapCode::IllegalOpcode),
+            });
+        }
+        slots.resize(params.len().max(result.len()), ValRaw::i32(0));
+        // SAFETY: `slots` holds one initialized value per parameter, of the types recorded from
+        // the function's own type when the export was cached, and has room for every result. The
+        // function is numeric only, so no reference types need rooting.
+        let halted = match unsafe { function.func.call_unchecked(&mut *store, &mut slots[..]) }
+            .map_err(map_wasmtime_error)
+        {
+            Ok(()) => false,
+            Err(TrapCode::ExecutionHalted) => true,
+            Err(trap_code) => return Err(trap_code),
+        };
+        for ((slot, out), ty) in slots.iter().zip(result.iter_mut()).zip(&function.results) {
+            // A halted call never wrote its results, so the slots still hold parameter bits;
+            // report zeros of the declared types instead of reinterpreting them.
+            *out = match ty {
+                ValType::I32 => Value::I32(if halted { 0 } else { slot.get_i32() }),
+                ValType::I64 => Value::I64(if halted { 0 } else { slot.get_i64() }),
+                ValType::F32 => Value::F32(F32::from_bits(if halted { 0 } else { slot.get_f32() })),
+                ValType::F64 => Value::F64(F64::from_bits(if halted { 0 } else { slot.get_f64() })),
+                _ => unreachable!("wasmtime: raw call path taken for a non-numeric export"),
+            };
+        }
+        Ok(())
+    }
+
+    /// Calls an export through wasmtime's checked `Val` interface; needed for reference types.
+    fn execute_checked(
+        &mut self,
+        entrypoint: wasmtime::Func,
+        params: &[Value],
+        result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        use wasmtime::Val;
         let mut buffer = Vec::<Val>::default();
         for (i, value) in params.iter().enumerate() {
             let value = match value {
@@ -256,33 +423,14 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     }
 
     fn try_consume_fuel(&mut self, delta: u64) -> Result<(), TrapCode> {
-        if let Ok(remaining_fuel) = self.store.get_fuel() {
-            let new_fuel = remaining_fuel
-                .checked_sub(delta)
-                .ok_or(TrapCode::OutOfFuel)?;
-            self.store
-                .set_fuel(new_fuel)
-                .unwrap_or_else(|_| unreachable!("wasmtime: fuel mode is disabled in wasmtime"));
-        } else if let Some(fuel) = self.store.data_mut().fuel.as_mut() {
-            *fuel = fuel.checked_sub(delta).ok_or(TrapCode::OutOfFuel)?;
-        }
-        Ok(())
+        crate::wasmtime::context::try_consume_fuel(&mut self.store, delta)
     }
 
     fn remaining_fuel(&self) -> Option<u64> {
-        if let Ok(fuel) = self.store.get_fuel() {
-            Some(fuel)
-        } else {
-            self.store.data().fuel.as_ref().copied()
-        }
+        crate::wasmtime::context::remaining_fuel(&self.store)
     }
 
     fn reset_fuel(&mut self, new_fuel_limit: u64) {
-        let has_fuel_enabled = self.store.get_fuel().is_ok();
-        if has_fuel_enabled {
-            self.store.set_fuel(new_fuel_limit).unwrap();
-        } else {
-            self.store.data_mut().fuel = Some(new_fuel_limit)
-        }
+        crate::wasmtime::context::reset_fuel(&mut self.store, new_fuel_limit)
     }
 }
