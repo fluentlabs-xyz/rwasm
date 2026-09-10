@@ -672,7 +672,7 @@ impl ModuleParser {
         self.validator.global_section(&section)?;
         for global in section.into_iter() {
             let global = global?;
-            let init_expr = CompiledExpr::new(global.init_expr);
+            let init_expr = CompiledExpr::new(global.init_expr)?;
             let default_value = self.eval_const(init_expr)?;
             let global_variable = GlobalVariable::new(global.ty, default_value);
             let global_idx = GlobalIdx::from(self.allocations.translation.globals.len() as u32);
@@ -745,7 +745,7 @@ impl ModuleParser {
                 ElementItems::Expressions(section) => section
                     .into_iter()
                     .map(|v| {
-                        let compiled_expr = CompiledExpr::new(v?);
+                        let compiled_expr = CompiledExpr::new(v?)?;
                         compiled_expr
                             .funcref()
                             .map(|v| v + 1)
@@ -764,7 +764,7 @@ impl ModuleParser {
                     table_index,
                     offset_expr,
                 } => {
-                    let compiled_expr = CompiledExpr::new(offset_expr);
+                    let compiled_expr = CompiledExpr::new(offset_expr)?;
                     // We can fail-fast here because we already that know that there an overflow
                     let element_offset = u32::try_from(self.eval_const(compiled_expr)?)
                         .map_err(|_| CompilationError::TableOutOfBounds)?;
@@ -832,7 +832,7 @@ impl ModuleParser {
                     if memory_index != DEFAULT_MEMORY_INDEX {
                         return Err(CompilationError::NonDefaultMemoryIndex);
                     }
-                    let compiled_expr = CompiledExpr::new(offset_expr);
+                    let compiled_expr = CompiledExpr::new(offset_expr)?;
                     // We can fail-fast here because we already that know that there an overflow
                     let data_offset = u32::try_from(self.eval_const(compiled_expr)?)
                         .map_err(|_| CompilationError::MemoryOutOfBounds)?;
