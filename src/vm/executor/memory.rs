@@ -22,6 +22,16 @@ macro_rules! impl_visit_store {
     }
 }
 
+/// Converts a bulk-memory operand (an offset or a byte count) into a slice index.
+///
+/// Wasm defines these operands as `u32`. Sign-extending them instead made rwasm trap on any
+/// operand with bit 31 set, while Wasmtime addresses the upper half of a memory larger than 2 GiB
+/// with the same operand; the two backends must agree on the trap.
+#[inline(always)]
+fn bulk_operand(value: UntypedValue) -> usize {
+    u32::from(value) as usize
+}
+
 impl<'a, T> RwasmExecutor<'a, T> {
     impl_visit_load! {
         fn visit_i32_load(i32_load);
@@ -70,8 +80,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_memory_fill(&mut self) -> Result<(), TrapCode> {
         let (d, val, n) = self.sp.pop3();
-        let n = i32::from(n) as usize;
-        let offset = i32::from(d) as usize;
+        let n = bulk_operand(n);
+        let offset = bulk_operand(d);
         let byte = u8::from(val);
         let memory = self
             .store
@@ -92,9 +102,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_memory_copy(&mut self) -> Result<(), TrapCode> {
         let (d, s, n) = self.sp.pop3();
-        let n = i32::from(n) as usize;
-        let src_offset = i32::from(s) as usize;
-        let dst_offset = i32::from(d) as usize;
+        let n = bulk_operand(n);
+        let src_offset = bulk_operand(s);
+        let dst_offset = bulk_operand(d);
         // these accesses just perform the bound checks required by the Wasm spec.
         let data = self.store.global_memory.data_mut();
         data.get(src_offset..)
@@ -127,9 +137,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .copied()
             .unwrap_or(false);
         let (d, s, n) = self.sp.pop3();
-        let n = i32::from(n) as usize;
-        let src_offset = i32::from(s) as usize;
-        let dst_offset = i32::from(d) as usize;
+        let n = bulk_operand(n);
+        let src_offset = bulk_operand(s);
+        let dst_offset = bulk_operand(d);
         let memory = self
             .store
             .global_memory
@@ -165,5 +175,25 @@ impl<'a, T> RwasmExecutor<'a, T> {
         }
         empty_data_segments.set(idx, true);
         self.ip.add(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bulk_operands_are_unsigned() {
+        assert_eq!(bulk_operand(UntypedValue::from(0)), 0);
+        assert_eq!(
+            bulk_operand(UntypedValue::from(0x7fff_ffff_u32)),
+            0x7fff_ffff
+        );
+        // bit 31 set: an offset into the upper half of a >2 GiB memory, not a negative number
+        assert_eq!(
+            bulk_operand(UntypedValue::from(0x8000_0000_u32)),
+            0x8000_0000
+        );
+        assert_eq!(bulk_operand(UntypedValue::from(-1_i32)), u32::MAX as usize);
     }
 }
