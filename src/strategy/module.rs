@@ -134,8 +134,7 @@ impl StrategyDefinition {
                     fuel_limit,
                     max_allowed_memory_pages,
                 );
-                let instance =
-                    import_linker.instantiate(&mut store, engine.clone(), module.clone())?;
+                let instance = import_linker.instantiate(&mut store, *engine, module.clone())?;
                 Ok(StrategyExecutor::Rwasm { store, instance })
             }
             #[cfg(feature = "wasmtime")]
