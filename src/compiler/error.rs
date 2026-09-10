@@ -26,7 +26,13 @@ pub enum CompilationError {
     MemoryOutOfBounds,
     TableOutOfBounds,
     StartSectionsAreNotAllowed,
-    TooManyFunctionTypes { count: u32, limit: u32 },
+    TooManyFunctionTypes {
+        count: u32,
+        limit: u32,
+    },
+    /// Wasmtime rejected a binary that passed rwasm validation.
+    #[cfg(feature = "wasmtime")]
+    WasmtimeCompilationFailed(wasmtime::Error),
 }
 
 impl core::error::Error for CompilationError {}
@@ -77,6 +83,10 @@ impl core::fmt::Display for CompilationError {
                     f,
                     "function type count {count} exceeds compilation limit {limit}"
                 )
+            }
+            #[cfg(feature = "wasmtime")]
+            CompilationError::WasmtimeCompilationFailed(err) => {
+                write!(f, "wasmtime compilation failed ({err})")
             }
         }
     }

@@ -29,8 +29,7 @@ pub fn for_each_strategy<R, F: FnMut(StrategyDefinition) -> Result<R, StrategyEr
     #[cfg(feature = "wasmtime")]
     {
         let module =
-            crate::wasmtime::compile_wasmtime_module(compilation_config.clone(), wasm_binary)
-                .unwrap();
+            crate::wasmtime::compile_wasmtime_module(compilation_config.clone(), wasm_binary)?;
         result.push(f(StrategyDefinition::Wasmtime { module })?);
     }
     Ok(result)

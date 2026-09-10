@@ -267,3 +267,112 @@ fn compiler_emits_constant_and_quadratic_syscall_fuel_blocks() {
 
     RwasmModule::compile(config, &wasm).unwrap();
 }
+
+/// Both strategies must accept exactly the rwasm language and report a rejected binary as an
+/// error. The Wasmtime path used to compile through Wasmtime alone and `expect` the result, so
+/// anything rwasm rejects but Wasmtime accepts slipped through, and anything Wasmtime rejected
+/// panicked.
+mod accepted_language {
+    use super::*;
+    use rwasm::CompilationError;
+
+    /// A valid header followed by garbage.
+    const MALFORMED: &[u8] = b"\0asm\x01\0\0\0\xff\xff\xff\xff";
+
+    /// Wasmtime accepts SIMD; rwasm does not translate it.
+    const SIMD_WAT: &str = r#"
+        (module
+            (func (export "main")
+                (drop (v128.const i32x4 0 0 0 0))))
+    "#;
+
+    const START_WAT: &str = r#"
+        (module
+            (func $start)
+            (start $start)
+            (func (export "main")))
+    "#;
+
+    #[test]
+    fn malformed_binary_is_an_error_on_every_constructor() {
+        assert!(matches!(
+            StrategyDefinition::new_as_rwasm(strategy_config(), MALFORMED),
+            Err(CompilationError::MalformedWasmBinary(_))
+        ));
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(strategy_config(), MALFORMED, None),
+            Err(CompilationError::MalformedWasmBinary(_))
+        ));
+        assert!(matches!(
+            StrategyDefinition::new(strategy_config(), MALFORMED, None),
+            Err(CompilationError::MalformedWasmBinary(_))
+        ));
+        assert!(matches!(
+            StrategyExecutor::compile_and_instantiate(
+                strategy_config(),
+                MALFORMED,
+                None,
+                Arc::new(ImportLinker::default()),
+                (),
+                always_failing_syscall_handler,
+                None,
+            ),
+            Err(rwasm::StrategyError::CompilationError(
+                CompilationError::MalformedWasmBinary(_)
+            ))
+        ));
+    }
+
+    #[test]
+    fn wasmtime_strategy_rejects_what_rwasm_rejects() {
+        let simd = wat::parse_str(SIMD_WAT).unwrap();
+        let rwasm_err = StrategyDefinition::new_as_rwasm(strategy_config(), &simd)
+            .err()
+            .expect("rwasm rejects SIMD");
+        let wasmtime_err = StrategyDefinition::new_as_wasmtime(strategy_config(), &simd, None)
+            .err()
+            .expect("the Wasmtime strategy must reject SIMD too");
+        assert!(
+            matches!(
+                rwasm_err,
+                CompilationError::NotSupportedOpcode
+                    | CompilationError::NotSupportedExtension
+                    | CompilationError::MalformedWasmBinary(_)
+            ),
+            "unexpected error: {rwasm_err:?}"
+        );
+        assert_eq!(format!("{rwasm_err:?}"), format!("{wasmtime_err:?}"));
+
+        let start = wat::parse_str(START_WAT).unwrap();
+        assert!(matches!(
+            StrategyDefinition::new_as_rwasm(strategy_config(), &start),
+            Err(CompilationError::StartSectionsAreNotAllowed)
+        ));
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(strategy_config(), &start, Some([9; 32])),
+            Err(CompilationError::StartSectionsAreNotAllowed)
+        ));
+        // the rejection is not cached under the key
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(strategy_config(), &start, Some([9; 32])),
+            Err(CompilationError::StartSectionsAreNotAllowed)
+        ));
+
+        let missing_entrypoint = wat::parse_str("(module)").unwrap();
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(strategy_config(), &missing_entrypoint, None),
+            Err(CompilationError::MissingEntrypoint)
+        ));
+    }
+
+    #[test]
+    fn for_each_strategy_reports_compile_errors() {
+        let result = rwasm::for_each_strategy(|_| Ok(()), strategy_config(), MALFORMED);
+        assert!(matches!(
+            result,
+            Err(rwasm::StrategyError::CompilationError(
+                CompilationError::MalformedWasmBinary(_)
+            ))
+        ));
+    }
+}
