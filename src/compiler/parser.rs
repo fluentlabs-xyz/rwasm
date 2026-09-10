@@ -777,18 +777,18 @@ impl ModuleParser {
                             element_offset,
                             table_idx,
                             element_items_vec,
-                        );
+                        )?;
                 }
                 ElementKind::Passive => self
                     .allocations
                     .translation
                     .segment_builder
-                    .add_passive_elements(element_segment_idx, element_items_vec),
+                    .add_passive_elements(element_segment_idx, element_items_vec)?,
                 ElementKind::Declared => self
                     .allocations
                     .translation
                     .segment_builder
-                    .add_passive_elements(element_segment_idx, []),
+                    .add_passive_elements(element_segment_idx, [])?,
             };
         }
         Ok(())
@@ -839,13 +839,13 @@ impl ModuleParser {
                     self.allocations
                         .translation
                         .segment_builder
-                        .add_active_memory(data_segment_idx, data_offset, data.data);
+                        .add_active_memory(data_segment_idx, data_offset, data.data)?;
                 }
                 DataKind::Passive => self
                     .allocations
                     .translation
                     .segment_builder
-                    .add_passive_memory(data_segment_idx, data.data),
+                    .add_passive_memory(data_segment_idx, data.data)?,
             };
         }
         Ok(())

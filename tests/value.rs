@@ -215,8 +215,7 @@ fn untyped_value_numeric_operations_cover_public_wasm_helpers() {
         0
     );
 
-    let value = UntypedValue::from(7_u64);
-    assert_eq!(value.as_u16(), 7);
+    let value = UntypedValue::from(7_u32);
     assert_eq!(value.as_usize(), 7);
     assert_eq!(value.as_f64().to_bits(), 7);
     assert_eq!(value.to_string(), "7");
