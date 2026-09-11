@@ -1,10 +1,11 @@
 use rwasm::{
-    always_failing_syscall_handler, for_each_strategy, CompilationConfig, RwasmModule, StoreTr,
-    Value, F64,
+    always_failing_syscall_handler, for_each_strategy, CompilationConfig, CompilationError,
+    RwasmModule, StoreTr, StrategyError, Value, F64, N_MAX_TABLE_SIZE,
 };
 
-fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value], result: &mut [Value]) {
-    let config = CompilationConfig::default()
+/// The compilation config the differential fuzzer runs with.
+fn fuzz_config() -> CompilationConfig {
+    CompilationConfig::default()
         .with_entrypoint_name("".into())
         .with_allow_malformed_entrypoint_func_type(true)
         .with_allow_start_section(true)
@@ -12,7 +13,11 @@ fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value], result
         .with_consume_fuel_for_params_and_locals(false)
         .with_allow_func_ref_function_types(false)
         .with_max_allowed_memory_pages(4096)
-        .with_consume_fuel_for_bulk_ops(false);
+        .with_consume_fuel_for_bulk_ops(false)
+}
+
+fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value], result: &mut [Value]) {
+    let config = fuzz_config();
     let (module, _) = RwasmModule::compile(config.clone(), wasm_binary).unwrap();
     println!("{}", module);
     let fuel_consumed = for_each_strategy(
@@ -94,8 +99,8 @@ fn test_fuel_mismatch_2() {
             r#"
 (module
   (type (;0;) (func))
-  (table (;0;) 2076 funcref)
-  (table (;1;) 2795 264955 externref)
+  (table (;0;) 1000 funcref)
+  (table (;1;) 1000 264955 externref)
   (memory (;0;) 0 65341)
   (global (;0;) i32 i32.const 1487)
   (export "" (func 0))
@@ -205,7 +210,7 @@ fn test_fuel_bad_memory() {
             r#"
 (module
   (type (;0;) (func (param i32 i32 i32 i32 i32 i32 i32 i32)))
-  (table (;0;) 996180 996225 funcref)
+  (table (;0;) 1000 1024 funcref)
   (memory (;0;) 1543)
   (global (;0;) f32 f32.const -0x1.0b58fcp+127 (;=-177682950000000000000000000000000000000;))
   (global (;1;) (mut i32) i32.const 7936)
@@ -262,12 +267,13 @@ fn wasmtime_stack_overflow_behaviour_mismatch() {
     );
 }
 
+/// The fuzzer produced a module whose table declares more than `N_MAX_TABLE_SIZE` elements. The
+/// rwasm VM cannot instantiate such a table, so every compile path rejects the module instead of
+/// the two strategies running with tables of different sizes.
 #[test]
 fn test_rwasm_table_size_fatal() {
-    let mut result = vec![Value::I64(0), Value::I64(0), Value::I32(0)];
-    run_rwasm_vs_wasmtime_fuel_check(
-        &wat::parse_str(
-            r#"
+    let wasm = wat::parse_str(
+        r#"
 (module
   (type (;0;) (func (result externref f64 f32)))
   (type (;1;) (func))
@@ -293,11 +299,29 @@ fn test_rwasm_table_size_fatal() {
   (data (;0;) "\df\db\df\00")
 )
 "#,
+    )
+    .unwrap();
+    let expected = |err: &CompilationError| {
+        matches!(
+            err,
+            CompilationError::TableSizeExceedsLimit {
+                size: 4473,
+                limit: N_MAX_TABLE_SIZE,
+            }
         )
-        .unwrap(),
-        &[],
-        &mut result,
-    );
+    };
+    assert!(expected(
+        &RwasmModule::compile(fuzz_config(), &wasm).expect_err("rwasm rejects the table")
+    ));
+    #[cfg(feature = "wasmtime")]
+    assert!(expected(
+        &rwasm::wasmtime::compile_wasmtime_module(fuzz_config(), &wasm)
+            .expect_err("the Wasmtime compile path rejects the table")
+    ));
+    assert!(matches!(
+        for_each_strategy(|_| Ok(()), fuzz_config(), &wasm),
+        Err(StrategyError::CompilationError(err)) if expected(&err)
+    ));
 }
 
 #[test]

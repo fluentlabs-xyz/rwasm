@@ -2,7 +2,7 @@ use crate::{
     checked_memory_range_end, CallerTr, StoreTr, SyscallHandler, TrapCode, TypedCaller,
     N_BYTES_PER_MEMORY_PAGE,
 };
-use wasmtime::{AsContext, AsContextMut, StoreLimits};
+use wasmtime::{AsContext, AsContextMut, ResourceLimiter, StoreLimits};
 
 const ENGINE_FUEL_EXPECTED: &str = "wasmtime: fuel metering was enabled at store creation";
 
@@ -54,6 +54,85 @@ pub(crate) fn reset_fuel<T: 'static>(
     }
 }
 
+/// Store limits that remember which resource denied a grow.
+///
+/// Wasmtime reports a denied grow during instantiation as a plain error message. The rwasm
+/// entrypoint prologue traps with `MemoryOutOfBounds`/`TableOutOfBounds` for the same module, so
+/// the recorded resource lets [`crate::wasmtime::WasmtimeExecutor::new`] report the matching trap
+/// instead of a generic error.
+pub struct RecordingStoreLimits {
+    inner: StoreLimits,
+    /// The trap matching the most recently denied grow, if any.
+    denied: Option<TrapCode>,
+}
+
+impl RecordingStoreLimits {
+    pub(crate) fn new(inner: StoreLimits) -> Self {
+        Self {
+            inner,
+            denied: None,
+        }
+    }
+
+    /// Returns the trap of the most recent denied grow since the last [`Self::reset_denied`].
+    pub(crate) fn denied(&self) -> Option<TrapCode> {
+        self.denied
+    }
+
+    /// Forgets any recorded denial, so a following failure is attributed to its own grow.
+    pub(crate) fn reset_denied(&mut self) {
+        self.denied = None;
+    }
+}
+
+impl ResourceLimiter for RecordingStoreLimits {
+    fn memory_growing(
+        &mut self,
+        current: usize,
+        desired: usize,
+        maximum: Option<usize>,
+    ) -> wasmtime::Result<bool> {
+        let allowed = self.inner.memory_growing(current, desired, maximum)?;
+        if !allowed {
+            self.denied = Some(TrapCode::MemoryOutOfBounds);
+        }
+        Ok(allowed)
+    }
+
+    fn memory_grow_failed(&mut self, error: wasmtime::Error) -> wasmtime::Result<()> {
+        self.inner.memory_grow_failed(error)
+    }
+
+    fn table_growing(
+        &mut self,
+        current: usize,
+        desired: usize,
+        maximum: Option<usize>,
+    ) -> wasmtime::Result<bool> {
+        let allowed = self.inner.table_growing(current, desired, maximum)?;
+        if !allowed {
+            self.denied = Some(TrapCode::TableOutOfBounds);
+        }
+        Ok(allowed)
+    }
+
+    fn table_grow_failed(&mut self, error: wasmtime::Error) -> wasmtime::Result<()> {
+        self.inner.table_grow_failed(error)
+    }
+
+    fn instances(&self) -> usize {
+        self.inner.instances()
+    }
+
+    fn tables(&self) -> usize {
+        self.inner.tables()
+    }
+
+    fn memories(&self) -> usize {
+        self.inner.memories()
+    }
+}
+
 pub struct WrappedContext<T: 'static> {
     pub(crate) syscall_handler: SyscallHandler<T>,
     /// Soft fuel counter used when the engine does not meter fuel itself.
@@ -71,7 +150,7 @@ pub struct WrappedContext<T: 'static> {
     /// The instance's exported memory, resolved once per instantiation so host calls don't
     /// look it up by name.
     pub(crate) memory: Option<wasmtime::Memory>,
-    pub(crate) resource_limiter: StoreLimits,
+    pub(crate) resource_limiter: RecordingStoreLimits,
     pub(crate) data: T,
 }
 

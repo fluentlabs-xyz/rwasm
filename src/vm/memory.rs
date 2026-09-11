@@ -14,6 +14,14 @@ pub struct GlobalMemory {
 }
 
 impl GlobalMemory {
+    /// Creates a memory of `initial_pages` that may grow up to `max_allowed_memory_pages`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `initial_pages` exceeds `max_allowed_memory_pages` or the page count does not
+    /// fit the target's address space. Both arguments are chosen by the host (the store always
+    /// starts at zero pages), never by a module, so this is a configuration error caught at
+    /// startup rather than a reachable runtime failure.
     pub fn new(initial_pages: Pages, max_allowed_memory_pages: Pages) -> Self {
         let initial_len = initial_pages
             .to_bytes()

@@ -22,6 +22,26 @@ Examples:
 
 So malicious inputs are expected to produce controlled failures (validation errors/traps), not undefined behavior execution.
 
+## Panic-free entry points
+
+A node embedding `rwasm` should not need a `catch_unwind` net around the guest-facing API. The
+following entry points report every failure on guest-controlled input as a `Result`:
+
+- compilation: `RwasmModule::compile`, `ModuleParser::parse`, `StrategyDefinition::new`,
+  `new_as_rwasm`, `new_as_wasmtime`, `compile_wasmtime_module`, `compile_wasmtime_module_cached`
+- decoding of serialized rWasm: `RwasmModule::new_checked`, `RwasmModule::new_checked_exact`
+- instantiation: `StrategyDefinition::create_executor`, `ImportLinker::instantiate`,
+  `WasmtimeExecutor::new`, `WasmtimeExecutor::try_new`
+- execution: `ExecutionEngine::execute`, `ExecutionEngine::resume` (an error, not a panic, when
+  there is no interrupted execution to resume), `StrategyExecutor::execute`,
+  `StrategyExecutor::resume`, and the `StoreTr` memory and fuel accessors
+
+The remaining panics are deliberate fail-fast checks on host-supplied configuration, documented on
+each function: `RwasmModule::new` and `RwasmModule::serialize` (a trusted rWasm artifact that does
+not decode or encode), `ImportLinker::insert_*` (duplicate import names or syscall indices in the
+host's own linker), `GlobalMemory::new` and `ValueStack::new` (inconsistent host-chosen limits).
+None of them is reachable from a module or from guest execution.
+
 ## Host boundary
 
 Security of total execution depends on both VM semantics and host integrations:

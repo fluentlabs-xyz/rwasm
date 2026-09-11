@@ -267,3 +267,224 @@ fn compiler_emits_constant_and_quadratic_syscall_fuel_blocks() {
 
     RwasmModule::compile(config, &wasm).unwrap();
 }
+
+/// Both strategies must accept exactly the rwasm language and report a rejected binary as an
+/// error. The Wasmtime path used to compile through Wasmtime alone and `expect` the result, so
+/// anything rwasm rejects but Wasmtime accepts slipped through, and anything Wasmtime rejected
+/// panicked.
+mod accepted_language {
+    use super::*;
+    use rwasm::CompilationError;
+
+    /// A valid header followed by garbage.
+    const MALFORMED: &[u8] = b"\0asm\x01\0\0\0\xff\xff\xff\xff";
+
+    /// Wasmtime accepts SIMD; rwasm does not translate it.
+    const SIMD_WAT: &str = r#"
+        (module
+            (func (export "main")
+                (drop (v128.const i32x4 0 0 0 0))))
+    "#;
+
+    const START_WAT: &str = r#"
+        (module
+            (func $start)
+            (start $start)
+            (func (export "main")))
+    "#;
+
+    #[test]
+    fn malformed_binary_is_an_error_on_every_constructor() {
+        assert!(matches!(
+            StrategyDefinition::new_as_rwasm(strategy_config(), MALFORMED),
+            Err(CompilationError::MalformedWasmBinary(_))
+        ));
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(strategy_config(), MALFORMED, None),
+            Err(CompilationError::MalformedWasmBinary(_))
+        ));
+        assert!(matches!(
+            StrategyDefinition::new(strategy_config(), MALFORMED, None),
+            Err(CompilationError::MalformedWasmBinary(_))
+        ));
+        assert!(matches!(
+            StrategyExecutor::compile_and_instantiate(
+                strategy_config(),
+                MALFORMED,
+                None,
+                Arc::new(ImportLinker::default()),
+                (),
+                always_failing_syscall_handler,
+                None,
+            ),
+            Err(rwasm::StrategyError::CompilationError(
+                CompilationError::MalformedWasmBinary(_)
+            ))
+        ));
+    }
+
+    #[test]
+    fn wasmtime_strategy_rejects_what_rwasm_rejects() {
+        let simd = wat::parse_str(SIMD_WAT).unwrap();
+        let rwasm_err = StrategyDefinition::new_as_rwasm(strategy_config(), &simd)
+            .err()
+            .expect("rwasm rejects SIMD");
+        let wasmtime_err = StrategyDefinition::new_as_wasmtime(strategy_config(), &simd, None)
+            .err()
+            .expect("the Wasmtime strategy must reject SIMD too");
+        assert!(
+            matches!(
+                rwasm_err,
+                CompilationError::NotSupportedOpcode
+                    | CompilationError::NotSupportedExtension
+                    | CompilationError::MalformedWasmBinary(_)
+            ),
+            "unexpected error: {rwasm_err:?}"
+        );
+        assert_eq!(format!("{rwasm_err:?}"), format!("{wasmtime_err:?}"));
+
+        let start = wat::parse_str(START_WAT).unwrap();
+        assert!(matches!(
+            StrategyDefinition::new_as_rwasm(strategy_config(), &start),
+            Err(CompilationError::StartSectionsAreNotAllowed)
+        ));
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(strategy_config(), &start, Some([9; 32])),
+            Err(CompilationError::StartSectionsAreNotAllowed)
+        ));
+        // the rejection is not cached under the key
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(strategy_config(), &start, Some([9; 32])),
+            Err(CompilationError::StartSectionsAreNotAllowed)
+        ));
+
+        let missing_entrypoint = wat::parse_str("(module)").unwrap();
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(strategy_config(), &missing_entrypoint, None),
+            Err(CompilationError::MissingEntrypoint)
+        ));
+    }
+
+    /// `compile_wasmtime_module_cached` validates with Wasmtime only. A module it primed under a
+    /// key must not satisfy `new_as_wasmtime` under the same key, or the constructor's rwasm
+    /// validation could be skipped.
+    #[test]
+    fn wasmtime_only_cache_entries_do_not_bypass_rwasm_validation() {
+        let start = wat::parse_str(START_WAT).unwrap();
+        let key = [0x42; 32];
+        rwasm::wasmtime::compile_wasmtime_module_cached(strategy_config(), &start, key)
+            .expect("Wasmtime accepts a start section");
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(strategy_config(), &start, Some(key)),
+            Err(CompilationError::StartSectionsAreNotAllowed)
+        ));
+    }
+
+    #[test]
+    fn for_each_strategy_reports_compile_errors() {
+        let result = rwasm::for_each_strategy(|_| Ok(()), strategy_config(), MALFORMED);
+        assert!(matches!(
+            result,
+            Err(rwasm::StrategyError::CompilationError(
+                CompilationError::MalformedWasmBinary(_)
+            ))
+        ));
+    }
+}
+
+/// A config enabling the rwasm-only fuel injections charges different fuel on the two strategies,
+/// so the strategy-agnostic constructors reject it instead of silently under-metering on Wasmtime.
+/// The differential check pins that the strategy-compatible default charges identical fuel on the
+/// audit's counter-example (a function with locals doing a large `memory.fill`).
+mod strategy_compatibility {
+    use super::*;
+    use rwasm::{for_each_strategy, CompilationError, StrategyError};
+
+    const FILL_WAT: &str = r#"
+        (module
+            (memory 1)
+            (func (export "main") (result i32)
+                (local i32 i32 i32 i32 i64 i64 f32 f64)
+                i32.const 0
+                i32.const 42
+                i32.const 60000
+                memory.fill
+                local.get 0
+                i64.const 7
+                local.set 4
+                local.get 4
+                i32.wrap_i64
+                i32.add))
+    "#;
+
+    fn incompatible() -> CompilationConfig {
+        CompilationConfig::default()
+            .with_entrypoint_name("main".into())
+            .with_allow_malformed_entrypoint_func_type(true)
+    }
+
+    #[test]
+    fn strategy_agnostic_constructors_reject_incompatible_configs() {
+        let wasm = wat::parse_str(FILL_WAT).unwrap();
+        assert!(!incompatible().is_strategy_compatible());
+        assert!(matches!(
+            StrategyDefinition::new(incompatible(), &wasm, None),
+            Err(CompilationError::StrategyIncompatibleConfig)
+        ));
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(incompatible(), &wasm, Some([3; 32])),
+            Err(CompilationError::StrategyIncompatibleConfig)
+        ));
+        assert!(matches!(
+            for_each_strategy(|_| Ok(()), incompatible(), &wasm),
+            Err(StrategyError::CompilationError(
+                CompilationError::StrategyIncompatibleConfig
+            ))
+        ));
+        // each flag alone is enough to diverge
+        for config in [
+            strategy_config().with_consume_fuel_for_bulk_ops(true),
+            strategy_config().with_consume_fuel_for_params_and_locals(true),
+        ] {
+            assert!(matches!(
+                StrategyDefinition::new(config, &wasm, None),
+                Err(CompilationError::StrategyIncompatibleConfig)
+            ));
+        }
+        // the rwasm VM implements the injections, so the explicit rwasm constructor accepts them
+        StrategyDefinition::new_as_rwasm(incompatible(), &wasm).unwrap();
+        // and the compatible default is accepted everywhere
+        StrategyDefinition::new(strategy_config(), &wasm, None).unwrap();
+    }
+
+    #[test]
+    fn strategy_compatible_default_charges_identical_fuel() {
+        let wasm = wat::parse_str(FILL_WAT).unwrap();
+        let outcomes = for_each_strategy(
+            |strategy| {
+                let mut executor = strategy.create_executor(
+                    Arc::new(ImportLinker::default()),
+                    (),
+                    always_failing_syscall_handler,
+                    Some(1_000_000),
+                    None,
+                )?;
+                let fuel_before = executor.remaining_fuel().unwrap();
+                let mut result = [Value::I32(0)];
+                let trap = executor.execute("main", &[], &mut result).err();
+                let fuel_consumed = fuel_before - executor.remaining_fuel().unwrap();
+                Ok((trap, result[0].clone(), fuel_consumed))
+            },
+            strategy_config(),
+            &wasm,
+        )
+        .unwrap();
+        assert!(outcomes.len() >= 2, "both strategies must run");
+        assert_eq!(outcomes[0].0, None);
+        assert_eq!(outcomes[0].1, Value::I32(7));
+        assert!(outcomes[0].2 > 0);
+        for outcome in &outcomes[1..] {
+            assert_eq!(outcome, &outcomes[0]);
+        }
+    }
+}

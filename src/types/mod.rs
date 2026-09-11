@@ -97,6 +97,11 @@ pub const N_MAX_TABLES: u32 = 100;
 /// The original standard allows `100_000` element segments with an unlimited number of elements
 /// inside.
 ///
+/// Both strategies enforce the cap: the compiler rejects a table declared larger than this
+/// (`SegmentBuilder::emit_table_segment` and the Wasmtime compile path), the rwasm VM fails any
+/// `table.grow` beyond it (`TableEntity::grow_untyped`), and the Wasmtime store applies it as its
+/// `table_elements` limit.
+///
 /// # Safety
 ///
 /// The same caveat as for [`N_MAX_ALLOWED_MEMORY_PAGES`] applies: the injected prologues for

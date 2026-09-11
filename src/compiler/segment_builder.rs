@@ -1,7 +1,7 @@
 use crate::{
     instruction_set, CompilationError, DataSegmentIdx, ElementSegmentIdx, GlobalIdx,
     GlobalVariable, I64ValueSplit, InstructionSet, TableIdx, TrapCode, DEFAULT_MEMORY_INDEX,
-    NULL_FUNC_IDX, N_BYTES_PER_MEMORY_PAGE,
+    NULL_FUNC_IDX, N_BYTES_PER_MEMORY_PAGE, N_MAX_TABLE_SIZE,
 };
 use alloc::{vec, vec::Vec};
 use hashbrown::HashMap;
@@ -48,9 +48,10 @@ impl SegmentBuilder {
     ) -> Result<(), CompilationError> {
         let global_type = global_variable.global_type.content_type;
         match global_type {
+            // a 32-bit global carries its initializer in the low limb of the `i64`
             ValType::I32 | ValType::F32 => self
                 .entrypoint_bytecode
-                .op_i32_const(global_variable.default_value),
+                .op_i32_const(global_variable.default_value as i32),
             ValType::I64 | ValType::F64 => {
                 let (lower, upper) = global_variable.default_value.split_into_i32_tuple();
                 self.entrypoint_bytecode.op_i32_const(lower);
@@ -104,11 +105,21 @@ impl SegmentBuilder {
         Ok(())
     }
 
+    /// Max stack height: 2
     pub fn emit_table_segment(
         &mut self,
         table_index: TableIdx,
         table_type: &TableType,
     ) -> Result<(), CompilationError> {
+        // the runtime caps every table at `N_MAX_TABLE_SIZE` and the grow below discards its
+        // result, so a larger declared size would leave the rwasm VM running on an empty table
+        // while Wasmtime honours the declaration; reject it here so the module never compiles
+        if table_type.initial > N_MAX_TABLE_SIZE {
+            return Err(CompilationError::TableSizeExceedsLimit {
+                size: table_type.initial,
+                limit: N_MAX_TABLE_SIZE,
+            });
+        }
         // Wasm validation guarantees that the number of table segments can't exceed 100 items,
         // that is why there is no need to check for potential overflow
         self.entrypoint_bytecode.op_ref_func(NULL_FUNC_IDX);
@@ -118,7 +129,26 @@ impl SegmentBuilder {
         Ok(())
     }
 
-    pub fn add_active_memory(&mut self, segment_idx: DataSegmentIdx, offset: u32, bytes: &[u8]) {
+    /// Converts a data-section offset or length into the `u32` the bytecode carries.
+    ///
+    /// The data section is bounded by the module size, so an overflow is unreachable in practice;
+    /// it is reported as an error rather than truncated because the value ends up in consensus
+    /// bytecode.
+    fn data_section_u32(value: usize) -> Result<u32, CompilationError> {
+        u32::try_from(value).map_err(|_| CompilationError::MaxReadonlyDataReached)
+    }
+
+    /// Converts an element-section offset or length into the `u32` the bytecode carries.
+    fn elem_section_u32(value: usize) -> Result<u32, CompilationError> {
+        u32::try_from(value).map_err(|_| CompilationError::TableOutOfBounds)
+    }
+
+    pub fn add_active_memory(
+        &mut self,
+        segment_idx: DataSegmentIdx,
+        offset: u32,
+        bytes: &[u8],
+    ) -> Result<(), CompilationError> {
         // don't allow growing default memory if there are no enough pages allocated
         // `None` means the page arithmetic overflowed `u32`, which is itself proof that the
         // segment is out of range, so the caller below must treat it as an overflow
@@ -130,8 +160,8 @@ impl SegmentBuilder {
             Some(max_affected_page > self.total_allocated_pages)
         };
         // expand default memory
-        let data_offset = self.global_memory_section.len();
-        let data_length = bytes.len();
+        let data_offset = Self::data_section_u32(self.global_memory_section.len())?;
+        let data_length = Self::data_section_u32(bytes.len())?;
         self.global_memory_section.extend(bytes);
         // default memory is just a passive section with force memory init
         self.entrypoint_bytecode.op_i32_const(offset);
@@ -147,17 +177,23 @@ impl SegmentBuilder {
         self.entrypoint_bytecode.op_data_drop(segment_idx + 1);
         // store passive section info
         self.memory_sections
-            .insert(segment_idx, (offset, bytes.len() as u32));
+            .insert(segment_idx, (offset, data_length));
+        Ok(())
     }
 
-    pub fn add_passive_memory(&mut self, segment_idx: DataSegmentIdx, bytes: &[u8]) {
+    pub fn add_passive_memory(
+        &mut self,
+        segment_idx: DataSegmentIdx,
+        bytes: &[u8],
+    ) -> Result<(), CompilationError> {
         // expand default memory
-        let data_offset = self.global_memory_section.len() as u32;
-        let data_length = bytes.len() as u32;
+        let data_offset = Self::data_section_u32(self.global_memory_section.len())?;
+        let data_length = Self::data_section_u32(bytes.len())?;
         self.global_memory_section.extend(bytes);
         // store passive section info
         self.memory_sections
             .insert(segment_idx, (data_offset, data_length));
+        Ok(())
     }
 
     pub fn add_active_elements<T: IntoIterator<Item = u32>>(
@@ -166,11 +202,13 @@ impl SegmentBuilder {
         offset: u32,
         table_idx: TableIdx,
         elements: T,
-    ) {
+    ) -> Result<(), CompilationError> {
         // expand an element section (remember offset and length)
         let segment_offset = self.global_element_section.len();
         self.global_element_section.extend(elements);
-        let segment_length = self.global_element_section.len() - segment_offset;
+        let segment_length =
+            Self::elem_section_u32(self.global_element_section.len() - segment_offset)?;
+        let segment_offset = Self::elem_section_u32(segment_offset)?;
         // init table with these elements
         // TODO(dmitry123): "add stack height check"
         self.entrypoint_bytecode.op_i32_const(offset);
@@ -181,20 +219,24 @@ impl SegmentBuilder {
         self.entrypoint_bytecode.op_elem_drop(segment_idx + 1);
         // store active section info
         self.element_sections
-            .insert(segment_idx, (offset, segment_length as u32));
+            .insert(segment_idx, (offset, segment_length));
+        Ok(())
     }
 
     pub fn add_passive_elements<T: IntoIterator<Item = u32>>(
         &mut self,
         segment_idx: ElementSegmentIdx,
         elements: T,
-    ) {
+    ) -> Result<(), CompilationError> {
         // expand element section
-        let segment_offset = self.global_element_section.len() as u32;
+        let segment_offset = self.global_element_section.len();
         self.global_element_section.extend(elements);
-        let segment_length = self.global_element_section.len() as u32 - segment_offset;
+        let segment_length =
+            Self::elem_section_u32(self.global_element_section.len() - segment_offset)?;
+        let segment_offset = Self::elem_section_u32(segment_offset)?;
         // store passive section info
         self.element_sections
             .insert(segment_idx, (segment_offset, segment_length));
+        Ok(())
     }
 }

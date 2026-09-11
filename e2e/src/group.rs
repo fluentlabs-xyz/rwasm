@@ -101,7 +101,7 @@ impl TestingInstanceWasmtime {
             testing_context_syscall_handler,
             Some(u64::MAX),
             None,
-        );
+        )?;
         Ok(TestingInstanceWasmtime { store })
     }
 

@@ -86,6 +86,11 @@ impl ImportLinker {
         RwasmInstance::new(store, engine, module)
     }
 
+    /// Registers an imported function.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a duplicate `import_name` or `sys_func_idx`; see [`ImportLinker::insert_entity`].
     pub fn insert_function(
         &mut self,
         import_name: ImportName,
@@ -106,6 +111,11 @@ impl ImportLinker {
         );
     }
 
+    /// Registers an import that the compiler replaces with an intrinsic.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a duplicate `import_name` or `sys_func_idx`; see [`ImportLinker::insert_entity`].
     pub fn insert_intrinsic(
         &mut self,
         import_name: ImportName,
@@ -133,6 +143,14 @@ impl ImportLinker {
         }
     }
 
+    /// Registers an import entity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `import_name` or `entity.sys_func_idx` is already registered. The linker is the
+    /// host's static description of its own imports, built once at startup from constants, so a
+    /// collision is a host programming error and fails fast there rather than at the first
+    /// module that resolves the ambiguous name. Guest input never reaches this method.
     pub fn insert_entity(&mut self, import_name: ImportName, entity: ImportLinkerEntity) {
         let sys_func_idx = entity.sys_func_idx;
         if self.name_to_entity.contains_key(&import_name) {

@@ -65,7 +65,8 @@ fn test_nitro_verifier_wasmtime() {
         fluentbase_syscall_handler,
         None,
         None,
-    );
+    )
+    .unwrap();
     worker.execute("main", &[], &mut []).unwrap();
 }
 
@@ -74,7 +75,7 @@ fn test_nitro_verifier_wasmtime() {
 fn test_nitro_verifier_strategy() {
     let wasm_binary = include_bytes!("assets/nitro-verifier-stack-ub.wasm");
     let import_linker = create_import_linker();
-    let config = CompilationConfig::default()
+    let config = CompilationConfig::default_strategy_compatible()
         .with_entrypoint_name("main".into())
         .with_allow_malformed_entrypoint_func_type(true)
         .with_import_linker(import_linker.clone());

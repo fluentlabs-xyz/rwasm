@@ -1,18 +1,13 @@
 use crate::{CompilationConfig, N_MAX_STACK_SIZE};
 use rwasm_fuel_policy::SyscallName;
-use std::{collections::HashMap, mem::size_of, sync::OnceLock};
+use std::{collections::HashMap, mem::size_of};
 use wasmtime::{Config, Engine, OptLevel, Strategy};
 
-/// Returns the shared Wasmtime engine instance.
+/// Builds a Wasmtime engine for `compilation_config`.
 ///
-/// The engine is configured once and reused globally.
-/// Fuel metering is disabled (`consume_fuel(false)`) because fuel is accounted
-/// inside `RuntimeContext` and system runtimes are expected to self-manage.
-pub fn wasmtime_shared_engine(compilation_config: &CompilationConfig) -> &'static Engine {
-    static ENGINE: OnceLock<Engine> = OnceLock::new();
-    ENGINE.get_or_init(|| wasmtime_engine(compilation_config))
-}
-
+/// The engine bakes in the config's fuel metering, stack limit and syscall fuel parameters, so an
+/// engine is never shared between configs: each compiled module carries the engine it was built
+/// with, and the module cache keys on the config identity.
 pub fn wasmtime_engine(compilation_config: &CompilationConfig) -> Engine {
     let mut cfg = Config::new();
     cfg.strategy(Strategy::Cranelift);

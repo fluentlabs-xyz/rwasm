@@ -1,22 +1,13 @@
-/// A registry where local variables of a function are registered and resolved.
+/// Counts the local variables of the function being translated.
 ///
 /// # Note
 ///
-/// Note that in WebAssembly function parameters are also local variables.
+/// In WebAssembly function parameters are also local variables.
 ///
-/// The local registry efficiently registers and resolves local variables.
-/// The problem is that the Wasm specification allows encoding up to `u32::MAX`
-/// local variables in a small and constant space via the binary encoding.
-/// Therefore, we need a way to efficiently cope with this worst-case scenario
-///  to protect the `rwasm` interpreter against exploitation.
-///
-/// This implementation allows accessing local variables in this worst-case
-/// scenario with the worst time complexity of O(log n) and space requirement
-/// of O(m + n) where n is the number of registered groups of local variables
-/// and m is the number of actually used local variables.
-///
-/// Besides that, local variable usages are cached to further minimize potential
-/// exploitation impact.
+/// The Wasm binary encoding declares up to `u32::MAX` locals in a few bytes, so the registry only
+/// tracks their number; each local's type lives on the translator's operand-type stack
+/// (`TypeStack`), which resolves the slot depth of a local access in O(1) without a per-usage
+/// cache.
 #[derive(Debug, Default)]
 pub struct LocalsRegistry {
     /// The number of registered local variables.

@@ -12,6 +12,7 @@ use crate::{
         locals_registry::LocalsRegistry,
         segment_builder::SegmentBuilder,
         snippets::{Snippet, SnippetCall},
+        type_stack::TypeStack,
         utils::RelativeDepth,
         value_stack::ValueStackHeight,
     },
@@ -49,12 +50,11 @@ pub struct FuncTranslatorAllocations {
     pub(crate) instruction_set: InstructionSet,
     /// Buffer for translating `br_table`.
     pub(crate) br_table_branches: InstructionSet,
-    /// A vector representing the types of values on a stack.
+    /// The emulated Wasm operand-type stack.
     ///
-    /// This field is used to track the `ValType` of elements in a stack-like structure.
-    /// It is defined with `pub(crate)` visibility, meaning that it is accessible
-    /// within the current crate but not outside it.
-    pub(crate) stack_types: Vec<ValType>,
+    /// Tracks the `ValType` of every operand together with the value-stack slot height of each
+    /// prefix, so that the slot depth of a local can be resolved without scanning the stack.
+    pub(crate) stack_types: TypeStack,
     /// Module builder for rWASM
     pub(crate) segment_builder: SegmentBuilder,
     /// A registry for func types
@@ -591,20 +591,10 @@ impl InstructionTranslator {
             .unwrap_or_else(|| panic!("cannot convert a local index into local depth: {local_idx}"))
     }
 
+    /// Returns the number of value-stack slots occupied by the top `local_depth` operands, which
+    /// is the depth the emitted `local.*` opcode addresses.
     fn get_expressed_depth(&self, local_depth: u32) -> u32 {
-        self.alloc
-            .stack_types
-            .iter()
-            .rev()
-            .take(local_depth as usize)
-            .map(|t| {
-                if t == &ValType::I64 || t == &ValType::F64 {
-                    2
-                } else {
-                    1
-                }
-            })
-            .sum()
+        self.alloc.stack_types.slot_depth(local_depth)
     }
 
     /// Adjusts the emulated value stack given the [`rwasm_legacy::FuncType`] of the call.

@@ -2,64 +2,38 @@ use crate::{
     CallStack, InstructionPtr, ReusableContext, RwasmExecutor, RwasmModule, RwasmStore, TrapCode,
     Value, ValueStack,
 };
-use alloc::sync::Arc;
 use core::mem::take;
-use spin::Mutex;
 
-/// Represents the core execution engine for managing the execution of a program,
-/// including the handling of values and function calls.
-#[derive(Default, Clone)]
-pub struct ExecutionEngine {
-    inner: Arc<Mutex<ExecutionEngineInner>>,
-}
+/// Runs rwasm modules against an [`RwasmStore`].
+///
+/// The engine holds no state of its own: every call allocates its value and call stacks and hands
+/// them to a fresh executor, and an interrupted execution parks them in the store's resumable
+/// context. It therefore needs no synchronization and is safe to use re-entrantly, e.g. from a
+/// syscall handler that runs another module on [`ExecutionEngine::acquire_shared`] while an
+/// execution on the same engine is in progress.
+///
+/// An earlier version wrapped an empty inner struct in a spin lock. The lock protected nothing,
+/// serialized every execution in the process, and made such a re-entrant handler busy-spin
+/// forever.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ExecutionEngine;
 
 impl ExecutionEngine {
     pub fn new() -> Self {
-        Self::default()
+        Self
+    }
+
+    /// Returns the process-wide engine.
+    ///
+    /// The engine is stateless, so this is equivalent to [`ExecutionEngine::new`]; it is kept for
+    /// hosts that name their engine once and hand it around.
+    pub fn acquire_shared() -> ExecutionEngine {
+        Self
     }
 
     #[inline(always)]
     pub fn entrypoint<T>(
         &self,
-        store: &mut RwasmStore<T>,
-        module: &RwasmModule,
-    ) -> Result<(), TrapCode> {
-        let mut ctx = self.inner.lock();
-        ctx.entrypoint(store, module)
-    }
-
-    #[inline(always)]
-    pub fn execute<T>(
-        &self,
-        store: &mut RwasmStore<T>,
-        module: &RwasmModule,
-        params: &[Value],
-        result: &mut [Value],
-    ) -> Result<(), TrapCode> {
-        let mut ctx = self.inner.lock();
-        ctx.execute(store, module, params, result)
-    }
-
-    #[inline(always)]
-    pub fn resume<T>(
-        &self,
-        store: &mut RwasmStore<T>,
-        params: &[Value],
-        result: &mut [Value],
-    ) -> Result<(), TrapCode> {
-        let mut ctx = self.inner.lock();
-        ctx.resume(store, params, result)
-    }
-}
-
-#[derive(Default)]
-struct ExecutionEngineInner {
-    // we should store a reusable stack here
-}
-
-impl ExecutionEngineInner {
-    pub(crate) fn entrypoint<T>(
-        &mut self,
         store: &mut RwasmStore<T>,
         module: &RwasmModule,
     ) -> Result<(), TrapCode> {
@@ -82,8 +56,9 @@ impl ExecutionEngineInner {
     }
 
     /// Executes a rWasm module's function with the given parameters and stores the result.
-    pub(crate) fn execute<T>(
-        &mut self,
+    #[inline(always)]
+    pub fn execute<T>(
+        &self,
         store: &mut RwasmStore<T>,
         module: &RwasmModule,
         params: &[Value],
@@ -111,9 +86,17 @@ impl ExecutionEngineInner {
         }
     }
 
-    /// Resumes the execution of a WASM (WebAssembly) function that was previously interrupted.
-    pub(crate) fn resume<T>(
-        &mut self,
+    /// Resumes an execution on `store` that returned [`TrapCode::InterruptionCalled`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TrapCode::IllegalOpcode`] when the store holds no interrupted execution: the
+    /// host called `resume` without a preceding interruption, or a second time after the resumed
+    /// execution finished. That is a host bug, but one a node cannot rule out from the outside,
+    /// so it is reported instead of aborting the process.
+    #[inline(always)]
+    pub fn resume<T>(
+        &self,
         store: &mut RwasmStore<T>,
         params: &[Value],
         result: &mut [Value],
@@ -123,9 +106,7 @@ impl ExecutionEngineInner {
             mut call_stack,
             ip,
             mut value_stack,
-        } = take(&mut store.resumable_context).unwrap_or_else(|| {
-            unreachable!("resume calling without a remaining call stack");
-        });
+        } = take(&mut store.resumable_context).ok_or(TrapCode::IllegalOpcode)?;
         let sp = value_stack.stack_ptr();
         let mut executor =
             RwasmExecutor::new(&module, &mut value_stack, sp, &mut call_stack, ip, store);
@@ -140,7 +121,7 @@ impl ExecutionEngineInner {
     }
 
     fn remember_context<T>(
-        &mut self,
+        &self,
         module: RwasmModule,
         store: &mut RwasmStore<T>,
         value_stack: ValueStack,
@@ -154,12 +135,5 @@ impl ExecutionEngineInner {
             value_stack,
         });
         Err(TrapCode::InterruptionCalled)
-    }
-}
-
-impl ExecutionEngine {
-    pub fn acquire_shared() -> ExecutionEngine {
-        static ENGINE: spin::Once<ExecutionEngine> = spin::Once::new();
-        ENGINE.call_once(ExecutionEngine::default).clone()
     }
 }

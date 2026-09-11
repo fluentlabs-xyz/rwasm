@@ -68,9 +68,10 @@ pub struct CompilationConfig {
     /// The maximum number of memory pages that can be allocated by the module.
     pub max_allowed_memory_pages: u32,
     /// Maximum entries in the Wasm function-type section, including duplicates (default: 4096).
-    /// Checked before type validation allocates memory or signature deduplication runs.
-    /// Increasing this limit permits more quadratic compilation work and should be coordinated
-    /// with the host's compilation budget. It does not change emitted bytecode.
+    /// Checked before type validation allocates memory for the declared count. Every declared
+    /// type costs constant work in the compiler, so raising this limit scales compile time
+    /// linearly; coordinate it with the host's compilation budget. It does not change emitted
+    /// bytecode.
     pub max_allowed_function_types: u32,
 }
 
@@ -125,6 +126,10 @@ impl CompilationConfig {
     /// Returns `true` if this config charges the same fuel on the rwasm and Wasmtime strategies.
     ///
     /// See [`CompilationConfig::default_strategy_compatible`] for which flags diverge.
+    /// [`crate::StrategyDefinition::new`], [`crate::StrategyDefinition::new_as_wasmtime`] and
+    /// [`crate::for_each_strategy`] reject a config for which this returns `false`; only
+    /// [`crate::StrategyDefinition::new_as_rwasm`] and [`crate::RwasmModule::compile`] accept the
+    /// rwasm-only injections, since the rwasm VM is the one strategy that implements them.
     pub fn is_strategy_compatible(&self) -> bool {
         !self.consume_fuel_for_bulk_ops && !self.consume_fuel_for_params_and_locals
     }

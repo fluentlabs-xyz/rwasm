@@ -130,7 +130,7 @@ fn execute_main(wat_source: &str, params: &[Value], result: &mut [Value]) {
     let wasm_binary = wat::parse_str(wat_source).unwrap();
     let (rwasm_module, _) = RwasmModule::compile(snippets_off_config(), &wasm_binary).unwrap();
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::default();
+    let engine = ExecutionEngine::new();
     engine
         .execute(&mut store, &rwasm_module, params, result)
         .expect("execution must succeed");

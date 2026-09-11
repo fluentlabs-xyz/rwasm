@@ -28,6 +28,8 @@ impl RwasmInstance {
         self.engine.execute(store, &self.module, params, result)
     }
 
+    /// Resumes an interrupted execution; see [`ExecutionEngine::resume`] for the error when the
+    /// store holds none.
     pub fn resume<T>(
         &self,
         store: &mut RwasmStore<T>,

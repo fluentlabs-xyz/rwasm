@@ -8,15 +8,22 @@ use core::{
     ops::{Neg, Shl, Shr},
 };
 
-/// An untyped value.
+/// An untyped value: one 32-bit slot of the rwasm value stack.
 ///
-/// Provides a dense and simple interface to all functional Wasm operations.
+/// Provides a dense and simple interface to all functional Wasm operations on 32-bit values.
+///
+/// rwasm is a 32-bit word machine. An `i64` or `f64` occupies two slots (see
+/// [`crate::I64ValueSplit`]), so this type never holds a 64-bit value on its own. There is
+/// deliberately no `From<u64>` or `From<usize>`: a conversion that silently kept the low limb of a
+/// 64-bit value would be a consensus-critical truncation. The `From<i64>`, `From<f64>` and
+/// `From<F64>` impls do keep only the low 32 bits; they serve the legacy single-limb helpers and
+/// call sites that carry a 32-bit value inside a wider integer, and a caller must never hand them
+/// a value that does not fit.
 #[derive(Debug, Copy, Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord, Encode, Decode)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct UntypedValue {
-    /// This inner value is required to have enough bits to represent
-    /// all fundamental WebAssembly types `i32`, `i64`, `f32` and `f64`.
+    /// The 32 bits of the slot; `i32`/`f32` values in full, one limb of an `i64`/`f64`.
     bits: u32,
 }
 
@@ -83,26 +90,6 @@ macro_rules! impl_from_unsigned_prim {
 impl_from_unsigned_prim!(
     bool, u8, u16, u32,
 );
-
-impl From<u64> for UntypedValue {
-    fn from(value: u64) -> Self {
-        debug_assert!(
-            value <= u32::MAX as u64,
-            "u64 value does not fit into UntypedValue"
-        );
-        Self { bits: value as _ }
-    }
-}
-
-impl From<usize> for UntypedValue {
-    fn from(value: usize) -> Self {
-        debug_assert!(
-            value <= u32::MAX as usize,
-            "usize value does not fit into UntypedValue"
-        );
-        Self { bits: value as _ }
-    }
-}
 
 macro_rules! impl_from_signed_prim {
     ( $( $prim:ty as $base:ty ),* $(,)? ) => {
@@ -980,14 +967,6 @@ impl UntypedValue {
 }
 
 impl UntypedValue {
-    pub fn as_u16(self) -> u16 {
-        debug_assert!(
-            self.bits <= u16::MAX as u32,
-            "UntypedValue does not fit into u16"
-        );
-        u16::from(self)
-    }
-
     pub fn as_u32(self) -> u32 {
         u32::from(self)
     }

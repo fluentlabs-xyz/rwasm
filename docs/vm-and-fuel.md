@@ -56,8 +56,12 @@ per-operator schedule lives in the shared `rwasm-fuel-policy` crate. Both engine
   slots those parameters occupy.
 
 Only `consume_fuel_for_bulk_ops` and `consume_fuel_for_params_and_locals` remain rwasm-only; use
-`CompilationConfig::default_strategy_compatible` for modules that may run on either engine.
-`tests/fuel_alignment.rs` pins these invariants differentially.
+`CompilationConfig::default_strategy_compatible` for modules that may run on either engine. The
+strategy-agnostic constructors (`StrategyDefinition::new`, `StrategyDefinition::new_as_wasmtime`,
+`for_each_strategy`) reject a config that enables either flag with
+`CompilationError::StrategyIncompatibleConfig`; only `StrategyDefinition::new_as_rwasm` and
+`RwasmModule::compile` accept it, because the rwasm VM is the one engine that implements the
+injections. `tests/fuel_alignment.rs` pins these invariants differentially.
 
 ## Traps and errors
 

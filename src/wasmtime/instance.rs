@@ -1,8 +1,11 @@
 use crate::{
     checked_memory_range_end,
-    wasmtime::{types::map_wasmtime_error, wasmtime_import_linker, WrappedContext},
+    wasmtime::{
+        context::RecordingStoreLimits, types::map_wasmtime_error, wasmtime_import_linker,
+        WrappedContext,
+    },
     ImportLinker, SyscallHandler, TrapCode, Value, F32, F64, N_BYTES_PER_MEMORY_PAGE,
-    N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES,
+    N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES, N_MAX_TABLE_SIZE,
 };
 use smallvec::SmallVec;
 use std::sync::Arc;
@@ -99,15 +102,18 @@ impl<T: 'static> WasmtimeExecutor<T> {
 
     /// Creates an executor by instantiating an already-compiled Wasmtime module.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if linking or instantiation fails. This is deliberate fail-fast on API misuse: a
-    /// module produced by this crate's own compile path has already been validated against the
-    /// import linker, and start sections (the one way a valid module can trap during
-    /// instantiation) are rejected by default at compile time. So a failure here means the caller
-    /// paired a module with the wrong import linker or bypassed compilation/validation, and we'd
-    /// rather crash loudly than continue with a half-linked instance. Use [`Self::try_new`] to
-    /// get the error instead.
+    /// Instantiation can fail on input the caller cannot pre-validate, so the failure is reported
+    /// with the trap the rwasm strategy raises for the same module rather than as a panic:
+    ///
+    /// - an import the linker does not provide: [`TrapCode::UnknownExternalFunction`]
+    /// - an initial memory or table larger than the store allows:
+    ///   [`TrapCode::MemoryOutOfBounds`] / [`TrapCode::TableOutOfBounds`]
+    /// - a trapping start function: that function's trap
+    /// - any other Wasmtime error: [`TrapCode::IllegalOpcode`]
+    ///
+    /// Use [`Self::try_new`] to get the underlying Wasmtime error instead.
     pub fn new(
         module: wasmtime::Module,
         import_linker: Arc<ImportLinker>,
@@ -115,7 +121,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
         syscall_handler: SyscallHandler<T>,
         fuel_limit: Option<u64>,
         max_allowed_memory_pages: Option<u32>,
-    ) -> Self {
+    ) -> Result<Self, TrapCode> {
         Self::try_new(
             module,
             import_linker,
@@ -124,11 +130,14 @@ impl<T: 'static> WasmtimeExecutor<T> {
             fuel_limit,
             max_allowed_memory_pages,
         )
-        .unwrap_or_else(|err| panic!("wasmtime: can't instantiate module: {}", err))
+        .map_err(map_wasmtime_error)
     }
 
     /// Creates an executor by instantiating an already-compiled Wasmtime module, returning the
-    /// linking or instantiation error instead of panicking.
+    /// linking or instantiation error itself.
+    ///
+    /// The error carries the [`TrapCode`] described on [`Self::new`] as context, so
+    /// `downcast_ref::<TrapCode>()` recovers it.
     pub fn try_new(
         module: wasmtime::Module,
         import_linker: Arc<ImportLinker>,
@@ -143,9 +152,15 @@ impl<T: 'static> WasmtimeExecutor<T> {
         let memory_size_limit = (memory_pages as usize)
             .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
             .expect("wasmtime: memory limit is bounded by N_MAX_ALLOWED_MEMORY_PAGES");
-        let resource_limiter = wasmtime::StoreLimitsBuilder::new()
-            .memory_size(memory_size_limit)
-            .build();
+        // the rwasm VM caps every table at `N_MAX_TABLE_SIZE` elements (`TableEntity::grow_untyped`
+        // fails any grow beyond it); apply the same per-table cap here so `table.grow` reports
+        // the same failures on both strategies
+        let resource_limiter = RecordingStoreLimits::new(
+            wasmtime::StoreLimitsBuilder::new()
+                .memory_size(memory_size_limit)
+                .table_elements(N_MAX_TABLE_SIZE as usize)
+                .build(),
+        );
 
         let context = WrappedContext {
             syscall_handler,
@@ -175,8 +190,10 @@ impl<T: 'static> WasmtimeExecutor<T> {
         {
             Self::link_spectest_globals(&mut linker, &mut store);
         }
-        let instance_pre = linker.instantiate_pre(&module)?;
-        let instance = instance_pre.instantiate(store.as_context_mut())?;
+        let instance_pre = linker
+            .instantiate_pre(&module)
+            .map_err(|err| err.context(TrapCode::UnknownExternalFunction))?;
+        let instance = Self::instantiate_in(&instance_pre, &mut store)?;
         let mut executor = Self {
             linker,
             store,
@@ -191,13 +208,46 @@ impl<T: 'static> WasmtimeExecutor<T> {
 
     /// Instantiates `module` in this executor's store with its linker, replacing the current
     /// instance and its cached exports.
+    ///
+    /// Errors carry the same [`TrapCode`] context as [`Self::try_new`].
     pub fn instantiate(&mut self, module: &wasmtime::Module) -> wasmtime::Result<()> {
-        let instance_pre = self.linker.instantiate_pre(module)?;
-        let instance = instance_pre.instantiate(self.store.as_context_mut())?;
+        let instance_pre = self
+            .linker
+            .instantiate_pre(module)
+            .map_err(|err| err.context(TrapCode::UnknownExternalFunction))?;
+        let instance = Self::instantiate_in(&instance_pre, &mut self.store)?;
         self.instance_pre = instance_pre;
         self.instance = instance;
         self.refresh_exports();
         Ok(())
+    }
+
+    /// Instantiates `instance_pre` in `store`.
+    ///
+    /// A failure caused by the store's resource limits is tagged with the trap the rwasm
+    /// entrypoint prologue raises for the same module, so both strategies report an oversized
+    /// initial memory or table identically.
+    fn instantiate_in(
+        instance_pre: &wasmtime::InstancePre<WrappedContext<T>>,
+        store: &mut wasmtime::Store<WrappedContext<T>>,
+    ) -> wasmtime::Result<wasmtime::Instance> {
+        store.data_mut().resource_limiter.reset_denied();
+        match instance_pre.instantiate(store.as_context_mut()) {
+            Ok(instance) => Ok(instance),
+            Err(err) => {
+                // A refused initial memory or table aborts instantiation with a plain error. A
+                // refused `memory.grow`/`table.grow` inside the start function, however, is
+                // reported to the guest as `-1` and execution goes on; if the function then fails
+                // for a reason of its own, the error already carries a trap or a `TrapCode`, and
+                // that reason must win over the handled denial.
+                let already_classified = err.downcast_ref::<wasmtime::Trap>().is_some()
+                    || err.downcast_ref::<TrapCode>().is_some();
+                Err(match store.data().resource_limiter.denied() {
+                    Some(trap_code) if !already_classified => err.context(trap_code),
+                    _ => err,
+                })
+            }
+        }
     }
 
     /// Looks up an exported function in the cached export table.
@@ -366,12 +416,15 @@ impl<T: 'static> WasmtimeExecutor<T> {
         Ok(())
     }
 
+    /// Interruptions are not supported on the Wasmtime strategy, so there is never an execution
+    /// to resume; this always fails with [`TrapCode::IllegalOpcode`], the same error the rwasm
+    /// engine reports for a `resume` without an interrupted execution.
     pub fn resume(
         &mut self,
         interruption_result: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
-        unimplemented!("wasmtime: resume is not implemented yet");
+        Err(TrapCode::IllegalOpcode)
     }
 
     pub fn snapshot_memory(&mut self) -> Result<Vec<u8>, TrapCode> {

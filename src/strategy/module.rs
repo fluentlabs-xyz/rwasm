@@ -22,19 +22,36 @@ impl StrategyDefinition {
     /// Compiles a wasm binary with whichever strategy the crate was built with (Wasmtime when the
     /// `wasmtime` feature is on, the rwasm VM otherwise).
     ///
-    /// Because the strategy is a build-time choice, pass a config whose fuel semantics don't
-    /// depend on it — [`CompilationConfig::default_strategy_compatible`] — rather than
-    /// [`CompilationConfig::default`], which enables rwasm-only fuel injections that the Wasmtime
-    /// path silently ignores.
+    /// Because the strategy is a build-time choice, the config's fuel semantics must not depend
+    /// on it: a config that enables the rwasm-only fuel injections (the plain
+    /// [`CompilationConfig::default`]) is rejected with
+    /// [`CompilationError::StrategyIncompatibleConfig`] regardless of the feature set, so a
+    /// module never silently burns different fuel on the two strategies. Use
+    /// [`CompilationConfig::default_strategy_compatible`].
     pub fn new(
         compilation_config: CompilationConfig,
         wasm_binary: impl AsRef<[u8]>,
         #[allow(unused_variables)] module_caching_key: Option<[u8; 32]>,
     ) -> Result<Self, CompilationError> {
+        Self::ensure_strategy_compatible(&compilation_config)?;
         #[cfg(feature = "wasmtime")]
         return Self::new_as_wasmtime(compilation_config, wasm_binary, module_caching_key);
         #[cfg(not(feature = "wasmtime"))]
         return Self::new_as_rwasm(compilation_config, wasm_binary);
+    }
+
+    /// Rejects a config whose fuel accounting depends on the strategy.
+    ///
+    /// `is_strategy_compatible` used to be advisory only, so a divergent `default()` config was
+    /// accepted and the rwasm-only injections were silently dropped on the Wasmtime strategy.
+    pub(crate) fn ensure_strategy_compatible(
+        compilation_config: &CompilationConfig,
+    ) -> Result<(), CompilationError> {
+        if compilation_config.is_strategy_compatible() {
+            Ok(())
+        } else {
+            Err(CompilationError::StrategyIncompatibleConfig)
+        }
     }
 
     pub fn new_as_rwasm(
@@ -50,29 +67,43 @@ impl StrategyDefinition {
 
     /// Compiles a wasm binary for the Wasmtime strategy.
     ///
-    /// # Panics
+    /// The binary is first run through the rwasm front end ([`RwasmModule::compile`]) and only
+    /// then handed to Wasmtime. Wasmtime accepts a superset of the rwasm language, so without
+    /// that step the two strategies would disagree on which modules compile at all: rwasm
+    /// enforces the memory and table caps, the start-section and import rules and the accepted
+    /// proposal set, and Wasmtime does not. A module that rwasm rejects is rejected here with the
+    /// same error, and a Wasmtime failure is reported as
+    /// [`CompilationError::WasmtimeCompilationFailed`] instead of a panic.
     ///
-    /// Panics if Wasmtime rejects the binary. This is deliberate fail-fast on API misuse rather
-    /// than a recoverable error: the caller is expected to have run this crate's own
-    /// validation/compilation rules over the binary first (rwasm accepts a strict subset of what
-    /// Wasmtime accepts), so a binary that reaches this point and still fails to compile means the
-    /// caller skipped validation, and we'd rather crash loudly than let unvalidated input flow
-    /// further. Feed untrusted wasm through the rwasm validation path before calling this.
+    /// With a `module_caching_key` the validation runs only on a cache miss.
+    ///
+    /// The Wasmtime engine does not implement `consume_fuel_for_bulk_ops` or
+    /// `consume_fuel_for_params_and_locals`, so a config enabling either is rejected with
+    /// [`CompilationError::StrategyIncompatibleConfig`] rather than silently under-metered.
     #[cfg(feature = "wasmtime")]
     pub fn new_as_wasmtime(
         compilation_config: CompilationConfig,
         wasm_binary: impl AsRef<[u8]>,
         module_caching_key: Option<[u8; 32]>,
     ) -> Result<Self, CompilationError> {
-        use crate::wasmtime::{compile_wasmtime_module, compile_wasmtime_module_cached};
-        let module = if let Some(binary_caching_key) = module_caching_key {
-            compile_wasmtime_module_cached(compilation_config, wasm_binary, binary_caching_key)
-        } else {
-            compile_wasmtime_module(compilation_config, wasm_binary)
+        use crate::wasmtime::{
+            compile_wasmtime_module, compile_wasmtime_module_cached_with, CachePolicy,
         };
-        let module = module.expect(
-            "rwasm: compilation of wasmtime module can't fail since it's followed by rwasm validation rules, or it's a bug (the binary follows rwasm rules?)",
-        );
+        Self::ensure_strategy_compatible(&compilation_config)?;
+        let wasm_binary = wasm_binary.as_ref();
+        let compile = |config: CompilationConfig| -> Result<_, CompilationError> {
+            RwasmModule::compile(config.clone(), wasm_binary)?;
+            compile_wasmtime_module(config, wasm_binary)
+        };
+        let module = match module_caching_key {
+            Some(module_caching_key) => compile_wasmtime_module_cached_with(
+                compilation_config,
+                module_caching_key,
+                CachePolicy::RwasmValidated,
+                compile,
+            )?,
+            None => compile(compilation_config)?,
+        };
         Ok(Self::Wasmtime { module })
     }
 
@@ -103,8 +134,7 @@ impl StrategyDefinition {
                     fuel_limit,
                     max_allowed_memory_pages,
                 );
-                let instance =
-                    import_linker.instantiate(&mut store, engine.clone(), module.clone())?;
+                let instance = import_linker.instantiate(&mut store, *engine, module.clone())?;
                 Ok(StrategyExecutor::Rwasm { store, instance })
             }
             #[cfg(feature = "wasmtime")]
@@ -116,7 +146,7 @@ impl StrategyDefinition {
                     syscall_handler,
                     fuel_limit,
                     max_allowed_memory_pages,
-                );
+                )?;
                 Ok(StrategyExecutor::Wasmtime { executor })
             }
         }
@@ -239,6 +269,10 @@ impl<T: 'static> StrategyExecutor<T> {
         }
     }
 
+    /// Resumes an execution interrupted with [`TrapCode::InterruptionCalled`].
+    ///
+    /// Fails with [`TrapCode::IllegalOpcode`] when there is nothing to resume (no interruption
+    /// happened, or the Wasmtime strategy, which does not support interruptions).
     pub fn resume(
         &mut self,
         interruption_result: &[Value],

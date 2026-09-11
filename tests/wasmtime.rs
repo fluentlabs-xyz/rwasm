@@ -162,3 +162,51 @@ fn test_instance_reuse() {
         assert_eq!(result[0].i32(), Some(433_494_437));
     }
 }
+
+/// The compile-time memory cap applies to the Wasmtime compile path exactly as it applies to the
+/// rwasm compiler, so a deployment whose runtime memory limit differs from the compile limit
+/// cannot accept a module on one strategy and reject it on the other.
+mod compile_limits {
+    use super::*;
+    use rwasm::{CompilationError, RwasmModule, N_DEFAULT_MAX_MEMORY_PAGES};
+
+    fn module_with_memory(pages: u32) -> Vec<u8> {
+        wat::parse_str(format!(
+            r#"(module (memory {pages}) (func (export "main") (result i32) memory.size))"#
+        ))
+        .unwrap()
+    }
+
+    fn config() -> CompilationConfig {
+        CompilationConfig::default_strategy_compatible()
+            .with_entrypoint_name("main".into())
+            .with_allow_malformed_entrypoint_func_type(true)
+    }
+
+    #[test]
+    fn wasmtime_compile_path_enforces_the_memory_page_cap() {
+        let too_large = module_with_memory(N_DEFAULT_MAX_MEMORY_PAGES + 1);
+        assert!(matches!(
+            RwasmModule::compile(config(), &too_large),
+            Err(CompilationError::MaxReadonlyDataReached)
+        ));
+        assert!(matches!(
+            compile_wasmtime_module(config(), &too_large),
+            Err(CompilationError::MaxReadonlyDataReached)
+        ));
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(config(), &too_large, None),
+            Err(CompilationError::MaxReadonlyDataReached)
+        ));
+
+        // the cap is inclusive on both paths
+        let at_cap = module_with_memory(N_DEFAULT_MAX_MEMORY_PAGES);
+        RwasmModule::compile(config(), &at_cap).unwrap();
+        compile_wasmtime_module(config(), &at_cap).unwrap();
+
+        // and it follows the configured limit, not a constant
+        let relaxed = config().with_max_allowed_memory_pages(N_DEFAULT_MAX_MEMORY_PAGES + 1);
+        RwasmModule::compile(relaxed.clone(), &too_large).unwrap();
+        compile_wasmtime_module(relaxed, &too_large).unwrap();
+    }
+}

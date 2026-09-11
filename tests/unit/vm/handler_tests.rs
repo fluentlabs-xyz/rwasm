@@ -85,3 +85,75 @@ fn typed_rwasm_caller_exposes_store_operations_and_accessors() {
     let caller = caller.into_rwasm();
     assert_eq!(caller.data(), &8);
 }
+
+/// Adversarial parameters must trap, never panic or allocate before the range is validated.
+#[test]
+fn simple_call_handler_rejects_adversarial_parameters() {
+    let context = SimpleCallContext {
+        input: b"abcdef".to_vec(),
+        ..Default::default()
+    };
+    let mut store = RwasmStore::new(
+        Arc::new(ImportLinker::default()),
+        context,
+        always_failing_syscall_handler,
+        None,
+        Some(1),
+    );
+    store.global_memory.grow(Pages::new(1).unwrap()).unwrap();
+    let mut caller = TypedCaller::Rwasm(RwasmCaller::new(&mut store));
+    let call = |caller: &mut TypedCaller<SimpleCallContext>, func_idx, params: &[Value]| {
+        simple_call_handler_syscall_handler(caller, func_idx, params, &mut [])
+    };
+
+    // `offset + length` wraps around on the host input buffer
+    let wrap = [Value::I32(0), Value::I32(-1), Value::I32(2)];
+    assert_eq!(
+        call(&mut caller, 0x0003, &wrap),
+        Err(TrapCode::MemoryOutOfBounds)
+    );
+    // the input range is out of bounds
+    let oob = [Value::I32(0), Value::I32(4), Value::I32(3)];
+    assert_eq!(
+        call(&mut caller, 0x0003, &oob),
+        Err(TrapCode::MemoryOutOfBounds)
+    );
+    // a 4 GiB output read is rejected by the range check before any buffer exists
+    let huge = [Value::I32(0), Value::I32(-1)];
+    assert_eq!(
+        call(&mut caller, 0x0005, &huge),
+        Err(TrapCode::MemoryOutOfBounds)
+    );
+    assert!(caller.data().output.is_empty());
+    // the same for the hashed range, and a hash output offset past the end of memory
+    let huge = [Value::I32(0), Value::I32(-1), Value::I32(0)];
+    assert_eq!(
+        call(&mut caller, 0x0101, &huge),
+        Err(TrapCode::MemoryOutOfBounds)
+    );
+    let past_end = [Value::I32(0), Value::I32(4), Value::I32(65535)];
+    assert_eq!(
+        call(&mut caller, 0x0101, &past_end),
+        Err(TrapCode::MemoryOutOfBounds)
+    );
+    // missing or mistyped parameters are a signature error
+    assert_eq!(call(&mut caller, 0x0001, &[]), Err(TrapCode::BadSignature));
+    assert_eq!(
+        call(
+            &mut caller,
+            0x0003,
+            &[Value::I64(0), Value::I64(0), Value::I64(0)]
+        ),
+        Err(TrapCode::BadSignature)
+    );
+    let mut no_result: [Value; 0] = [];
+    assert_eq!(
+        simple_call_handler_syscall_handler(&mut caller, 0x0002, &[], &mut no_result),
+        Err(TrapCode::BadSignature)
+    );
+    // an unknown import index is an unknown external function
+    assert_eq!(
+        call(&mut caller, 0xdead, &[]),
+        Err(TrapCode::UnknownExternalFunction)
+    );
+}
