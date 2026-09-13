@@ -121,6 +121,17 @@ Executors are created with:
 - optional fuel limit
 - optional tracer
 
+An `RwasmStore` holds one current instance's memory, tables, globals, and segment state.
+Replacement initialization temporarily moves that state aside without copying its memory.
+Success commits the replacement and invalidates old `RwasmInstance` handles; a trap restores the
+previous state and handle. An interrupted initializer keeps the transaction pending until
+`ExecutionEngine::resume` completes or `reset` cancels it. Cancellation restores the previous
+instance's segment flags for either `keep_flags` value. Consumed fuel and host callback side effects
+are not rolled back; `reset` still resets consumed fuel. A replacement attempted while an execution
+is parked is rejected before changing its state. Handles reject a different store or a successfully
+replaced instance with `IllegalOpcode`. Hosts using `ExecutionEngine` directly are responsible for
+pairing the module with its initialized store state.
+
 ## 5) Runtime execution
 
 VM (`src/vm/**`) runs instruction stream:

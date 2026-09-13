@@ -1,9 +1,15 @@
 use crate::{ExecutionEngine, RwasmModule, RwasmStore, TrapCode, Value};
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 
+/// A handle to the current instance in a store.
+///
+/// A successful replacement invalidates earlier handles. Failed initialization restores the
+/// previous instance; an interrupted initialization retains its state until completion or reset.
+/// A replacement rejected because an execution is already parked leaves that execution intact.
 pub struct RwasmInstance {
     engine: ExecutionEngine,
     module: RwasmModule,
+    identity: Arc<()>,
     /// Name of the export compiled into the entrypoint, when the compiler selected one.
     ///
     /// The rwasm module has a single compile-time entrypoint (plus the optional state router), so
@@ -14,42 +20,41 @@ pub struct RwasmInstance {
 }
 
 impl RwasmInstance {
+    /// Initializes a module transactionally, restoring the previous instance on a terminal trap.
+    ///
+    /// An interruption can be resumed through [`ExecutionEngine::resume`] or canceled with
+    /// [`RwasmStore::reset`]. Initialization rollback preserves memory, tables, globals, and
+    /// segment flags, but does not undo host callback side effects or consumed fuel.
     pub fn new<T>(
         store: &mut RwasmStore<T>,
         engine: ExecutionEngine,
         module: RwasmModule,
     ) -> Result<Self, TrapCode> {
-        // A parked execution still owns the store's memory and tables. Reject replacement
-        // before clearing either so it can be resumed, or explicitly cancelled with reset.
-        if store.resumable_context.is_some() {
-            return Err(TrapCode::IllegalOpcode);
-        }
-        // The data/element drop state lives in the store but belongs to the instance: a module
-        // instantiated on a store that already hosted another module has to start with all of its
-        // segments live, or `memory.init`/`table.init` traps because the previous module dropped
-        // the same segment index. The flag has to be cleared before the entrypoint runs, because
-        // that code copies the module's active segments.
-        store.clear_segment_flags();
-        // The linear memory belongs to the instance as well. The entrypoint grows it from zero to
-        // the size the module declares, so releasing the previous instance's pages here is what
-        // keeps `memory.size`, the data-segment copies and every load/store relative to this
-        // module instead of the one that ran before it.
-        store.reset_memory();
-        // Tables are per-instance too: the entrypoint grows each declared table and fills it with
-        // nulls, so an entry the previous instance wrote must not survive into this one. Dropping
-        // the tables here keeps `call_indirect` from dispatching into the previous module's code
-        // and lets `table.size`/`table.get` report this module's table.
-        store.reset_tables();
-        // Invoke an entrypoint before (it triggers first init for memory, data, tables, etc. and also calls a start section).
-        // We call entrypoint only if source PC is greater than 0, it means that the module has a start section and it's not legacy module.
-        if module.source_pc > 0 {
-            engine.entrypoint(store, &module)?;
-        }
+        // Distinct allocations prevent handles from matching another store or a later instance
+        // of the same module. The previous identity is restored if initialization fails.
+        let identity = Arc::new(());
+        store.begin_instantiation(identity.clone())?;
+        // Legacy modules start at zero and have no separate initialization prologue.
+        let outcome = if module.source_pc > 0 {
+            engine.entrypoint(store, &module)
+        } else {
+            Ok(())
+        };
+        store.finish_instantiation(outcome)?;
         Ok(Self {
             engine,
             module,
+            identity,
             entrypoint_name: None,
         })
+    }
+
+    /// Rejects handles whose instance state is no longer active in this store.
+    fn check_store<T>(&self, store: &RwasmStore<T>) -> Result<(), TrapCode> {
+        match &store.active_instance {
+            Some(identity) if Arc::ptr_eq(identity, &self.identity) => Ok(()),
+            _ => Err(TrapCode::IllegalOpcode),
+        }
     }
 
     /// Records the export name the entrypoint was compiled from.
@@ -58,12 +63,14 @@ impl RwasmInstance {
         self
     }
 
+    /// Executes the compiled entrypoint if this instance still owns the supplied store.
     pub fn execute<T>(
         &self,
         store: &mut RwasmStore<T>,
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
+        self.check_store(store)?;
         self.engine.execute(store, &self.module, params, result)
     }
 
@@ -99,6 +106,7 @@ impl RwasmInstance {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
+        self.check_store(store)?;
         self.engine.resume(store, params, result)
     }
 }

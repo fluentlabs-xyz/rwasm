@@ -532,11 +532,15 @@ impl ModuleParser {
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
 
             if self.config.builtins_consume_fuel {
-                compile_block_params(
+                let temporary_slots = compile_block_params(
                     &mut translator.alloc.instruction_set,
                     import_linker_entity.syscall_fuel_param,
                     import_linker_entity.params,
                 )?;
+                // This prologue is emitted directly rather than through the Wasm translator.
+                // Include its peak so the trampoline grows the stack before using temporaries.
+                translator.stack_height.push_n(temporary_slots);
+                translator.stack_height.pop_n(temporary_slots);
             }
 
             translator
@@ -765,9 +769,9 @@ impl ModuleParser {
                     offset_expr,
                 } => {
                     let compiled_expr = CompiledExpr::new(offset_expr)?;
-                    // We can fail-fast here because we already that know that there an overflow
-                    let element_offset = u32::try_from(self.eval_const(compiled_expr)?)
-                        .map_err(|_| CompilationError::TableOutOfBounds)?;
+                    // Validation requires an i32 offset. Its bits denote an unsigned index;
+                    // an out-of-bounds active segment traps when the initializer runs.
+                    let element_offset = self.eval_const(compiled_expr)? as u32;
                     let table_idx = TableIdx::try_from(table_index).unwrap();
                     self.allocations
                         .translation
@@ -833,9 +837,9 @@ impl ModuleParser {
                         return Err(CompilationError::NonDefaultMemoryIndex);
                     }
                     let compiled_expr = CompiledExpr::new(offset_expr)?;
-                    // We can fail-fast here because we already that know that there an overflow
-                    let data_offset = u32::try_from(self.eval_const(compiled_expr)?)
-                        .map_err(|_| CompilationError::MemoryOutOfBounds)?;
+                    // Preserve the unsigned bits of the validated i32 expression, including
+                    // negative literals. Bounds belong to the emitted initialization code.
+                    let data_offset = self.eval_const(compiled_expr)? as u32;
                     self.allocations
                         .translation
                         .segment_builder

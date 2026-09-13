@@ -29,11 +29,17 @@ fn param_slot_depth(params: &[ValType], param_index: u32) -> Result<LocalDepth, 
     Ok(slots_above + 1)
 }
 
+/// Emits syscall metering and returns its peak temporary stack usage in 32-bit slots.
 pub(crate) fn compile_block_params(
     isa: &mut InstructionSet,
     syscall_fuel_param: SyscallFuelParams,
     params: &[ValType],
-) -> Result<(), CompilationError> {
+) -> Result<u32, CompilationError> {
+    let temporary_slots = match &syscall_fuel_param {
+        SyscallFuelParams::None | SyscallFuelParams::Const(_) => 0,
+        SyscallFuelParams::LinearFuel(_) => 2,
+        SyscallFuelParams::QuadraticFuel(_) => 4,
+    };
     match syscall_fuel_param {
         SyscallFuelParams::None => {}
         SyscallFuelParams::Const(base) => isa.op_consume_fuel(base as u32),
@@ -98,7 +104,7 @@ pub(crate) fn compile_block_params(
             }
         }
     }
-    Ok(())
+    Ok(temporary_slots)
 }
 
 #[cfg(test)]

@@ -26,6 +26,7 @@ use rwasm::{
 use std::sync::Arc;
 use tiny_keccak::{Hasher, Keccak};
 
+/// Hashes serialized compiler output so runs and processes can compare compact fingerprints.
 fn keccak(data: &[u8]) -> String {
     let mut h = Keccak::v256();
     let mut out = [0u8; 32];
@@ -99,6 +100,7 @@ fn compile_at_depth(depth: u32, config: &CompilationConfig, wasm: &[u8]) -> Stri
     }
 }
 
+/// Creates equivalent import maps in opposite insertion orders to detect order-sensitive codegen.
 fn linker(order_reversed: bool) -> ImportLinker {
     let mut entries: Vec<(ImportName, ImportLinkerEntity)> = Vec::new();
     for i in 0..32u32 {
@@ -195,6 +197,7 @@ fn matrix() -> Vec<(&'static str, CompilationConfig)> {
     ]
 }
 
+/// Collects arithmetic, snippet, and import inputs for the determinism configuration matrix.
 fn corpus() -> Vec<(&'static str, Vec<u8>)> {
     vec![
         ("tiny", tiny_wasm()),

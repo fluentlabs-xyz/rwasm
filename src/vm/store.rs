@@ -5,12 +5,17 @@ use crate::{
 };
 use alloc::{sync::Arc, vec::Vec};
 use bitvec::{order::Lsb0, vec::BitVec};
+use core::mem::{replace, take};
 use hashbrown::HashMap;
 
 /// Host-side store that holds memory, tables, globals, and host context for a rwasm instance.
 /// It also tracks fuel for metering and provides access to imported functions and syscalls.
 /// The store is passed to host callbacks and persists across invocations of the same module.
 pub struct RwasmStore<T: 'static> {
+    /// Identity of the one instance whose state this store currently holds.
+    pub(crate) active_instance: Option<Arc<()>>,
+    /// Previous instance state retained until replacement initialization completes.
+    pending_instance: Option<InstanceState>,
     /// Total amount of fuel consumed by the currently running instance.
     pub(crate) consumed_fuel: u64,
     /// The linear memory shared by the running module and the host.
@@ -46,6 +51,17 @@ pub(crate) struct ReusableContext {
     pub ip: InstructionPtr,
     pub value_stack: ValueStack,
     pub initializing: bool,
+}
+
+/// Instance-owned allocations moved aside during initialization, without copying memory.
+struct InstanceState {
+    identity: Option<Arc<()>>,
+    memory: GlobalMemory,
+    tables: HashMap<TableIdx, TableEntity>,
+    globals: HashMap<GlobalIdx, UntypedValue>,
+    data_segments: BitVec,
+    elem_segments: BitVec,
+    last_signature: Option<SignatureIdx>,
 }
 
 impl<T: 'static + Default> Default for RwasmStore<T> {
@@ -109,6 +125,7 @@ impl<T: 'static> StoreTr<T> for RwasmStore<T> {
 }
 
 impl<T: 'static> RwasmStore<T> {
+    /// Creates an empty store with the supplied host context, syscall handler, and resource limits.
     pub fn new(
         import_linker: Arc<ImportLinker>,
         context: T,
@@ -122,6 +139,8 @@ impl<T: 'static> RwasmStore<T> {
         let global_memory =
             GlobalMemory::new(Pages::new_unchecked(0), Pages::new_unchecked(memory_pages));
         Self {
+            active_instance: None,
+            pending_instance: None,
             consumed_fuel: 0,
             global_memory,
             data: context,
@@ -139,29 +158,57 @@ impl<T: 'static> RwasmStore<T> {
         }
     }
 
-    /// Releases every table the previous instance created.
-    ///
-    /// A module's init prologue grows one table per declared table
-    /// ([`crate::SegmentBuilder::emit_table_segment`]) and fills it with nulls, so an instance
-    /// created on a store that already ran another module must start with no tables at all:
-    /// otherwise `call_indirect` dispatches through an entry the previous module left behind
-    /// (and `table.size`/`table.get`/`table.fill` report it).
-    pub(crate) fn reset_tables(&mut self) {
-        self.tables.clear();
-    }
-
-    /// Restores the linear memory to the zero-page state a fresh store starts in.
-    ///
-    /// A module's init prologue grows the memory to the size its memory section declares, so an
-    /// instance created on a store that already ran another module must start from an empty
-    /// memory: otherwise it inherits the previous instance's page count and bytes, and the
-    /// prologue's `memory.grow` adds the declared pages on top of them. The configured maximum
-    /// stays in place, so the new instance can still grow to its own limit.
-    pub(crate) fn reset_memory(&mut self) {
-        self.global_memory = GlobalMemory::new(
+    /// Starts replacement with empty instance state, retaining the old allocations for rollback.
+    /// Parked executions and nested initialization must finish or be canceled first.
+    pub(crate) fn begin_instantiation(&mut self, identity: Arc<()>) -> Result<(), TrapCode> {
+        if self.resumable_context.is_some() || self.pending_instance.is_some() {
+            return Err(TrapCode::IllegalOpcode);
+        }
+        let memory = GlobalMemory::new(
             Pages::new_unchecked(0),
             self.global_memory.max_allowed_memory_pages,
         );
+        self.pending_instance = Some(InstanceState {
+            identity: self.active_instance.replace(identity),
+            memory: replace(&mut self.global_memory, memory),
+            tables: take(&mut self.tables),
+            globals: take(&mut self.global_variables),
+            data_segments: take(&mut self.empty_data_segments),
+            elem_segments: take(&mut self.empty_elem_segments),
+            last_signature: self.last_signature.take(),
+        });
+        Ok(())
+    }
+
+    /// Commits successful initialization, retains suspended work, or rolls back a trapped start.
+    /// Fuel, host context, and trace events describe the attempted execution and are not refunded.
+    pub(crate) fn finish_instantiation(
+        &mut self,
+        outcome: Result<(), TrapCode>,
+    ) -> Result<(), TrapCode> {
+        match outcome {
+            Ok(()) => self.pending_instance = None,
+            Err(TrapCode::InterruptionCalled) => {}
+            Err(_) => {
+                self.rollback_instantiation();
+            }
+        }
+        outcome
+    }
+
+    /// Restores the previous instance if a replacement was in progress.
+    fn rollback_instantiation(&mut self) -> bool {
+        let Some(previous) = self.pending_instance.take() else {
+            return false;
+        };
+        self.active_instance = previous.identity;
+        self.global_memory = previous.memory;
+        self.tables = previous.tables;
+        self.global_variables = previous.globals;
+        self.empty_data_segments = previous.data_segments;
+        self.empty_elem_segments = previous.elem_segments;
+        self.last_signature = previous.last_signature;
+        true
     }
 
     /// Clears the data/element segment drop state.
@@ -185,12 +232,18 @@ impl<T: 'static> RwasmStore<T> {
         }
     }
 
-    /// Resets the state of the current execution context.
+    /// Cancels parked execution and resets consumed fuel.
+    ///
+    /// Canceling initialization restores the previous instance, including its segment flags,
+    /// regardless of `keep_flags`. Otherwise `keep_flags` controls whether segment drops survive.
     pub fn reset(&mut self, keep_flags: bool) {
         // Reset cancels any interrupted execution, even when instance segment flags survive.
         self.resumable_context = None;
         // reset consumed fuel to 0
         self.consumed_fuel = 0;
+        if self.rollback_instantiation() {
+            return;
+        }
         // we might want to keep data/elem flags between calls, it's required for e2e tests
         if !keep_flags {
             self.clear_segment_flags();
@@ -199,6 +252,7 @@ impl<T: 'static> RwasmStore<T> {
         self.last_signature = None;
     }
 
+    /// Returns fuel consumed since construction or the most recent fuel reset.
     pub fn fuel_consumed(&self) -> u64 {
         self.consumed_fuel
     }

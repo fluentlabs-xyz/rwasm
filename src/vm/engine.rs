@@ -19,6 +19,7 @@ use core::mem::take;
 pub struct ExecutionEngine;
 
 impl ExecutionEngine {
+    /// Creates a stateless engine that can execute modules on independent stores.
     pub fn new() -> Self {
         Self
     }
@@ -31,6 +32,7 @@ impl ExecutionEngine {
         Self
     }
 
+    /// Runs a module's initialization prologue, parking its stacks if a syscall interrupts it.
     #[inline(always)]
     pub fn entrypoint<T>(
         &self,
@@ -108,6 +110,7 @@ impl ExecutionEngine {
     }
 
     /// Resumes an execution on `store` that returned [`TrapCode::InterruptionCalled`].
+    /// Completing a replacement initializer commits its state; a trap restores the old instance.
     ///
     /// # Errors
     ///
@@ -152,10 +155,12 @@ impl ExecutionEngine {
                     },
                 )
             }
+            res if initializing => store.finish_instantiation(res),
             res => res,
         }
     }
 
+    /// Parks interpreter stacks and instruction position for the next resume call.
     fn remember_context<T>(
         &self,
         store: &mut RwasmStore<T>,

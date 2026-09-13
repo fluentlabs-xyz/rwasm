@@ -11,9 +11,10 @@
 //! branch targets, that test has to be inverted into "the module is rejected".
 
 use rwasm::{
-    always_failing_syscall_handler, instruction_set, wasmtime::WasmtimeExecutor, wasmtime::WasmtimeModule,
-    CompilationConfig, ExecutionEngine, ImportLinker, ImportName, RwasmModule, RwasmModuleBuilder,
-    RwasmStore, StrategyDefinition, StoreTr, SyscallFuelParams, TrapCode, TypedCaller, ValType, Value,
+    always_failing_syscall_handler, instruction_set, wasmtime::WasmtimeExecutor,
+    wasmtime::WasmtimeModule, CompilationConfig, ExecutionEngine, ImportLinker, ImportName,
+    RwasmModule, RwasmModuleBuilder, RwasmStore, StateRouterConfig, StrategyDefinition, StoreTr,
+    SyscallFuelParams, TrapCode, TypedCaller, ValType, Value,
 };
 use std::sync::{Arc, Mutex};
 
@@ -237,6 +238,55 @@ const ELEMENTS_B: &str = r#"(module
        (table.init 0 (i32.const 0) (i32.const 0) (i32.const 1))
        (elem.drop 0)
        (i64.extend_i32_u (call_indirect (type $t) (i32.const 0)))))"#;
+
+/// Guard for the table half of `R3-1` with offsets large enough to leave the second module's code
+/// section: module A has 200 functions and installs the offset of its last one, module B is a few
+/// instructions long and never initializes its table. Before the fix, B's `call_indirect` fetched
+/// from `B.code + ~1000` (an instrumented `InstructionPtr` window check reported
+/// `instruction offset=1030` against a 23-instruction window); now B's table is its own and both
+/// backends trap `IndirectCallToNull`.
+#[test]
+fn table_entries_do_not_leak_between_instances_with_large_offsets() {
+    let mut large_a = String::from(
+        r#"(module
+             (type $t (func (result i32)))
+             (table 1 funcref)
+             (elem func $f199)
+             (func (export "main") (result i64)
+               (table.init 0 (i32.const 0) (i32.const 0) (i32.const 1))
+               (i64.const 0))
+"#,
+    );
+    for i in 0..200 {
+        large_a.push_str(&format!("(func $f{i} (result i32) (i32.const {i}))\n"));
+    }
+    large_a.push(')');
+
+    let linker = Arc::new(ImportLinker::default());
+    let mut store = RwasmStore::new(linker.clone(), Ctx::default(), noop, Some(1_000_000), None);
+    let mut result = [Value::I64(-1)];
+    rwasm_execute(&linker, &mut store, rwasm_module(&linker, &large_a), &mut result)
+        .expect("the large module runs");
+
+    let mut second = [Value::I64(-1)];
+    let rwasm = rwasm_execute(&linker, &mut store, rwasm_module(&linker, TABLE_B), &mut second)
+        .map(|()| second[0].clone());
+
+    let mut wasmtime = wasmtime_executor(&linker, &large_a);
+    let mut result = [Value::I64(-1)];
+    wasmtime.execute("main", &[], &mut result).unwrap();
+    wasmtime_instantiate(&mut wasmtime, TABLE_B);
+    let mut second = [Value::I64(-1)];
+    let wasmtime = wasmtime
+        .execute("main", &[], &mut second)
+        .map(|()| second[0].clone());
+
+    assert_eq!(
+        rwasm, wasmtime,
+        "a dispatch target left by a much larger module must not be applied to this module's code: \
+         rwasm={rwasm:?}, wasmtime={wasmtime:?}"
+    );
+}
 
 /// The element-segment mirror of the data-segment leak: `elem.drop 0` in module A used to make
 /// module B's `table.init 0` trap `TableOutOfBounds`, because the drop bitset lives in the store
@@ -622,4 +672,62 @@ fn out_of_range_branch_target_aborts_the_process() {
              branch target, which would be a correctness bug instead of a crash"
         );
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// R3-4 checks instantiation-time bounds validation. R3-5 records the documented difference
+// between the Wasmtime host-memory contract and interpreter support for unexported memory.
+// ---------------------------------------------------------------------------------------------
+
+fn hex(bytes: &str) -> Vec<u8> {
+    (0..bytes.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&bytes[i..i + 2], 16).unwrap())
+        .collect()
+}
+
+/// `R3-4`: `(memory 1) (data (i32.const -1) "a")` is valid Wasm — `-1` is the i32 `0xFFFF_FFFF` —
+/// and the spec requires the *instantiation* to trap out of bounds. Preserve the offset's bit
+/// pattern during compilation and let the initialization bounds check reject it.
+#[test]
+fn negative_active_segment_offset_is_not_a_compile_error() {
+    let wasm = hex("0061736d0100000005030100010b070100417f0b0161");
+    let linker = Arc::new(ImportLinker::default());
+    let config = CompilationConfig::default_strategy_compatible()
+        .with_allow_malformed_entrypoint_func_type(true)
+        .with_import_linker(linker)
+        .with_state_router(StateRouterConfig {
+            states: Box::new([]),
+            opcode: None,
+        });
+    let (module, _) = RwasmModule::compile(config, &wasm)
+        .expect("the unsigned i32 offset is valid at compile time");
+    let mut store = RwasmStore::<()>::default();
+    assert_eq!(
+        ImportLinker::default()
+            .instantiate(&mut store, ExecutionEngine::new(), module)
+            .err(),
+        Some(TrapCode::MemoryOutOfBounds),
+        "the active segment must trap during initialization"
+    );
+}
+
+/// The Wasmtime strategy requires exported memory for host access, as documented in
+/// `docs/pipeline.md`. The interpreter and the Wasm spec harness also support unexported memory.
+#[test]
+fn unexported_memory_is_supported_only_by_the_rwasm_strategy() {
+    let wasm = hex("0061736d010000000104016000000302010005030100000a0a01080041002c00001a0b");
+    let linker = Arc::new(ImportLinker::default());
+    let config = CompilationConfig::default_strategy_compatible()
+        .with_allow_malformed_entrypoint_func_type(true)
+        .with_import_linker(linker)
+        .with_state_router(StateRouterConfig {
+            states: Box::new([("f".into(), 0u32)]),
+            opcode: None,
+        });
+    assert!(StrategyDefinition::new_as_rwasm(config.clone(), &wasm).is_ok());
+    assert!(matches!(
+        StrategyDefinition::new_as_wasmtime(config, &wasm, None),
+        Err(rwasm::CompilationError::MissingMemoryExport)
+    ));
 }

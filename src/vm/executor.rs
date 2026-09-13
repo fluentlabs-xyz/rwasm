@@ -27,6 +27,7 @@ pub struct RwasmExecutor<'a, T: 'static> {
 }
 
 impl<'a, T> RwasmExecutor<'a, T> {
+    /// Creates an executor positioned at the module's initialization prologue.
     pub fn entrypoint(
         module: &'a RwasmModule,
         value_stack: &'a mut ValueStack,
@@ -38,6 +39,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         Self::new(module, value_stack, sp, call_stack, ip, store)
     }
 
+    /// Reconstructs an executor from fresh or parked stacks and an instruction position.
     pub(crate) fn new(
         module: &'a RwasmModule,
         value_stack: &'a mut ValueStack,
@@ -56,6 +58,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         }
     }
 
+    /// Returns the current instruction's offset in this module's code section.
     pub fn program_counter(&self) -> u32 {
         let ip = self.ip.ptr as usize;
         let base = self.module.code_section.as_ptr() as usize;
@@ -133,6 +136,23 @@ impl<'a, T> RwasmExecutor<'a, T> {
             _ => {}
         }
 
+        // The host supplies the output buffer. Validate its slot count before reading values:
+        // a short buffer used to leave values behind and panic only in debug builds, while a
+        // long buffer attempted to pop beyond the stack.
+        let result_slots: usize = result
+            .iter()
+            .map(|value| match value {
+                Value::I64(_) | Value::F64(_) => 2,
+                _ => 1,
+            })
+            .sum();
+        if self.value_stack.stack_len(self.sp) != result_slots {
+            self.value_stack.reset();
+            self.call_stack.reset();
+            self.store.last_signature = None;
+            return Err(TrapCode::IllegalOpcode);
+        }
+
         // Copy output values in case of successful execution
         for x in result.iter_mut().rev() {
             *x = self.sp.pop_value(x.ty());
@@ -153,6 +173,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         Ok(())
     }
 
+    /// Executes while checking the stack window after each step and cleaning up terminal traps.
     pub fn run_with_stack_check(&mut self) -> Result<(), TrapCode> {
         if self.module.code_section.is_empty() {
             return Err(TrapCode::UnreachableCodeReached);
