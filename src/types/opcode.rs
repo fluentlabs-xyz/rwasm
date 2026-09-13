@@ -145,14 +145,6 @@ define_opcode_enum! {
     TableCopy(dst: TableIdx, src: TableIdx) => 45u32,
     TableInit(segment: ElementSegmentIdx) => 46u32,
     ElemDrop(segment: ElementSegmentIdx) => 47u32,
-    // Pushes `1` while the data segment still holds its bytes and `0` once it has been dropped.
-    //
-    // The `memory.init` prologue uses it to decide whether the segment's offset inside the
-    // flattened data blob applies: a dropped segment keeps its original source offset so that the
-    // runtime's empty-window check implements the spec's "dropped segments have length 0" rule.
-    DataSegmentLive(segment: DataSegmentIdx) => 90u32,
-    // Same as `DataSegmentLive`, for element segments.
-    ElementSegmentLive(segment: ElementSegmentIdx) => 91u32,
 
     // alu
     I32Eqz => 48u32,
@@ -504,8 +496,6 @@ impl Opcode {
             }
             Opcode::TableInit(ele_seg_id) => *ele_seg_id,
             Opcode::ElemDrop(ele_seg_id) => *ele_seg_id,
-            Opcode::DataSegmentLive(seg_id) => *seg_id,
-            Opcode::ElementSegmentLive(seg_id) => *seg_id,
             Opcode::I64Const32S(value) => value.to_bits(),
             Opcode::I64Const32U(value) => value.to_bits(),
             _ => 0,

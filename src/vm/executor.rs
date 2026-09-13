@@ -311,8 +311,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
             TableCopy(dst_imm, src_imm) => self.visit_table_copy(dst_imm, src_imm)?,
             TableInit(imm) => self.visit_table_init(imm)?,
             ElemDrop(imm) => self.visit_element_drop(imm)?,
-            DataSegmentLive(imm) => self.visit_data_segment_live(imm),
-            ElementSegmentLive(imm) => self.visit_element_segment_live(imm),
 
             // Floating point is not officially supported: the `fpu` feature is only for the e2e
             // testing suite and the fuzzer, and a default build traps on every float opcode. Note

@@ -50,7 +50,7 @@ which is which.
 
 | Finding | Fix in this change set | Also fixed upstream (#204) |
 | --- | --- | --- |
-| CRIT-1 `memory.init`/`table.init` | two-step unsigned bound check (`s > len`, `len - s < n`) and a liveness-aware blob-offset rewrite (new opcodes `DataSegmentLive`/`ElementSegmentLive`), so a dropped segment keeps its original source offset | partial: #204 made the VM's operand conversion unsigned (FLU-1363), which does not cover the injected guard's wrap |
+| CRIT-1 `memory.init`/`table.init` | two-step unsigned bound check (`s > len`, `len - s < n`) and an existing-opcode branch that skips the blob-offset rewrite when `s == 0 && n == 0`; the init instruction still validates dropped segments and destination bounds | partial: #204 made the VM's operand conversion unsigned (FLU-1363), which does not cover the injected guard's wrap |
 | CRIT-2 table limits | the `table.grow` guard is unsigned over a maximum clamped to the cap, and the bootstrap grow result is verified instead of dropped | yes for the initial-size cap and the store limit (FLU-1356); the `max >= 2^31` guard misfire is fixed here |
 | HIGH-1 stack limits | `InstructionTranslator::finish` rejects a peak above `N_MAX_STACK_SIZE` (`StackHeightExceeded`); the call-depth difference is documented | no |
 | HIGH-2 `execute(func_name)` | both strategies record the compiled entrypoint name and reject any other name | no |
@@ -63,10 +63,12 @@ which is which.
 
 ### Compatibility notes for integrators
 
-- **Emitted bytecode changed** for any module with a passive segment (the init prologue is
-  different and uses two new opcodes, codes `90`/`91`), and for `table.grow` guards. Modules
-  compiled by this compiler need a runtime that knows the new opcodes; already compiled artifacts
-  keep decoding and running.
+- **Emitted bytecode changed** for bulk-init prologues and `table.grow` guards, using existing
+  opcode encodings and module wire version 1. The codegen identity domain remains version 1 and
+  fingerprints configuration/features; pin the compiler revision separately to identify the
+  changed lowering. Pre-audit artifacts keep decoding but retain their old
+  guards until recompiled. The proposed segment-liveness codes `90`/`91` were removed; artifacts
+  containing them must be recompiled from Wasm before loading on this runtime.
 - **Input-compatibility changes**: tables above 1024 elements and functions needing more than 8192
   value-stack slots are rejected at compile time; compiling for the Wasmtime strategy rejects a
   config that charges rwasm-only fuel, a module that does not export its linear memory, and (from
@@ -75,7 +77,7 @@ which is which.
   `WasmtimeExecutor::with_entrypoint_name` and the `StrategyDefinition::{Rwasm,Wasmtime}`
   `entrypoint_name` field; `deserialize_wasmtime_module` is `unsafe`; new `CompilationError`
   variants (`StackHeightExceeded`, `MissingMemoryExport`, plus #204's `TableSizeExceedsLimit`,
-  `StrategyIncompatibleConfig`, `WasmtimeCompilationFailed`); two new opcodes.
+  `StrategyIncompatibleConfig`, `WasmtimeCompilationFailed`).
 - **Residual differences**: call-depth limits are still not synchronized between the engines (rwasm
   stops at 1024 frames or the stack window, Wasmtime at its native stack); the differential fuzzer
   still treats trailing zero memory bytes as equivalent and skips `memory.grow`.
@@ -136,10 +138,11 @@ which is which.
   backstops everything; the comment at `src/isa/memory.rs:259-261` states that assumption
   explicitly. `tests/fuel_alignment.rs` and the differential fuzzer never generate `src` values near
   2^32, and the spec suite only covers `n >= 1` after a drop.
-- **Fix:** two-step non-wrapping check (`s > length` → trap; `n > length - s` → trap, unsigned) and
-  validate the *original* `s, n` against the segment's own window (dropped ⇒ accept only
-  `s == 0 && n == 0`). `SegmentBuilder` already tracks per-segment `(offset, length)`; it needs to
-  reach the runtime (e.g. a segment table in the module header, or per-segment length immediates).
+- **Fix:** two-step non-wrapping check (`s > length` → trap; `n > length - s` → trap, unsigned)
+  against the segment's original length. Skip the flattened-blob offset exactly when
+  `s == 0 && n == 0`, using existing stack and branch instructions. The existing init instruction
+  rejects every other input after a drop and still checks the destination for the empty copy.
+  This requires neither per-segment metadata in the wire format nor new runtime opcodes.
 
 ### CRIT-2 — Table size limits are neither validated at compile time nor clamped consistently: valid modules silently get an empty or un-growable table — **FIXED**
 

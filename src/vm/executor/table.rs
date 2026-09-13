@@ -143,28 +143,14 @@ impl<'a, T> RwasmExecutor<'a, T> {
         Ok(())
     }
 
-    /// Pushes `1` while `element_segment` still holds its elements, `0` once it has been dropped.
-    #[inline(always)]
-    pub(crate) fn visit_element_segment_live(&mut self, element_segment_idx: ElementSegmentIdx) {
-        let dropped = self
-            .store
-            .empty_elem_segments
-            .get(element_segment_idx as usize)
-            .as_deref()
-            .copied()
-            .unwrap_or(false);
-        self.sp.push_as(u32::from(!dropped));
-        self.ip.add(1);
-    }
-
     #[inline(always)]
     pub(crate) fn visit_element_drop(
         &mut self,
         element_segment_idx: ElementSegmentIdx,
     ) -> Result<(), TrapCode> {
-        // See `visit_data_drop`: the immediate must not be able to size a bitset.
+        // Like data segments, element indices are shifted by one by the compiler.
         let idx = element_segment_idx as usize;
-        if idx >= N_MAX_ELEM_SEGMENTS {
+        if idx > N_MAX_ELEM_SEGMENTS {
             return Err(TrapCode::TableOutOfBounds);
         }
         let empty_elem_segments = &mut self.store.empty_elem_segments;

@@ -79,19 +79,6 @@ This document is the canonical opcode inventory for `rwasm`.
 | 46 | `TableInit` | `ElementSegmentIdx` | — |
 | 47 | `ElemDrop` | `ElementSegmentIdx` | — |
 
-### bulk segment queries
-
-| Code (`u16`) | Opcode | Immediate | Feature gate |
-| ---: | --- | --- | --- |
-| 90 | `DataSegmentLive` | `DataSegmentIdx` | — |
-| 91 | `ElementSegmentLive` | `ElementSegmentIdx` | — |
-
-`DataSegmentLive`/`ElementSegmentLive` push `1` while the segment still holds data and `0` after
-`data.drop`/`elem.drop`. The `memory.init`/`table.init` prologues use them to decide whether the
-segment's offset inside the flattened section applies: a dropped segment keeps its original source
-offset, so the runtime's empty-window check implements the spec rule that a dropped segment has
-length 0 (only `s == 0 && n == 0` survives).
-
 ### alu
 
 | Code (`u16`) | Opcode | Immediate | Feature gate |
@@ -148,10 +135,17 @@ not as a recommended/guaranteed opcode set for production integration.
 
 ## Stability and compatibility
 
-- Opcode order is part of binary compatibility for encoded modules.
-- Any opcode addition/removal/reordering is a format change and must be treated as such in release notes.
-- Codes `90`/`91` (`DataSegmentLive`, `ElementSegmentLive`) were added together with the corrected
-  `memory.init`/`table.init` bound checks. Modules compiled before that change never contain them
-  and keep decoding; modules compiled after it need a runtime that knows these two codes, and their
-  bytecode differs from the previous compiler for any module with a passive segment.
+- Explicit opcode codes and immediate encodings determine binary compatibility; preserve the
+  existing codes when editing the enum. Additions, removals and encoding changes must be documented.
+- The corrected `memory.init`/`table.init` prologues use existing opcodes only. They check the
+  original source bounds with unsigned arithmetic and skip the blob-offset rewrite exactly when
+  `src == 0 && len == 0`. The existing init instruction checks dropped segments and destination
+  bounds, including empty copies. Neither its encoding nor its runtime semantics changes.
+- Pre-audit artifacts keep decoding, but need recompilation to replace their old injected guards.
+  New instruction sequences change module bytes and hashes even though the wire version stays 1;
+  `CompilationConfig::codegen_identity()` retains domain version 1. Its hashes now also include
+  `max_allowed_function_types` to isolate compilation limits in the cache. Pin the compiler
+  revision separately to identify the changed lowering.
+- The segment-liveness opcodes proposed in commit `24ab5cbb` (codes `90`/`91`) were removed.
+  Artifacts containing those codes must be recompiled from Wasm before loading on this runtime.
 - Feature-gated variants (`fpu`) change the available opcode surface; pin feature set in production deployments.

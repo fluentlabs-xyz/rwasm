@@ -280,15 +280,16 @@ impl InstructionSet {
         }
         // Address the segment inside the flattened data blob.
         //
-        // The blob offset is applied only while the segment is live. A dropped segment keeps the
-        // original source offset: the runtime substitutes it with an empty window, and that check
-        // (`s + n <= 0`) is exactly the spec rule for a zero-length segment. Adding the blob
-        // offset to a dropped segment would compare the wrong value and reject the valid
-        // zero-length case.
+        // Leave `s == 0 && n == 0` untouched: an empty copy from offset zero is valid for both
+        // live and dropped segments. Every other input uses the blob offset; the checks above
+        // prevent wrapping, and `MemoryInit` rejects it if the segment was dropped. Always run
+        // `MemoryInit`, including for the empty copy, so it still validates the destination.
         if let Some(offset) = rewrite_offset.filter(|v| *v > 0) {
-            self.op_data_segment_live(data_segment_index);
+            self.op_local_get(2); // s
+            self.op_local_get(2); // n
+            self.op_i32_or();
+            self.op_br_if_eqz(5); // skip the four offset-rewrite instructions when s == n == 0
             self.op_i32_const(offset);
-            self.op_i32_mul(); // offset while live, 0 after `data.drop`
             self.op_local_get(3); // s
             self.op_i32_add();
             self.op_local_set(2);

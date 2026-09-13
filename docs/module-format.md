@@ -60,9 +60,11 @@ Inputs that change emitted bytecode:
 Features that only change the host-side surface (`std`, `serde`, `wasmtime`, `debug-print`, …) do
 not affect the emitted bytes.
 
-`CompilationConfig::codegen_identity()` hashes all of the above — the codegen-relevant config fields
-plus the compile-time feature set of the compiling binary — into a 32-byte fingerprint. Compilers
-agreeing on this value produce identical bytecode for a given wasm input. The fingerprint is **not**
+`CompilationConfig::codegen_identity()` hashes the config fields, including the input-validation
+limit `max_allowed_function_types`, plus the compile-time feature set into a 32-byte fingerprint.
+Including validation limits prevents a cached module from bypassing a stricter compilation policy.
+Compilers at the same revision agreeing on this value produce identical bytecode for a given wasm
+input; pin the compiler revision separately. The fingerprint is **not**
 part of the wire format, so a host that addresses modules by hash must carry the identity alongside
 the bytecode and reject a module whose producer identity does not match its own. Embedding the
 identity in the header would require a `RWASM_VERSION_V2` bump and would change the bytes (and

@@ -39,7 +39,7 @@ fn type_limit_is_inclusive_and_does_not_change_accepted_bytecode() {
     let wasm = module_with_distinct_types(4096);
     let strict = config();
     let relaxed = config().with_max_allowed_function_types(8192);
-    assert_eq!(strict.codegen_identity(), relaxed.codegen_identity());
+    assert_ne!(strict.codegen_identity(), relaxed.codegen_identity());
     let (strict_module, _) = RwasmModule::compile(strict, &wasm).unwrap();
     let (relaxed_module, _) = RwasmModule::compile(relaxed, &wasm).unwrap();
     assert_eq!(strict_module.serialize(), relaxed_module.serialize());
@@ -101,6 +101,32 @@ fn export_parsing_and_strategy_construction_enforce_type_limit() {
         CompilationConfig::default_strategy_compatible().max_allowed_function_types,
         4096
     );
+}
+
+#[cfg(feature = "wasmtime")]
+#[test]
+fn cached_strategy_enforces_a_stricter_function_type_limit() {
+    let wasm = module_with_distinct_types(3);
+    let relaxed = config()
+        .with_consume_fuel(false)
+        .with_max_allowed_function_types(3);
+    let strict = relaxed.clone().with_max_allowed_function_types(2);
+    let cache_key = Some([0x73; 32]);
+
+    // Warm the cache under a policy that accepts this module.
+    StrategyDefinition::new_as_wasmtime(relaxed.clone(), &wasm, cache_key).unwrap();
+    for key in [None, cache_key] {
+        let result = StrategyDefinition::new_as_wasmtime(strict.clone(), &wasm, key);
+        assert!(
+            matches!(
+                result,
+                Err(CompilationError::TooManyFunctionTypes { count: 3, limit: 2 })
+            ),
+            "the stricter limit must be enforced even when the module is cached"
+        );
+    }
+    // Rejecting the stricter policy must not invalidate the relaxed policy's cached module.
+    assert!(StrategyDefinition::new_as_wasmtime(relaxed, &wasm, cache_key).is_ok());
 }
 
 #[test]

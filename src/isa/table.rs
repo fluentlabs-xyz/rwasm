@@ -57,13 +57,16 @@ impl InstructionSet {
         self.op_trap(TrapCode::TableOutOfBounds);
         // Address the segment inside the flattened element blob.
         //
-        // The blob offset is applied only while the segment is live: a dropped segment keeps its
-        // original source offset so the runtime's empty-window check implements the spec rule for
-        // a zero-length segment (only `s == 0 && n == 0` survives).
+        // Leave `s == 0 && n == 0` untouched, since it is valid for both live and dropped
+        // segments. Every other input uses the blob offset; the non-wrapping checks above and
+        // `TableInit`'s dropped-segment check reject invalid sources. Always run `TableInit` so
+        // even an empty copy still validates its destination.
         if offset > 0 {
-            self.op_element_segment_live(segment_index);
+            self.op_local_get(2); // s
+            self.op_local_get(2); // n
+            self.op_i32_or();
+            self.op_br_if_eqz(5); // skip the four offset-rewrite instructions when s == n == 0
             self.op_i32_const(offset);
-            self.op_i32_mul(); // offset while live, 0 after `elem.drop`
             self.op_local_get(3); // s
             self.op_i32_add();
             self.op_local_set(2);

@@ -167,27 +167,13 @@ impl<'a, T> RwasmExecutor<'a, T> {
         Ok(())
     }
 
-    /// Pushes `1` while `data_segment` still holds its bytes, `0` once it has been dropped.
-    #[inline(always)]
-    pub(crate) fn visit_data_segment_live(&mut self, data_segment_idx: DataSegmentIdx) {
-        let dropped = self
-            .store
-            .empty_data_segments
-            .get(data_segment_idx as usize)
-            .as_deref()
-            .copied()
-            .unwrap_or(false);
-        self.sp.push_as(u32::from(!dropped));
-        self.ip.add(1);
-    }
-
     #[inline(always)]
     pub(crate) fn visit_data_drop(&mut self, data_segment_idx: DataSegmentIdx) -> Result<(), TrapCode> {
-        // Segment indices come from Wasm validation, which bounds them by
-        // `N_MAX_DATA_SEGMENTS`. A larger index cannot name a real segment, so it is a fault
-        // rather than a reason to allocate a bitset proportional to the immediate.
+        // The compiler adds one to Wasm's zero-based segment index, reserving zero for the
+        // flattened blob. The highest translated index is therefore `N_MAX_DATA_SEGMENTS`.
+        // Larger indices cannot name a real segment and must not size the bitset.
         let idx = data_segment_idx as usize;
-        if idx >= N_MAX_DATA_SEGMENTS {
+        if idx > N_MAX_DATA_SEGMENTS {
             return Err(TrapCode::MemoryOutOfBounds);
         }
         let empty_data_segments = &mut self.store.empty_data_segments;
