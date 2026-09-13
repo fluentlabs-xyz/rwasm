@@ -36,11 +36,12 @@ recommend — so the documented mitigation for strategy divergence does not cove
 
 ## Fixes applied
 
-All findings below were fixed, each with a regression test (`tests/bulk_init_bounds.rs`,
+The Class A findings and retained Class B hardening have regression tests (`tests/bulk_init_bounds.rs`,
 `tests/strategy_limits.rs`, `tests/instruction_pointer_bounds.rs`, plus updates to the existing
 suites). The root suite passes in debug **and release**, the e2e spec-suite run (92 tests) is green,
 clippy is clean at `-D warnings`, and the differential fuzzer replays its corpus without a
-divergence.
+divergence. Instruction-pointer hardening was excluded after the performance review below;
+arbitrary rWasm instruction streams remain outside the supported trust model.
 
 **Reconciliation note.** While this audit was in progress the branch advanced to `744e4a1d`
 ("close the rWasm audit 2026-09-09 findings", FLU-1355), which independently fixed part of the same
@@ -57,7 +58,7 @@ which is which.
 | HIGH-3 Wasmtime path | engine feature pinning, fallible import linker (unsupported types/collisions report errors), memory resolved by export kind | yes for validation-first, error propagation and the panicking constructor (FLU-1361, FLU-1362) |
 | HIGH-4 fuel/limit divergence | — | yes (FLU-1357 `StrategyIncompatibleConfig`, FLU-1364 compile-time page cap) |
 | HIGH-5 memory binding | memory is resolved by export **kind**, and the Wasmtime strategy rejects a module that declares an unexported memory (`MissingMemoryExport`) | no |
-| HIGH-6 foreign bytecode | `InstructionPtr` carries `[src, end)` and every move/fetch is bounds-checked in all profiles; `source_pc` validated in release; the three `unreachable!`s became traps; `br_table` uses `checked_sub`; drop indices bounded; `BulkConst` stops at the stack window | partial: #204 fixed the reference handler (FLU-1368) and `resume` (FLU-1369) |
+| HIGH-6 foreign bytecode | partial hardening only: `source_pc` validated at entry; executor errors become traps; `br_table` uses `checked_sub`; drop indices bounded; `BulkConst` stops at the stack window. Instruction movement/fetch remains unchecked for trusted compiler output | partial: #204 fixed the reference handler (FLU-1368) and `resume` (FLU-1369) |
 | HIGH-7 deserialize/cache | the bytecode identity is part of the module cache key, so a reused caller key cannot return a module compiled from other bytes | yes for `unsafe` deserialize (FLU-1365) and the codegen-identity key (FLU-1366) |
 | HIGH-8 verification gaps | CI runs `cargo test --release` and clippy with `-D warnings`; a new `fuzz.yml` runs the bounded differential target; publish is gated on tests; the oracle compares trap codes; `tests/fuzz.rs` asserts both strategies ran | no |
 
@@ -73,7 +74,7 @@ which is which.
   value-stack slots are rejected at compile time; compiling for the Wasmtime strategy rejects a
   config that charges rwasm-only fuel, a module that does not export its linear memory, and (from
   #204) a module whose memory exceeds the compile-time page cap.
-- **API changes**: `InstructionPtr::new` takes a length; `RwasmInstance::execute_named`,
+- **API changes**: `RwasmInstance::execute_named`,
   `WasmtimeExecutor::with_entrypoint_name` and the `StrategyDefinition::{Rwasm,Wasmtime}`
   `entrypoint_name` field; `deserialize_wasmtime_module` is `unsafe`; new `CompilationError`
   variants (`StackHeightExceeded`, `MissingMemoryExport`, plus #204's `TableSizeExceedsLimit`,
@@ -264,13 +265,12 @@ which is which.
 
 ## Class B — HIGH (requires rWasm bytecode the compiler does not produce)
 
-These are out of scope under the documented trust model. They are reported because (a) the crate's
-own safe API can produce such modules (`RwasmModuleBuilder` + `InstructionSet` push methods, used by
-`tests/tables.rs`), (b) the crate offers no API that would let a host *enforce* the boundary on a
-distributed artifact, and (c) each is a cheap, local fix. They become CRIT if any production path
-ever executes rWasm bytes it did not compile itself (see the caveat at the end).
+Foreign instruction streams are out of scope under the documented trust model. The observations
+below concern manually constructed or unverified artifacts, not compiler-produced instruction
+targets. Decoding checks encoding only; hosts must establish provenance and integrity before
+executing distributed rWasm. The retained defensive checks do not make arbitrary rWasm safe to run.
 
-### HIGH-6 — Instruction-pointer memory unsafety, executor panics and resource amplification from foreign bytecode — **FIXED**
+### HIGH-6 — Instruction-pointer memory unsafety, executor panics and resource amplification from foreign bytecode — **PARTIAL HARDENING; POINTER CHECKS EXCLUDED**
 
 - **Where:** `src/vm/instr_ptr.rs:36-41` (`offset`), `:44-49` (`add`), `:59-64` (`get`);
   `src/vm/engine.rs:99-101` (`source_pc`, guarded only by `debug_assert!` at `:100`);
@@ -300,12 +300,19 @@ ever executes rWasm bytes it did not compile itself (see the caveat at the end).
     `BulkConst(0xFFFF_FFFF)` → 4.29e9 interpreter iterations with **zero fuel charged** (measured
     33.7 s debug / 7.9 s release; fuel is charged only by compiler-emitted
     `ConsumeFuel`/`ConsumeFuelStack`, so a hand-built `[Br(0)]` loop is unmetered).
-- **Fix (recommended regardless of the model):** give `InstructionPtr` a `base`/`end` window and make
-  `offset`/`add`/`get` trap outside it — that single change covers branch offsets, call targets,
-  indirect-call table values and `source_pc`; replace the three `unreachable!`s with `TrapCode`s;
-  `checked_sub` in `visit_br_table`; clamp drop-segment indices; bound `BulkConst` by the remaining
-  window. The syscall panic in particular can fire in the *supported* model too, as a linker/module
-  mismatch during execution — a trap is the correct outcome there.
+- **Scope decision:** retain the one-time `source_pc` entry check, executor error handling,
+  `checked_sub` in `visit_br_table`, bounded drop-segment indices, and the `BulkConst` limit. Restore
+  the single-pointer `#[repr(transparent)]` representation and unchecked `offset`/`add`/`get`:
+  instruction targets are established by Wasm validation and trusted code generation. Tests that
+  execute out-of-range branches or unterminated instruction streams are outside that contract.
+  The syscall trap remains useful for a linker/module mismatch in the supported execution model.
+- **Performance evidence:** on an Apple M5 Max with Rust 1.93.1, release mode, and the `std`
+  interpreter, seven interleaved samples using identical compiled bytecode measured metered warm
+  `examples/fib` execution at 694 ns with the checked pointer versus 316 ns with only the thin
+  pointer restored (devel: 317 ns). The expanded pointer was 32 bytes instead of 8, and the inline
+  `CallStack` grew from 144 to 528 bytes. Other control-flow and memory kernels showed 1.7–2.6x
+  slowdowns; a locals-initialization kernel was unchanged. This is local microbenchmark evidence,
+  not an end-to-end application estimate. The per-instruction bounds checks are not retained.
 
 ### HIGH-7 — Safe public wrapper over `unsafe wasmtime::Module::deserialize`; module cache keyed on caller bytes only — **FIXED**
 

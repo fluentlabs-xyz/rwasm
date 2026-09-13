@@ -1,14 +1,11 @@
-//! Bytecode that the compiler never emits must not crash or hang the interpreter.
+//! Entry checks and execution guards that remain independent of instruction-pointer bounds.
 //!
-//! `RwasmModuleBuilder` and `InstructionSet` are safe public API, and `RwasmModule::new_checked`
-//! decodes modules that were not produced in-process. Displacements (branch offsets, call targets,
-//! table payloads, `source_pc`) are therefore validated at run time: they trap instead of reading
-//! memory outside the code section, panicking inside the executor, or sizing an allocation from an
-//! immediate.
+//! The instruction stream is a trusted compiler artifact. These tests cover the retained entry,
+//! linker, and resource checks; they do not execute invalid branch targets or unterminated code.
 
 use rwasm::{
-    always_failing_syscall_handler, instruction_set, BranchOffset, ExecutionEngine, ImportLinker,
-    RwasmModule, RwasmModuleBuilder, RwasmStore, TrapCode,
+    always_failing_syscall_handler, instruction_set, ExecutionEngine, ImportLinker, RwasmModule,
+    RwasmModuleBuilder, RwasmStore, TrapCode,
 };
 
 fn execute(module: &RwasmModule) -> Result<(), TrapCode> {
@@ -27,43 +24,6 @@ fn execute_mut(module: &RwasmModule) -> Result<(), TrapCode> {
     execute(module)
 }
 
-/// A branch far outside the code section used to move the raw instruction pointer out of the
-/// section and dereference it (SIGSEGV in both debug and release builds).
-#[test]
-fn branch_outside_the_code_section_traps() {
-    // The code section holds three instructions, so every offset below leaves it. A small
-    // offset such as `-1` stays inside and is legitimate control flow instead.
-    for offset in [i32::MAX, i32::MIN, 1_000_000, -1_000_000, -4] {
-        let module = RwasmModuleBuilder::new(instruction_set! {
-            I32Const(0)
-            Drop
-            Br(offset)
-        })
-        .build();
-        assert_eq!(
-            execute_mut(&module),
-            Err(TrapCode::UnreachableCodeReached),
-            "branch offset {offset} must trap"
-        );
-    }
-}
-
-/// The same module decoded from its own encoding (the documented round trip) must trap too.
-#[test]
-fn decoded_module_with_an_out_of_range_branch_traps() {
-    let module = RwasmModuleBuilder::new(instruction_set! {
-        I32Const(1)
-        Br(BranchOffset::from(i32::MAX))
-    })
-    .build();
-    let bytes = module.serialize();
-    let (decoded, _) = RwasmModule::new_checked(&bytes).expect("the encoding is valid");
-    assert_eq!(
-        execute_mut(&decoded),
-        Err(TrapCode::UnreachableCodeReached)
-    );
-}
-
 /// `targets as usize - 1` used to underflow: a panic with overflow checks, a wrapped clamp plus an
 /// 8 GiB jump without them.
 #[test]
@@ -75,10 +35,7 @@ fn br_table_with_zero_targets_traps() {
         Return
     })
     .build();
-    assert_eq!(
-        execute_mut(&module),
-        Err(TrapCode::UnreachableCodeReached)
-    );
+    assert_eq!(execute_mut(&module), Err(TrapCode::UnreachableCodeReached));
 }
 
 /// A syscall index the linker cannot resolve used to panic the interpreter.
@@ -90,10 +47,7 @@ fn unresolved_syscall_traps() {
         Return
     })
     .build();
-    assert_eq!(
-        execute_mut(&module),
-        Err(TrapCode::UnknownExternalFunction)
-    );
+    assert_eq!(execute_mut(&module), Err(TrapCode::UnknownExternalFunction));
 }
 
 /// `CallIndirect`/`TableInit` carry their table index in the payload word that follows them; a
@@ -136,16 +90,6 @@ fn empty_code_section_traps() {
     );
 }
 
-/// A code section without a terminator used to walk off the end of the section.
-#[test]
-fn code_section_without_terminator_traps() {
-    let module = RwasmModuleBuilder::new(instruction_set! { I32Const(1) }).build();
-    assert_eq!(
-        execute_mut(&module),
-        Err(TrapCode::UnreachableCodeReached)
-    );
-}
-
 /// `source_pc` is a decoded module field; an out-of-range value used to be checked by a
 /// `debug_assert!` only.
 #[test]
@@ -153,10 +97,7 @@ fn out_of_range_source_pc_traps() {
     let module = RwasmModuleBuilder::new(instruction_set! { Return })
         .with_source_pc(u32::MAX)
         .build();
-    assert_eq!(
-        execute_mut(&module),
-        Err(TrapCode::UnreachableCodeReached)
-    );
+    assert_eq!(execute_mut(&module), Err(TrapCode::UnreachableCodeReached));
 }
 
 /// One immediate used to size the dropped-segment bitset at ~512 MiB.

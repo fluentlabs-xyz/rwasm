@@ -34,7 +34,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         store: &'a mut RwasmStore<T>,
     ) -> Self {
         let sp = value_stack.stack_ptr();
-        let ip = InstructionPtr::new(module.code_section.as_ptr(), module.code_section.len());
+        let ip = InstructionPtr::new(module.code_section.as_ptr());
         Self::new(module, value_stack, sp, call_stack, ip, store)
     }
 
@@ -57,7 +57,18 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     pub fn program_counter(&self) -> u32 {
-        let pc = self.ip.position();
+        let ip = self.ip.ptr as usize;
+        let base = self.module.code_section.as_ptr() as usize;
+        if ip < base {
+            unreachable!(
+                "program counter negative: ip={:?}, base={:?}",
+                self.ip,
+                self.module.code_section.as_ptr()
+            );
+        }
+        let diff = ip - base;
+        debug_assert_eq!(diff % size_of::<Opcode>(), 0);
+        let pc = diff / size_of::<Opcode>();
         debug_assert!(pc <= self.module.code_section.len());
         pc.try_into()
             .unwrap_or_else(|_| unreachable!("program counter exceeds u32: {pc}"))
@@ -191,11 +202,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
     ///
     /// # Errors
     ///
-    /// With [`TrapCode::StackOverflow`] if `instr` addressed a cell outside the value stack, or
-    /// with [`TrapCode::UnreachableCodeReached`] if a displacement left the code section. Both
-    /// offending accesses were already suppressed by [`ValueStackPtr`]/[`InstructionPtr`], these
-    /// checks only stop the execution from carrying on with a corrupted stack or instruction
-    /// stream.
+    /// With [`TrapCode::StackOverflow`] if `instr` addressed a cell outside the value stack. The
+    /// offending access itself was already suppressed by [`ValueStackPtr`], this only stops the
+    /// execution from carrying on with a corrupted stack.
     ///
     /// An out-of-bounds access outranks whatever `instr` reported on its own: that trap is an
     /// artifact of the values the suppressed access substituted. The check therefore runs before
@@ -207,9 +216,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let result = self.execute(instr);
         if self.sp.is_out_of_bounds() {
             return Err(TrapCode::StackOverflow);
-        }
-        if self.ip.is_out_of_bounds() {
-            return Err(TrapCode::UnreachableCodeReached);
         }
         result
     }

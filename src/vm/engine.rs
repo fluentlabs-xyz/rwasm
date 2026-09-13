@@ -77,10 +77,7 @@ impl ExecutionEngine {
         if module.source_pc as usize >= module.code_section.len() {
             return Err(TrapCode::UnreachableCodeReached);
         }
-        let mut ip = InstructionPtr::new(
-            module.code_section.as_ptr(),
-            module.code_section.len(),
-        );
+        let mut ip = InstructionPtr::new(module.code_section.as_ptr());
         ip.offset(module.source_pc as isize);
         let mut executor =
             RwasmExecutor::new(module, &mut value_stack, sp, &mut call_stack, ip, store);
