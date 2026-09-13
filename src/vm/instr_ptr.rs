@@ -2,9 +2,9 @@ use crate::types::Opcode;
 
 /// The instruction pointer to the instruction of a function on the call stack.
 ///
-/// Module construction validates static instruction targets and fallthroughs. The executor checks
-/// that result at entry and bounds-checks dynamic indirect-call targets, so pointer movement and
-/// fetch remain unchecked here, including for hand-built and decoded modules.
+/// rWasm bytecode is a trusted compiler artifact. Wasm validation and code generation establish
+/// valid instruction targets, so movement and fetch remain unchecked on the execution path.
+/// Do not use this pointer to execute arbitrary hand-built or decoded instruction streams.
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(transparent)]
 pub(crate) struct InstructionPtr {
@@ -38,14 +38,17 @@ impl InstructionPtr {
     /// valid bounds of the instructions of the same compiled Wasm function.
     #[inline(always)]
     pub(crate) fn offset(&mut self, by: isize) {
-        // SAFETY: Module validation and the indirect-call guards establish in-allocation targets.
+        // SAFETY: Within Wasm bytecode execution we are guaranteed by
+        //         Wasm validation and `rwasm` codegen to never run out
+        //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.offset(by) };
     }
 
     #[inline(always)]
     pub(crate) fn add(&mut self, delta: usize) {
-        // SAFETY: Validated successors/payloads stay within the allocation (or one-past for a
-        // tail call that immediately replaces the pointer without fetching from it).
+        // SAFETY: Within Wasm bytecode execution we are guaranteed by
+        //         Wasm validation and `rwasm` codegen to never run out
+        //         of valid bounds using this method.
         self.ptr = unsafe { self.ptr.add(delta) };
     }
 
@@ -58,7 +61,9 @@ impl InstructionPtr {
     /// the boundaries of its associated compiled Wasm function.
     #[inline(always)]
     pub(crate) fn get(&self) -> Opcode {
-        // SAFETY: Entry, static successor and indirect-call checks establish a valid instruction.
+        // SAFETY: Within Wasm bytecode execution we are guaranteed by
+        //         Wasm validation and `rwasm` codegen to never run out
+        //         of valid bounds using this method.
         unsafe { *self.ptr }
     }
 

@@ -100,9 +100,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
         if instr_ref == 0 {
             return Err(TrapCode::IndirectCallToNull);
         }
-        if instr_ref as usize >= self.module.executable_len {
-            return Err(TrapCode::UnreachableCodeReached);
-        }
         self.ip.add(2);
         self.value_stack.sync_stack_ptr(self.sp);
         self.sp = self.value_stack.stack_ptr();
@@ -153,9 +150,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .ok_or(TrapCode::TableOutOfBounds)?;
         if instr_ref == NULL_FUNC_IDX {
             return Err(TrapCode::IndirectCallToNull);
-        }
-        if instr_ref as usize >= self.module.executable_len {
-            return Err(TrapCode::UnreachableCodeReached);
         }
         // call func
         self.ip.add(2);

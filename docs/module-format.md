@@ -37,8 +37,6 @@ After header, fields are encoded in this exact order:
 - Field order and opcode layout are part of wire compatibility.
 - Feature combinations (`fpu`, etc.) alter executable surface and should be pinned.
 - Legacy support currently handles missing `source_pc` by defaulting to `0`.
-- Instruction-bound validation is derived at construction and is not serialized. Invalid control
-  flow can still be decoded, but execution rejects it before fetching instructions.
 
 ## Codegen determinism
 

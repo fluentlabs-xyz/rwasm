@@ -152,7 +152,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     pub fn run_with_stack_check(&mut self) -> Result<(), TrapCode> {
-        if self.module.executable_len == 0 {
+        if self.module.code_section.is_empty() {
             return Err(TrapCode::UnreachableCodeReached);
         }
         // Run the loop
@@ -187,9 +187,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     fn run_the_loop(&mut self) -> Result<(), TrapCode> {
-        // Construction validates static control flow once. Check its cached result before
-        // entering the loop, including initialization; instruction fetch remains unchecked.
-        if self.module.executable_len == 0 {
+        // Initialization starts at instruction zero without going through `execute`'s source_pc
+        // guard. Check once before entering the loop; instruction fetch remains unchecked.
+        if self.module.code_section.is_empty() {
             return Err(TrapCode::UnreachableCodeReached);
         }
         loop {

@@ -83,7 +83,7 @@ impl ExecutionEngine {
         // `source_pc` is a module-declared entry offset. It used to be checked with a
         // `debug_assert!` only, so a module whose entry offset is outside the code section made
         // the interpreter fetch instructions from outside the section in release builds.
-        if module.source_pc as usize >= module.executable_len {
+        if module.source_pc as usize >= module.code_section.len() {
             return Err(TrapCode::UnreachableCodeReached);
         }
         let mut ip = InstructionPtr::new(module.code_section.as_ptr());

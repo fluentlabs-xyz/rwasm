@@ -103,12 +103,6 @@ tail calls for modules that must run on both.
 - table/data/element sections
 - execution metadata required by the VM
 
-Construction checks static instruction targets, fallthroughs, and inline table payloads once.
-The immutable module retains the result, and execution rejects invalid control flow with
-`UnreachableCodeReached` before entering the opcode loop. Indirect calls also check table-derived
-targets, since table contents can change at runtime. This does not validate operand-stack types
-or make foreign bytecode equivalent to compiler-validated Wasm.
-
 An `ExecutionHalted` host result terminates a normal export call successfully with zeroed output
 values of the expected types. During initialization, including a resumed start function, it
 propagates as an error: a halted start function does not produce a usable instance.

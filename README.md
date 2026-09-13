@@ -182,9 +182,8 @@ Serialized rWasm modules are trusted artifacts of the compilation pipeline. The 
 produced from validated Wasm by a trusted compiler using the expected feature set, import linker, fuel policy, and
 codegen identity.
 
-Never execute arbitrary serialized rWasm received from users or network peers. Decoding checks the binary
-encoding and records instruction bounds for execution to enforce; it does not validate operand-stack types
-or the fuel policy, and the codegen identity is not part of the wire format. For untrusted
+Never execute arbitrary serialized rWasm received from users or network peers. Decoding checks only the binary
+encoding, not the module structure, and the codegen identity is not part of the wire format. For untrusted
 programs, validate and compile the original Wasm locally. If compiled modules are distributed, verify their
 integrity and provenance and check the accompanying codegen identity before execution.
 
