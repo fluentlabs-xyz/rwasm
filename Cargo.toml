@@ -41,6 +41,7 @@ rand = "=0.9.1"
 wat = "1.243.0"
 hex-literal = "1.0.0"
 hex = "0.4.3"
+serde_json = "1.0"
 criterion = { version = "0.7.0", default-features = false, features = [] }
 fib-example = { path = "examples/fib" }
 

@@ -34,3 +34,5 @@ use wat as _;
 use criterion as _;
 #[cfg(test)]
 use fib_example as _;
+#[cfg(test)]
+use serde_json as _;

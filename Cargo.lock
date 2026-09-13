@@ -1312,6 +1312,7 @@ dependencies = [
  "rand",
  "rwasm-fuel-policy",
  "serde",
+ "serde_json",
  "smallvec",
  "tiny-keccak",
  "wasmparser-nostd",

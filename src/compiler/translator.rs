@@ -158,6 +158,8 @@ pub struct InstructionTranslator {
     pub(crate) alloc: FuncTranslatorAllocations,
     /// The height of the emulated value stack.
     pub(crate) stack_height: ValueStackHeight,
+    /// Parameter slots already pushed by the caller, excluded from `stack_height`.
+    param_slots: u32,
     /// Do we need to emit consume fuel related opcodes
     pub(crate) with_consume_fuel: bool,
     /// Do we need to emit consume fuel for params and locals
@@ -185,6 +187,7 @@ impl InstructionTranslator {
             reachable: true,
             alloc,
             stack_height: Default::default(),
+            param_slots: 0,
             with_consume_fuel,
             locals: Default::default(),
             with_code_snippets,
@@ -238,6 +241,7 @@ impl InstructionTranslator {
         debug_assert_eq!(self.stack_height.height(), 0);
         debug_assert_eq!(self.stack_height.max_stack_height(), 0);
         let func_params_len = func_type.params().len();
+        self.param_slots = func_params_len as u32;
         self.locals.register_locals(func_params_len as u32);
         if self.consume_fuel_for_params_and_locals {
             let locals_count = self.locals.len_registered();
@@ -378,13 +382,13 @@ impl InstructionTranslator {
             self.alloc.instruction_set[user as usize].update_branch_offset(offset?);
         }
         // The runtime window is `N_MAX_STACK_SIZE` slots, and `StackCheck` reserves the function's
-        // peak on entry. A function that needs more could never run on the rwasm VM (its first
-        // instruction traps with `StackOverflow`) while the Wasmtime backend executes it, so it is
-        // rejected here instead of at run time.
+        // peak on top of the parameters already pushed by the caller. Larger frames would trap
+        // with `StackOverflow` on rwasm while Wasmtime executes them, so reject them at compile time.
         let max_stack_height = self.stack_height.max_stack_height();
-        if max_stack_height > N_MAX_STACK_SIZE as u32 {
+        let frame_height = self.param_slots.saturating_add(max_stack_height);
+        if frame_height > N_MAX_STACK_SIZE as u32 {
             return Err(CompilationError::StackHeightExceeded {
-                height: max_stack_height,
+                height: frame_height,
                 limit: N_MAX_STACK_SIZE as u32,
             });
         }

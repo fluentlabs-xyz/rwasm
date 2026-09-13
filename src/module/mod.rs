@@ -1,3 +1,5 @@
+mod validation;
+
 use crate::{
     types::codec::{decode_section_bytes, decode_section_vec},
     CompilationConfig, CompilationError, ConstructorParams, HintType, InstructionSet, ModuleParser,
@@ -19,9 +21,30 @@ use core::ops::Deref;
 ///
 /// It's compiled from Wasm
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(from = "SerializedModule"))]
 #[derive(Default, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct RwasmModule {
     inner: Arc<RwasmModuleInner>,
+    /// Cached instruction bounds, established before the immutable module can be executed.
+    /// Zero means invalid control flow. A final tail-call payload is not an executable target.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub(crate) executable_len: usize,
+}
+
+// Keep the existing serde representation, but never deserialize a validation result supplied by
+// the caller. All construction paths must derive it from the immutable code section.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(rename = "RwasmModule")]
+struct SerializedModule {
+    inner: RwasmModuleInner,
+}
+
+#[cfg(feature = "serde")]
+impl From<SerializedModule> for RwasmModule {
+    fn from(value: SerializedModule) -> Self {
+        value.inner.into()
+    }
 }
 
 fn _check() {
@@ -76,9 +99,9 @@ impl RwasmModule {
     ///
     /// # Note
     ///
-    /// "Checked" refers to the binary encoding only: this performs **no** structural validation of
-    /// the decoded module. Branch targets, call targets, segment indices, and stack offsets are all
-    /// taken at face value, so a module accepted here can still trap at any point during execution.
+    /// "Checked" refers to the binary encoding. Construction also records whether instruction
+    /// targets and fallthroughs stay within the code section; execution rejects invalid control
+    /// flow with `UnreachableCodeReached`. This is not Wasm type or operand-stack validation.
     pub fn new_checked(sink: &[u8]) -> Result<(Self, usize), DecodeError> {
         let (inner, bytes_read): (RwasmModuleInner, usize) =
             bincode::decode_from_slice(sink, bincode::config::legacy())?;
@@ -89,8 +112,7 @@ impl RwasmModule {
     ///
     /// # Note
     ///
-    /// Just like [`RwasmModule::new_checked`], this validates the encoding but not the structure
-    /// of the decoded module.
+    /// Like [`RwasmModule::new_checked`], invalid control flow is recorded for execution to reject.
     pub fn new_checked_exact(sink: &[u8]) -> Result<Self, DecodeError> {
         let (module, bytes_read) = Self::new_checked(sink)?;
         if bytes_read != sink.len() {
@@ -120,6 +142,7 @@ impl RwasmModule {
 impl From<RwasmModuleInner> for RwasmModule {
     fn from(value: RwasmModuleInner) -> Self {
         Self {
+            executable_len: validation::executable_len(&value),
             inner: Arc::new(value),
         }
     }

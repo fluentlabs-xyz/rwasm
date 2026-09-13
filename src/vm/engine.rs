@@ -45,11 +45,20 @@ impl ExecutionEngine {
         );
         let mut executor =
             RwasmExecutor::entrypoint(module, &mut value_stack, &mut call_stack, store);
-        match executor.run(&[], &mut []) {
+        match executor.run_with_mode(&[], &mut [], true) {
             Err(TrapCode::InterruptionCalled) => {
                 let (ip, sp) = (executor.ip, executor.sp);
                 value_stack.sync_stack_ptr(sp);
-                self.remember_context(module.clone(), store, value_stack, call_stack, ip)
+                self.remember_context(
+                    store,
+                    ReusableContext {
+                        module: module.clone(),
+                        value_stack,
+                        call_stack,
+                        ip,
+                        initializing: true,
+                    },
+                )
             }
             res => res,
         }
@@ -74,7 +83,7 @@ impl ExecutionEngine {
         // `source_pc` is a module-declared entry offset. It used to be checked with a
         // `debug_assert!` only, so a module whose entry offset is outside the code section made
         // the interpreter fetch instructions from outside the section in release builds.
-        if module.source_pc as usize >= module.code_section.len() {
+        if module.source_pc as usize >= module.executable_len {
             return Err(TrapCode::UnreachableCodeReached);
         }
         let mut ip = InstructionPtr::new(module.code_section.as_ptr());
@@ -85,7 +94,16 @@ impl ExecutionEngine {
             Err(TrapCode::InterruptionCalled) => {
                 let (ip, sp) = (executor.ip, executor.sp);
                 value_stack.sync_stack_ptr(sp);
-                self.remember_context(module.clone(), store, value_stack, call_stack, ip)
+                self.remember_context(
+                    store,
+                    ReusableContext {
+                        module: module.clone(),
+                        value_stack,
+                        call_stack,
+                        ip,
+                        initializing: false,
+                    },
+                )
             }
             res => res,
         }
@@ -111,15 +129,25 @@ impl ExecutionEngine {
             mut call_stack,
             ip,
             mut value_stack,
+            initializing,
         } = take(&mut store.resumable_context).ok_or(TrapCode::IllegalOpcode)?;
         let sp = value_stack.stack_ptr();
         let mut executor =
             RwasmExecutor::new(&module, &mut value_stack, sp, &mut call_stack, ip, store);
-        match executor.run(params, result) {
+        match executor.run_with_mode(params, result, initializing) {
             Err(TrapCode::InterruptionCalled) => {
                 let (ip, sp) = (executor.ip, executor.sp);
                 value_stack.sync_stack_ptr(sp);
-                self.remember_context(module, store, value_stack, call_stack, ip)
+                self.remember_context(
+                    store,
+                    ReusableContext {
+                        module,
+                        value_stack,
+                        call_stack,
+                        ip,
+                        initializing,
+                    },
+                )
             }
             res => res,
         }
@@ -127,18 +155,10 @@ impl ExecutionEngine {
 
     fn remember_context<T>(
         &self,
-        module: RwasmModule,
         store: &mut RwasmStore<T>,
-        value_stack: ValueStack,
-        call_stack: CallStack,
-        ip: InstructionPtr,
+        context: ReusableContext,
     ) -> Result<(), TrapCode> {
-        store.resumable_context = Some(ReusableContext {
-            module,
-            call_stack,
-            ip,
-            value_stack,
-        });
+        store.resumable_context = Some(context);
         Err(TrapCode::InterruptionCalled)
     }
 }

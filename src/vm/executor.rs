@@ -75,6 +75,15 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     pub fn run(&mut self, params: &[Value], result: &mut [Value]) -> Result<(), TrapCode> {
+        self.run_with_mode(params, result, false)
+    }
+
+    pub(crate) fn run_with_mode(
+        &mut self,
+        params: &[Value],
+        result: &mut [Value],
+        initializing: bool,
+    ) -> Result<(), TrapCode> {
         // Make sure we have enough capacity on the stack
         self.value_stack.sync_stack_ptr(self.sp);
         let mut params_len = 0;
@@ -110,7 +119,10 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 // The last signature also might stick in a dirty state
                 self.store.last_signature = None;
                 // If we halted with `ExecutionHalted`, then just exit with default output params
-                return if trap_code == TrapCode::ExecutionHalted {
+                return if trap_code == TrapCode::ExecutionHalted && !initializing {
+                    for value in result {
+                        *value = Value::default(value.ty());
+                    }
                     Ok(())
                 } else {
                     Err(trap_code)
@@ -140,7 +152,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     pub fn run_with_stack_check(&mut self) -> Result<(), TrapCode> {
-        if self.module.code_section.is_empty() {
+        if self.module.executable_len == 0 {
             return Err(TrapCode::UnreachableCodeReached);
         }
         // Run the loop
@@ -175,9 +187,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     fn run_the_loop(&mut self) -> Result<(), TrapCode> {
-        // Initialization starts at instruction zero without going through `execute`'s source_pc
-        // guard. Check once before entering the loop; instruction fetch remains unchecked.
-        if self.module.code_section.is_empty() {
+        // Construction validates static control flow once. Check its cached result before
+        // entering the loop, including initialization; instruction fetch remains unchecked.
+        if self.module.executable_len == 0 {
             return Err(TrapCode::UnreachableCodeReached);
         }
         loop {
@@ -483,22 +495,28 @@ impl<'a, T> RwasmExecutor<'a, T> {
         else {
             return Err(TrapCode::UnknownExternalFunction);
         };
-        let params_len = params.len();
-        let result_len = result.len();
-        let max_in_out = params_len.max(result_len);
-        self.value_stack.sync_stack_ptr(self.sp);
-        self.value_stack.reserve(max_in_out)?;
-        self.sp = self.value_stack.stack_ptr();
         let mut buffer = SmallVec::<[Value; 16]>::default();
         buffer.resize(params.len() + result.len(), Value::I32(0));
-        for (i, x) in params.iter().enumerate() {
-            buffer[params.len() - i - 1] = self.sp.pop_value(*x);
+        for (i, x) in params.iter().enumerate().rev() {
+            buffer[i] = self.sp.pop_value(*x);
         }
         // A parameter popped from outside the value stack is a fabricated zero. The host must not
         // observe it: its side effects would happen before `step` gets to see the flag.
         if self.sp.is_out_of_bounds() {
             return Err(TrapCode::StackOverflow);
         }
+        // Results replace the popped parameters. Reserve their slot widths before invoking the
+        // host, so a valid full stack is not rejected and wide results have enough capacity.
+        let result_slots = result
+            .iter()
+            .map(|ty| match ty {
+                wasmparser::ValType::I64 | wasmparser::ValType::F64 => 2,
+                _ => 1,
+            })
+            .sum();
+        self.value_stack.sync_stack_ptr(self.sp);
+        self.value_stack.reserve(result_slots)?;
+        self.sp = self.value_stack.stack_ptr();
         for (i, x) in result.iter().enumerate() {
             buffer[params.len() + i] = Value::default(*x);
         }
@@ -515,12 +533,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 Ok(())
             }
             Err(TrapCode::ExecutionHalted) => {
-                // if execution halted, then copy output params back to the stack because the caller
-                // might want to read these params
-                for x in result {
-                    self.sp.push_value(x)
-                }
-                // when execution is halted, then we terminate an execution loop
+                // A halt aborts the whole Wasm call; its result values are not returned.
                 Err(TrapCode::ExecutionHalted)
             }
             Err(TrapCode::InterruptionCalled) => {
