@@ -522,11 +522,21 @@ impl<'a, T> RwasmExecutor<'a, T> {
         for (i, x) in result.iter().enumerate() {
             buffer[params.len() + i] = Value::default(*x);
         }
+        let result_types = result;
         let (params, result) = buffer.split_at_mut(params.len());
         let syscall_handler = self.store.syscall_handler;
         let mut caller = TypedCaller::Rwasm(RwasmCaller::new(self.store));
         match syscall_handler(&mut caller, sys_func_idx, params, result) {
             Ok(_) => {
+                // Validate the whole result before pushing any slots. A mistyped wide result
+                // changes the operand layout even if it fits in the allocated stack window.
+                if result
+                    .iter()
+                    .zip(result_types)
+                    .any(|(value, ty)| value.ty() != *ty)
+                {
+                    return Err(TrapCode::BadSignature);
+                }
                 // if execution succeeded, then copy output params back to the stack
                 for x in result {
                     self.sp.push_value(x)

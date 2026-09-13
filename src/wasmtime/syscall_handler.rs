@@ -105,7 +105,7 @@ pub unsafe fn wasmtime_syscall_handler_raw<'a, T: 'static>(
             _ => unreachable!("wasmtime: raw trampoline registered for a non-numeric import"),
         });
     }
-    buffer.extend(core::iter::repeat_n(Value::I32(0), result.len()));
+    buffer.extend(result.iter().copied().map(Value::default));
 
     let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
     let syscall_handler = caller.data().syscall_handler;

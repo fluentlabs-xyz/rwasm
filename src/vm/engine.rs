@@ -39,10 +39,9 @@ impl ExecutionEngine {
     ) -> Result<(), TrapCode> {
         let mut value_stack = ValueStack::default();
         let mut call_stack = CallStack::default();
-        debug_assert!(
-            store.resumable_context.is_none(),
-            "rwasm: resumable context is presented"
-        );
+        if store.resumable_context.is_some() {
+            return Err(TrapCode::IllegalOpcode);
+        }
         let mut executor =
             RwasmExecutor::entrypoint(module, &mut value_stack, &mut call_stack, store);
         match executor.run_raw(&[], &mut []) {
@@ -75,10 +74,9 @@ impl ExecutionEngine {
     ) -> Result<(), TrapCode> {
         let mut value_stack = ValueStack::default();
         let mut call_stack = CallStack::default();
-        debug_assert!(
-            store.resumable_context.is_none(),
-            "rwasm: resumable context is presented"
-        );
+        if store.resumable_context.is_some() {
+            return Err(TrapCode::IllegalOpcode);
+        }
         let sp = value_stack.stack_ptr();
         // `source_pc` is a module-declared entry offset. It used to be checked with a
         // `debug_assert!` only, so a module whose entry offset is outside the code section made

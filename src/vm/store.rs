@@ -139,26 +139,61 @@ impl<T: 'static> RwasmStore<T> {
         }
     }
 
+    /// Releases every table the previous instance created.
+    ///
+    /// A module's init prologue grows one table per declared table
+    /// ([`crate::SegmentBuilder::emit_table_segment`]) and fills it with nulls, so an instance
+    /// created on a store that already ran another module must start with no tables at all:
+    /// otherwise `call_indirect` dispatches through an entry the previous module left behind
+    /// (and `table.size`/`table.get`/`table.fill` report it).
+    pub(crate) fn reset_tables(&mut self) {
+        self.tables.clear();
+    }
+
+    /// Restores the linear memory to the zero-page state a fresh store starts in.
+    ///
+    /// A module's init prologue grows the memory to the size its memory section declares, so an
+    /// instance created on a store that already ran another module must start from an empty
+    /// memory: otherwise it inherits the previous instance's page count and bytes, and the
+    /// prologue's `memory.grow` adds the declared pages on top of them. The configured maximum
+    /// stays in place, so the new instance can still grow to its own limit.
+    pub(crate) fn reset_memory(&mut self) {
+        self.global_memory = GlobalMemory::new(
+            Pages::new_unchecked(0),
+            self.global_memory.max_allowed_memory_pages,
+        );
+    }
+
+    /// Clears the data/element segment drop state.
+    ///
+    /// The bitsets describe *one instance*: `data.drop`/`elem.drop` in a module must not make the
+    /// next module instantiated on the same store look like it already dropped its segments.
+    pub(crate) fn clear_segment_flags(&mut self) {
+        // we don't do any assumptions regarding how data segments are used,
+        // maybe there is a way to optimize reuse of bitset.
+        if self.empty_data_segments.len() <= size_of::<usize>() {
+            self.empty_data_segments.fill(false);
+        } else {
+            self.empty_data_segments = BitVec::<usize, Lsb0>::EMPTY;
+        }
+        // we don't do any assumptions regarding how tables are used inside the applications,
+        // so keep it always empty, probably there is an optimization here.
+        if self.empty_elem_segments.len() <= size_of::<usize>() {
+            self.empty_elem_segments.fill(false);
+        } else {
+            self.empty_elem_segments = BitVec::<usize, Lsb0>::EMPTY;
+        }
+    }
+
     /// Resets the state of the current execution context.
     pub fn reset(&mut self, keep_flags: bool) {
+        // Reset cancels any interrupted execution, even when instance segment flags survive.
+        self.resumable_context = None;
         // reset consumed fuel to 0
         self.consumed_fuel = 0;
         // we might want to keep data/elem flags between calls, it's required for e2e tests
         if !keep_flags {
-            // we don't do any assumptions regarding how data segments are used,
-            // maybe there is a way to optimize reuse of bitset.
-            if self.empty_data_segments.len() <= size_of::<usize>() {
-                self.empty_data_segments.fill(false);
-            } else {
-                self.empty_data_segments = BitVec::<usize, Lsb0>::EMPTY;
-            }
-            // we don't do any assumptions regarding how tables are used inside the applications,
-            // so keep it always empty, probably there is an optimization here.
-            if self.empty_elem_segments.len() <= size_of::<usize>() {
-                self.empty_elem_segments.fill(false);
-            } else {
-                self.empty_elem_segments = BitVec::<usize, Lsb0>::EMPTY;
-            }
+            self.clear_segment_flags();
         }
         // in case of a trap, we might have this flag remains active
         self.last_signature = None;

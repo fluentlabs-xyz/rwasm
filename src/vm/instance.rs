@@ -19,6 +19,27 @@ impl RwasmInstance {
         engine: ExecutionEngine,
         module: RwasmModule,
     ) -> Result<Self, TrapCode> {
+        // A parked execution still owns the store's memory and tables. Reject replacement
+        // before clearing either so it can be resumed, or explicitly cancelled with reset.
+        if store.resumable_context.is_some() {
+            return Err(TrapCode::IllegalOpcode);
+        }
+        // The data/element drop state lives in the store but belongs to the instance: a module
+        // instantiated on a store that already hosted another module has to start with all of its
+        // segments live, or `memory.init`/`table.init` traps because the previous module dropped
+        // the same segment index. The flag has to be cleared before the entrypoint runs, because
+        // that code copies the module's active segments.
+        store.clear_segment_flags();
+        // The linear memory belongs to the instance as well. The entrypoint grows it from zero to
+        // the size the module declares, so releasing the previous instance's pages here is what
+        // keeps `memory.size`, the data-segment copies and every load/store relative to this
+        // module instead of the one that ran before it.
+        store.reset_memory();
+        // Tables are per-instance too: the entrypoint grows each declared table and fills it with
+        // nulls, so an entry the previous instance wrote must not survive into this one. Dropping
+        // the tables here keeps `call_indirect` from dispatching into the previous module's code
+        // and lets `table.size`/`table.get` report this module's table.
+        store.reset_tables();
         // Invoke an entrypoint before (it triggers first init for memory, data, tables, etc. and also calls a start section).
         // We call entrypoint only if source PC is greater than 0, it means that the module has a start section and it's not legacy module.
         if module.source_pc > 0 {
