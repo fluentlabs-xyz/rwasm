@@ -145,6 +145,55 @@ fn module_with_an_unexported_memory_is_rejected_by_the_wasmtime_strategy() {
     );
 }
 
+#[test]
+fn for_each_strategy_rejects_unexported_memory_before_the_wasmtime_callback() {
+    let wasm = wat::parse_str(r#"(module (memory 1) (func (export "main")))"#).unwrap();
+    let mut callbacks = 0;
+    let result = rwasm::for_each_strategy(
+        |definition| {
+            callbacks += 1;
+            assert!(matches!(definition, StrategyDefinition::Rwasm { .. }));
+            let mut executor = definition.default_executor()?;
+            executor.memory_write(0, &[42])?;
+            Ok(())
+        },
+        config(),
+        &wasm,
+    );
+    assert!(matches!(
+        result,
+        Err(rwasm::StrategyError::CompilationError(
+            CompilationError::MissingMemoryExport
+        ))
+    ));
+    assert_eq!(callbacks, 1, "only the rwasm callback may run");
+}
+
+#[test]
+fn for_each_strategy_accepts_exported_memory_and_memoryless_modules() {
+    for memory in ["", r#"(memory (export "mem") 1)"#] {
+        let wasm = wat::parse_str(format!(r#"(module {memory} (func (export "main")))"#)).unwrap();
+        let results = rwasm::for_each_strategy(
+            |definition| {
+                let is_rwasm = matches!(definition, StrategyDefinition::Rwasm { .. });
+                let mut executor = definition.default_executor()?;
+                executor.execute("main", &[], &mut [])?;
+                if !memory.is_empty() {
+                    executor.memory_write(0, &[42])?;
+                    let mut bytes = [0];
+                    executor.memory_read(0, &mut bytes)?;
+                    assert_eq!(bytes, [42]);
+                }
+                Ok(is_rwasm)
+            },
+            config(),
+            &wasm,
+        )
+        .unwrap();
+        assert_eq!(results, [true, false]);
+    }
+}
+
 /// A memory exported under any name is reachable by both backends.
 #[test]
 fn memory_exported_under_any_name_is_reachable() {
