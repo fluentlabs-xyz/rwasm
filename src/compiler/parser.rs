@@ -153,6 +153,14 @@ impl ModuleParser {
             .entrypoint_bytecode;
         let entrypoint_length = code_section.len() as u32;
         code_section.extend(self.allocations.translation.instruction_set.iter());
+        // The functions were bounded as they were translated; the init prologue, the snippets
+        // and the state router come on top and the whole section has to fit as well.
+        if code_section.len() > self.config.max_code_len as usize {
+            return Err(CompilationError::CodeSizeExceeded {
+                len: u32::try_from(code_section.len()).unwrap_or(u32::MAX),
+                limit: self.config.max_code_len,
+            });
+        }
 
         // TODO(dmitry123): "optimize it"
         for instr in code_section.iter_mut() {
@@ -523,6 +531,7 @@ impl ModuleParser {
                 self.config.consume_fuel_for_bulk_ops,
                 self.config.consume_fuel_for_params_and_locals,
                 self.config.max_allowed_memory_pages,
+                self.config.max_code_len,
             );
             translator.prepare(func_idx)?;
             let signature_index = translator
@@ -936,6 +945,7 @@ impl ModuleParser {
             self.config.consume_fuel_for_bulk_ops,
             self.config.consume_fuel_for_params_and_locals,
             self.config.max_allowed_memory_pages,
+            self.config.max_code_len,
         )
         .translate()?;
         let _ = replace(&mut self.allocations, allocations);

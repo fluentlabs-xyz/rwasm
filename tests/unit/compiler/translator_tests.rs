@@ -13,7 +13,8 @@ macro_rules! assert_unsupported {
 
 #[test]
 fn every_unsupported_operator_is_rejected() {
-    let mut visitor = InstructionTranslator::new(Default::default(), false, false, false, false, 0);
+    let mut visitor =
+        InstructionTranslator::new(Default::default(), false, false, false, false, 0, 0);
     let memarg = MemArg {
         align: 0,
         max_align: 0,

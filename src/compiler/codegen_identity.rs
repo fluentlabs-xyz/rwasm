@@ -79,6 +79,7 @@ impl CompilationConfig {
         hasher.bool(self.allow_start_section);
         hasher.u32(self.max_allowed_memory_pages);
         hasher.u32(self.max_allowed_function_types);
+        hasher.u32(self.max_code_len);
 
         hasher.finalize()
     }
@@ -258,9 +259,9 @@ mod tests {
     #[test]
     fn default_identity_is_pinned() {
         let expected = if cfg!(feature = "fpu") {
-            hex_literal::hex!("4576e9f18d24b7654b35b502383405e4a63d118841bb6546039639026c8dfd8d")
+            hex_literal::hex!("cba46c439e7d617ce172ef036e5781555e1664b22651425f88625eb4cc4b0690")
         } else {
-            hex_literal::hex!("86647b3a825399ee479bc66bf2c0cbf4930aa214c6582724796006e0c7a8b696")
+            hex_literal::hex!("12124ae76ec807e80a81f238312ddd29db5db1f77fe1d64c9538453f6f4c3ab5")
         };
         assert_eq!(CompilationConfig::default().codegen_identity(), expected);
     }
@@ -287,6 +288,7 @@ mod tests {
             CompilationConfig::default().with_allow_start_section(true),
             CompilationConfig::default().with_max_allowed_memory_pages(1),
             CompilationConfig::default().with_max_allowed_function_types(1),
+            CompilationConfig::default().with_max_code_len(1),
             CompilationConfig::default().with_default_imported_global_value(0),
             CompilationConfig::default().with_entrypoint_name("main".into()),
             CompilationConfig::default().with_state_router(StateRouterConfig {

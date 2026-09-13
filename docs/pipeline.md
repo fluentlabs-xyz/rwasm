@@ -94,7 +94,19 @@ meter rather than what the language allows.
   after the same `IntegerOverflow` guard on the metered parameter. It is deliberately *not*
   handed to the Wasmtime engine: Cranelift could only charge it at direct `call` sites, which
   left every other path unmetered. A bare `wasmtime::Module` converted with
-  `WasmtimeModule::from` carries no schedule and charges nothing.
+  `WasmtimeModule::from` carries no schedule and charges nothing. A schedule that meters a wide
+  (`i64`/`f64`) parameter is rejected with `InvalidSyscallFuelParam` on both strategies: the
+  policies are defined over 32-bit byte lengths.
+- **Code size (`max_code_len`)** — the translator expands some operators into many instructions
+  (a branch keeping `k` values costs `2k + 1`, `k` up to Wasm's 1000 block results), so the
+  output is not proportional to the input: a 1 MiB `br_table` module used to compile to ~16 GiB
+  of bytecode before anything was metered. `CompilationConfig::max_code_len` (default
+  `N_DEFAULT_MAX_CODE_LEN`, 2 Mi instructions) is checked after every operator and after every
+  `br_table` target, i.e. before the next expansion is allocated, and rejects the module with
+  `CompilationError::CodeSizeExceeded`. `br_table` entries with the same target and the same
+  `DropKeep` share one trampoline, which removes the expansion for the common repeated-target
+  case; the bound covers the rest. The Wasmtime strategy inherits the bound through the rwasm
+  front end it runs first.
 
 ### Backend differences that remain
 

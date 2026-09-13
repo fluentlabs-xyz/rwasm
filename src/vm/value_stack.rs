@@ -1,6 +1,7 @@
 use crate::{
     types::{TrapCode, UntypedValue},
     ExternRef, FuncRef, I64ValueSplit, Value, F32, F64, N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE,
+    N_STACK_TRAMPOLINE_HEADROOM,
 };
 use alloc::vec::Vec;
 use core::fmt::Debug;
@@ -69,7 +70,12 @@ impl Extend<UntypedValue> for ValueStack {
 
 impl Default for ValueStack {
     fn default() -> Self {
-        Self::new(N_DEFAULT_STACK_SIZE, N_MAX_STACK_SIZE)
+        // the frames the compiler accepts fit `N_MAX_STACK_SIZE`; the headroom is for the
+        // temporaries of an import trampoline entered at that peak, see the constant
+        Self::new(
+            N_DEFAULT_STACK_SIZE,
+            N_MAX_STACK_SIZE + N_STACK_TRAMPOLINE_HEADROOM,
+        )
     }
 }
 

@@ -9,15 +9,21 @@ use wasmparser::ValType;
 /// `LocalGet` expects inside the import trampoline.
 ///
 /// `LinearFuelParams::param_index` and `QuadraticFuelParams::local_depth` count the imported
-/// function's parameters from the last one (`1` is the last parameter). That is what the Wasmtime
-/// engine reads with `peekn`, where every parameter is one value. On the rwasm stack an `i64` or
-/// `f64` parameter occupies two 32-bit slots, so the depth has to skip two slots for each such
-/// parameter above the metered one. The metered parameter itself is a byte length and therefore
-/// a single `i32` slot.
+/// function's parameters from the last one (`1` is the last parameter), where every parameter is
+/// one value. On the rwasm stack an `i64` or `f64` parameter occupies two 32-bit slots, so the
+/// depth has to skip two slots for each such parameter above the metered one.
+///
+/// The metered parameter itself is a byte length and must be an `i32`: the policies are defined
+/// over 32-bit lengths (`FUEL_MAX_LINEAR_X`/`FUEL_MAX_QUADRATIC_X` are `u32`), and a wide
+/// parameter has no single slot to meter — the trampoline used to read its high word while the
+/// Wasmtime host trampoline reads the whole value, so the two strategies charged different fuel.
+/// Such a schedule is rejected with [`CompilationError::InvalidSyscallFuelParam`], on both
+/// strategies since the Wasmtime one runs this front end first.
 fn param_slot_depth(params: &[ValType], param_index: u32) -> Result<LocalDepth, CompilationError> {
     let param_index = usize::try_from(param_index)
         .ok()
         .filter(|index| (1..=params.len()).contains(index))
+        .filter(|index| params[params.len() - index] == ValType::I32)
         .ok_or(CompilationError::InvalidSyscallFuelParam)?;
     let slots_above = params[params.len() - param_index + 1..]
         .iter()
@@ -104,6 +110,10 @@ pub(crate) fn compile_block_params(
             }
         }
     }
+    debug_assert!(
+        temporary_slots as usize <= crate::N_STACK_TRAMPOLINE_HEADROOM,
+        "the value stack headroom must cover the trampoline temporaries"
+    );
     Ok(temporary_slots)
 }
 
@@ -128,5 +138,27 @@ mod tests {
         assert!(param_slot_depth(&[I32, I32], 0).is_err());
         assert!(param_slot_depth(&[I32, I32], 3).is_err());
         assert!(param_slot_depth(&[], 1).is_err());
+    }
+
+    /// A wide metered parameter has no single slot to read; the rwasm trampoline used to meter
+    /// its high word while the Wasmtime host trampoline metered the whole value.
+    #[test]
+    fn param_slot_depth_rejects_wide_metered_parameters() {
+        use ValType::*;
+        for (params, index) in [
+            (&[I32, I64][..], 1),
+            (&[I64, I32][..], 2),
+            (&[I64, I64][..], 1),
+            (&[I32, F64][..], 1),
+            (&[F32][..], 1),
+        ] {
+            assert!(
+                matches!(
+                    param_slot_depth(params, index),
+                    Err(CompilationError::InvalidSyscallFuelParam)
+                ),
+                "{params:?} at {index}"
+            );
+        }
     }
 }

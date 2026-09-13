@@ -26,7 +26,10 @@ pub enum CompilationError {
     MemoryOutOfBounds,
     TableOutOfBounds,
     /// A function needs more value-stack slots than the runtime provides (`N_MAX_STACK_SIZE`).
-    StackHeightExceeded { height: u32, limit: u32 },
+    StackHeightExceeded {
+        height: u32,
+        limit: u32,
+    },
     /// The module declares a linear memory but does not export it.
     ///
     /// The Wasmtime backend reaches the instance memory through its exports only, so a memory the
@@ -36,6 +39,15 @@ pub enum CompilationError {
     StartSectionsAreNotAllowed,
     TooManyFunctionTypes {
         count: u32,
+        limit: u32,
+    },
+    /// The module compiles to more instructions than
+    /// [`crate::CompilationConfig::max_code_len`] allows.
+    ///
+    /// `len` is the size reached when the bound was hit, not the size the module would have had:
+    /// the check runs while code is emitted, so the excess is never allocated.
+    CodeSizeExceeded {
+        len: u32,
         limit: u32,
     },
     /// The config enables fuel injections that only the rwasm strategy implements, so the same
@@ -99,7 +111,10 @@ impl core::fmt::Display for CompilationError {
                 )
             }
             CompilationError::MissingMemoryExport => {
-                write!(f, "the module declares a linear memory but does not export it")
+                write!(
+                    f,
+                    "the module declares a linear memory but does not export it"
+                )
             }
             CompilationError::StartSectionsAreNotAllowed => {
                 write!(f, "start sections are not allowed")
@@ -108,6 +123,12 @@ impl core::fmt::Display for CompilationError {
                 write!(
                     f,
                     "function type count {count} exceeds compilation limit {limit}"
+                )
+            }
+            CompilationError::CodeSizeExceeded { len, limit } => {
+                write!(
+                    f,
+                    "compiled code size {len} instructions exceeds compilation limit {limit}"
                 )
             }
             CompilationError::StrategyIncompatibleConfig => write!(

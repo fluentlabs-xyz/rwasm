@@ -51,7 +51,13 @@ fn table_at_the_limit_is_accepted_by_both() {
         StrategyDefinition::new_as_wasmtime(config(), &wasm, None).expect("wasmtime compiles"),
     ] {
         let mut executor = definition
-            .create_executor(Default::default(), (), rwasm::always_failing_syscall_handler, None, None)
+            .create_executor(
+                Default::default(),
+                (),
+                rwasm::always_failing_syscall_handler,
+                None,
+                None,
+            )
             .expect("instantiation");
         let mut result = [rwasm::Value::I32(-1)];
         executor.execute("main", &[], &mut result).unwrap();
@@ -74,7 +80,13 @@ fn table_grow_with_a_huge_declared_maximum_grows_up_to_the_cap() {
         StrategyDefinition::new_as_wasmtime(config(), &wasm, None).expect("wasmtime compiles"),
     ] {
         let mut executor = definition
-            .create_executor(Default::default(), (), rwasm::always_failing_syscall_handler, None, None)
+            .create_executor(
+                Default::default(),
+                (),
+                rwasm::always_failing_syscall_handler,
+                None,
+                None,
+            )
             .expect("instantiation");
         // One element fits: the result is the previous size.
         let mut result = [rwasm::Value::I32(-1)];
@@ -117,7 +129,13 @@ fn function_at_the_value_stack_limit_is_accepted() {
     let mut result = [rwasm::Value::I32(0)];
     StrategyDefinition::new_as_rwasm(config(), &wasm)
         .unwrap()
-        .create_executor(Default::default(), (), rwasm::always_failing_syscall_handler, None, None)
+        .create_executor(
+            Default::default(),
+            (),
+            rwasm::always_failing_syscall_handler,
+            None,
+            None,
+        )
         .unwrap()
         .execute("main", &[], &mut result)
         .unwrap();
@@ -207,7 +225,13 @@ fn memory_exported_under_any_name_is_reachable() {
         StrategyDefinition::new_as_wasmtime(config(), &wasm, None).expect("wasmtime compiles"),
     ] {
         let mut executor = definition
-            .create_executor(Default::default(), (), rwasm::always_failing_syscall_handler, None, None)
+            .create_executor(
+                Default::default(),
+                (),
+                rwasm::always_failing_syscall_handler,
+                None,
+                None,
+            )
             .expect("instantiation");
         executor.execute("main", &[], &mut []).unwrap();
         let mut buffer = [0_u8; 4];
@@ -219,13 +243,20 @@ fn memory_exported_under_any_name_is_reachable() {
 /// A module without a linear memory keeps working on both strategies.
 #[test]
 fn module_without_memory_is_accepted() {
-    let wasm = wat::parse_str(r#"(module (func (export "main") (result i32) (i32.const 5)))"#).unwrap();
+    let wasm =
+        wat::parse_str(r#"(module (func (export "main") (result i32) (i32.const 5)))"#).unwrap();
     for definition in [
         StrategyDefinition::new_as_rwasm(config(), &wasm).expect("rwasm compiles"),
         StrategyDefinition::new_as_wasmtime(config(), &wasm, None).expect("wasmtime compiles"),
     ] {
         let mut executor = definition
-            .create_executor(Default::default(), (), rwasm::always_failing_syscall_handler, None, None)
+            .create_executor(
+                Default::default(),
+                (),
+                rwasm::always_failing_syscall_handler,
+                None,
+                None,
+            )
             .expect("instantiation");
         let mut result = [rwasm::Value::I32(0)];
         executor.execute("main", &[], &mut result).unwrap();
@@ -248,7 +279,13 @@ fn calling_another_export_name_fails_on_both_backends() {
         StrategyDefinition::new_as_wasmtime(config(), &wasm, None).expect("wasmtime compiles"),
     ] {
         let mut executor = definition
-            .create_executor(Default::default(), (), rwasm::always_failing_syscall_handler, None, None)
+            .create_executor(
+                Default::default(),
+                (),
+                rwasm::always_failing_syscall_handler,
+                None,
+                None,
+            )
             .expect("instantiation");
         // The configured entrypoint keeps working.
         let mut result = [rwasm::Value::I32(0)];
@@ -294,7 +331,13 @@ fn resume_without_an_interruption_reports_a_trap() {
         StrategyDefinition::new_as_wasmtime(config(), &wasm, None).expect("wasmtime compiles"),
     ] {
         let mut executor = definition
-            .create_executor(Default::default(), (), rwasm::always_failing_syscall_handler, None, None)
+            .create_executor(
+                Default::default(),
+                (),
+                rwasm::always_failing_syscall_handler,
+                None,
+                None,
+            )
             .expect("instantiation");
         assert_eq!(
             executor.resume(&[], &mut []),
@@ -307,17 +350,137 @@ fn resume_without_an_interruption_reports_a_trap() {
 /// the caller reuses its caching key.
 #[test]
 fn module_cache_key_covers_the_bytecode() {
-    let first = wat::parse_str(r#"(module (func (export "main") (result i32) (i32.const 11)))"#).unwrap();
-    let second = wat::parse_str(r#"(module (func (export "main") (result i32) (i32.const 22)))"#).unwrap();
+    let first =
+        wat::parse_str(r#"(module (func (export "main") (result i32) (i32.const 11)))"#).unwrap();
+    let second =
+        wat::parse_str(r#"(module (func (export "main") (result i32) (i32.const 22)))"#).unwrap();
     let cache_key = Some([7u8; 32]);
 
     for (wasm, expected) in [(&first, 11), (&second, 22)] {
         let definition = StrategyDefinition::new_as_wasmtime(config(), wasm, cache_key).unwrap();
         let mut executor = definition
-            .create_executor(Default::default(), (), rwasm::always_failing_syscall_handler, None, None)
+            .create_executor(
+                Default::default(),
+                (),
+                rwasm::always_failing_syscall_handler,
+                None,
+                None,
+            )
             .expect("instantiation");
         let mut result = [rwasm::Value::I32(0)];
         executor.execute("main", &[], &mut result).unwrap();
         assert_eq!(result[0].i32(), Some(expected));
+    }
+}
+
+/// A `br_table` whose targets keep 1000 values, as used by the code-size tests below: every
+/// entry that has to drop the value underneath the results costs a `2·1000 + 1` instruction
+/// trampoline, so the emitted size is bounded by the number of *distinct* targets and the
+/// configured code bound, not by the input size.
+fn br_table_wasm(distinct_targets: usize, entries: usize) -> Vec<u8> {
+    let results = vec!["i32"; 1000].join(" ");
+    let mut body = String::from("(i32.const 7)\n");
+    for _ in 0..1000 {
+        body.push_str("(i32.const 1)\n");
+    }
+    body.push_str("(local.get 0)\n(br_table");
+    for entry in 0..entries {
+        body.push_str(&format!(" {}", entry % distinct_targets));
+    }
+    body.push_str(" 0)\n");
+    let open = format!("(block (result {results})\n").repeat(distinct_targets);
+    wat::parse_str(format!(
+        r#"(module
+          (func (export "main") (param i32) (result i32)
+            {open}{body}{close}
+            {drops}))"#,
+        close = ")".repeat(distinct_targets),
+        drops = "drop ".repeat(999)
+    ))
+    .unwrap()
+}
+
+/// Every branch that keeps values expands into a trampoline, and the expansion is not bounded
+/// by the input: a 1 MiB `br_table` module used to compile to ~16 GiB of bytecode. The
+/// compiler now stops at `max_code_len` while emitting, so the rejected module never costs more
+/// than the bound, and the Wasmtime strategy (which runs the rwasm front end first) rejects it
+/// too.
+#[test]
+fn code_size_bound_rejects_expanding_modules_on_both_strategies() {
+    // 1000 distinct targets: dedup cannot help, 1000 trampolines of 2001 instructions
+    let wasm = br_table_wasm(1000, 1000);
+    let bounded = config().with_max_code_len(1_000_000);
+    let err = RwasmModule::compile(bounded.clone(), &wasm).expect_err("must be rejected");
+    match err {
+        CompilationError::CodeSizeExceeded { len, limit } => {
+            assert_eq!(limit, 1_000_000);
+            // stopped at the bound, not after building the whole table
+            assert!(len > limit && len <= limit + 2_002, "len={len}");
+        }
+        err => panic!("unexpected error: {err}"),
+    }
+    assert!(matches!(
+        StrategyDefinition::new_as_wasmtime(bounded, &wasm, None),
+        Err(CompilationError::CodeSizeExceeded { .. })
+    ));
+    // the same module fits a bound above its real size
+    let module = RwasmModule::compile(config().with_max_code_len(3_000_000), &wasm)
+        .expect("fits the bound")
+        .0;
+    assert!(module.code_section.len() > 2_000_000);
+    assert!(module.code_section.len() <= 3_000_000);
+}
+
+/// The bound also covers ordinary code: a limit below the module's size rejects it, the limit
+/// itself is inclusive, and the default admits every module the runtime can hold.
+#[test]
+fn code_size_bound_is_inclusive() {
+    let wasm = wat::parse_str(
+        r#"(module (func (export "main") (result i32) (i32.add (i32.const 1) (i32.const 2))))"#,
+    )
+    .unwrap();
+    let len = RwasmModule::compile(config(), &wasm)
+        .unwrap()
+        .0
+        .code_section
+        .len() as u32;
+    assert!(RwasmModule::compile(config().with_max_code_len(len), &wasm).is_ok());
+    assert!(matches!(
+        RwasmModule::compile(config().with_max_code_len(len - 1), &wasm),
+        Err(CompilationError::CodeSizeExceeded { limit, .. }) if limit == len - 1
+    ));
+}
+
+/// Entries of a `br_table` with the same target share one trampoline: 100 000 entries naming
+/// one block cost one `2001`-instruction trampoline, not 100 000 of them, and the table still
+/// dispatches every entry to it.
+#[test]
+fn br_table_entries_with_the_same_target_share_a_trampoline() {
+    let wasm = br_table_wasm(1, 100_000);
+    let module = RwasmModule::compile(config(), &wasm)
+        .expect("a deduplicated table fits the default bound")
+        .0;
+    // the 100 001 two-word entries plus a single trampoline
+    assert!(module.code_section.len() < 2 * 100_001 + 2_001 + 2_100);
+    for definition in [
+        StrategyDefinition::new_as_rwasm(config(), &wasm).expect("rwasm compiles"),
+        StrategyDefinition::new_as_wasmtime(config(), &wasm, None).expect("wasmtime compiles"),
+    ] {
+        let mut executor = definition
+            .create_executor(
+                Default::default(),
+                (),
+                rwasm::always_failing_syscall_handler,
+                None,
+                None,
+            )
+            .expect("instantiation");
+        for index in [0, 1, 50_000, 99_999, 100_000, 7_000_000] {
+            let mut result = [rwasm::Value::I32(-1)];
+            executor
+                .execute("main", &[rwasm::Value::I32(index)], &mut result)
+                .unwrap();
+            assert_eq!(result[0].i32(), Some(1), "entry {index}");
+        }
     }
 }
