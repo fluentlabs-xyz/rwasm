@@ -45,6 +45,7 @@ pub(crate) struct ReusableContext {
     pub call_stack: CallStack,
     pub ip: InstructionPtr,
     pub value_stack: ValueStack,
+    pub initializing: bool,
 }
 
 impl<T: 'static + Default> Default for RwasmStore<T> {

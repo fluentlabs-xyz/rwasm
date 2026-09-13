@@ -103,6 +103,10 @@ tail calls for modules that must run on both.
 - table/data/element sections
 - execution metadata required by the VM
 
+An `ExecutionHalted` host result terminates a normal export call successfully with zeroed output
+values of the expected types. During initialization, including a resumed start function, it
+propagates as an error: a halted start function does not produce a usable instance.
+
 ## 4) Executor creation
 
 Via strategy layer (`src/strategy/**`):

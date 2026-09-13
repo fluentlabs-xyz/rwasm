@@ -45,11 +45,20 @@ impl ExecutionEngine {
         );
         let mut executor =
             RwasmExecutor::entrypoint(module, &mut value_stack, &mut call_stack, store);
-        match executor.run(&[], &mut []) {
+        match executor.run_raw(&[], &mut []) {
             Err(TrapCode::InterruptionCalled) => {
                 let (ip, sp) = (executor.ip, executor.sp);
                 value_stack.sync_stack_ptr(sp);
-                self.remember_context(module.clone(), store, value_stack, call_stack, ip)
+                self.remember_context(
+                    store,
+                    ReusableContext {
+                        module: module.clone(),
+                        value_stack,
+                        call_stack,
+                        ip,
+                        initializing: true,
+                    },
+                )
             }
             res => res,
         }
@@ -85,7 +94,16 @@ impl ExecutionEngine {
             Err(TrapCode::InterruptionCalled) => {
                 let (ip, sp) = (executor.ip, executor.sp);
                 value_stack.sync_stack_ptr(sp);
-                self.remember_context(module.clone(), store, value_stack, call_stack, ip)
+                self.remember_context(
+                    store,
+                    ReusableContext {
+                        module: module.clone(),
+                        value_stack,
+                        call_stack,
+                        ip,
+                        initializing: false,
+                    },
+                )
             }
             res => res,
         }
@@ -111,15 +129,30 @@ impl ExecutionEngine {
             mut call_stack,
             ip,
             mut value_stack,
+            initializing,
         } = take(&mut store.resumable_context).ok_or(TrapCode::IllegalOpcode)?;
         let sp = value_stack.stack_ptr();
         let mut executor =
             RwasmExecutor::new(&module, &mut value_stack, sp, &mut call_stack, ip, store);
-        match executor.run(params, result) {
+        let outcome = if initializing {
+            executor.run_raw(params, result)
+        } else {
+            executor.run(params, result)
+        };
+        match outcome {
             Err(TrapCode::InterruptionCalled) => {
                 let (ip, sp) = (executor.ip, executor.sp);
                 value_stack.sync_stack_ptr(sp);
-                self.remember_context(module, store, value_stack, call_stack, ip)
+                self.remember_context(
+                    store,
+                    ReusableContext {
+                        module,
+                        value_stack,
+                        call_stack,
+                        ip,
+                        initializing,
+                    },
+                )
             }
             res => res,
         }
@@ -127,18 +160,10 @@ impl ExecutionEngine {
 
     fn remember_context<T>(
         &self,
-        module: RwasmModule,
         store: &mut RwasmStore<T>,
-        value_stack: ValueStack,
-        call_stack: CallStack,
-        ip: InstructionPtr,
+        context: ReusableContext,
     ) -> Result<(), TrapCode> {
-        store.resumable_context = Some(ReusableContext {
-            module,
-            call_stack,
-            ip,
-            value_stack,
-        });
+        store.resumable_context = Some(context);
         Err(TrapCode::InterruptionCalled)
     }
 }
