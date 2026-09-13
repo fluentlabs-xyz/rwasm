@@ -41,6 +41,13 @@ fn run_rwasm_vs_wasmtime_fuel_check(wasm_binary: &[u8], params: &[Value], result
         wasm_binary,
     )
     .unwrap();
+    // Without the Wasmtime strategy the loop below would compare a single outcome with itself.
+    #[cfg(feature = "wasmtime")]
+    assert_eq!(
+        fuel_consumed.len(),
+        2,
+        "both strategies must be exercised by the differential check"
+    );
     let value_should_be = fuel_consumed[0];
     for x in fuel_consumed {
         assert_eq!(x, value_should_be);

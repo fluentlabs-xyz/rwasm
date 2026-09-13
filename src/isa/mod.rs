@@ -207,6 +207,7 @@ impl InstructionSet {
     impl_basic_opcode!(MemoryCopy);
     impl_basic_opcode!(MemoryInit(DataSegmentIdx));
     impl_basic_opcode!(DataDrop(DataSegmentIdx));
+    impl_basic_opcode!(DataSegmentLive(DataSegmentIdx));
 
     // table
     impl_basic_opcode!(TableSize(TableIdx));
@@ -217,6 +218,7 @@ impl InstructionSet {
     impl_basic_opcode!(TableCopy(TableIdx, TableIdx));
     impl_basic_opcode!(TableInit(ElementSegmentIdx));
     impl_basic_opcode!(ElemDrop(ElementSegmentIdx));
+    impl_basic_opcode!(ElementSegmentLive(ElementSegmentIdx));
     impl_basic_opcode!(RefFunc(CompiledFunc));
     impl_basic_opcode!(I32Const(UntypedValue));
 

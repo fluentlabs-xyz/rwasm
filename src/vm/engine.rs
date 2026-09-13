@@ -71,8 +71,16 @@ impl ExecutionEngine {
             "rwasm: resumable context is presented"
         );
         let sp = value_stack.stack_ptr();
-        let mut ip = InstructionPtr::new(module.code_section.as_ptr());
-        debug_assert!(module.source_pc < module.code_section.len() as u32);
+        // `source_pc` is a module-declared entry offset. It used to be checked with a
+        // `debug_assert!` only, so a module whose entry offset is outside the code section made
+        // the interpreter fetch instructions from outside the section in release builds.
+        if module.source_pc as usize >= module.code_section.len() {
+            return Err(TrapCode::UnreachableCodeReached);
+        }
+        let mut ip = InstructionPtr::new(
+            module.code_section.as_ptr(),
+            module.code_section.len(),
+        );
         ip.offset(module.source_pc as isize);
         let mut executor =
             RwasmExecutor::new(module, &mut value_stack, sp, &mut call_stack, ip, store);

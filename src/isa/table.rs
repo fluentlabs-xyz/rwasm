@@ -35,18 +35,36 @@ impl InstructionSet {
         offset: u32,
         inject_fuel_check: bool,
     ) {
+        // Spec bound check on the original `s`/`n`: trap when `s > len` or `n > len - s`.
+        //
+        // Both compares are unsigned and neither operand sum can wrap: the subtraction only runs
+        // after `s <= len` has been established. The previous form compared the wrapping sum
+        // `n + s` against `len` with a signed `gt_s`, so a source index near `u32::MAX` wrapped
+        // into range and the init installed another segment's elements instead of trapping.
         // [d, s, n]
-        self.op_local_get(1); // n
-        self.op_local_get(3); // s
-        self.op_i32_add(); // n+s
-        self.op_i32_const(length); // length
-        self.op_i32_gt_s(); // n+s>length, signed: see the SAFETY NOTE at the top of this file
+        self.op_local_get(2); // s
+        self.op_i32_const(length);
+        self.op_i32_gt_u(); // s > len
         self.op_br_if_eqz(2);
         self.op_trap(TrapCode::TableOutOfBounds);
-        // we need to replace the offset on the stack with the new value
+        // [d, s, n]
+        self.op_i32_const(length); // len
+        self.op_local_get(3); // s
+        self.op_i32_sub(); // len - s, exact because s <= len
+        self.op_local_get(2); // n
+        self.op_i32_lt_u(); // len - s < n, i.e. n > len - s
+        self.op_br_if_eqz(2);
+        self.op_trap(TrapCode::TableOutOfBounds);
+        // Address the segment inside the flattened element blob.
+        //
+        // The blob offset is applied only while the segment is live: a dropped segment keeps its
+        // original source offset so the runtime's empty-window check implements the spec rule for
+        // a zero-length segment (only `s == 0 && n == 0` survives).
         if offset > 0 {
+            self.op_element_segment_live(segment_index);
             self.op_i32_const(offset);
-            self.op_local_get(3);
+            self.op_i32_mul(); // offset while live, 0 after `elem.drop`
+            self.op_local_get(3); // s
             self.op_i32_add();
             self.op_local_set(2);
         }
@@ -71,17 +89,31 @@ impl InstructionSet {
         inject_fuel_check: bool,
     ) {
         // [init, delta]
+        //
+        // Two unsigned, non-wrapping checks instead of the previous signed `n + table_size >
+        // limit`: the sum wrapped for a `delta` near `u32::MAX`, and `limit` is the
+        // *module-declared* maximum, which is negative as `i32` for any maximum >= 2^31. Both
+        // made the guard report an overflow that never happened.
         if let Some(limit) = limit_check {
+            self.op_local_get(1); // n
+            self.op_i32_const(limit);
+            self.op_i32_gt_u(); // n > limit
+            self.op_br_if_eqz(5);
+            self.op_drop();
+            self.op_drop();
+            self.op_i32_const(u32::MAX);
+            // we don't trap here, because, according to a wasm standard, we should put u32::MAX on
+            // the top of the stack in case of overflow
+            self.op_br(if inject_fuel_check { 18 } else { 12 });
+            // `n <= limit` now, so `table_size + n` cannot wrap
             self.op_local_get(1); // n
             self.op_table_size(table_idx); // table_size
             self.op_i32_add(); // n+table_size
             self.op_i32_const(limit); // limit
-            self.op_i32_gt_s(); // n+table_size>limit, signed: see the SAFETY NOTE at the top
+            self.op_i32_gt_u(); // n+table_size>limit
             self.op_br_if_eqz(5);
             self.op_drop();
             self.op_drop();
-            // we don't trap here, because, according to a wasm standard, we should put u32::MAX on
-            // the top of the stack in case of overflow
             self.op_i32_const(u32::MAX);
             self.op_br(if inject_fuel_check { 8 } else { 2 });
         }

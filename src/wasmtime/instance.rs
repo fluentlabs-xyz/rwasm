@@ -33,6 +33,11 @@ pub struct WasmtimeExecutor<T: 'static> {
     /// Exported functions of `cached_instance`, resolved once so calls don't look them up by
     /// name. Entry points are few, so a linear scan beats hashing the name.
     functions: Vec<ExportedFunction>,
+    /// Export the module was compiled for, when the config selected one.
+    ///
+    /// The strategy layer exposes a single entrypoint, matching the rwasm backend, which has no
+    /// way to resolve an arbitrary export name at run time.
+    entrypoint_name: Option<Box<str>>,
 }
 
 impl<T: 'static> AsContext for WasmtimeExecutor<T> {
@@ -69,8 +74,11 @@ impl<T: 'static> WasmtimeExecutor<T> {
             let name = export.name();
             match export.into_extern() {
                 Extern::Func(func) => functions.push((Box::<str>::from(name), func)),
-                Extern::Memory(exported_memory) if name == "memory" => {
-                    memory = Some(exported_memory)
+                // Resolved by kind, not by the literal name "memory": rwasm always uses the
+                // module's memory 0, so the host has to reach whichever memory the module exports
+                // (multi-memory is rejected by the compiler, so there is at most one).
+                Extern::Memory(exported_memory) => {
+                    memory.get_or_insert(exported_memory);
                 }
                 _ => {}
             }
@@ -185,7 +193,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
             store.data_mut().fuel = fuel_limit;
         }
         #[allow(unused_mut)]
-        let mut linker = wasmtime_import_linker(module.engine(), &import_linker);
+        let mut linker = wasmtime_import_linker(module.engine(), &import_linker)?;
         #[cfg(feature = "e2e")]
         {
             Self::link_spectest_globals(&mut linker, &mut store);
@@ -201,9 +209,16 @@ impl<T: 'static> WasmtimeExecutor<T> {
             instance,
             cached_instance: instance,
             functions: Vec::new(),
+            entrypoint_name: None,
         };
         executor.refresh_exports();
         Ok(executor)
+    }
+
+    /// Records the export name the module was compiled for.
+    pub fn with_entrypoint_name(mut self, entrypoint_name: Option<Box<str>>) -> Self {
+        self.entrypoint_name = entrypoint_name;
+        self
     }
 
     /// Instantiates `module` in this executor's store with its linker, replacing the current
@@ -294,6 +309,14 @@ impl<T: 'static> WasmtimeExecutor<T> {
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
+        // A module compiled with a named entrypoint is only callable through that name: the rwasm
+        // backend cannot resolve another export, so resolving one here would run different code
+        // depending on the strategy.
+        if let Some(expected) = self.entrypoint_name.as_deref() {
+            if expected != func_name {
+                return Err(TrapCode::UnknownExternalFunction);
+            }
+        }
         let index = self
             .exported_function(func_name)
             .ok_or(TrapCode::UnknownExternalFunction)?;

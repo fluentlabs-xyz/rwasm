@@ -41,6 +41,13 @@ fn push_and_pop_round_trip_in_lifo_order() {
 /// The watermark is what `InstructionSet::MSH_*` is compared against in `tests/snippets.rs`. It is
 /// fed by `sync_stack_ptr`, which is how the interpreter publishes the height it reached, and it
 /// records the peak rather than the current height.
+///
+/// # Note
+///
+/// The watermark is deliberately only maintained while `debug_assertions` are on (see
+/// `ValueStack::sync_stack_ptr`), so this test is a debug-build check; the release suite runs the
+/// rest of this file.
+#[cfg(debug_assertions)]
 #[test]
 fn max_stack_height_records_the_peak_not_the_current_height() {
     let mut stack = ValueStack::default();

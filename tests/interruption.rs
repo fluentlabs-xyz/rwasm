@@ -319,6 +319,7 @@ fn test_memory_write_during_interruption() {
     test_strategy(StrategyDefinition::Rwasm {
         module,
         engine: ExecutionEngine::acquire_shared(),
+        entrypoint_name: Some("main".into()),
     });
 }
 

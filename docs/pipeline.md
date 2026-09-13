@@ -35,6 +35,50 @@ Integrations adopting this compiler must coordinate the new default as an input-
 change. On-chain compilers must be rebuilt and upgraded to activate it; already compiled rWasm
 artifacts are unchanged.
 
+### Other compilation limits
+
+The limits below bound the accepted input so that a module is either runnable on both execution
+strategies or rejected by both. They are input-validation rules, not code-generation changes, and
+raising any of them requires the matching runtime budget. The memory-export and fuel-configuration
+rules apply to the Wasmtime strategy only, because they describe what that backend can reach and
+meter rather than what the language allows.
+
+- **Table size** — a table whose declared initial size exceeds `N_MAX_TABLE_SIZE` (1024) is
+  rejected with `CompilationError::TableSizeExceedsLimit`. The runtime materializes at most that
+  many elements per table, and the bootstrap `table.grow` reports failure as `u32::MAX`; accepting
+  a larger table used to leave the module running on an empty table while the Wasmtime backend got
+  the declared one. A declared *maximum* above the cap is clamped rather than rejected, so
+  `table.grow` succeeds up to the cap and reports the failure sentinel beyond it on both backends.
+  The bootstrap grow result is itself checked now, so a grow that fails for another reason (an
+  allocation failure, a smaller store limit) traps at instantiation instead of leaving the module
+  on an empty table.
+- **Value-stack height** — a function whose parameters, locals and operand stack need more than
+  `N_MAX_STACK_SIZE` (8192) slots is rejected with `CompilationError::StackHeightExceeded`. Such a
+  function traps with `StackOverflow` on its entry `StackCheck` on the rwasm VM, so compiling it
+  would only move the failure to run time — and, before this check, the Wasmtime backend executed
+  it successfully.
+- **Memory export (Wasmtime strategy only)** — compiling for the Wasmtime strategy rejects a
+  module that declares a linear memory without exporting it (`CompilationError::MissingMemoryExport`),
+  because that backend can only reach an instance memory through the module's exports while the
+  rwasm VM always uses memory index 0. Host memory access (`StoreTr::memory_read`/`memory_write`,
+  syscall handlers) would otherwise succeed on rwasm and fail on Wasmtime. The rwasm-only path —
+  including the Wasm spec test suite — keeps accepting modules that do not export their memory.
+- **Fuel configuration** — compiling for the Wasmtime strategy rejects a config that enables fuel
+  injections only the rwasm translator implements (`consume_fuel_for_bulk_ops`,
+  `consume_fuel_for_params_and_locals`) with
+  `CompilationError::StrategyIncompatibleConfig` — on `StrategyDefinition::new`,
+  `new_as_wasmtime` and `for_each_strategy` alike. Use
+  `CompilationConfig::default_strategy_compatible()` for modules that may run on either engine;
+  `new_as_rwasm` and `RwasmModule::compile` keep accepting the rwasm-only injections.
+
+### Backend differences that remain
+
+Call-depth limits are not synchronized: the rwasm VM stops at `N_MAX_RECURSION_DEPTH` (1024) frames
+or when the value-stack window is exhausted, while the Wasmtime backend stops when its native stack
+(the configured `max_wasm_stack`) is exhausted. Deeply recursive modules can therefore consume
+different fuel, or trap at different depths, on the two engines. Prefer explicit iteration or
+tail calls for modules that must run on both.
+
 ## 3) Module construction
 
 `src/module/**` materializes `RwasmModule` / builder outputs:

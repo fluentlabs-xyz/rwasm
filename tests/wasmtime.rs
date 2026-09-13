@@ -101,6 +101,7 @@ fn test_10001_instances_in_a_row() {
     )
     .unwrap();
     let strategy = StrategyDefinition::Wasmtime {
+        entrypoint_name: Some("main".into()),
         module: compile_wasmtime_module(
             CompilationConfig::default().with_consume_fuel(false),
             &wasm_binary,
@@ -119,6 +120,7 @@ fn test_10001_instances_in_a_row() {
 #[test]
 fn test_fib_bench() {
     let strategy = StrategyDefinition::Wasmtime {
+        entrypoint_name: Some("main".into()),
         module: compile_wasmtime_module(CompilationConfig::default(), FIB_WASM).unwrap(),
     };
     // it fails on iter number 32'165...
@@ -172,7 +174,9 @@ mod compile_limits {
 
     fn module_with_memory(pages: u32) -> Vec<u8> {
         wat::parse_str(format!(
-            r#"(module (memory {pages}) (func (export "main") (result i32) memory.size))"#
+            // the Wasmtime strategy requires the instance memory to be exported, so the host can
+            // reach it at all
+            r#"(module (memory (export "memory") {pages}) (func (export "main") (result i32) memory.size))"#
         ))
         .unwrap()
     }

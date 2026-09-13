@@ -75,7 +75,10 @@ fn bench_comparisons(c: &mut Criterion) {
         // Both backends meter fuel, otherwise the comparison rewards rwasm for doing less work.
         let config = CompilationConfig::default().with_consume_fuel(true);
         let module = compile_wasmtime_module(config, FIB_WASM).unwrap();
-        let strategy = StrategyDefinition::Wasmtime { module };
+        let strategy = StrategyDefinition::Wasmtime {
+            module,
+            entrypoint_name: Some("main".into()),
+        };
         group.bench_function("bench_wasmtime_warm", |b| {
             bench_warm(b, strategy.clone());
         });
@@ -93,6 +96,7 @@ fn bench_comparisons(c: &mut Criterion) {
         let strategy = StrategyDefinition::Rwasm {
             module,
             engine: ExecutionEngine::acquire_shared(),
+            entrypoint_name: Some("main".into()),
         };
         group.bench_function("bench_rwasm_warm", |b| {
             bench_warm(b, strategy.clone());

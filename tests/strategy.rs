@@ -402,7 +402,8 @@ mod strategy_compatibility {
 
     const FILL_WAT: &str = r#"
         (module
-            (memory 1)
+            ;; exported because the Wasmtime strategy reaches host memory through exports
+            (memory (export "memory") 1)
             (func (export "main") (result i32)
                 (local i32 i32 i32 i32 i64 i64 f32 f64)
                 i32.const 0

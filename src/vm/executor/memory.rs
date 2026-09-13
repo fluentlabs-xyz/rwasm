@@ -1,4 +1,7 @@
-use crate::{AddressOffset, DataSegmentIdx, Pages, RwasmExecutor, TrapCode, UntypedValue};
+use crate::{
+    AddressOffset, DataSegmentIdx, Pages, RwasmExecutor, TrapCode, UntypedValue,
+    N_MAX_DATA_SEGMENTS,
+};
 
 macro_rules! impl_visit_load {
     ( $( fn $visit_ident:ident($untyped_ident:ident); )* ) => {
@@ -164,17 +167,38 @@ impl<'a, T> RwasmExecutor<'a, T> {
         Ok(())
     }
 
+    /// Pushes `1` while `data_segment` still holds its bytes, `0` once it has been dropped.
     #[inline(always)]
-    pub(crate) fn visit_data_drop(&mut self, data_segment_idx: DataSegmentIdx) {
+    pub(crate) fn visit_data_segment_live(&mut self, data_segment_idx: DataSegmentIdx) {
+        let dropped = self
+            .store
+            .empty_data_segments
+            .get(data_segment_idx as usize)
+            .as_deref()
+            .copied()
+            .unwrap_or(false);
+        self.sp.push_as(u32::from(!dropped));
+        self.ip.add(1);
+    }
+
+    #[inline(always)]
+    pub(crate) fn visit_data_drop(&mut self, data_segment_idx: DataSegmentIdx) -> Result<(), TrapCode> {
+        // Segment indices come from Wasm validation, which bounds them by
+        // `N_MAX_DATA_SEGMENTS`. A larger index cannot name a real segment, so it is a fault
+        // rather than a reason to allocate a bitset proportional to the immediate.
+        let idx = data_segment_idx as usize;
+        if idx >= N_MAX_DATA_SEGMENTS {
+            return Err(TrapCode::MemoryOutOfBounds);
+        }
         let empty_data_segments = &mut self.store.empty_data_segments;
         // grow only, `resize` would truncate the bitset and forget previously dropped segments
         // with a higher index
-        let idx = data_segment_idx as usize;
         if idx >= empty_data_segments.len() {
             empty_data_segments.resize(idx + 1, false);
         }
         empty_data_segments.set(idx, true);
         self.ip.add(1);
+        Ok(())
     }
 }
 

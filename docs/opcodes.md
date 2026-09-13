@@ -79,6 +79,19 @@ This document is the canonical opcode inventory for `rwasm`.
 | 46 | `TableInit` | `ElementSegmentIdx` | — |
 | 47 | `ElemDrop` | `ElementSegmentIdx` | — |
 
+### bulk segment queries
+
+| Code (`u16`) | Opcode | Immediate | Feature gate |
+| ---: | --- | --- | --- |
+| 90 | `DataSegmentLive` | `DataSegmentIdx` | — |
+| 91 | `ElementSegmentLive` | `ElementSegmentIdx` | — |
+
+`DataSegmentLive`/`ElementSegmentLive` push `1` while the segment still holds data and `0` after
+`data.drop`/`elem.drop`. The `memory.init`/`table.init` prologues use them to decide whether the
+segment's offset inside the flattened section applies: a dropped segment keeps its original source
+offset, so the runtime's empty-window check implements the spec rule that a dropped segment has
+length 0 (only `s == 0 && n == 0` survives).
+
 ### alu
 
 | Code (`u16`) | Opcode | Immediate | Feature gate |
@@ -137,4 +150,8 @@ not as a recommended/guaranteed opcode set for production integration.
 
 - Opcode order is part of binary compatibility for encoded modules.
 - Any opcode addition/removal/reordering is a format change and must be treated as such in release notes.
+- Codes `90`/`91` (`DataSegmentLive`, `ElementSegmentLive`) were added together with the corrected
+  `memory.init`/`table.init` bound checks. Modules compiled before that change never contain them
+  and keep decoding; modules compiled after it need a runtime that knows these two codes, and their
+  bytecode differs from the previous compiler for any module with a passive segment.
 - Feature-gated variants (`fpu`) change the available opcode surface; pin feature set in production deployments.

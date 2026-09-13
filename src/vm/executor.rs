@@ -34,7 +34,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         store: &'a mut RwasmStore<T>,
     ) -> Self {
         let sp = value_stack.stack_ptr();
-        let ip = InstructionPtr::new(module.code_section.as_ptr());
+        let ip = InstructionPtr::new(module.code_section.as_ptr(), module.code_section.len());
         Self::new(module, value_stack, sp, call_stack, ip, store)
     }
 
@@ -57,18 +57,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     pub fn program_counter(&self) -> u32 {
-        let ip = self.ip.ptr as usize;
-        let base = self.module.code_section.as_ptr() as usize;
-        if ip < base {
-            unreachable!(
-                "program counter negative: ip={:?}, base={:?}",
-                self.ip,
-                self.module.code_section.as_ptr()
-            );
-        }
-        let diff = ip - base;
-        debug_assert_eq!(diff % size_of::<Opcode>(), 0);
-        let pc = diff / size_of::<Opcode>();
+        let pc = self.ip.position();
         debug_assert!(pc <= self.module.code_section.len());
         pc.try_into()
             .unwrap_or_else(|_| unreachable!("program counter exceeds u32: {pc}"))
@@ -202,9 +191,11 @@ impl<'a, T> RwasmExecutor<'a, T> {
     ///
     /// # Errors
     ///
-    /// With [`TrapCode::StackOverflow`] if `instr` addressed a cell outside the value stack. The
-    /// offending access itself was already suppressed by [`ValueStackPtr`], this only stops the
-    /// execution from carrying on with a corrupted stack.
+    /// With [`TrapCode::StackOverflow`] if `instr` addressed a cell outside the value stack, or
+    /// with [`TrapCode::UnreachableCodeReached`] if a displacement left the code section. Both
+    /// offending accesses were already suppressed by [`ValueStackPtr`]/[`InstructionPtr`], these
+    /// checks only stop the execution from carrying on with a corrupted stack or instruction
+    /// stream.
     ///
     /// An out-of-bounds access outranks whatever `instr` reported on its own: that trap is an
     /// artifact of the values the suppressed access substituted. The check therefore runs before
@@ -216,6 +207,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let result = self.execute(instr);
         if self.sp.is_out_of_bounds() {
             return Err(TrapCode::StackOverflow);
+        }
+        if self.ip.is_out_of_bounds() {
+            return Err(TrapCode::UnreachableCodeReached);
         }
         result
     }
@@ -232,7 +226,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
             Br(imm) => self.visit_br(imm),
             BrIfEqz(imm) => self.visit_br_if(imm),
             BrIfNez(imm) => self.visit_br_if_nez(imm),
-            BrTable(imm) => self.visit_br_table(imm),
+            BrTable(imm) => self.visit_br_table(imm)?,
             ConsumeFuel(imm) => self.visit_consume_fuel(imm)?,
             ConsumeFuelStack => self.visit_consume_fuel_stack()?,
             Return => return Ok(self.visit_return()),
@@ -299,7 +293,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
             MemoryFill => self.visit_memory_fill()?,
             MemoryCopy => self.visit_memory_copy()?,
             MemoryInit(imm) => self.visit_memory_init(imm)?,
-            DataDrop(imm) => self.visit_data_drop(imm),
+            DataDrop(imm) => self.visit_data_drop(imm)?,
             I32Load(imm) => self.visit_i32_load(imm)?,
             I32Load8S(imm) => self.visit_i32_load_i8_s(imm)?,
             I32Load8U(imm) => self.visit_i32_load_i8_u(imm)?,
@@ -316,7 +310,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
             TableSet(imm) => self.visit_table_set(imm)?,
             TableCopy(dst_imm, src_imm) => self.visit_table_copy(dst_imm, src_imm)?,
             TableInit(imm) => self.visit_table_init(imm)?,
-            ElemDrop(imm) => self.visit_element_drop(imm),
+            ElemDrop(imm) => self.visit_element_drop(imm)?,
+            DataSegmentLive(imm) => self.visit_data_segment_live(imm),
+            ElementSegmentLive(imm) => self.visit_element_segment_live(imm),
 
             // Floating point is not officially supported: the `fpu` feature is only for the e2e
             // testing suite and the fuzzer, and a default build traps on every float opcode. Note
@@ -392,12 +388,19 @@ impl<'a, T> RwasmExecutor<'a, T> {
         );
     }
 
-    pub(crate) fn fetch_table_index(&self, offset: usize) -> TableIdx {
+    /// Resolves the table index carried by the payload word of a table opcode.
+    ///
+    /// # Errors
+    ///
+    /// With [`TrapCode::UnreachableCodeReached`] if the word after the opcode is missing or is not
+    /// a `TableGet` payload. The payload shape is a codegen convention, so bytecode that does not
+    /// follow it (a hand-built or foreign module) is rejected instead of panicking.
+    pub(crate) fn fetch_table_index(&self, offset: usize) -> Result<TableIdx, TrapCode> {
         let mut addr: InstructionPtr = self.ip;
         addr.add(offset);
         match addr.get() {
-            Opcode::TableGet(table_idx) => table_idx,
-            _ => unreachable!("can't extract table index"),
+            Opcode::TableGet(table_idx) => Ok(table_idx),
+            _ => Err(TrapCode::UnreachableCodeReached),
         }
     }
 
@@ -450,25 +453,24 @@ impl<'a, T> RwasmExecutor<'a, T> {
 
     /// Invokes a syscall by its index.
     ///
-    /// An index that the import linker can't resolve is a fatal error, not a trap: the number of
-    /// stack params and results is taken from the linker, so an unresolved index leaves us with no
-    /// way to know how many values to pop, and any guess would desynchronize the value stack.
-    /// zkVM proving requires the same execution trace on every run, so the caller must supply an
-    /// import linker that resolves every syscall the module can reach — restricting the reachable
-    /// set is the linker's responsibility, and [`crate::always_failing_syscall_handler`] is the way
-    /// to reject a syscall that is declared but must not be executed.
+    /// An index the import linker can't resolve traps with
+    /// [`TrapCode::UnknownExternalFunction`]: the number of stack params and results is taken from
+    /// the linker, so an unresolved index leaves no way to know how many values to pop, and any
+    /// guess would desynchronize the value stack. The trap aborts the run, which resets both
+    /// stacks, so the caller must supply an import linker that resolves every syscall the module
+    /// can reach — restricting the reachable set is the linker's responsibility, and
+    /// [`crate::always_failing_syscall_handler`] is the way to reject a syscall that is declared
+    /// but must not be executed. Panicking here used to abort a node instead of failing the
+    /// execution, and the Wasmtime backend reports the same trap code.
     pub(crate) fn invoke_syscall(&mut self, sys_func_idx: SysFuncIdx) -> Result<(), TrapCode> {
-        let (params, result) = self
+        let Some((params, result)) = self
             .store
             .import_linker
             .resolve_by_func_idx(sys_func_idx)
             .map(|v| (v.params, v.result))
-            .unwrap_or_else(|| {
-                unreachable!(
-                    "rwasm: can't resolve syscall in the import linker: {}",
-                    sys_func_idx
-                )
-            });
+        else {
+            return Err(TrapCode::UnknownExternalFunction);
+        };
         let params_len = params.len();
         let result_len = result.len();
         let max_in_out = params_len.max(result_len);

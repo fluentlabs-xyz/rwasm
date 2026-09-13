@@ -41,11 +41,17 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     #[inline(always)]
-    pub(crate) fn visit_br_table(&mut self, targets: BranchTableTargets) {
+    pub(crate) fn visit_br_table(&mut self, targets: BranchTableTargets) -> Result<(), TrapCode> {
         let index: u32 = self.sp.pop_as();
-        let max_index = targets as usize - 1;
+        // A `br_table` carries at least the default target, so a zero immediate is malformed
+        // bytecode. The subtraction used to wrap to `usize::MAX` in release builds (and panic in
+        // debug ones), which removed the only clamp on the jump distance.
+        let Some(max_index) = (targets as usize).checked_sub(1) else {
+            return Err(TrapCode::UnreachableCodeReached);
+        };
         let normalized_index = cmp::min(index as usize, max_index);
         self.ip.add(2 * normalized_index + 1);
+        Ok(())
     }
 
     #[inline(always)]
@@ -65,7 +71,10 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.ip.add(1);
         self.value_stack.sync_stack_ptr(self.sp);
         self.sp = self.value_stack.stack_ptr();
-        self.ip = InstructionPtr::new(self.module.code_section.as_ptr());
+        self.ip = InstructionPtr::new(
+            self.module.code_section.as_ptr(),
+            self.module.code_section.len(),
+        );
         self.ip.add(compiled_func as usize);
     }
 
@@ -83,7 +92,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         &mut self,
         signature_idx: SignatureIdx,
     ) -> Result<(), TrapCode> {
-        let table = self.fetch_table_index(1);
+        let table = self.fetch_table_index(1)?;
         let func_index: u32 = self.sp.pop_as();
         self.store.last_signature = Some(signature_idx);
         let instr_ref: u32 = self
@@ -97,7 +106,10 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.ip.add(2);
         self.value_stack.sync_stack_ptr(self.sp);
         self.sp = self.value_stack.stack_ptr();
-        self.ip = InstructionPtr::new(self.module.code_section.as_ptr());
+        self.ip = InstructionPtr::new(
+            self.module.code_section.as_ptr(),
+            self.module.code_section.len(),
+        );
         self.ip.add(instr_ref as usize);
         Ok(())
     }
@@ -114,7 +126,10 @@ impl<'a, T> RwasmExecutor<'a, T> {
         }
         self.call_stack.push(self.ip);
         self.sp = self.value_stack.stack_ptr();
-        self.ip = InstructionPtr::new(self.module.code_section.as_ptr());
+        self.ip = InstructionPtr::new(
+            self.module.code_section.as_ptr(),
+            self.module.code_section.len(),
+        );
         self.ip.add(compiled_func as usize);
         Ok(())
     }
@@ -134,7 +149,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         signature_idx: SignatureIdx,
     ) -> Result<(), TrapCode> {
         // resolve func index
-        let table = self.fetch_table_index(1);
+        let table = self.fetch_table_index(1)?;
         let func_index: u32 = self.sp.pop_as();
         self.store.last_signature = Some(signature_idx);
         let instr_ref = self
@@ -153,7 +168,10 @@ impl<'a, T> RwasmExecutor<'a, T> {
         }
         self.call_stack.push(self.ip);
         self.sp = self.value_stack.stack_ptr();
-        self.ip = InstructionPtr::new(self.module.code_section.as_ptr());
+        self.ip = InstructionPtr::new(
+            self.module.code_section.as_ptr(),
+            self.module.code_section.len(),
+        );
         self.ip.add(instr_ref as usize);
         Ok(())
     }

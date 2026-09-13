@@ -1,4 +1,6 @@
-use crate::{CompiledFunc, LocalDepth, NumLocals, RwasmExecutor, UntypedValue};
+use crate::{
+    CompiledFunc, LocalDepth, NumLocals, RwasmExecutor, UntypedValue, N_MAX_STACK_SIZE,
+};
 
 impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]
@@ -71,8 +73,16 @@ impl<'a, T> RwasmExecutor<'a, T> {
     #[inline(always)]
     pub(crate) fn visit_bulk_const(&mut self, imm: NumLocals) {
         // TODO(dmitry123): We can optimize it, but need to support bulk stack reset
-        for _ in 0..imm {
+        //
+        // The loop stops as soon as the value stack reports an out-of-bounds push, so an oversized
+        // immediate (up to `u32::MAX` values) costs at most the remaining window instead of
+        // spinning four billion times without charging fuel. The flag makes `step` trap with
+        // `StackOverflow` before the next instruction runs.
+        for _ in 0..imm.min(N_MAX_STACK_SIZE as u32) {
             self.sp.push_i32(0);
+            if self.sp.is_out_of_bounds() {
+                break;
+            }
         }
         self.ip.add(1);
     }

@@ -1,4 +1,4 @@
-use rwasm::{CompilationConfig, RwasmModule};
+use rwasm::{CompilationConfig, CompilationError, RwasmModule, N_MAX_STACK_SIZE};
 
 fn leb128(mut n: u32) -> Vec<u8> {
     let mut out = Vec::new();
@@ -52,19 +52,39 @@ fn build_max_locals_module(num_funcs: u32) -> Vec<u8> {
     wasm
 }
 
+/// Locals are materialized on the value stack, so the number of locals a function may declare is
+/// bounded by the runtime window (`N_MAX_STACK_SIZE` slots), not only by the Wasm validator's
+/// limit. A function above that bound would trap on entry on the rwasm VM and run on Wasmtime,
+/// so the compiler rejects it.
 #[test]
 fn test_max_number_of_locals() {
     let wasm_input_binary = build_max_locals_module(20);
-    let (rwasm_module, _) = RwasmModule::compile(
+    let err = RwasmModule::compile(
         CompilationConfig::default().with_entrypoint_name("main".into()),
         &wasm_input_binary,
     )
-    .unwrap();
-    println!("module = {}", rwasm_module);
-    let rwasm_module_bytes = rwasm_module.serialize();
-    println!("module_size = {}", rwasm_module_bytes.len());
-    // old locals: 15'728'970 bytes
-    // new local: 1'130 bytes
+    .expect_err("must be rejected");
+    assert!(
+        matches!(
+            err,
+            CompilationError::StackHeightExceeded { height, limit }
+                if height == 32767 * 2 && limit == N_MAX_STACK_SIZE as u32
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+/// A function that fits the window still compiles, so the bound is a limit and not a blanket
+/// rejection of modules with locals.
+#[test]
+fn locals_within_the_value_stack_window_compile() {
+    let locals = "(local f64)".repeat(100);
+    let wasm = wat::parse_str(format!(r#"(module (func (export "main") {locals}))"#)).unwrap();
+    RwasmModule::compile(
+        CompilationConfig::default().with_entrypoint_name("main".into()),
+        &wasm,
+    )
+    .expect("100 locals fit the window");
 }
 
 /// Runs `main` of `wat` on the rwasm VM and returns its single `i64` result.
