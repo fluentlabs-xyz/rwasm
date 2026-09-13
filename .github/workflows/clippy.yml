@@ -28,13 +28,13 @@ jobs:
         include:
           - name: root
             toolchain: stable
-            command: cargo clippy --all-targets --all-features
+            command: cargo clippy --all-targets --all-features -- -D warnings
           - name: e2e
             toolchain: stable
-            command: cargo clippy --manifest-path=./e2e/Cargo.toml --all-targets --all-features
+            command: cargo clippy --manifest-path=./e2e/Cargo.toml --all-targets --all-features -- -D warnings
           - name: snippets
             toolchain: nightly-2025-09-20
-            command: cargo +nightly-2025-09-20 clippy --manifest-path=./snippets/Cargo.toml --lib --all-features
+            command: cargo +nightly-2025-09-20 clippy --manifest-path=./snippets/Cargo.toml --lib --all-features -- -D warnings
 
     steps:
       - uses: actions/checkout@v7

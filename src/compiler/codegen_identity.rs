@@ -1,4 +1,4 @@
-//! Codegen identity: a stable fingerprint of everything that changes emitted rwasm bytecode.
+//! Codegen identity: a stable fingerprint of compilation configuration and codegen features.
 //!
 //! The same wasm input does not compile to the same rwasm bytecode under every build:
 //! [`CompilationConfig`] flags decide which functions are emitted and where fuel charges are
@@ -7,7 +7,9 @@
 //! `docs/module-format.md`), so two differently built compilers silently produce different bytes
 //! for one contract.
 //!
-//! [`CompilationConfig::codegen_identity`] hashes those inputs into a single 32-byte value.
+//! [`CompilationConfig::codegen_identity`] hashes those settings into a single 32-byte value.
+//! It also includes input-validation limits so cached modules cannot bypass a stricter policy.
+//! Compiler revisions are not hashed and must be pinned separately for reproducible bytecode.
 //! Hosts that distribute or address compiled modules by hash should pin this identity next to the
 //! bytecode and reject a module whose producer identity does not match the local one — a clean
 //! error instead of a silent behavioral difference.
@@ -22,8 +24,8 @@ use wasmparser::ValType;
 
 /// Domain separator for the codegen identity hash.
 ///
-/// Bump the trailing version whenever the preimage layout below changes; it keeps identities
-/// produced by different rwasm releases from colliding.
+/// Version 1 retains the existing configuration/feature identity. Compiler lowering changes do
+/// not change this domain; bump it when changing the identity's preimage layout.
 const CODEGEN_IDENTITY_DOMAIN: &[u8] = b"rwasm.codegen-identity.v1";
 
 /// The `fpu` cargo feature is enabled.
@@ -46,13 +48,12 @@ pub const fn codegen_feature_set() -> u64 {
 }
 
 impl CompilationConfig {
-    /// Returns a 32-byte fingerprint of every input that affects emitted bytecode: the
-    /// codegen-relevant fields of this config plus the compile-time feature set of the compiling
-    /// binary ([`codegen_feature_set`]).
+    /// Returns a 32-byte fingerprint of this config, including input-validation limits, and the
+    /// compile-time feature set of the compiling binary ([`codegen_feature_set`]).
     ///
-    /// Two compilers agreeing on this value compile any given wasm input to identical rwasm bytes;
-    /// two compilers disagreeing on it may not. The value is not part of the module wire format,
-    /// so a host that cares about reproducibility must carry it alongside the bytecode itself.
+    /// Equal identities describe the same settings for a given compiler revision. Compiler
+    /// revisions are not hashed, so hosts requiring reproducible bytecode must pin them separately.
+    /// The identity is not part of the module wire format and must accompany distributed bytecode.
     pub fn codegen_identity(&self) -> [u8; 32] {
         let mut hasher = IdentityHasher::new();
 
@@ -77,6 +78,7 @@ impl CompilationConfig {
         hasher.bool(self.allow_func_ref_function_types);
         hasher.bool(self.allow_start_section);
         hasher.u32(self.max_allowed_memory_pages);
+        hasher.u32(self.max_allowed_function_types);
 
         hasher.finalize()
     }
@@ -251,14 +253,14 @@ mod tests {
     }
 
     /// Pins the preimage layout: the identity of the default config must not drift silently,
-    /// and it must differ between an `fpu` build and a default one. Update these digests together
-    /// with the `CODEGEN_IDENTITY_DOMAIN` version whenever the preimage changes on purpose.
+    /// and it must differ between an `fpu` build and a default one. Update these digests whenever
+    /// the preimage changes on purpose.
     #[test]
     fn default_identity_is_pinned() {
         let expected = if cfg!(feature = "fpu") {
-            hex_literal::hex!("551dea720f2815bc82b4cd8ff7a4fcc4a68ea457c2f4b2793fc190ff8d2ee277")
+            hex_literal::hex!("4576e9f18d24b7654b35b502383405e4a63d118841bb6546039639026c8dfd8d")
         } else {
-            hex_literal::hex!("72e113e7f5d3ac82ea0588d7cda7eaab3ea613154090b4a1b8d5f7621f475a66")
+            hex_literal::hex!("86647b3a825399ee479bc66bf2c0cbf4930aa214c6582724796006e0c7a8b696")
         };
         assert_eq!(CompilationConfig::default().codegen_identity(), expected);
     }
@@ -272,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn identity_tracks_codegen_relevant_flags() {
+    fn identity_tracks_compilation_settings() {
         let default_identity = CompilationConfig::default().codegen_identity();
         let modified = [
             CompilationConfig::default().with_code_snippets(false),
@@ -284,6 +286,7 @@ mod tests {
             CompilationConfig::default().with_allow_func_ref_function_types(true),
             CompilationConfig::default().with_allow_start_section(true),
             CompilationConfig::default().with_max_allowed_memory_pages(1),
+            CompilationConfig::default().with_max_allowed_function_types(1),
             CompilationConfig::default().with_default_imported_global_value(0),
             CompilationConfig::default().with_entrypoint_name("main".into()),
             CompilationConfig::default().with_state_router(StateRouterConfig {

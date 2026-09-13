@@ -3,18 +3,52 @@ use crate::{
     ImportLinker, RwasmInstance, RwasmModule, RwasmStore, StoreTr, StrategyError, SyscallHandler,
     TrapCode, Value,
 };
-use alloc::{sync::Arc, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
+
+/// Returns `true` when every linear memory the module declares is exported.
+///
+/// A module without a memory needs no export: host memory access fails on both backends for it.
+fn memory_is_exported(wasm_binary: &[u8]) -> Result<bool, CompilationError> {
+    use wasmparser::{ExternalKind, Parser, Payload};
+    let mut has_memory = false;
+    let mut exports_memory = false;
+    for payload in Parser::new(0).parse_all(wasm_binary) {
+        match payload.map_err(CompilationError::from)? {
+            Payload::MemorySection(section) => has_memory = section.count() > 0,
+            Payload::ExportSection(section) => {
+                for export in section {
+                    if export?.kind == ExternalKind::Memory {
+                        exports_memory = true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(!has_memory || exports_memory)
+}
 
 #[derive(Clone)]
 pub enum StrategyDefinition {
     Rwasm {
         engine: ExecutionEngine,
         module: RwasmModule,
+        /// Name of the export compiled into the entrypoint, when the config selected one.
+        ///
+        /// The rwasm backend has a single compile-time entrypoint (plus the optional state
+        /// router), so it validates the name it is called with against this value instead of
+        /// resolving it like the Wasmtime backend does.
+        entrypoint_name: Option<Box<str>>,
     },
     #[cfg(feature = "wasmtime")]
     Wasmtime {
         // A wasmtime module that stores engine inside
         module: crate::wasmtime::WasmtimeModule,
+        /// Name of the export the module was compiled for, when the config selected one. The
+        /// strategy layer exposes that single entrypoint on both backends: calling any other name
+        /// fails with `TrapCode::UnknownExternalFunction` instead of executing a different
+        /// function than the rwasm entrypoint would.
+        entrypoint_name: Option<Box<str>>,
     },
 }
 
@@ -58,10 +92,12 @@ impl StrategyDefinition {
         compilation_config: CompilationConfig,
         wasm_binary: impl AsRef<[u8]>,
     ) -> Result<Self, CompilationError> {
+        let entrypoint_name = compilation_config.entrypoint_name.clone();
         let (module, _) = RwasmModule::compile(compilation_config, wasm_binary.as_ref())?;
         Ok(Self::Rwasm {
             module,
             engine: ExecutionEngine::new(),
+            entrypoint_name,
         })
     }
 
@@ -87,24 +123,39 @@ impl StrategyDefinition {
         module_caching_key: Option<[u8; 32]>,
     ) -> Result<Self, CompilationError> {
         use crate::wasmtime::{
-            compile_wasmtime_module, compile_wasmtime_module_cached_with, CachePolicy,
+            compile_wasmtime_module, compile_wasmtime_module_cached_with, wasm_identity,
+            CachePolicy,
         };
         Self::ensure_strategy_compatible(&compilation_config)?;
         let wasm_binary = wasm_binary.as_ref();
+        let entrypoint_name = compilation_config.entrypoint_name.clone();
         let compile = |config: CompilationConfig| -> Result<_, CompilationError> {
             RwasmModule::compile(config.clone(), wasm_binary)?;
+            // The rwasm VM always has its memory at index 0, while this backend can only reach an
+            // instance memory through the module's exports. Requiring the export keeps host memory
+            // access (`StoreTr::memory_read`/`memory_write`, syscall handlers) behaviourally
+            // identical on both strategies; the rwasm-only path, including the Wasm spec suite,
+            // keeps accepting modules that never export their memory. The check runs after the
+            // rwasm front end so a module that violates a resource cap reports that error first.
+            if !memory_is_exported(wasm_binary)? {
+                return Err(CompilationError::MissingMemoryExport);
+            }
             compile_wasmtime_module(config, wasm_binary)
         };
         let module = match module_caching_key {
             Some(module_caching_key) => compile_wasmtime_module_cached_with(
                 compilation_config,
                 module_caching_key,
+                wasm_identity(wasm_binary),
                 CachePolicy::RwasmValidated,
                 compile,
             )?,
             None => compile(compilation_config)?,
         };
-        Ok(Self::Wasmtime { module })
+        Ok(Self::Wasmtime {
+            module,
+            entrypoint_name,
+        })
     }
 
     pub fn default_executor(&self) -> Result<StrategyExecutor<()>, TrapCode> {
@@ -126,7 +177,11 @@ impl StrategyDefinition {
         max_allowed_memory_pages: Option<u32>,
     ) -> Result<StrategyExecutor<T>, TrapCode> {
         match self {
-            StrategyDefinition::Rwasm { engine, module } => {
+            StrategyDefinition::Rwasm {
+                engine,
+                module,
+                entrypoint_name,
+            } => {
                 let mut store = RwasmStore::new(
                     import_linker.clone(),
                     context,
@@ -134,11 +189,16 @@ impl StrategyDefinition {
                     fuel_limit,
                     max_allowed_memory_pages,
                 );
-                let instance = import_linker.instantiate(&mut store, *engine, module.clone())?;
+                let instance = import_linker
+                    .instantiate(&mut store, *engine, module.clone())?
+                    .with_entrypoint_name(entrypoint_name.clone());
                 Ok(StrategyExecutor::Rwasm { store, instance })
             }
             #[cfg(feature = "wasmtime")]
-            StrategyDefinition::Wasmtime { module } => {
+            StrategyDefinition::Wasmtime {
+                module,
+                entrypoint_name,
+            } => {
                 let executor = crate::wasmtime::WasmtimeExecutor::new(
                     module.clone(),
                     import_linker,
@@ -146,7 +206,8 @@ impl StrategyDefinition {
                     syscall_handler,
                     fuel_limit,
                     max_allowed_memory_pages,
-                )?;
+                )?
+                .with_entrypoint_name(entrypoint_name.clone());
                 Ok(StrategyExecutor::Wasmtime { executor })
             }
         }
@@ -263,7 +324,9 @@ impl<T: 'static> StrategyExecutor<T> {
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
         match self {
-            StrategyExecutor::Rwasm { store, instance } => instance.execute(store, params, result),
+            StrategyExecutor::Rwasm { store, instance } => {
+                instance.execute_named(store, func_name, params, result)
+            }
             #[cfg(feature = "wasmtime")]
             StrategyExecutor::Wasmtime { executor } => executor.execute(func_name, params, result),
         }

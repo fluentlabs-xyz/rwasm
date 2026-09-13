@@ -45,14 +45,16 @@ pub(super) fn map_wasmtime_error(err: wasmtime::Error) -> TrapCode {
 
 /// Maps an rWasm `ValType` into a Wasmtime `ValType`.
 ///
-/// System runtimes currently support only numeric scalar types.
-pub(super) fn map_val_type(val_type: ValType) -> wasmtime::ValType {
+/// System runtimes currently support only numeric scalar types; a reference type registered by a
+/// host is reported as an error instead of panicking the process that is only trying to create an
+/// executor.
+pub(crate) fn map_val_type(val_type: ValType) -> Option<wasmtime::ValType> {
     match val_type {
-        ValType::I32 => wasmtime::ValType::I32,
-        ValType::I64 => wasmtime::ValType::I64,
-        ValType::F32 => wasmtime::ValType::F32,
-        ValType::F64 => wasmtime::ValType::F64,
-        _ => unreachable!("wasmtime: unsupported type: {:?}", val_type),
+        ValType::I32 => Some(wasmtime::ValType::I32),
+        ValType::I64 => Some(wasmtime::ValType::I64),
+        ValType::F32 => Some(wasmtime::ValType::F32),
+        ValType::F64 => Some(wasmtime::ValType::F64),
+        _ => None,
     }
 }
 

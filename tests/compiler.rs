@@ -1,6 +1,6 @@
 use rwasm::{
     always_failing_syscall_handler, CompilationConfig, CompilationError, ConstructorParams,
-    ExecutionEngine, ImportLinker, RwasmModule, RwasmStore, Value,
+    ExecutionEngine, ImportLinker, RwasmModule, RwasmStore, Value, N_MAX_STACK_SIZE,
 };
 
 fn test_compilation(wat_str: &str) -> Result<(RwasmModule, ConstructorParams), CompilationError> {
@@ -150,23 +150,26 @@ const LOCALS_32767_WASM: &[u8] = &[
     0x0a, 0x08, 0x01, 0x06, 0x01, 0xff, 0xff, 0x01, 0x7e, 0x0b, // code: 32767 i64 locals
 ];
 
+/// Locals live on the value stack, so a function declaring more of them than the runtime window
+/// (`N_MAX_STACK_SIZE` slots) could never execute: its entry `StackCheck` reserves more than the
+/// window and the first instruction traps with `StackOverflow`. The compiler rejects such a
+/// function instead — which is also what keeps the Wasmtime backend from accepting a module the
+/// rwasm VM cannot run.
 #[test]
 fn test_max_locals_single_func() {
     let config = CompilationConfig::default()
         .with_entrypoint_name("main".into())
         .with_consume_fuel(true);
 
-    let (module, _) = RwasmModule::compile(config, LOCALS_32767_WASM).expect("compile");
-
-    let input_size = LOCALS_32767_WASM.len();
-    let output_size = module.serialize().len();
-
-    eprintln!("\n=== Single Function, 32767 Locals ===");
-    eprintln!("Input:  {} bytes", input_size);
-    eprintln!(
-        "Output: {} bytes ({:.2} MB)",
-        output_size,
-        output_size as f64 / 1_000_000.0
+    // 32767 `i64` locals occupy two slots each.
+    let err = RwasmModule::compile(config, LOCALS_32767_WASM).expect_err("must be rejected");
+    assert!(
+        matches!(
+            err,
+            CompilationError::StackHeightExceeded { height, limit }
+                if height == 32767 * 2 && limit == N_MAX_STACK_SIZE as u32
+        ),
+        "unexpected error: {err}"
     );
 }
 

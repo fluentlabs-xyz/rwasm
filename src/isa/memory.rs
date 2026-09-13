@@ -255,23 +255,42 @@ impl InstructionSet {
         data_segment_index: DataSegmentIdx,
         inject_fuel_check: bool,
     ) {
-        // do an overflow check;
-        // note that this compare is signed and `n + s` wraps, so operands close to `i32::MAX`
-        // slip past it — the data segment bounds check inside `memory.init` below is what
-        // actually rejects them, this guard only turns the common case into an early trap
+        // Spec bound check on the original `s`/`n`: trap when `s > len` or `n > len - s`.
+        //
+        // Both compares are unsigned and neither operand sum can wrap: the subtraction only runs
+        // after `s <= len` has been established, and both checks keep the transient height at two
+        // slots above their base (`MSH_MEMORY_INIT_CHECKED`). The previous form compared the wrapping sum
+        // `n + s` against `len` with a signed `gt_s`, so a source index near `u32::MAX` wrapped
+        // into range and the init read another segment's bytes instead of trapping.
         if let Some(length) = rewrite_length {
-            self.op_local_get(1); // n
-            self.op_local_get(3); // s
-            self.op_i32_add(); // n + s
+            // [d, s, n]
+            self.op_local_get(2); // s
             self.op_i32_const(length);
-            self.op_i32_gt_s(); // n + s > length, signed: see the note above
+            self.op_i32_gt_u(); // s > len
+            self.op_br_if_eqz(2);
+            self.op_trap(TrapCode::MemoryOutOfBounds);
+            // [d, s, n]
+            self.op_i32_const(length); // len
+            self.op_local_get(3); // s
+            self.op_i32_sub(); // len - s, exact because s <= len
+            self.op_local_get(2); // n
+            self.op_i32_lt_u(); // len - s < n, i.e. n > len - s
             self.op_br_if_eqz(2);
             self.op_trap(TrapCode::MemoryOutOfBounds);
         }
-        // we need to replace the offset on the stack with the new value
+        // Address the segment inside the flattened data blob.
+        //
+        // Leave `s == 0 && n == 0` untouched: an empty copy from offset zero is valid for both
+        // live and dropped segments. Every other input uses the blob offset; the checks above
+        // prevent wrapping, and `MemoryInit` rejects it if the segment was dropped. Always run
+        // `MemoryInit`, including for the empty copy, so it still validates the destination.
         if let Some(offset) = rewrite_offset.filter(|v| *v > 0) {
+            self.op_local_get(2); // s
+            self.op_local_get(2); // n
+            self.op_i32_or();
+            self.op_br_if_eqz(5); // skip the four offset-rewrite instructions when s == n == 0
             self.op_i32_const(offset);
-            self.op_local_get(3);
+            self.op_local_get(3); // s
             self.op_i32_add();
             self.op_local_set(2);
         }

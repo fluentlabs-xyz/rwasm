@@ -27,6 +27,27 @@ pub fn wasmtime_engine(compilation_config: &CompilationConfig) -> Engine {
     cfg.cranelift_opt_level(OptLevel::Speed);
     cfg.parallel_compilation(true);
 
+    // Mirror `CompilationConfig::wasm_features()`: the Wasmtime engine is enabled by default for
+    // proposals the rwasm translator does not implement (SIMD, multi-memory, threads, ...), which
+    // used to let a module the rwasm compiler rejects run on this backend. `StrategyDefinition`
+    // also compiles with the rwasm compiler first; pinning the features here keeps the low-level
+    // `compile_wasmtime_module` entry point — and therefore every caller of it — on the same
+    // language.
+    cfg.wasm_multi_value(true);
+    cfg.wasm_bulk_memory(true);
+    cfg.wasm_reference_types(true);
+    cfg.wasm_tail_call(true);
+    cfg.wasm_extended_const(true);
+    cfg.wasm_simd(false);
+    cfg.wasm_relaxed_simd(false);
+    cfg.wasm_threads(false);
+    cfg.wasm_multi_memory(false);
+    cfg.wasm_exceptions(false);
+    cfg.wasm_component_model(false);
+    cfg.wasm_gc(false);
+    cfg.wasm_wide_arithmetic(false);
+    cfg.wasm_custom_page_sizes(false);
+
     // Fuel accounting is handled externally via RuntimeContext.
     cfg.consume_fuel(compilation_config.consume_fuel);
 

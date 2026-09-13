@@ -1,4 +1,6 @@
-use crate::{ElementSegmentIdx, RwasmExecutor, TableEntity, TableIdx, TrapCode};
+use crate::{
+    ElementSegmentIdx, RwasmExecutor, TableEntity, TableIdx, TrapCode, N_MAX_ELEM_SEGMENTS,
+};
 
 impl<'a, T> RwasmExecutor<'a, T> {
     /// Resolves a table by its index, materializing an empty one if it doesn't exist yet.
@@ -106,7 +108,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         &mut self,
         element_segment_idx: ElementSegmentIdx,
     ) -> Result<(), TrapCode> {
-        let table_idx = self.fetch_table_index(1);
+        let table_idx = self.fetch_table_index(1)?;
 
         let (d, s, n) = self.sp.pop3();
         let len = u32::from(n);
@@ -142,15 +144,23 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     #[inline(always)]
-    pub(crate) fn visit_element_drop(&mut self, element_segment_idx: ElementSegmentIdx) {
+    pub(crate) fn visit_element_drop(
+        &mut self,
+        element_segment_idx: ElementSegmentIdx,
+    ) -> Result<(), TrapCode> {
+        // Like data segments, element indices are shifted by one by the compiler.
+        let idx = element_segment_idx as usize;
+        if idx > N_MAX_ELEM_SEGMENTS {
+            return Err(TrapCode::TableOutOfBounds);
+        }
         let empty_elem_segments = &mut self.store.empty_elem_segments;
         // grow only, `resize` would truncate the bitset and forget previously dropped segments
         // with a higher index
-        let idx = element_segment_idx as usize;
         if idx >= empty_elem_segments.len() {
             empty_elem_segments.resize(idx + 1, false);
         }
         empty_elem_segments.set(idx, true);
         self.ip.add(1);
+        Ok(())
     }
 }

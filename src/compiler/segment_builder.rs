@@ -125,7 +125,14 @@ impl SegmentBuilder {
         self.entrypoint_bytecode.op_ref_func(NULL_FUNC_IDX);
         self.entrypoint_bytecode.op_i32_const(table_type.initial);
         self.entrypoint_bytecode.op_table_grow(table_index);
-        self.entrypoint_bytecode.op_drop();
+        // `table.grow` reports failure as `u32::MAX` (the compiler bounds `initial` by
+        // `N_MAX_TABLE_SIZE`, but the allocation itself can still fail). Dropping the result would
+        // leave the module running on an empty table while instantiation reports success, which is
+        // exactly the divergence this check removes.
+        self.entrypoint_bytecode.op_i32_const(u32::MAX);
+        self.entrypoint_bytecode.op_i32_eq();
+        self.entrypoint_bytecode.op_br_if_eqz(2);
+        self.entrypoint_bytecode.op_trap(TrapCode::TableOutOfBounds);
         Ok(())
     }
 

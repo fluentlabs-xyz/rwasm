@@ -11,8 +11,10 @@ pub use store::*;
 pub use syscall_handler::*;
 pub use types::*;
 
-/// Compiles `wasm_binary` once per available strategy and runs `f` on each definition, in the
+/// Compiles `wasm_binary` for each available strategy and runs `f` on each definition, in the
 /// order rwasm, then Wasmtime (when the feature is enabled).
+/// Each definition follows its strategy constructor's validation, including the Wasmtime
+/// requirement that a declared memory be exported.
 ///
 /// The config must be strategy compatible (see
 /// [`CompilationConfig::default_strategy_compatible`]); otherwise the strategies would charge
@@ -31,14 +33,17 @@ pub fn for_each_strategy<R, F: FnMut(StrategyDefinition) -> Result<R, StrategyEr
         result.push(f(StrategyDefinition::Rwasm {
             module,
             engine: ExecutionEngine::acquire_shared(),
+            entrypoint_name: compilation_config.entrypoint_name.clone(),
         })?);
     }
     // wasmtime case
     #[cfg(feature = "wasmtime")]
     {
-        let module =
-            crate::wasmtime::compile_wasmtime_module(compilation_config.clone(), wasm_binary)?;
-        result.push(f(StrategyDefinition::Wasmtime { module })?);
+        result.push(f(StrategyDefinition::new_as_wasmtime(
+            compilation_config,
+            wasm_binary,
+            None,
+        )?)?);
     }
     Ok(result)
 }

@@ -27,10 +27,15 @@ fn is_numeric_type(ty: &ValType) -> bool {
 /// - invokes `invoke_runtime_handler`,
 /// - maps rWasm results back to Wasmtime values,
 /// - converts certain trap codes into controlled termination (`ExecutionHalted`).
+///
+/// # Errors
+///
+/// If a registered import has a type the Wasmtime backend cannot map (reference types), or if two
+/// imports collide on the same module/field name. Both used to panic while creating an executor.
 pub fn wasmtime_import_linker<T: 'static>(
     engine: &wasmtime::Engine,
     import_linker: &Arc<ImportLinker>,
-) -> wasmtime::Linker<WrappedContext<T>> {
+) -> wasmtime::Result<wasmtime::Linker<WrappedContext<T>>> {
     let mut linker = wasmtime::Linker::<WrappedContext<T>>::new(engine);
 
     for (import_name, import_entity) in import_linker.iter() {
@@ -39,13 +44,23 @@ pub fn wasmtime_import_linker<T: 'static>(
             .iter()
             .copied()
             .map(map_val_type)
-            .collect::<Vec<_>>();
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| {
+                wasmtime::Error::msg(format!(
+                    "wasmtime: unsupported parameter type in import `{import_name}`"
+                ))
+            })?;
         let result = import_entity
             .result
             .iter()
             .copied()
             .map(map_val_type)
-            .collect::<Vec<_>>();
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| {
+                wasmtime::Error::msg(format!(
+                    "wasmtime: unsupported result type in import `{import_name}`"
+                ))
+            })?;
 
         let func_type = wasmtime::FuncType::new(engine, params, result);
 
@@ -81,8 +96,10 @@ pub fn wasmtime_import_linker<T: 'static>(
                 },
             )
         };
-        linked.unwrap_or_else(|_| panic!("function import collision: {}", import_name));
+        linked.map_err(|_| {
+            wasmtime::Error::msg(format!("wasmtime: function import collision: {import_name}"))
+        })?;
     }
 
-    linker
+    Ok(linker)
 }

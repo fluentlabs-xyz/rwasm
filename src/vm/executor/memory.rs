@@ -1,4 +1,7 @@
-use crate::{AddressOffset, DataSegmentIdx, Pages, RwasmExecutor, TrapCode, UntypedValue};
+use crate::{
+    AddressOffset, DataSegmentIdx, Pages, RwasmExecutor, TrapCode, UntypedValue,
+    N_MAX_DATA_SEGMENTS,
+};
 
 macro_rules! impl_visit_load {
     ( $( fn $visit_ident:ident($untyped_ident:ident); )* ) => {
@@ -165,16 +168,23 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     #[inline(always)]
-    pub(crate) fn visit_data_drop(&mut self, data_segment_idx: DataSegmentIdx) {
+    pub(crate) fn visit_data_drop(&mut self, data_segment_idx: DataSegmentIdx) -> Result<(), TrapCode> {
+        // The compiler adds one to Wasm's zero-based segment index, reserving zero for the
+        // flattened blob. The highest translated index is therefore `N_MAX_DATA_SEGMENTS`.
+        // Larger indices cannot name a real segment and must not size the bitset.
+        let idx = data_segment_idx as usize;
+        if idx > N_MAX_DATA_SEGMENTS {
+            return Err(TrapCode::MemoryOutOfBounds);
+        }
         let empty_data_segments = &mut self.store.empty_data_segments;
         // grow only, `resize` would truncate the bitset and forget previously dropped segments
         // with a higher index
-        let idx = data_segment_idx as usize;
         if idx >= empty_data_segments.len() {
             empty_data_segments.resize(idx + 1, false);
         }
         empty_data_segments.set(idx, true);
         self.ip.add(1);
+        Ok(())
     }
 }
 

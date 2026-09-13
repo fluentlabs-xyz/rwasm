@@ -380,8 +380,21 @@ fn differential_rwasm_vs_wasmtime(
 
             Ok(true)
         }
-        // LHS trap, RHS trap: considered equivalent (coarser than Wasmtime's Trap equality).
-        (Err(_), Err(_)) => Ok(true),
+        // LHS trap, RHS trap: the trap *codes* have to agree. "Both trapped" alone hides a
+        // divergence where one engine stops with `OutOfFuel`, `StackOverflow` or
+        // `IntegerOverflow` while the other reports a different class at a different point.
+        (Err(lhs_trap), Err(rhs_err)) => {
+            match wasmtime_trap_code(&rhs_err) {
+                Some(rhs_trap) => assert_eq!(
+                    lhs_trap, rhs_trap,
+                    "diff trap code: export={name} args={args:?} result_tys={result_tys:?}\n\
+                     rwasm={lhs_trap:?}\nwasmtime={rhs_trap:?} ({rhs_err:?})\n"
+                ),
+                // A trap this harness cannot classify is not a comparable signal.
+                None => log::debug!("unclassified wasmtime trap: {rhs_err:?}"),
+            }
+            Ok(true)
+        }
 
         // If Wasmtime side cannot represent the invocation in the currently comparable subset,
         // skip this case instead of reporting a false mismatch.
@@ -709,6 +722,30 @@ fn diff_value_equivalent_for_state(lhs: &DiffValue, rhs: &DiffValue) -> bool {
         }
         _ => lhs == rhs,
     }
+}
+
+/// Maps a Wasmtime failure into the rWasm trap code it corresponds to, using the same mapping as
+/// `rwasm::wasmtime`'s adapter, so the two engines' traps can be compared.
+fn wasmtime_trap_code(err: &anyhow::Error) -> Option<TrapCode> {
+    if let Some(trap_code) = err.downcast_ref::<TrapCode>() {
+        return Some(*trap_code);
+    }
+    let trap = err.downcast_ref::<wasmtime::Trap>()?;
+    use wasmtime::Trap;
+    Some(match trap {
+        Trap::StackOverflow => TrapCode::StackOverflow,
+        Trap::MemoryOutOfBounds | Trap::HeapMisaligned => TrapCode::MemoryOutOfBounds,
+        Trap::TableOutOfBounds => TrapCode::TableOutOfBounds,
+        Trap::IndirectCallToNull | Trap::NullReference => TrapCode::IndirectCallToNull,
+        Trap::BadSignature => TrapCode::BadSignature,
+        Trap::IntegerOverflow => TrapCode::IntegerOverflow,
+        Trap::IntegerDivisionByZero => TrapCode::IntegerDivisionByZero,
+        Trap::BadConversionToInteger | Trap::CastFailure => TrapCode::BadConversionToInteger,
+        Trap::UnreachableCodeReached => TrapCode::UnreachableCodeReached,
+        Trap::Interrupt => TrapCode::InterruptionCalled,
+        Trap::OutOfFuel => TrapCode::OutOfFuel,
+        _ => TrapCode::IllegalOpcode,
+    })
 }
 
 fn memory_equivalent(lhs: &[u8], rhs: &[u8]) -> bool {

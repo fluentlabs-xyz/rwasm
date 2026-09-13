@@ -18,7 +18,7 @@ use crate::{
     },
     AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
     ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
-    Opcode, TableIdx, TrapCode, DEFAULT_MEMORY_INDEX, N_MAX_TABLE_SIZE,
+    Opcode, TableIdx, TrapCode, DEFAULT_MEMORY_INDEX, N_MAX_STACK_SIZE, N_MAX_TABLE_SIZE,
     SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec::Vec};
@@ -377,6 +377,17 @@ impl InstructionTranslator {
         for (user, offset) in self.alloc.labels.resolved_users() {
             self.alloc.instruction_set[user as usize].update_branch_offset(offset?);
         }
+        // The runtime window is `N_MAX_STACK_SIZE` slots, and `StackCheck` reserves the function's
+        // peak on entry. A function that needs more could never run on the rwasm VM (its first
+        // instruction traps with `StackOverflow`) while the Wasmtime backend executes it, so it is
+        // rejected here instead of at run time.
+        let max_stack_height = self.stack_height.max_stack_height();
+        if max_stack_height > N_MAX_STACK_SIZE as u32 {
+            return Err(CompilationError::StackHeightExceeded {
+                height: max_stack_height,
+                limit: N_MAX_STACK_SIZE as u32,
+            });
+        }
         let last_func_offset = self.alloc.func_offsets.last().copied().unwrap() as usize;
         // update max stack height in `StackAlloc` opcode
         let how_deep_stack_check = if self.with_consume_fuel { 3 } else { 2 };
@@ -389,8 +400,8 @@ impl InstructionTranslator {
         for opcode in iter {
             match opcode {
                 Opcode::ConsumeFuel(_) | Opcode::SignatureCheck(_) => {}
-                Opcode::StackCheck(max_stack_height) => {
-                    *max_stack_height = self.stack_height.max_stack_height();
+                Opcode::StackCheck(stack_height) => {
+                    *stack_height = max_stack_height;
                     break;
                 }
                 _ => unreachable!(),
@@ -2378,8 +2389,12 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 .get(&data_segment_index)
                 .copied()
                 .ok_or(CompilationError::MemoryOutOfBounds)?;
-            builder.stack_height.push2();
-            builder.stack_height.pop2();
+            builder
+                .stack_height
+                .push_n(InstructionSet::MSH_MEMORY_INIT_CHECKED);
+            builder
+                .stack_height
+                .pop_n(InstructionSet::MSH_MEMORY_INIT_CHECKED);
             builder.stack_height.pop3();
             // since we store all data sections in the one segment, then the index is always 0
             ib.op_memory_init_checked(
@@ -2573,8 +2588,14 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             // elements, then we push `u32::MAX` on the stack that is equal to table
             // grow overflow error
             let table_type = builder.resolve_table_type(table_index);
-            // TODO(dmitry123): "is this construction correct?"
-            let max_table_elements = table_type.maximum.unwrap_or(N_MAX_TABLE_SIZE);
+            // The runtime can only materialize `N_MAX_TABLE_SIZE` elements, so a declared maximum
+            // above it is clamped: feeding the raw declared maximum into the guard made every
+            // `table.grow` report an overflow for a maximum >= 2^31, and the Wasmtime store limit
+            // is set to the same bound.
+            let max_table_elements = table_type
+                .maximum
+                .unwrap_or(N_MAX_TABLE_SIZE)
+                .min(N_MAX_TABLE_SIZE);
             let ib = &mut builder.alloc.instruction_set;
             ib.op_table_grow_checked(
                 TableIdx::try_from(table_index).unwrap(),

@@ -142,9 +142,11 @@ pub fn compile_wasmtime_module_cached(
     wasm_binary: impl AsRef<[u8]>,
     module_caching_key: [u8; 32],
 ) -> Result<WasmtimeModule, CompilationError> {
+    let wasm_binary = wasm_binary.as_ref();
     compile_wasmtime_module_cached_with(
         compilation_config,
         module_caching_key,
+        wasm_identity(wasm_binary),
         CachePolicy::WasmtimeOnly,
         |config| compile_wasmtime_module(config, wasm_binary),
     )
@@ -164,9 +166,23 @@ pub(crate) enum CachePolicy {
     RwasmValidated,
 }
 
-/// The key of a cached module: the validation policy, the caller's key and the identity of the
-/// config it was compiled with.
-type ModuleCacheKey = (CachePolicy, [u8; 32], [u8; 32]);
+/// The key of a cached module: the validation policy, the caller's key, the identity of the config
+/// it was compiled with and the identity of the bytecode itself.
+///
+/// The bytecode hash is what keeps a reused caller key from returning a module compiled from other
+/// bytes: a host that keys by contract address and upgrades the contract in place would otherwise
+/// execute the previous version's code.
+type ModuleCacheKey = (CachePolicy, [u8; 32], [u8; 32], [u8; 32]);
+
+/// Hashes the compiled input, so the cache key identifies the module and not just its address.
+pub(crate) fn wasm_identity(wasm_binary: &[u8]) -> [u8; 32] {
+    use tiny_keccak::{Hasher, Keccak};
+    let mut hasher = Keccak::v256();
+    hasher.update(wasm_binary);
+    let mut identity = [0u8; 32];
+    hasher.finalize(&mut identity);
+    identity
+}
 
 /// Returns the module cached under `module_caching_key`, `policy` and `compilation_config`, or
 /// compiles it with `compile` and caches the result. The cache lock is held across `compile`, so
@@ -174,6 +190,7 @@ type ModuleCacheKey = (CachePolicy, [u8; 32], [u8; 32]);
 pub(crate) fn compile_wasmtime_module_cached_with<E>(
     compilation_config: CompilationConfig,
     module_caching_key: [u8; 32],
+    wasm_identity: [u8; 32],
     policy: CachePolicy,
     compile: impl FnOnce(CompilationConfig) -> Result<WasmtimeModule, E>,
 ) -> Result<WasmtimeModule, E> {
@@ -188,6 +205,7 @@ pub(crate) fn compile_wasmtime_module_cached_with<E>(
         policy,
         module_caching_key,
         compilation_config.codegen_identity(),
+        wasm_identity,
     );
     let mut guard = compiled_modules.lock().unwrap();
     if let Some(module) = guard.get(&cache_key) {

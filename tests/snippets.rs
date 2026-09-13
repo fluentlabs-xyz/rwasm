@@ -1527,7 +1527,7 @@ fn run_i64_binary_op_with_config(
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
 
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::default();
+    let engine = ExecutionEngine::new();
     let mut result = [Value::I64(0); 1];
 
     let execution_result = engine.execute(
@@ -1574,7 +1574,7 @@ fn run_i64_comparation_op(op: &str, a: i64, b: i64, expected: bool) {
     let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
 
     let mut store = RwasmStore::<()>::default();
-    let engine = ExecutionEngine::default();
+    let engine = ExecutionEngine::new();
     let mut result = [Value::I32(0); 1];
 
     let execution_result = engine.execute(
@@ -1635,7 +1635,7 @@ fn test_i64_compares_e2e_boundary_matrix() {
             .with_allow_malformed_entrypoint_func_type(true);
         let (rwasm_module, _) = RwasmModule::compile(config, &wasm_binary).unwrap();
         let mut store = RwasmStore::<()>::default();
-        let engine = ExecutionEngine::default();
+        let engine = ExecutionEngine::new();
         for &a in &values {
             for &b in &values {
                 let (a, b) = (a as i64, b as i64);

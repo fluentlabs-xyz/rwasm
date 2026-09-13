@@ -25,6 +25,14 @@ pub enum CompilationError {
     MalformedFuncType,
     MemoryOutOfBounds,
     TableOutOfBounds,
+    /// A function needs more value-stack slots than the runtime provides (`N_MAX_STACK_SIZE`).
+    StackHeightExceeded { height: u32, limit: u32 },
+    /// The module declares a linear memory but does not export it.
+    ///
+    /// The Wasmtime backend reaches the instance memory through its exports only, so a memory the
+    /// host cannot name would be readable through `StoreTr::memory_read` on rwasm and out of
+    /// bounds on Wasmtime.
+    MissingMemoryExport,
     StartSectionsAreNotAllowed,
     TooManyFunctionTypes {
         count: u32,
@@ -84,6 +92,15 @@ impl core::fmt::Display for CompilationError {
             CompilationError::MalformedFuncType => write!(f, "malformed func type"),
             CompilationError::MemoryOutOfBounds => write!(f, "out of bounds memory access"),
             CompilationError::TableOutOfBounds => write!(f, "out of bounds table access"),
+            CompilationError::StackHeightExceeded { height, limit } => {
+                write!(
+                    f,
+                    "function needs {height} value stack slots, above the limit {limit}"
+                )
+            }
+            CompilationError::MissingMemoryExport => {
+                write!(f, "the module declares a linear memory but does not export it")
+            }
             CompilationError::StartSectionsAreNotAllowed => {
                 write!(f, "start sections are not allowed")
             }

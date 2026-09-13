@@ -46,3 +46,10 @@ jobs:
           rustup target add wasm32-unknown-unknown
           rustup +nightly-2025-09-20 target add wasm32-unknown-unknown
           make test
+
+      # The interpreter's bounds checks, the compiler's limits and the emitted bytecode all have
+      # `#[cfg(debug_assertions)]`-dependent behaviour; the release profile is the one that ships,
+      # so it is tested too (this suite is also what pins the release-mode traps that the debug
+      # build would otherwise catch with an assertion).
+      - name: Run tests (release)
+        run: cargo test --release --no-fail-fast --manifest-path Cargo.toml
