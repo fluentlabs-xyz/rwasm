@@ -74,15 +74,25 @@ impl<'a, T> RwasmExecutor<'a, T> {
             .unwrap_or_else(|_| unreachable!("program counter exceeds u32: {pc}"))
     }
 
+    /// Executes a call, treating an execution halt as success with zeroed results.
     pub fn run(&mut self, params: &[Value], result: &mut [Value]) -> Result<(), TrapCode> {
-        self.run_with_mode(params, result, false)
+        match self.run_raw(params, result) {
+            Err(TrapCode::ExecutionHalted) => {
+                for value in result {
+                    *value = Value::default(value.ty());
+                }
+                Ok(())
+            }
+            outcome => outcome,
+        }
     }
 
-    pub(crate) fn run_with_mode(
+    /// Executes without converting halts to success. A halt cleans up the terminated execution
+    /// and propagates `ExecutionHalted`, so initialization can reject an incomplete start function.
+    pub(crate) fn run_raw(
         &mut self,
         params: &[Value],
         result: &mut [Value],
-        initializing: bool,
     ) -> Result<(), TrapCode> {
         // Make sure we have enough capacity on the stack
         self.value_stack.sync_stack_ptr(self.sp);
@@ -118,15 +128,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 self.call_stack.reset();
                 // The last signature also might stick in a dirty state
                 self.store.last_signature = None;
-                // If we halted with `ExecutionHalted`, then just exit with default output params
-                return if trap_code == TrapCode::ExecutionHalted && !initializing {
-                    for value in result {
-                        *value = Value::default(value.ty());
-                    }
-                    Ok(())
-                } else {
-                    Err(trap_code)
-                };
+                return Err(trap_code);
             }
             _ => {}
         }

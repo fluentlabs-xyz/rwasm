@@ -45,7 +45,7 @@ impl ExecutionEngine {
         );
         let mut executor =
             RwasmExecutor::entrypoint(module, &mut value_stack, &mut call_stack, store);
-        match executor.run_with_mode(&[], &mut [], true) {
+        match executor.run_raw(&[], &mut []) {
             Err(TrapCode::InterruptionCalled) => {
                 let (ip, sp) = (executor.ip, executor.sp);
                 value_stack.sync_stack_ptr(sp);
@@ -134,7 +134,12 @@ impl ExecutionEngine {
         let sp = value_stack.stack_ptr();
         let mut executor =
             RwasmExecutor::new(&module, &mut value_stack, sp, &mut call_stack, ip, store);
-        match executor.run_with_mode(params, result, initializing) {
+        let outcome = if initializing {
+            executor.run_raw(params, result)
+        } else {
+            executor.run(params, result)
+        };
+        match outcome {
             Err(TrapCode::InterruptionCalled) => {
                 let (ip, sp) = (executor.ip, executor.sp);
                 value_stack.sync_stack_ptr(sp);
