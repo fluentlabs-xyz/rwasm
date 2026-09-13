@@ -38,7 +38,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         Self::new(module, value_stack, sp, call_stack, ip, store)
     }
 
-    pub fn new(
+    pub(crate) fn new(
         module: &'a RwasmModule,
         value_stack: &'a mut ValueStack,
         sp: ValueStackPtr,
@@ -140,6 +140,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     pub fn run_with_stack_check(&mut self) -> Result<(), TrapCode> {
+        if self.module.code_section.is_empty() {
+            return Err(TrapCode::UnreachableCodeReached);
+        }
         // Run the loop
         let status = loop {
             let instr = self.ip.get();
@@ -172,6 +175,11 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     fn run_the_loop(&mut self) -> Result<(), TrapCode> {
+        // Initialization starts at instruction zero without going through `execute`'s source_pc
+        // guard. Check once before entering the loop; instruction fetch remains unchecked.
+        if self.module.code_section.is_empty() {
+            return Err(TrapCode::UnreachableCodeReached);
+        }
         loop {
             let instr = self.ip.get();
             #[cfg(feature = "debug-print")]
@@ -212,7 +220,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     /// of [`RwasmExecutor::run`] would drop the flag, and [`TrapCode::ExecutionHalted`] returned by
     /// a host function would even turn the run into a success.
     #[inline(always)]
-    pub fn step(&mut self, instr: Opcode) -> Result<bool, TrapCode> {
+    pub(crate) fn step(&mut self, instr: Opcode) -> Result<bool, TrapCode> {
         let result = self.execute(instr);
         if self.sp.is_out_of_bounds() {
             return Err(TrapCode::StackOverflow);
@@ -396,9 +404,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
     ///
     /// # Errors
     ///
-    /// With [`TrapCode::UnreachableCodeReached`] if the word after the opcode is missing or is not
-    /// a `TableGet` payload. The payload shape is a codegen convention, so bytecode that does not
-    /// follow it (a hand-built or foreign module) is rejected instead of panicking.
+    /// With [`TrapCode::UnreachableCodeReached`] if the payload word is not a `TableGet`.
+    /// The compiler guarantees that the payload word exists, just as it guarantees valid branch
+    /// targets. This shape check does not validate truncated or arbitrary instruction streams.
     pub(crate) fn fetch_table_index(&self, offset: usize) -> Result<TableIdx, TrapCode> {
         let mut addr: InstructionPtr = self.ip;
         addr.add(offset);

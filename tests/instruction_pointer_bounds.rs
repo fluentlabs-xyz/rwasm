@@ -50,10 +50,10 @@ fn unresolved_syscall_traps() {
     assert_eq!(execute_mut(&module), Err(TrapCode::UnknownExternalFunction));
 }
 
-/// `CallIndirect`/`TableInit` carry their table index in the payload word that follows them; a
-/// module without that word used to hit `unreachable!` in the executor.
+/// `CallIndirect`/`TableInit` carry a `TableGet` payload; a different opcode in that slot used to
+/// hit `unreachable!`. The compiler guarantees that the slot exists.
 #[test]
-fn missing_table_index_payload_traps() {
+fn incorrect_table_index_payload_traps() {
     let call_indirect = RwasmModuleBuilder::new(instruction_set! {
         StackCheck(16)
         I32Const(0)
@@ -86,6 +86,31 @@ fn missing_table_index_payload_traps() {
 fn empty_code_section_traps() {
     assert_eq!(
         execute_mut(&RwasmModule::empty()),
+        Err(TrapCode::UnreachableCodeReached)
+    );
+}
+
+/// Initialization and the low-level executor also reject an empty code section before fetching.
+#[test]
+fn empty_code_section_traps_on_initialization_paths() {
+    let module = RwasmModule::empty();
+    let engine = ExecutionEngine::new();
+    let mut store = RwasmStore::<()>::default();
+    assert_eq!(
+        engine.entrypoint(&mut store, &module),
+        Err(TrapCode::UnreachableCodeReached)
+    );
+
+    let mut value_stack = rwasm::ValueStack::default();
+    let mut call_stack = rwasm::CallStack::default();
+    let mut executor =
+        rwasm::RwasmExecutor::entrypoint(&module, &mut value_stack, &mut call_stack, &mut store);
+    assert_eq!(
+        executor.run(&[], &mut []),
+        Err(TrapCode::UnreachableCodeReached)
+    );
+    assert_eq!(
+        executor.run_with_stack_check(),
         Err(TrapCode::UnreachableCodeReached)
     );
 }

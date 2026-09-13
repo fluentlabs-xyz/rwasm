@@ -7,7 +7,7 @@ use crate::types::Opcode;
 /// Do not use this pointer to execute arbitrary hand-built or decoded instruction streams.
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(transparent)]
-pub struct InstructionPtr {
+pub(crate) struct InstructionPtr {
     /// The pointer to the instruction.
     pub(crate) ptr: *const Opcode,
 }
@@ -25,7 +25,7 @@ unsafe impl Send for InstructionPtr {}
 impl InstructionPtr {
     /// Creates a new [`rwasm::engine::code_map::InstructionPtr`] for `instr`.
     #[inline]
-    pub fn new(ptr: *const Opcode) -> Self {
+    pub(crate) fn new(ptr: *const Opcode) -> Self {
         Self { ptr }
     }
 
@@ -37,7 +37,7 @@ impl InstructionPtr {
     /// offset values so that the [`rwasm::engine::code_map::InstructionPtr`] never points out of
     /// valid bounds of the instructions of the same compiled Wasm function.
     #[inline(always)]
-    pub fn offset(&mut self, by: isize) {
+    pub(crate) fn offset(&mut self, by: isize) {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
         //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
@@ -45,7 +45,7 @@ impl InstructionPtr {
     }
 
     #[inline(always)]
-    pub fn add(&mut self, delta: usize) {
+    pub(crate) fn add(&mut self, delta: usize) {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
         //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
@@ -60,7 +60,7 @@ impl InstructionPtr {
     /// guaranteed that the [`rwasm::engine::code_map::InstructionPtr`] is validly pointing inside
     /// the boundaries of its associated compiled Wasm function.
     #[inline(always)]
-    pub fn get(&self) -> Opcode {
+    pub(crate) fn get(&self) -> Opcode {
         // SAFETY: Within Wasm bytecode execution we are guaranteed by
         //         Wasm validation and `rwasm` codegen to never run out
         //         of valid bounds using this method.
@@ -68,7 +68,7 @@ impl InstructionPtr {
     }
 
     #[cfg(feature = "tracing")]
-    pub fn is_valid(self, max: u64) -> bool {
+    pub(crate) fn is_valid(self, max: u64) -> bool {
         self.ptr as u64 <= max
     }
 }

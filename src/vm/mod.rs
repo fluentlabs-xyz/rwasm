@@ -20,7 +20,7 @@ pub use executor::*;
 pub use handler::*;
 pub use import_linker::*;
 pub use instance::*;
-pub use instr_ptr::*;
+pub(crate) use instr_ptr::*;
 pub use memory::*;
 pub use store::*;
 pub use table_entity::*;

@@ -78,7 +78,9 @@ which is which.
   `WasmtimeExecutor::with_entrypoint_name` and the `StrategyDefinition::{Rwasm,Wasmtime}`
   `entrypoint_name` field; `deserialize_wasmtime_module` is `unsafe`; new `CompilationError`
   variants (`StackHeightExceeded`, `MissingMemoryExport`, plus #204's `TableSizeExceedsLimit`,
-  `StrategyIncompatibleConfig`, `WasmtimeCompilationFailed`).
+  `StrategyIncompatibleConfig`, `WasmtimeCompilationFailed`). Raw instruction-pointer access is
+  now internal: `InstructionPtr`, `ReusableContext`, `CallStack::{push,pop}` and
+  `RwasmExecutor::{new,step}` are crate-private. Public execution still requires trusted bytecode.
 - **Residual differences**: call-depth limits are still not synchronized between the engines (rwasm
   stops at 1024 frames or the stack window, Wasmtime at its native stack); the differential fuzzer
   still treats trailing zero memory bytes as equivalent and skips `memory.grow`.
@@ -306,6 +308,9 @@ executing distributed rWasm. The retained defensive checks do not make arbitrary
   instruction targets are established by Wasm validation and trusted code generation. Tests that
   execute out-of-range branches or unterminated instruction streams are outside that contract.
   The syscall trap remains useful for a linker/module mismatch in the supported execution model.
+  The low-level pointer API is crate-private, and both execution loops reject empty code before
+  their first fetch. Table-payload checks only reject an incorrect opcode in an existing slot;
+  the compiler guarantees that the slot exists. They do not validate truncated instruction streams.
 - **Performance evidence:** on an Apple M5 Max with Rust 1.93.1, release mode, and the `std`
   interpreter, seven interleaved samples using identical compiled bytecode measured metered warm
   `examples/fib` execution at 694 ns with the checked pointer versus 316 ns with only the thin

@@ -40,7 +40,7 @@ pub struct RwasmStore<T: 'static> {
     pub tracer: crate::Tracer,
 }
 
-pub struct ReusableContext {
+pub(crate) struct ReusableContext {
     pub module: RwasmModule,
     pub call_stack: CallStack,
     pub ip: InstructionPtr,

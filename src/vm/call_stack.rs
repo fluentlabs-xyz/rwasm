@@ -11,11 +11,11 @@ pub struct CallStack {
 }
 
 impl CallStack {
-    pub fn push(&mut self, ip: InstructionPtr) {
+    pub(crate) fn push(&mut self, ip: InstructionPtr) {
         self.buf.push(ip);
     }
 
-    pub fn pop(&mut self) -> Option<InstructionPtr> {
+    pub(crate) fn pop(&mut self) -> Option<InstructionPtr> {
         self.buf.pop()
     }
 
