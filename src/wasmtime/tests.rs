@@ -1,5 +1,5 @@
 use crate::{
-    wasmtime::{compile_wasmtime_module, WasmtimeExecutor},
+    wasmtime::{compile_wasmtime_module, WasmtimeExecutor, WasmtimeModule},
     CompilationConfig, ImportLinker, ImportName, StoreTr, TrapCode, TypedCaller, Value,
     N_BYTES_PER_MEMORY_PAGE,
 };
@@ -10,7 +10,7 @@ use wasmtime::Module;
 const DIVISOR: u64 = 10;
 const WORD_COST: u64 = 0;
 
-fn get_test_wasmtime_module() -> (Module, Arc<ImportLinker>) {
+fn get_test_wasmtime_module() -> (WasmtimeModule, Arc<ImportLinker>) {
     let wasm_binary = wat::parse_str(
         r#"
             (module
@@ -160,7 +160,7 @@ fn test_wasmtime_executor_missing_entrypoint_returns_trap() {
     assert_eq!(err, TrapCode::UnknownExternalFunction);
 }
 
-fn get_test_memory_module() -> (Module, Arc<ImportLinker>) {
+fn get_test_memory_module() -> (WasmtimeModule, Arc<ImportLinker>) {
     let wasm_binary = wat::parse_str(
         r#"
             (module
@@ -198,7 +198,7 @@ fn get_test_memory_module() -> (Module, Arc<ImportLinker>) {
     )
 }
 
-fn get_test_module_without_memory() -> (Module, Arc<ImportLinker>) {
+fn get_test_module_without_memory() -> (WasmtimeModule, Arc<ImportLinker>) {
     let wasm_binary = wat::parse_str(
         r#"
             (module
@@ -342,7 +342,7 @@ fn test_wasmtime_caller_memory_read_into_vec_checks_bounds_before_allocating() {
     );
 }
 
-fn get_test_module_without_engine_fuel() -> (Module, Arc<ImportLinker>) {
+fn get_test_module_without_engine_fuel() -> (WasmtimeModule, Arc<ImportLinker>) {
     let wasm_binary = wat::parse_str(
         r#"
             (module
@@ -458,7 +458,9 @@ fn test_wasmtime_executor_exports_follow_the_instance() {
     assert_eq!(wasmtime_worker.data(), &[1, 2, 3, 4]);
 
     // Re-instantiating through the executor swaps both the function table and the memory.
-    wasmtime_worker.instantiate(&module_without_memory).unwrap();
+    wasmtime_worker
+        .instantiate(&module_without_memory.into())
+        .unwrap();
     assert_eq!(
         wasmtime_worker
             .execute("read_missing_memory", &[], &mut [])
@@ -492,7 +494,7 @@ fn test_wasmtime_executor_exports_follow_the_instance() {
     );
 }
 
-fn get_test_numeric_marshalling_module() -> (Module, Arc<ImportLinker>) {
+fn get_test_numeric_marshalling_module() -> (WasmtimeModule, Arc<ImportLinker>) {
     let wasm_binary = wat::parse_str(
         r#"
             (module
@@ -776,7 +778,7 @@ fn test_wasmtime_executor_reports_instantiation_errors() {
     .unwrap();
 
     assert!(WasmtimeExecutor::try_new(
-        unlinked_module.clone(),
+        unlinked_module.clone().into(),
         import_linker.clone(),
         Vec::new(),
         read_memory_syscall,
@@ -795,7 +797,9 @@ fn test_wasmtime_executor_reports_instantiation_errors() {
         None,
     )
     .unwrap();
-    assert!(wasmtime_worker.instantiate(&unlinked_module).is_err());
+    assert!(wasmtime_worker
+        .instantiate(&unlinked_module.into())
+        .is_err());
     wasmtime_worker.execute("read_ok", &[], &mut []).unwrap();
     assert_eq!(wasmtime_worker.data(), &[1, 2, 3, 4]);
 }
@@ -893,11 +897,14 @@ mod instantiation_failures {
     use super::*;
     use crate::always_failing_syscall_handler;
 
-    fn compile(wat: &str, config: CompilationConfig) -> Module {
+    fn compile(wat: &str, config: CompilationConfig) -> WasmtimeModule {
         compile_wasmtime_module(config, wat::parse_str(wat).unwrap()).unwrap()
     }
 
-    fn instantiate(module: Module, max_allowed_memory_pages: Option<u32>) -> Result<(), TrapCode> {
+    fn instantiate(
+        module: WasmtimeModule,
+        max_allowed_memory_pages: Option<u32>,
+    ) -> Result<(), TrapCode> {
         WasmtimeExecutor::new(
             module,
             Arc::new(ImportLinker::default()),
@@ -1054,7 +1061,7 @@ fn test_initial_table_above_the_cap_is_table_out_of_bounds() {
     .unwrap();
     let module = Module::new(&engine, &wasm).unwrap();
     let err = WasmtimeExecutor::new(
-        module,
+        module.into(),
         Arc::new(ImportLinker::default()),
         (),
         always_failing_syscall_handler,
@@ -1080,7 +1087,7 @@ fn test_module_cache_distinguishes_configs_under_one_key() {
     let unmetered_module = compile_wasmtime_module_cached(unmetered, &wasm, key).unwrap();
     // a store meters fuel only if the module's engine was configured to
     let fuel_enabled =
-        |module: &Module| wasmtime::Store::new(module.engine(), ()).get_fuel().is_ok();
+        |module: &WasmtimeModule| wasmtime::Store::new(module.engine(), ()).get_fuel().is_ok();
     assert!(fuel_enabled(&metered_module));
     assert!(!fuel_enabled(&unmetered_module));
     // the same key with the same config is a cache hit
@@ -1089,4 +1096,232 @@ fn test_module_cache_distinguishes_configs_under_one_key() {
         metered_module.engine(),
         again.engine()
     ));
+}
+
+/// Syscall fuel is charged by the host trampoline, so every way of reaching an import pays it:
+/// `call_indirect` and `return_call_indirect` through a table entry, an import exported as the
+/// entrypoint and an import used as `start`. The engine used to charge it at Cranelift `call`
+/// sites only, which left all of these free (audit round 5, R5-1).
+#[test]
+fn test_syscall_fuel_is_charged_on_every_dispatch_path() {
+    const BASE: u64 = 1000;
+    fn linker() -> Arc<ImportLinker> {
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("env", "flat"),
+            1,
+            SyscallFuelParams::Const(BASE),
+            &[],
+            &[],
+        );
+        Arc::new(import_linker)
+    }
+    fn accept(
+        _: &mut TypedCaller<'_, ()>,
+        _: u32,
+        _: &[Value],
+        _: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        Ok(())
+    }
+    let cases = [
+        ("call", "(func (export \"main\") call $flat)", false),
+        (
+            "call_indirect",
+            "(func (export \"main\") (call_indirect (type $t) (i32.const 0)))",
+            false,
+        ),
+        (
+            "return_call_indirect",
+            "(func (export \"main\") (return_call_indirect (type $t) (i32.const 0)))",
+            false,
+        ),
+        (
+            "ref.func + table.set",
+            "(func (export \"main\") (table.set 0 (i32.const 1) (ref.func $flat)) \
+             (call_indirect (type $t) (i32.const 1)))",
+            false,
+        ),
+        ("export-of-import", "(export \"main\" (func $flat))", false),
+        ("start", "(start $flat) (func (export \"main\"))", true),
+    ];
+    for (label, body, allow_start) in cases {
+        let wasm = wat::parse_str(format!(
+            r#"(module
+              (type $t (func))
+              (import "env" "flat" (func $flat))
+              (table 2 funcref)
+              (elem (i32.const 0) $flat)
+              {body})"#
+        ))
+        .unwrap();
+        let config = CompilationConfig::default()
+            .with_consume_fuel(true)
+            .with_builtins_consume_fuel(true)
+            .with_allow_start_section(allow_start)
+            .with_import_linker(linker());
+        let module = compile_wasmtime_module(config, &wasm).unwrap();
+        let mut executor =
+            WasmtimeExecutor::new(module, linker(), (), accept, Some(100_000), None).unwrap();
+        executor.execute("main", &[], &mut []).unwrap();
+        let consumed = 100_000 - executor.remaining_fuel().unwrap();
+        assert!(
+            consumed >= BASE,
+            "{label}: the syscall fuel must be charged, consumed only {consumed}"
+        );
+    }
+}
+
+/// The schedule belongs to the module: a bare `wasmtime::Module` charges no syscall fuel, and
+/// re-instantiating a module compiled under another config swaps the schedule with it.
+#[test]
+fn test_syscall_fuel_schedule_follows_the_instantiated_module() {
+    fn accept(
+        _: &mut TypedCaller<'_, ()>,
+        _: u32,
+        _: &[Value],
+        _: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        Ok(())
+    }
+    let mut import_linker = ImportLinker::default();
+    import_linker.insert_function(
+        ImportName::new("env", "flat"),
+        1,
+        SyscallFuelParams::Const(1000),
+        &[],
+        &[],
+    );
+    let import_linker = Arc::new(import_linker);
+    let wasm = wat::parse_str(
+        r#"(module
+          (import "env" "flat" (func $flat))
+          (func (export "main") call $flat))"#,
+    )
+    .unwrap();
+    let metered = compile_wasmtime_module(
+        CompilationConfig::default()
+            .with_consume_fuel(true)
+            .with_builtins_consume_fuel(true)
+            .with_import_linker(import_linker.clone()),
+        &wasm,
+    )
+    .unwrap();
+    // a store only instantiates modules of its own engine, so the variants share `metered`'s
+    let unmetered = WasmtimeModule::new(
+        Module::new(metered.engine(), &wasm).unwrap(),
+        &CompilationConfig::default()
+            .with_consume_fuel(true)
+            .with_builtins_consume_fuel(false)
+            .with_import_linker(import_linker.clone()),
+    );
+    let bare = WasmtimeModule::from(Module::new(metered.engine(), &wasm).unwrap());
+
+    let consumed_by = |executor: &mut WasmtimeExecutor<()>| {
+        executor.reset_fuel(100_000);
+        executor.execute("main", &[], &mut []).unwrap();
+        100_000 - executor.remaining_fuel().unwrap()
+    };
+    let mut executor = WasmtimeExecutor::new(
+        metered.clone(),
+        import_linker.clone(),
+        (),
+        accept,
+        Some(100_000),
+        None,
+    )
+    .unwrap();
+    let with_schedule = consumed_by(&mut executor);
+    assert!(with_schedule >= 1000, "metered module: {with_schedule}");
+
+    executor.instantiate(&unmetered).unwrap();
+    let without_schedule = consumed_by(&mut executor);
+    assert_eq!(with_schedule - without_schedule, 1000, "unmetered module");
+
+    executor.instantiate(&bare).unwrap();
+    assert_eq!(consumed_by(&mut executor), without_schedule, "bare module");
+
+    executor.instantiate(&metered).unwrap();
+    assert_eq!(consumed_by(&mut executor), with_schedule, "metered again");
+
+    // The replacement's schedule must be active before its imported start function runs.
+    let start_wasm = wat::parse_str(
+        r#"(module (import "env" "flat" (func $flat))
+          (start $flat) (func (export "main") call $flat))"#,
+    )
+    .unwrap();
+    for (previous, enabled, expected) in [(&unmetered, true, 1000), (&metered, false, 0)] {
+        executor.instantiate(previous).unwrap();
+        let replacement = WasmtimeModule::new(
+            Module::new(metered.engine(), &start_wasm).unwrap(),
+            &CompilationConfig::default()
+                .with_builtins_consume_fuel(enabled)
+                .with_import_linker(import_linker.clone()),
+        );
+        executor.reset_fuel(100_000);
+        executor.instantiate(&replacement).unwrap();
+        assert_eq!(100_000 - executor.remaining_fuel().unwrap(), expected);
+    }
+
+    // A failed start must restore the prior instance's schedule without refunding its charge.
+    executor.instantiate(&unmetered).unwrap();
+    let trapping_start = WasmtimeModule::new(
+        Module::new(
+            metered.engine(),
+            r#"(module (import "env" "flat" (func $flat))
+              (func $start call $flat unreachable) (start $start) (func (export "main")))"#,
+        )
+        .unwrap(),
+        &CompilationConfig::default()
+            .with_builtins_consume_fuel(true)
+            .with_import_linker(import_linker),
+    );
+    executor.reset_fuel(100_000);
+    assert!(executor.instantiate(&trapping_start).is_err());
+    assert!(100_000 - executor.remaining_fuel().unwrap() >= 1000);
+    assert_eq!(consumed_by(&mut executor), without_schedule);
+}
+
+/// A schedule whose metered parameter does not name an `i32` parameter of the import is refused
+/// when the executor is built, as the rwasm compiler refuses the same linker entry.
+#[test]
+fn test_misaddressed_syscall_fuel_parameter_is_rejected_at_instantiation() {
+    let mut import_linker = ImportLinker::default();
+    import_linker.insert_function(
+        ImportName::new("env", "lin"),
+        1,
+        SyscallFuelParams::LinearFuel(LinearFuelParams {
+            base_fuel: 0,
+            param_index: 2,
+            word_cost: 1,
+        }),
+        &[wasmparser::ValType::I32],
+        &[],
+    );
+    let import_linker = Arc::new(import_linker);
+    let wasm = wat::parse_str(
+        r#"(module
+          (import "env" "lin" (func $lin (param i32)))
+          (func (export "main") (i32.const 0) (call $lin)))"#,
+    )
+    .unwrap();
+    let module = compile_wasmtime_module(
+        CompilationConfig::default()
+            .with_consume_fuel(true)
+            .with_builtins_consume_fuel(true)
+            .with_import_linker(import_linker.clone()),
+        &wasm,
+    )
+    .unwrap();
+    let err = WasmtimeExecutor::new(
+        module,
+        import_linker,
+        (),
+        crate::always_failing_syscall_handler,
+        Some(100_000),
+        None,
+    )
+    .err()
+    .expect("the executor must not be built");
+    assert_eq!(err, TrapCode::BadSignature);
 }

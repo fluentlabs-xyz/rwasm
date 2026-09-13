@@ -1,7 +1,9 @@
 use crate::{
-    checked_memory_range_end, CallerTr, StoreTr, SyscallHandler, TrapCode, TypedCaller,
+    checked_memory_range_end, CallerTr, StoreTr, SyscallHandler, TrapCode, TypedCaller, Value,
     N_BYTES_PER_MEMORY_PAGE,
 };
+use rwasm_fuel_policy::{SyscallFuelParams, FUEL_MAX_LINEAR_X, FUEL_MAX_QUADRATIC_X};
+use std::collections::HashMap;
 use wasmtime::{AsContext, AsContextMut, ResourceLimiter, StoreLimits};
 
 const ENGINE_FUEL_EXPECTED: &str = "wasmtime: fuel metering was enabled at store creation";
@@ -51,6 +53,92 @@ pub(crate) fn reset_fuel<T: 'static>(
         ctx.data_mut().fuel_unbounded = false;
     } else {
         ctx.data_mut().fuel = Some(new_fuel_limit);
+    }
+}
+
+/// Computes the syscall fuel `policy` charges for a call with `params`, or `None` when the policy
+/// charges nothing.
+///
+/// This is the host-side twin of the trampoline prologue `compile_block_params` emits into rwasm
+/// bytecode and follows it operation by operation, including its 32-bit wrapping arithmetic, so a
+/// host call is charged the same amount on both strategies whichever way the guest reached it.
+/// The metered parameter is addressed like `LinearFuelParams::param_index` /
+/// `QuadraticFuelParams::local_depth`: counted from the last parameter, `1` being the last.
+///
+/// # Errors
+///
+/// - [`TrapCode::IntegerOverflow`] when the metered parameter exceeds the policy's bound
+///   (`FUEL_MAX_LINEAR_X` / `FUEL_MAX_QUADRATIC_X`), the guard the rwasm prologue runs first.
+/// - [`TrapCode::IntegerDivisionByZero`] for a quadratic policy with a zero `divisor`, which the
+///   prologue's `i32.div_u` traps on.
+/// - [`TrapCode::BadSignature`] when the metered parameter does not exist or is not an `i32`:
+///   the rwasm compiler rejects such a linker entry (`InvalidSyscallFuelParam`), so a Wasmtime
+///   executor only sees it through an import linker the module was not compiled with.
+pub(crate) fn syscall_fuel_charge(
+    policy: &SyscallFuelParams,
+    params: &[Value],
+) -> Result<Option<u64>, TrapCode> {
+    fn metered_param(params: &[Value], param_index: u32) -> Result<u32, TrapCode> {
+        usize::try_from(param_index)
+            .ok()
+            .filter(|index| *index >= 1)
+            .and_then(|index| params.len().checked_sub(index))
+            .and_then(|index| params.get(index))
+            .and_then(Value::i32)
+            .map(|value| value as u32)
+            .ok_or(TrapCode::BadSignature)
+    }
+    // rounds bytes up to 32-byte words with the wrapping `i32.add` the bytecode uses
+    fn words(bytes: u32) -> u32 {
+        bytes.wrapping_add(31) / 32
+    }
+    Ok(match policy {
+        SyscallFuelParams::None => None,
+        // the bytecode carries the base as a `ConsumeFuel(u32)` immediate
+        SyscallFuelParams::Const(base) => Some(u64::from(*base as u32)),
+        SyscallFuelParams::LinearFuel(fuel_params) => {
+            let bytes = metered_param(params, fuel_params.param_index)?;
+            if bytes > FUEL_MAX_LINEAR_X {
+                return Err(TrapCode::IntegerOverflow);
+            }
+            let fuel = words(bytes)
+                .wrapping_mul(fuel_params.word_cost)
+                .wrapping_add(fuel_params.base_fuel);
+            Some(u64::from(fuel))
+        }
+        SyscallFuelParams::QuadraticFuel(fuel_params) => {
+            let bytes = metered_param(params, fuel_params.local_depth)?;
+            if bytes > FUEL_MAX_QUADRATIC_X {
+                return Err(TrapCode::IntegerOverflow);
+            }
+            let words = words(bytes);
+            let linear = words.wrapping_mul(fuel_params.word_cost);
+            let quadratic = words
+                .wrapping_mul(words)
+                .checked_div(fuel_params.divisor)
+                .ok_or(TrapCode::IntegerDivisionByZero)?;
+            let fuel = linear
+                .wrapping_add(quadratic)
+                .wrapping_mul(fuel_params.fuel_denom_rate);
+            Some(u64::from(fuel))
+        }
+    })
+}
+
+/// Charges the syscall fuel the store's schedule assigns to `sys_func_idx`, if any, before the
+/// host function runs. See [`syscall_fuel_charge`] for the amount and the traps.
+pub(crate) fn charge_syscall_fuel<T: 'static>(
+    mut ctx: impl AsContextMut<Data = WrappedContext<T>>,
+    sys_func_idx: u32,
+    params: &[Value],
+) -> Result<(), TrapCode> {
+    let mut ctx = ctx.as_context_mut();
+    let Some(policy) = ctx.data().syscall_fuel.get(&sys_func_idx) else {
+        return Ok(());
+    };
+    match syscall_fuel_charge(policy, params)? {
+        Some(fuel) => try_consume_fuel(&mut ctx, fuel),
+        None => Ok(()),
     }
 }
 
@@ -150,6 +238,11 @@ pub struct WrappedContext<T: 'static> {
     /// The instance's exported memory, resolved once per instantiation so host calls don't
     /// look it up by name.
     pub(crate) memory: Option<wasmtime::Memory>,
+    /// Syscall fuel charged before each host function runs, by syscall index: the module's
+    /// schedule ([`crate::wasmtime::WasmtimeModule::syscall_fuel`]) resolved through the
+    /// executor's import linker. Empty when the module was compiled without
+    /// `builtins_consume_fuel`.
+    pub(crate) syscall_fuel: HashMap<u32, SyscallFuelParams>,
     pub(crate) resource_limiter: RecordingStoreLimits,
     pub(crate) data: T,
 }
@@ -222,3 +315,97 @@ impl<'a, T: 'static> StoreTr<T> for WasmtimeCaller<'a, T> {
 }
 
 impl<'a, T: 'static> CallerTr<T> for WasmtimeCaller<'a, T> {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rwasm_fuel_policy::{LinearFuelParams, QuadraticFuelParams};
+
+    fn linear(param_index: u32) -> SyscallFuelParams {
+        SyscallFuelParams::LinearFuel(LinearFuelParams {
+            base_fuel: 7,
+            param_index,
+            word_cost: 5,
+        })
+    }
+
+    fn quadratic(local_depth: u32, divisor: u32) -> SyscallFuelParams {
+        SyscallFuelParams::QuadraticFuel(QuadraticFuelParams {
+            local_depth,
+            word_cost: 3,
+            divisor,
+            fuel_denom_rate: 4,
+        })
+    }
+
+    /// The host-side charge is the amount the rwasm trampoline prologue would charge for the
+    /// same call, so a syscall reached through a table entry pays what a direct call pays.
+    #[test]
+    fn charge_follows_the_trampoline_prologue() {
+        assert_eq!(syscall_fuel_charge(&SyscallFuelParams::None, &[]), Ok(None));
+        assert_eq!(
+            syscall_fuel_charge(&SyscallFuelParams::Const(17), &[]),
+            Ok(Some(17))
+        );
+        // 300 bytes are 10 words: 10 * 5 + 7
+        assert_eq!(
+            syscall_fuel_charge(&linear(1), &[Value::I32(300)]),
+            Ok(Some(57))
+        );
+        // `param_index` counts from the last parameter, whatever its width
+        assert_eq!(
+            syscall_fuel_charge(&linear(2), &[Value::I32(320), Value::I64(0)]),
+            Ok(Some(57))
+        );
+        // (10 * 3 + 10 * 10 / 2) * 4
+        assert_eq!(
+            syscall_fuel_charge(&quadratic(1, 2), &[Value::I32(300)]),
+            Ok(Some(320))
+        );
+    }
+
+    /// The prologue's overflow guard runs before anything is charged.
+    #[test]
+    fn oversized_parameter_traps_with_integer_overflow() {
+        assert_eq!(
+            syscall_fuel_charge(&linear(1), &[Value::I32(FUEL_MAX_LINEAR_X as i32)]),
+            Ok(Some(u64::from(FUEL_MAX_LINEAR_X / 32) * 5 + 7))
+        );
+        assert_eq!(
+            syscall_fuel_charge(&linear(1), &[Value::I32(FUEL_MAX_LINEAR_X as i32 + 1)]),
+            Err(TrapCode::IntegerOverflow)
+        );
+        assert_eq!(
+            syscall_fuel_charge(
+                &quadratic(1, 2),
+                &[Value::I32(FUEL_MAX_QUADRATIC_X as i32 + 1)]
+            ),
+            Err(TrapCode::IntegerOverflow)
+        );
+        // a negative i32 is a huge unsigned length, like the `i32.gt_u` in the prologue sees it
+        assert_eq!(
+            syscall_fuel_charge(&linear(1), &[Value::I32(-1)]),
+            Err(TrapCode::IntegerOverflow)
+        );
+    }
+
+    #[test]
+    fn misaddressed_metered_parameter_is_a_bad_signature() {
+        assert_eq!(
+            syscall_fuel_charge(&linear(0), &[Value::I32(1)]),
+            Err(TrapCode::BadSignature)
+        );
+        assert_eq!(
+            syscall_fuel_charge(&linear(2), &[Value::I32(1)]),
+            Err(TrapCode::BadSignature)
+        );
+        assert_eq!(
+            syscall_fuel_charge(&linear(1), &[Value::I64(1)]),
+            Err(TrapCode::BadSignature)
+        );
+        assert_eq!(
+            syscall_fuel_charge(&quadratic(1, 0), &[Value::I32(64)]),
+            Err(TrapCode::IntegerDivisionByZero)
+        );
+    }
+}

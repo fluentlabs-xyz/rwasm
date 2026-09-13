@@ -1,13 +1,16 @@
 use crate::{CompilationConfig, N_MAX_STACK_SIZE};
-use rwasm_fuel_policy::SyscallName;
-use std::{collections::HashMap, mem::size_of};
+use std::mem::size_of;
 use wasmtime::{Config, Engine, OptLevel, Strategy};
 
 /// Builds a Wasmtime engine for `compilation_config`.
 ///
-/// The engine bakes in the config's fuel metering, stack limit and syscall fuel parameters, so an
-/// engine is never shared between configs: each compiled module carries the engine it was built
-/// with, and the module cache keys on the config identity.
+/// The engine bakes in the config's fuel metering and stack limit, so an engine is never shared
+/// between configs: each compiled module carries the engine it was built with, and the module
+/// cache keys on the config identity. The syscall fuel schedule is deliberately *not* handed to
+/// the engine: Cranelift can only charge it at direct `call`/`return_call` sites, which leaves
+/// `call_indirect`, `return_call_indirect`, an exported import and a `start` import unmetered.
+/// It travels with the [`crate::wasmtime::WasmtimeModule`] instead and is charged by the host
+/// trampolines, which every path into an import goes through.
 pub fn wasmtime_engine(compilation_config: &CompilationConfig) -> Engine {
     let mut cfg = Config::new();
     cfg.strategy(Strategy::Cranelift);
@@ -50,22 +53,6 @@ pub fn wasmtime_engine(compilation_config: &CompilationConfig) -> Engine {
 
     // Fuel accounting is handled externally via RuntimeContext.
     cfg.consume_fuel(compilation_config.consume_fuel);
-
-    if let Some(import_linker) = compilation_config
-        .import_linker
-        .as_ref()
-        .filter(|_| compilation_config.builtins_consume_fuel)
-    {
-        let mut syscall_params = HashMap::new();
-        for (import_name, import_entity) in import_linker.iter() {
-            let syscall_name = SyscallName {
-                module: import_name.module.to_string(),
-                name: import_name.field.to_string(),
-            };
-            syscall_params.insert(syscall_name, import_entity.syscall_fuel_param);
-        }
-        cfg.syscall_fuel_params(syscall_params);
-    }
 
     // use caching for artifacts
     #[cfg(feature = "cache-compiled-artifacts")]

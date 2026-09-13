@@ -980,4 +980,77 @@ mod tests {
             .expect_err("component-model payload must be rejected");
         assert!(matches!(err, CompilationError::NotSupportedExtension));
     }
+
+    /// The fuel prologue `compile_block_params` emits into an import trampoline is written
+    /// straight into the instruction set, outside the translator's stack-height tracking. Its
+    /// temporaries still have to be part of the trampoline's `StackCheck`: with `StackCheck(0)`
+    /// a `LinearFuel` (two temporaries) or `QuadraticFuel` (four) import called while the value
+    /// stack sat within that many slots of its capacity trapped `StackOverflow` on the rwasm VM
+    /// for a module Wasmtime executes (audit round 5, R5-2).
+    #[test]
+    fn import_trampoline_stack_check_covers_the_fuel_prologue() {
+        use crate::ImportLinker;
+        use alloc::sync::Arc;
+        use rwasm_fuel_policy::{LinearFuelParams, QuadraticFuelParams, SyscallFuelParams};
+
+        let cases = [
+            ("none", SyscallFuelParams::None, 0),
+            ("const", SyscallFuelParams::Const(5), 0),
+            (
+                "linear",
+                SyscallFuelParams::LinearFuel(LinearFuelParams {
+                    base_fuel: 1,
+                    param_index: 1,
+                    word_cost: 1,
+                }),
+                2,
+            ),
+            (
+                "quadratic",
+                SyscallFuelParams::QuadraticFuel(QuadraticFuelParams {
+                    local_depth: 1,
+                    word_cost: 1,
+                    divisor: 1,
+                    fuel_denom_rate: 1,
+                }),
+                4,
+            ),
+        ];
+        for (name, policy, expected_peak) in cases {
+            let mut linker = ImportLinker::default();
+            linker.insert_function(
+                ImportName::new("env", "builtin"),
+                1,
+                policy,
+                &[ValType::I32],
+                &[],
+            );
+            let wasm = wat::parse_str(
+                r#"(module
+                  (import "env" "builtin" (func $builtin (param i32)))
+                  (func (export "main") (i32.const 0) (call $builtin)))"#,
+            )
+            .unwrap();
+            let config = CompilationConfig::default()
+                .with_entrypoint_name("main".into())
+                .with_builtins_consume_fuel(true)
+                .with_import_linker(Arc::new(linker));
+            let module = RwasmModule::compile(config, &wasm).unwrap().0;
+            // the trampoline is the first compiled function: it starts right after the init
+            // prologue's `Return`, with `SignatureCheck; ConsumeFuel; StackCheck`
+            let stack_check = module
+                .code_section
+                .iter()
+                .skip(module.source_pc as usize)
+                .find_map(|opcode| match opcode {
+                    Opcode::StackCheck(height) => Some(*height),
+                    _ => None,
+                })
+                .expect("the trampoline carries a StackCheck");
+            assert_eq!(
+                stack_check, expected_peak,
+                "{name}: the trampoline must reserve the fuel prologue's temporaries"
+            );
+        }
+    }
 }

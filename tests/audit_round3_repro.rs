@@ -63,10 +63,10 @@ fn wasmtime_executor(
 
 fn wasmtime_instantiate(executor: &mut WasmtimeExecutor<Ctx>, wat: &str) {
     let wasm = wat::parse_str(wat).expect("the test module parses");
-    let module = WasmtimeModule::new(executor.store.engine(), &wasm)
+    let module = wasmtime::Module::new(executor.store.engine(), &wasm)
         .expect("wasmtime builds the second module");
     executor
-        .instantiate(&module)
+        .instantiate(&WasmtimeModule::from(module))
         .expect("wasmtime instantiates the second module");
 }
 

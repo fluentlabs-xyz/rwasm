@@ -85,6 +85,16 @@ meter rather than what the language allows.
   `new_as_wasmtime` and `for_each_strategy` alike. Use
   `CompilationConfig::default_strategy_compatible()` for modules that may run on either engine;
   `new_as_rwasm` and `RwasmModule::compile` keep accepting the rwasm-only injections.
+- **Syscall fuel (`builtins_consume_fuel`)** — the rwasm compiler charges an import's
+  `SyscallFuelParams` inside the import trampoline, so every way of reaching the import pays it:
+  `call`, `return_call`, `call_indirect`/`return_call_indirect` through a table entry, an import
+  exported as the entrypoint and an import used as `start`. On the Wasmtime strategy the same
+  schedule travels with the compiled module (`WasmtimeModule::syscall_fuel`, by import name) and
+  is charged by the host trampolines `WasmtimeExecutor` installs, before the handler runs and
+  after the same `IntegerOverflow` guard on the metered parameter. It is deliberately *not*
+  handed to the Wasmtime engine: Cranelift could only charge it at direct `call` sites, which
+  left every other path unmetered. A bare `wasmtime::Module` converted with
+  `WasmtimeModule::from` carries no schedule and charges nothing.
 
 ### Backend differences that remain
 

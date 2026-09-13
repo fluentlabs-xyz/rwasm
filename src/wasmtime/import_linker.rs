@@ -97,7 +97,9 @@ pub fn wasmtime_import_linker<T: 'static>(
             )
         };
         linked.map_err(|_| {
-            wasmtime::Error::msg(format!("wasmtime: function import collision: {import_name}"))
+            wasmtime::Error::msg(format!(
+                "wasmtime: function import collision: {import_name}"
+            ))
         })?;
     }
 
