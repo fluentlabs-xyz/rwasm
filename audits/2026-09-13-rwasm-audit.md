@@ -25,12 +25,15 @@
 | Severity | Count | Class A (production model) | Class B (foreign bytecode) |
 | --- | --- | --- | --- |
 | CRIT | 1 | 1 | 0 |
-| HIGH | 7 | 7 | 0 |
+| HIGH | 8 | 8 | 0 |
 
-All eight are reachable from valid Wasm — six with the recommended
+All nine are reachable from valid Wasm — seven with the recommended
 `CompilationConfig::default_strategy_compatible()` (plus `builtins_consume_fuel`, the production
-schedule) — and all eight are fixed on this branch. Every finding section below is the write-up
-at the revision it was found on; the fix and its regression tests are in the table that follows.
+schedule). Eight are fixed on this branch; HIGH-8 (bulk memory and table operations are not
+metered by size on the Wasmtime strategy, nor on rwasm under the recommended configuration) needs
+the Wasmtime fork to implement the dynamic charge and stays **open** with its fix designed and
+its regression test checked in as ignored. Every finding section below is the write-up at the
+revision it was found on; the fix and its regression tests are in the table that follows.
 
 ## Fixes applied
 
@@ -43,6 +46,7 @@ at the revision it was found on; the fix and its regression tests are in the tab
 | HIGH-4 unbounded code expansion | `CompilationConfig::max_code_len` (default `N_DEFAULT_MAX_CODE_LEN`, 2 Mi instructions) checked after every operator and every `br_table` target while emitting, plus on the merged section; `CompilationError::CodeSizeExceeded`; `br_table` entries with the same `(label, DropKeep)` share one trampoline; part of the codegen identity | `7c506511` | `::code_size_bound` (2), `tests/strategy_limits.rs::code_size_bound_*`, `::br_table_entries_with_the_same_target_share_a_trampoline` |
 | HIGH-5 wide metered parameter accepted by rwasm only | `param_slot_depth` rejects a non-`i32` metered parameter with `InvalidSyscallFuelParam`, so both strategies refuse it together (it never metered correctly: the trampoline read the high word, Cranelift the whole value) | `7c506511` | `::metered_import_parameters` (2), `src/compiler/block_fuel.rs` unit tests |
 | HIGH-6 metered import at the stack-window boundary traps on rwasm only | `N_STACK_TRAMPOLINE_HEADROOM` (4 slots) above `N_MAX_STACK_SIZE` on the runtime value stack, for the one frame Wasm does not have | `7c506511` | `::metered_import_parameters::stack_window_*` (3) |
+| HIGH-8 bulk operations unmetered by size | **open** — fork-side: charge `(n + 63) >> 6` / `(n + 15) >> 4` / `pages · 1024` before `memory.{fill,copy,init,grow}` and `table.{fill,copy,init,grow}` in `wasmtime-rwasm`, behind a `Config` knob, so `consume_fuel_for_bulk_ops` becomes strategy-compatible; then drop it from `CompilationConfig::is_strategy_compatible` and wire the knob in `wasmtime_engine` | — | `tests/audit_2026_09_13_repro.rs::bulk_operation_metering` (2, `#[ignore]` until the fork ships) |
 | HIGH-7 fuel after a statically out-of-bounds access | the translator mirrors Cranelift's compile-time bounds check (`is_statically_out_of_bounds`, `emit_memory_access`): such an access lowers to `Trap(MemoryOutOfBounds)` and ends the path, as disabled float operators already did | `ff4dd79b` | `::static_out_of_bounds_fuel` (5), `tests/fuel_alignment.rs::fuel_matches_after_statically_out_of_bounds_access`, `src/compiler/parser.rs::statically_out_of_bounds_access_lowers_to_a_trap` |
 
 The whole suite is green in release and debug (`cargo test --release --features wasmtime`,
@@ -550,6 +554,69 @@ out-of-bounds case is the passing control).
 
 ---
 
+### HIGH-8 — bulk memory and table operations are priced flat on the Wasmtime strategy, and on rwasm under the recommended configuration: 64 MiB of `memory.fill` for 14 fuel — **OPEN** (fix designed, fork-side)
+
+**Where:** `CompilationConfig::default_strategy_compatible` (`src/compiler/config.rs`) disables
+`consume_fuel_for_bulk_ops`, and `StrategyDefinition::new` / `new_as_wasmtime` /
+`for_each_strategy` reject any config that enables it (`StrategyIncompatibleConfig`), because the
+Wasmtime fork charges every bulk operator a flat `ENTITY_FUEL_COST`
+(`wasmtime-rwasm/crates/cranelift/src/rwasm_fuel.rs:50-65`) and cannot be told otherwise. The
+rwasm translator *can* meter these operators by size (`op_memory_fill_checked` and friends in
+`src/isa/{memory,table}.rs`: `(n + 63) >> 6` fuel per `memory.fill`/`copy`/`init`, `pages · 1024`
+per `memory.grow`, `(n + 15) >> 4` per table operation), and the plain `CompilationConfig::default`
+does — but that is exactly the config the crate's primary entry point refuses. The 2026-09-12 fix
+of HIGH-4 chose to reject the divergent config rather than implement the charge on Wasmtime, and
+the docs of `default_strategy_compatible` then recommend the unmetered config "whenever the
+produced module may run on either strategy (consensus-critical paths)".
+
+**Measured** (200 iterations of `(memory.fill (i32.const 0) (i32.const 8) (i32.const 0x4000000))`
+on a 1024-page memory, `Some(1024)` store limit; release):
+
+| config | strategy | fuel for 200 × 64 MiB fills | wall time | per fuel unit |
+| --- | --- | --- | --- | --- |
+| `default_strategy_compatible` | rwasm | 2 804 (14 per fill) | 110 ms | **39 µs** |
+| `default_strategy_compatible` | Wasmtime | 2 804 (14 per fill) | 113 ms | **40 µs** |
+| `default` (bulk fuel on) | rwasm | 210 766 581 (1 M per fill) | 108 ms | 0.5 ns |
+| `default` (bulk fuel on) | Wasmtime | rejected (`StrategyIncompatibleConfig`) | — | — |
+
+Ordinary instructions cost 1.65 ns per fuel unit on the interpreter (`i32.add` loop, same
+harness), so under the recommended configuration a bulk operation buys ~24 000× more CPU per
+fuel than anything else, on both engines. `memory.copy`, `memory.init` and the table operations
+behave the same way; `memory.grow` is bounded by the page cap and is not the problem.
+
+**Why it matters.** A transaction budget cannot bound the work: with 10 M fuel a module can issue
+~700 000 64 MiB fills, i.e. minutes of `memset` per transaction on every node that executes it.
+Any deployment that follows the crate's own guidance — `StrategyDefinition::new` with the
+recommended config — is exposed on both strategies; a deployment that pins contracts to the rwasm
+VM with `CompilationConfig::default` (as the host does today) is exposed only where it runs the
+Wasmtime strategy, which is currently trusted system code. That is why this is HIGH and not
+CRIT, and why it was left as a documented limitation in 2026-09-12 — but a documented 24 000×
+metering gap on the recommended path is still a reachable DoS from valid Wasm under the threat
+model, and the fix is well within reach.
+
+**Fix (designed, fork-side).** Give the fork a `Config::consume_fuel_for_bulk_ops(bool)` and,
+when set, charge the rwasm formulas at the operator, in `fuel_before_op` next to the syscall
+policy: `memory.fill`/`copy`: `(n + 63) >> 6` on the top-of-stack `n` with 32-bit wrapping
+arithmetic (the `SAFETY NOTE` in `src/isa/memory.rs` explains why the wrap is harmless);
+`memory.init`/`table.init`: the same charge *after* the source-range guard rwasm runs first
+(`s > len` / `n > len - s` against the segment's static length — `ModuleTranslation::
+passive_data_map` and `passive_elements` carry those lengths); `memory.grow`: `(pages · 65536) >> 6`
+only when rwasm's declared-maximum guard does not short-circuit to `-1`; `table.fill`/`copy`:
+`(n + 15) >> 4`; `table.grow`: the same, only past its `min(declared max, N_MAX_TABLE_SIZE)`
+guard. Then, in this crate, take `consume_fuel_for_bulk_ops` out of
+`CompilationConfig::is_strategy_compatible`, set the knob in `wasmtime_engine`, and un-ignore
+`tests/audit_2026_09_13_repro.rs::bulk_operation_metering`, which asserts the per-size charge and
+its equality on both strategies. Until the fork ships, the host-side mitigation is the one already
+in place: never run untrusted Wasm on the Wasmtime strategy, and compile contracts with
+`CompilationConfig::default` on the rwasm VM.
+
+**Repro:** `tests/audit_2026_09_13_repro.rs::bulk_operation_metering::bulk_operations_are_metered_by_size_on_both_strategies`
+and `::flat_priced_bulk_operations_are_not_offered_as_strategy_compatible` (both `#[ignore]`,
+written against the fixed behaviour; the measurement above is reproduced by the first one when
+run with `--ignored`).
+
+---
+
 ## Lower-severity observations (verified, below the HIGH bar)
 
 * **Fuel is not released at instantiation, although the field is documented per instance.**
@@ -622,13 +689,22 @@ out-of-bounds case is the passing control).
   `TypeStack::slot_depth` is O(1); const expressions are evaluated iteratively. Three real
   contracts (`tests/assets`: secp256k1 1.1 MB, nitro-verifier 465 KB, panic 41 KB) compile at
   ~0.6 instructions per byte, serialize/deserialize byte-for-byte and agree between strategies.
-* **Fuzzing:** 50 104 inputs with imports, `memory.grow`, repeated calls and 2–4 tables
-  (`differential_imports`), 146 966 interrupt/resume pairs (`resume_equivalence`) and the 9 513-file
-  corpus of the original target — no divergence beyond HIGH-7 and the documented `StackOverflow`
-  depth residual (rwasm: 1024 frames / the value-stack window, Wasmtime: its native stack).
-* Runtime cost per fuel unit of `memory.grow` (in-place `realloc`), bulk operations under the
-  production schedule, and the transactional instantiation added in `4c40f702` (state moved aside
-  and restored together, second `begin_instantiation` blocked while one is parked).
+* **Fuzzing:** 170 549 inputs with imports, `memory.grow`, repeated calls and 2–4 tables
+  (`differential_imports`), 291 457 interrupt/resume pairs (`resume_equivalence`), 453 255
+  malformed or byte-corrupted modules through both compilers (`compile_malformed`: no panic in
+  the parser, the validator or the translator, and the Wasmtime front end never accepts what
+  rwasm rejects) and the 9 513-file corpus of the original target — no divergence beyond HIGH-7
+  and the documented `StackOverflow` depth residual (rwasm: 1024 frames / the value-stack window,
+  Wasmtime: its native stack).
+* **Fuel after every other trap kind** agrees between the engines, on the spec suite with fuel
+  compared after traps as well as on targeted cases: division by zero and overflow inside the
+  `i64` snippets and inline, `unreachable`, `table.get`/`call_indirect` out of bounds, a null
+  indirect call, `memory.fill`/`init` out of bounds, accesses to zero-maximum tables and
+  memories, declarative and dropped element segments, and `table.grow` past its maximum.
+* Runtime cost per fuel unit of `memory.grow` (in-place `realloc`), the `i64` snippets (≤ 7 ns
+  per fuel unit), bulk operations under the production schedule (0.5 ns), and the transactional
+  instantiation added in `4c40f702` (state moved aside and restored together, second
+  `begin_instantiation` blocked while one is parked).
 
 ## Verification gaps
 
@@ -651,4 +727,5 @@ cargo test --release --features wasmtime --test fuel_alignment
 # the new fuzz targets
 cd fuzz && cargo +nightly fuzz run differential_imports -- -max_total_time=600 -rss_limit_mb=4096
 cd fuzz && cargo +nightly fuzz run resume_equivalence  -- -max_total_time=600 -rss_limit_mb=4096
+cd fuzz && cargo +nightly fuzz run compile_malformed    -- -max_total_time=600 -rss_limit_mb=4096
 ```

@@ -1094,3 +1094,118 @@ mod static_out_of_bounds_fuel {
         );
     }
 }
+
+#[cfg(feature = "wasmtime")]
+mod bulk_operation_metering {
+    //! HIGH-8: bulk memory and table operations are priced flat on the Wasmtime strategy, and the
+    //! only configuration both strategies accept therefore prices them flat on rwasm too — 64 MiB
+    //! of `memory.fill` for 14 fuel, ~24 000× the per-fuel cost of ordinary instructions. The fix
+    //! is a dynamic charge in the Wasmtime fork; these tests describe the fixed contract and stay
+    //! ignored until the fork ships (`cargo test -- --ignored` runs them, and the first one prints
+    //! the measurement either way).
+
+    use rwasm::{
+        CompilationConfig, CompilationError, ImportLinker, StoreTr, StrategyDefinition, Value,
+    };
+    use std::{sync::Arc, time::Instant};
+
+    const PAGES: u32 = 1024;
+    const FILLS: i32 = 200;
+    const FILL_BYTES: u32 = 64 * 1024 * 1024;
+    const FUEL: u64 = 1_000_000_000;
+
+    fn wasm() -> Vec<u8> {
+        wat::parse_str(format!(
+            r#"(module (memory (export "memory") {PAGES})
+              (func (export "main") (param $n i32)
+                (block (loop
+                  (br_if 1 (i32.eqz (local.get $n)))
+                  (memory.fill (i32.const 0) (i32.const 8) (i32.const {FILL_BYTES}))
+                  (local.set $n (i32.sub (local.get $n) (i32.const 1)))
+                  (br 0)))))"#
+        ))
+        .unwrap()
+    }
+
+    /// `(fuel consumed, wall time)` of `FILLS` fills on `definition`.
+    fn measure(definition: StrategyDefinition) -> (u64, std::time::Duration) {
+        let mut executor = definition
+            .create_executor(
+                Arc::new(ImportLinker::default()),
+                (),
+                rwasm::always_failing_syscall_handler,
+                Some(FUEL),
+                Some(PAGES),
+            )
+            .unwrap();
+        let started = Instant::now();
+        executor
+            .execute("main", &[Value::I32(FILLS)], &mut [])
+            .unwrap();
+        (FUEL - executor.remaining_fuel().unwrap(), started.elapsed())
+    }
+
+    /// With `consume_fuel_for_bulk_ops` both strategies must charge `(n + 63) >> 6` per fill —
+    /// 1 Mi fuel for 64 MiB — and agree. Today the Wasmtime strategy rejects the config outright,
+    /// and the config it does accept charges 14 fuel per fill on both engines.
+    #[test]
+    #[ignore = "HIGH-8: needs wasmtime-rwasm with a dynamic bulk-operation charge"]
+    fn bulk_operations_are_metered_by_size_on_both_strategies() {
+        let wasm = wasm();
+        let metered = CompilationConfig::default()
+            .with_consume_fuel_for_params_and_locals(false)
+            .with_entrypoint_name("main".into())
+            .with_max_allowed_memory_pages(PAGES);
+        let per_fill = u64::from(FILL_BYTES.div_ceil(64));
+        let (rwasm_fuel, rwasm_time) =
+            measure(StrategyDefinition::new_as_rwasm(metered.clone(), &wasm).unwrap());
+        eprintln!("rwasm metered: {rwasm_fuel} fuel in {rwasm_time:?}");
+        assert!(rwasm_fuel >= per_fill * FILLS as u64, "{rwasm_fuel}");
+        let wasmtime = StrategyDefinition::new_as_wasmtime(metered, &wasm, None)
+            .expect("the Wasmtime strategy accepts the size-metered config");
+        let (wasmtime_fuel, wasmtime_time) = measure(wasmtime);
+        eprintln!("wasmtime metered: {wasmtime_fuel} fuel in {wasmtime_time:?}");
+        assert_eq!(rwasm_fuel, wasmtime_fuel);
+    }
+
+    /// The strategy-compatible config must not be the one that prices 64 MiB at 14 fuel: once
+    /// the fork meters bulk operations, `default_strategy_compatible()` keeps the dynamic charge.
+    /// Until then this pins the measurement that motivates the finding.
+    #[test]
+    #[ignore = "HIGH-8: needs wasmtime-rwasm with a dynamic bulk-operation charge"]
+    fn flat_priced_bulk_operations_are_not_offered_as_strategy_compatible() {
+        let wasm = wasm();
+        let compatible = CompilationConfig::default_strategy_compatible()
+            .with_entrypoint_name("main".into())
+            .with_max_allowed_memory_pages(PAGES);
+        for definition in [
+            StrategyDefinition::new_as_rwasm(compatible.clone(), &wasm).unwrap(),
+            StrategyDefinition::new_as_wasmtime(compatible.clone(), &wasm, None).unwrap(),
+        ] {
+            let (fuel, time) = measure(definition);
+            let per_fill = fuel / FILLS as u64;
+            eprintln!(
+                "strategy-compatible: {per_fill} fuel per 64 MiB fill, {:.1} µs per fuel unit",
+                time.as_micros() as f64 / fuel as f64
+            );
+            assert!(
+                per_fill >= u64::from(FILL_BYTES.div_ceil(64)),
+                "a 64 MiB fill must not cost {per_fill} fuel"
+            );
+        }
+        // and the size-metered config must be strategy compatible
+        assert!(
+            !matches!(
+                StrategyDefinition::new(
+                    CompilationConfig::default()
+                        .with_consume_fuel_for_params_and_locals(false)
+                        .with_entrypoint_name("main".into()),
+                    &wasm,
+                    None
+                ),
+                Err(CompilationError::StrategyIncompatibleConfig)
+            ),
+            "the size-metered config is rejected as strategy incompatible"
+        );
+    }
+}
