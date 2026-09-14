@@ -1148,6 +1148,7 @@ mod bulk_operation_metering {
     /// 1 Mi fuel for 64 MiB — and agree. Today the Wasmtime strategy rejects the config outright,
     /// and the config it does accept charges 14 fuel per fill on both engines.
     #[test]
+    #[ignore = "HIGH-8: needs wasmtime-rwasm 45.0.0-rwasm.3 (fluentlabs-xyz/wasmtime#12); run with --ignored to reproduce"]
     fn bulk_operations_are_metered_by_size_on_both_strategies() {
         let wasm = wasm();
         let metered = CompilationConfig::default()
@@ -1171,6 +1172,7 @@ mod bulk_operation_metering {
     /// and the size-metered config is accepted by the strategy layer. The failure message carries
     /// the measurement that motivates the finding.
     #[test]
+    #[ignore = "HIGH-8: needs wasmtime-rwasm 45.0.0-rwasm.3 (fluentlabs-xyz/wasmtime#12); run with --ignored to reproduce"]
     fn flat_priced_bulk_operations_are_not_offered_as_strategy_compatible() {
         let wasm = wasm();
         let compatible = CompilationConfig::default_strategy_compatible()
