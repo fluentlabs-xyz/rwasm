@@ -1100,9 +1100,8 @@ mod bulk_operation_metering {
     //! HIGH-8: bulk memory and table operations are priced flat on the Wasmtime strategy, and the
     //! only configuration both strategies accept therefore prices them flat on rwasm too — 64 MiB
     //! of `memory.fill` for 14 fuel, ~24 000× the per-fuel cost of ordinary instructions. The fix
-    //! is a dynamic charge in the Wasmtime fork; these tests describe the fixed contract and stay
-    //! ignored until the fork ships (`cargo test -- --ignored` runs them, and the first one prints
-    //! the measurement either way).
+    //! is a dynamic charge in the Wasmtime fork (`wasmtime-rwasm`); until it ships these tests
+    //! are red, like every other reproduction in this file was when its finding was open.
 
     use rwasm::{
         CompilationConfig, CompilationError, ImportLinker, StoreTr, StrategyDefinition, Value,
@@ -1149,7 +1148,6 @@ mod bulk_operation_metering {
     /// 1 Mi fuel for 64 MiB — and agree. Today the Wasmtime strategy rejects the config outright,
     /// and the config it does accept charges 14 fuel per fill on both engines.
     #[test]
-    #[ignore = "HIGH-8: needs wasmtime-rwasm with a dynamic bulk-operation charge"]
     fn bulk_operations_are_metered_by_size_on_both_strategies() {
         let wasm = wasm();
         let metered = CompilationConfig::default()
@@ -1169,10 +1167,10 @@ mod bulk_operation_metering {
     }
 
     /// The strategy-compatible config must not be the one that prices 64 MiB at 14 fuel: once
-    /// the fork meters bulk operations, `default_strategy_compatible()` keeps the dynamic charge.
-    /// Until then this pins the measurement that motivates the finding.
+    /// the fork meters bulk operations, `default_strategy_compatible()` keeps the dynamic charge
+    /// and the size-metered config is accepted by the strategy layer. The failure message carries
+    /// the measurement that motivates the finding.
     #[test]
-    #[ignore = "HIGH-8: needs wasmtime-rwasm with a dynamic bulk-operation charge"]
     fn flat_priced_bulk_operations_are_not_offered_as_strategy_compatible() {
         let wasm = wasm();
         let compatible = CompilationConfig::default_strategy_compatible()
