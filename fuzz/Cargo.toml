@@ -42,6 +42,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "compile_malformed"
+path = "fuzz_targets/compile_malformed.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "repro_artifact"
 path = "src/bin/repro_artifact.rs"
 test = false
