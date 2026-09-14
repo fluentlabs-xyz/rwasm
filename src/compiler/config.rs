@@ -118,9 +118,16 @@ impl CompilationConfig {
     /// depending on which strategy the crate was built with. This constructor disables the
     /// rwasm-only injections so both strategies charge from the same schedule.
     ///
-    /// Use this whenever the produced module may run on either strategy (consensus-critical
-    /// paths); use [`CompilationConfig::default`] only when execution is pinned to the rwasm VM
-    /// and the extra metering is wanted.
+    /// Use this whenever the produced module may run on either strategy; use
+    /// [`CompilationConfig::default`] when execution is pinned to the rwasm VM and the extra
+    /// metering is wanted.
+    ///
+    /// **Not for untrusted code.** Without `consume_fuel_for_bulk_ops` a bulk memory or table
+    /// operation costs a flat entity cost however much it touches — 64 MiB of `memory.fill` for
+    /// a handful of fuel — on both engines, so a guest can buy unbounded host work per fuel unit.
+    /// Untrusted Wasm belongs on the rwasm VM with [`CompilationConfig::default`]; the Wasmtime
+    /// strategy is for trusted (system) code until the engine meters bulk operations itself
+    /// (<https://github.com/fluentlabs-xyz/wasmtime/pull/12>).
     pub fn default_strategy_compatible() -> Self {
         Self {
             consume_fuel_for_bulk_ops: false,

@@ -1099,9 +1099,15 @@ mod static_out_of_bounds_fuel {
 mod bulk_operation_metering {
     //! HIGH-8: bulk memory and table operations are priced flat on the Wasmtime strategy, and the
     //! only configuration both strategies accept therefore prices them flat on rwasm too — 64 MiB
-    //! of `memory.fill` for 14 fuel, ~24 000× the per-fuel cost of ordinary instructions. The fix
-    //! is a dynamic charge in the Wasmtime fork (`wasmtime-rwasm`); until it ships these tests
-    //! are red, like every other reproduction in this file was when its finding was open.
+    //! of `memory.fill` for 14 fuel, ~24 000× the per-fuel cost of ordinary instructions.
+    //!
+    //! Ignored until https://github.com/fluentlabs-xyz/wasmtime/pull/12 is merged and released:
+    //! the fix is a dynamic charge inside the Wasmtime fork (`Config::rwasm_bulk_fuel`), which is
+    //! a substantial change to that code base. It is not needed for the current deployment — the
+    //! Wasmtime strategy runs trusted system code only, and contracts run on the rwasm VM with
+    //! `CompilationConfig::default()`, where bulk operations are metered — so the tests stay in
+    //! the suite as the executable statement of the contract, `--ignored` runs them and prints
+    //! the measurement, and they turn green with the fork release.
 
     use rwasm::{
         CompilationConfig, CompilationError, ImportLinker, StoreTr, StrategyDefinition, Value,
@@ -1147,8 +1153,10 @@ mod bulk_operation_metering {
     /// With `consume_fuel_for_bulk_ops` both strategies must charge `(n + 63) >> 6` per fill —
     /// 1 Mi fuel for 64 MiB — and agree. Today the Wasmtime strategy rejects the config outright,
     /// and the config it does accept charges 14 fuel per fill on both engines.
+    // Ignored until https://github.com/fluentlabs-xyz/wasmtime/pull/12 is merged: needs
+    // `Config::rwasm_bulk_fuel` in wasmtime-rwasm 45.0.0-rwasm.3.
     #[test]
-    #[ignore = "HIGH-8: needs wasmtime-rwasm 45.0.0-rwasm.3 (fluentlabs-xyz/wasmtime#12); run with --ignored to reproduce"]
+    #[ignore = "HIGH-8: ignored until fluentlabs-xyz/wasmtime#12 is merged; run with --ignored to reproduce"]
     fn bulk_operations_are_metered_by_size_on_both_strategies() {
         let wasm = wasm();
         let metered = CompilationConfig::default()
@@ -1171,8 +1179,10 @@ mod bulk_operation_metering {
     /// the fork meters bulk operations, `default_strategy_compatible()` keeps the dynamic charge
     /// and the size-metered config is accepted by the strategy layer. The failure message carries
     /// the measurement that motivates the finding.
+    // Ignored until https://github.com/fluentlabs-xyz/wasmtime/pull/12 is merged, like the test
+    // above.
     #[test]
-    #[ignore = "HIGH-8: needs wasmtime-rwasm 45.0.0-rwasm.3 (fluentlabs-xyz/wasmtime#12); run with --ignored to reproduce"]
+    #[ignore = "HIGH-8: ignored until fluentlabs-xyz/wasmtime#12 is merged; run with --ignored to reproduce"]
     fn flat_priced_bulk_operations_are_not_offered_as_strategy_compatible() {
         let wasm = wasm();
         let compatible = CompilationConfig::default_strategy_compatible()

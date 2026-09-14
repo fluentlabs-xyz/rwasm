@@ -29,11 +29,17 @@
 
 All nine are reachable from valid Wasm — seven with the recommended
 `CompilationConfig::default_strategy_compatible()` (plus `builtins_consume_fuel`, the production
-schedule). Eight are fixed on this branch; HIGH-8 (bulk memory and table operations are not
-metered by size on the Wasmtime strategy, nor on rwasm under the recommended configuration) needs
-the Wasmtime fork to implement the dynamic charge and stays **open** with its fix designed and
-its regression tests checked in red. Every finding section below is the write-up at the
-revision it was found on; the fix and its regression tests are in the table that follows.
+schedule). Eight are fixed on this branch. HIGH-8 (bulk memory and table operations are not
+metered by size on the Wasmtime strategy, nor on rwasm under the strategy-compatible
+configuration) is **accepted as a documented limitation** for now: the fix is a substantial
+change inside the Wasmtime fork (proposed as fluentlabs-xyz/wasmtime#12, with the crate side on
+branch `fix/bulk-fuel-wasmtime`), and the current deployment is not exposed — the Wasmtime
+strategy runs trusted system code only and contracts run on the rwasm VM with
+`CompilationConfig::default`, where bulk operations are metered. Its regression tests stay in the
+suite ignored until that PR is merged (`--ignored` runs them), and
+`default_strategy_compatible()` now documents that it must not be used for untrusted code. Every
+finding section below is the write-up at the revision it was found on; the fix and its
+regression tests are in the table that follows.
 
 ## Fixes applied
 
@@ -46,7 +52,7 @@ revision it was found on; the fix and its regression tests are in the table that
 | HIGH-4 unbounded code expansion | `CompilationConfig::max_code_len` (default `N_DEFAULT_MAX_CODE_LEN`, 2 Mi instructions) checked after every operator and every `br_table` target while emitting, plus on the merged section; `CompilationError::CodeSizeExceeded`; `br_table` entries with the same `(label, DropKeep)` share one trampoline; part of the codegen identity | `7c506511` | `::code_size_bound` (2), `tests/strategy_limits.rs::code_size_bound_*`, `::br_table_entries_with_the_same_target_share_a_trampoline` |
 | HIGH-5 wide metered parameter accepted by rwasm only | `param_slot_depth` rejects a non-`i32` metered parameter with `InvalidSyscallFuelParam`, so both strategies refuse it together (it never metered correctly: the trampoline read the high word, Cranelift the whole value) | `7c506511` | `::metered_import_parameters` (2), `src/compiler/block_fuel.rs` unit tests |
 | HIGH-6 metered import at the stack-window boundary traps on rwasm only | `N_STACK_TRAMPOLINE_HEADROOM` (4 slots) above `N_MAX_STACK_SIZE` on the runtime value stack, for the one frame Wasm does not have | `7c506511` | `::metered_import_parameters::stack_window_*` (3) |
-| HIGH-8 bulk operations unmetered by size | **open** — fork-side: charge `(n + 63) >> 6` / `(n + 15) >> 4` / `pages · 1024` before `memory.{fill,copy,init,grow}` and `table.{fill,copy,init,grow}` in `wasmtime-rwasm`, behind a `Config` knob, so `consume_fuel_for_bulk_ops` becomes strategy-compatible; then drop it from `CompilationConfig::is_strategy_compatible` and wire the knob in `wasmtime_engine` | — | `tests/audit_2026_09_13_repro.rs::bulk_operation_metering` (2, **red** until the fork ships) |
+| HIGH-8 bulk operations unmetered by size | **accepted limitation** (deployment not exposed: Wasmtime strategy = trusted system code, contracts = rwasm VM with `CompilationConfig::default`); `default_strategy_compatible()` documents that it is not for untrusted code. Full fix proposed, not merged: fork PR fluentlabs-xyz/wasmtime#12 (`Config::rwasm_bulk_fuel`, Cranelift charges rwasm's formulas and guards at each bulk operator) plus crate branch `fix/bulk-fuel-wasmtime` | — | `tests/audit_2026_09_13_repro.rs::bulk_operation_metering` (2, ignored until the PR is merged) |
 | HIGH-7 fuel after a statically out-of-bounds access | the translator mirrors Cranelift's compile-time bounds check (`is_statically_out_of_bounds`, `emit_memory_access`): such an access lowers to `Trap(MemoryOutOfBounds)` and ends the path, as disabled float operators already did | `ff4dd79b` | `::static_out_of_bounds_fuel` (5), `tests/fuel_alignment.rs::fuel_matches_after_statically_out_of_bounds_access`, `src/compiler/parser.rs::statically_out_of_bounds_access_lowers_to_a_trap` |
 
 The whole suite is green in release and debug (`cargo test --release --features wasmtime`,
@@ -554,7 +560,7 @@ out-of-bounds case is the passing control).
 
 ---
 
-### HIGH-8 — bulk memory and table operations are priced flat on the Wasmtime strategy, and on rwasm under the recommended configuration: 64 MiB of `memory.fill` for 14 fuel — **OPEN** (fix designed, fork-side)
+### HIGH-8 — bulk memory and table operations are priced flat on the Wasmtime strategy, and on rwasm under the recommended configuration: 64 MiB of `memory.fill` for 14 fuel — **ACCEPTED LIMITATION** (fix proposed in the fork, not merged)
 
 **Where:** `CompilationConfig::default_strategy_compatible` (`src/compiler/config.rs`) disables
 `consume_fuel_for_bulk_ops`, and `StrategyDefinition::new` / `new_as_wasmtime` /
@@ -594,25 +600,24 @@ CRIT, and why it was left as a documented limitation in 2026-09-12 — but a doc
 metering gap on the recommended path is still a reachable DoS from valid Wasm under the threat
 model, and the fix is well within reach.
 
-**Fix (designed, fork-side).** Give the fork a `Config::consume_fuel_for_bulk_ops(bool)` and,
-when set, charge the rwasm formulas at the operator, in `fuel_before_op` next to the syscall
-policy: `memory.fill`/`copy`: `(n + 63) >> 6` on the top-of-stack `n` with 32-bit wrapping
-arithmetic (the `SAFETY NOTE` in `src/isa/memory.rs` explains why the wrap is harmless);
-`memory.init`/`table.init`: the same charge *after* the source-range guard rwasm runs first
-(`s > len` / `n > len - s` against the segment's static length — `ModuleTranslation::
-passive_data_map` and `passive_elements` carry those lengths); `memory.grow`: `(pages · 65536) >> 6`
-only when rwasm's declared-maximum guard does not short-circuit to `-1`; `table.fill`/`copy`:
-`(n + 15) >> 4`; `table.grow`: the same, only past its `min(declared max, N_MAX_TABLE_SIZE)`
-guard. Then, in this crate, take `consume_fuel_for_bulk_ops` out of
-`CompilationConfig::is_strategy_compatible`, set the knob in `wasmtime_engine`, and
-`tests/audit_2026_09_13_repro.rs::bulk_operation_metering` turns green: it asserts the per-size
-charge and its equality on both strategies. Until the fork ships, the host-side mitigation is the one already
-in place: never run untrusted Wasm on the Wasmtime strategy, and compile contracts with
-`CompilationConfig::default` on the rwasm VM.
+**Decision.** Accepted as a documented limitation rather than fixed. The proper fix is a dynamic
+charge inside the Wasmtime fork — proposed as fluentlabs-xyz/wasmtime#12 (`Config::rwasm_bulk_fuel`:
+Cranelift charges rwasm's formulas right before each bulk operator, with rwasm's guards for `init`
+and `grow`, segment lengths recorded in `ModuleTranslation`) with the crate side on branch
+`fix/bulk-fuel-wasmtime` (engine knob, the init prologue's initial-memory charge at instantiation,
+`consume_fuel_for_bulk_ops` made strategy compatible; 457 tests, e2e and clippy green against the
+patched fork). That is a substantial change to the Wasmtime code base for a gap the current
+deployment does not expose: the Wasmtime strategy runs trusted system code only, and contracts
+run on the rwasm VM with `CompilationConfig::default`, which meters bulk operations. The
+`default_strategy_compatible()` docs now say the config is not for untrusted code. The proposal
+stays available if the Wasmtime strategy is ever opened to untrusted Wasm; its regression tests
+are in the suite, ignored until the PR is merged.
 
 **Repro:** `tests/audit_2026_09_13_repro.rs::bulk_operation_metering::bulk_operations_are_metered_by_size_on_both_strategies`
-and `::flat_priced_bulk_operations_are_not_offered_as_strategy_compatible` (both red, written
-against the fixed behaviour; their failure messages carry the measurement above).
+and `::flat_priced_bulk_operations_are_not_offered_as_strategy_compatible` (written against the
+fixed behaviour; ignored until fluentlabs-xyz/wasmtime#12 is merged — `--ignored` runs them and
+their failure messages carry the measurement above; green on `fix/bulk-fuel-wasmtime` against the
+patched fork).
 
 ---
 
