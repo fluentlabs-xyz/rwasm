@@ -1024,3 +1024,102 @@ fn metered_builtin_call_at_stack_capacity_matches() {
         }
     }
 }
+
+/// A memory access whose immediate offset plus its size exceeds the largest size the memory can
+/// ever have — a declared maximum, or 4 GiB without one — can only trap. Cranelift proves that at
+/// compile time, lowers the access to an unconditional trap and stops translating the block, so
+/// the Wasmtime backend charges the region only up to and including the access. rwasm used to
+/// emit the ordinary access and charge the whole region (audit round 7, R7-1); it now emits the
+/// same unconditional trap and ends the path, so both engines charge 1 entry + the operators up
+/// to the access and leave the rest of the region unpaid. The dynamic and boundary cases below
+/// pin the other side of the rule: an access that *can* be in bounds still charges its whole
+/// region on both engines.
+#[test]
+fn fuel_matches_after_statically_out_of_bounds_access() {
+    // (label, module, remaining fuel out of 1000, trap)
+    let mut cases: Vec<(&str, &str, u64, TrapCode)> = vec![
+        (
+            "offset beyond the declared maximum",
+            r#"(module (memory (export "memory") 1 2)
+               (func (export "main")
+                 (drop (i32.load offset=131072 (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2,
+            TrapCode::MemoryOutOfBounds,
+        ),
+        (
+            "offset + size beyond the declared maximum",
+            r#"(module (memory (export "memory") 1 2)
+               (func (export "main")
+                 (drop (i32.load offset=131069 (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2,
+            TrapCode::MemoryOutOfBounds,
+        ),
+        (
+            "offset + size exactly the maximum is a dynamic access",
+            r#"(module (memory (export "memory") 1 2)
+               (func (export "main")
+                 (drop (i32.load offset=131068 (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2 - 1 - 1,
+            TrapCode::MemoryOutOfBounds,
+        ),
+        (
+            "a zero-maximum memory makes every access static",
+            r#"(module (memory (export "memory") 0 0)
+               (func (export "main")
+                 (drop (i32.load (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2,
+            TrapCode::MemoryOutOfBounds,
+        ),
+        (
+            "stores follow the same rule",
+            r#"(module (memory (export "memory") 0 1)
+               (func (export "main")
+                 (i32.store offset=65536 (i32.const 0) (i32.const 0))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 1 - 2,
+            TrapCode::MemoryOutOfBounds,
+        ),
+        (
+            "without a maximum the bound is 4 GiB: an i64 at 0xffffffff is static",
+            r#"(module (memory (export "memory") 1)
+               (func (export "main")
+                 (drop (i64.load offset=0xffffffff (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2,
+            TrapCode::MemoryOutOfBounds,
+        ),
+        (
+            "without a maximum an i32 at 0xfffffffc still fits and is dynamic",
+            r#"(module (memory (export "memory") 1)
+               (func (export "main")
+                 (drop (i32.load offset=0xfffffffc (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2 - 1 - 1,
+            TrapCode::MemoryOutOfBounds,
+        ),
+    ];
+    // Without `fpu` a float access is a disabled opcode on both engines, and that lowering takes
+    // precedence over the bounds rule. (An `fpu` build pairs with a Wasmtime build that still
+    // disables floats, so float operators are not comparable there; see the feature's docs.)
+    if !cfg!(feature = "fpu") {
+        cases.push((
+            "a disabled float access traps as an illegal opcode before the bounds rule",
+            r#"(module (memory (export "memory") 1 1)
+               (func (export "main")
+                 (drop (f32.load offset=65536 (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2,
+            TrapCode::IllegalOpcode,
+        ));
+    }
+    for (label, wat, remaining, trap) in cases {
+        let (rwasm, wasmtime) = Run::plain(wat, Some(1_000)).execute();
+        assert_eq!(rwasm.trap, Some(trap), "{label}");
+        assert_eq!(rwasm.remaining_fuel, Some(remaining), "{label}");
+        assert_aligned(&rwasm, &wasmtime);
+    }
+}

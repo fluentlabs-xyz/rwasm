@@ -991,6 +991,74 @@ mod tests {
         assert!(matches!(err, CompilationError::NotSupportedExtension));
     }
 
+    /// A memory access that can never be in bounds — immediate offset plus access size beyond
+    /// the declared maximum, or beyond 4 GiB without one — lowers to an unconditional
+    /// `Trap(MemoryOutOfBounds)` and ends the path, the way Cranelift treats it, so both engines
+    /// charge the region only up to the access (audit round 7, R7-1). An access that can be in
+    /// bounds keeps its ordinary lowering.
+    #[test]
+    fn statically_out_of_bounds_access_lowers_to_a_trap() {
+        use crate::TrapCode;
+        fn compiled(memory: &str, body: &str) -> Vec<Opcode> {
+            let wasm = wat::parse_str(format!(
+                r#"(module (memory {memory})
+                     (func (export "main") {body} unreachable))"#
+            ))
+            .unwrap();
+            let config = CompilationConfig::default_strategy_compatible()
+                .with_entrypoint_name("main".into());
+            let module = RwasmModule::compile(config, &wasm).unwrap().0;
+            // the init prologue carries its own `MemoryOutOfBounds` guard; look at the body only
+            module
+                .code_section
+                .iter()
+                .skip(module.source_pc as usize)
+                .copied()
+                .collect()
+        }
+        let has = |code: &[Opcode], pred: fn(&Opcode) -> bool| code.iter().any(pred);
+        let is_oob_trap = |op: &Opcode| matches!(op, Opcode::Trap(TrapCode::MemoryOutOfBounds));
+        let is_load = |op: &Opcode| matches!(op, Opcode::I32Load(_));
+        let is_store = |op: &Opcode| matches!(op, Opcode::I32Store(_));
+        let is_unreachable = |op: &Opcode| matches!(op, Opcode::Unreachable);
+
+        // static: the trap replaces the access and the dead tail is not emitted
+        for (memory, body) in [
+            ("1 2", "(drop (i32.load offset=131072 (i32.const 0)))"),
+            ("1 2", "(drop (i32.load offset=131069 (i32.const 0)))"),
+            ("0 0", "(drop (i32.load (i32.const 0)))"),
+            ("1", "(drop (i64.load offset=0xffffffff (i32.const 0)))"),
+        ] {
+            let code = compiled(memory, body);
+            assert!(has(&code, is_oob_trap), "{memory} {body}: trap expected");
+            assert!(!has(&code, is_load), "{memory} {body}: no load expected");
+            assert!(
+                !has(&code, is_unreachable),
+                "{memory} {body}: dead tail expected"
+            );
+        }
+        let code = compiled(
+            "0 1",
+            "(i32.store offset=65536 (i32.const 0) (i32.const 0))",
+        );
+        assert!(has(&code, is_oob_trap) && !has(&code, is_store));
+
+        // dynamic: the access and everything after it are emitted
+        for (memory, body) in [
+            ("1 2", "(drop (i32.load offset=131068 (i32.const 0)))"),
+            ("1", "(drop (i32.load offset=0xfffffffc (i32.const 0)))"),
+            ("0", "(drop (i32.load (i32.const 0)))"),
+        ] {
+            let code = compiled(memory, body);
+            assert!(
+                !has(&code, is_oob_trap),
+                "{memory} {body}: no trap expected"
+            );
+            assert!(has(&code, is_load), "{memory} {body}: load expected");
+            assert!(has(&code, is_unreachable), "{memory} {body}: tail expected");
+        }
+    }
+
     /// The fuel prologue `compile_block_params` emits into an import trampoline is written
     /// straight into the instruction set, outside the translator's stack-height tracking. Its
     /// temporaries still have to be part of the trampoline's `StackCheck`: with `StackCheck(0)`

@@ -97,6 +97,14 @@ meter rather than what the language allows.
   `WasmtimeModule::from` carries no schedule and charges nothing. A schedule that meters a wide
   (`i64`/`f64`) parameter is rejected with `InvalidSyscallFuelParam` on both strategies: the
   policies are defined over 32-bit byte lengths.
+- **Statically out-of-bounds memory accesses** — a load or store whose immediate offset plus its
+  access size exceeds the largest size the memory can ever have (its declared maximum, or 4 GiB
+  without one) is lowered to an unconditional `Trap(MemoryOutOfBounds)` and ends the code path,
+  exactly as Cranelift does on the Wasmtime strategy. The access could never succeed, so only the
+  metering of the dead tail changes: both engines charge the region up to and including the
+  access. Without this the Wasmtime backend, which never translates the dead tail, charged less
+  than rwasm for the same trap. Disabled float accesses keep their `Trap(IllegalOpcode)`
+  lowering, which takes precedence on both engines.
 - **Code size (`max_code_len`)** — the translator expands some operators into many instructions
   (a branch keeping `k` values costs `2k + 1`, `k` up to Wasm's 1000 block results), so the
   output is not proportional to the input: a 1 MiB `br_table` module used to compile to ~16 GiB

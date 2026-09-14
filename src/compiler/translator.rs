@@ -18,8 +18,8 @@ use crate::{
     },
     AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
     ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
-    Opcode, TableIdx, TrapCode, DEFAULT_MEMORY_INDEX, N_MAX_STACK_SIZE, N_MAX_TABLE_SIZE,
-    SNIPPET_FUNC_IDX_UNRESOLVED,
+    Opcode, TableIdx, TrapCode, DEFAULT_MEMORY_INDEX, N_BYTES_PER_MEMORY_PAGE, N_MAX_STACK_SIZE,
+    N_MAX_TABLE_SIZE, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec::Vec};
 use bitvec::macros::internal::funty::Fundamental;
@@ -602,6 +602,51 @@ impl InstructionTranslator {
         ) {
             self.reachable = false;
         }
+    }
+
+    /// Returns `true` if a memory access with `memarg` can never be in bounds: its immediate
+    /// offset plus its access size exceeds the largest size the memory can ever have.
+    ///
+    /// This mirrors the compile-time bounds check of the Wasmtime backend
+    /// (`bounds_check_and_compute_addr`: `offset + access_size > maximum_byte_size`, where the
+    /// maximum is the declared one, or 4 GiB for a memory that declares none). Cranelift lowers
+    /// such an access to an unconditional trap and treats the code after it as unreachable, so it
+    /// charges the region only up to and including the access. rwasm has to charge the same
+    /// amount; [`Self::translate_load`] and [`Self::translate_store`] therefore emit the same
+    /// unconditional `Trap(MemoryOutOfBounds)` and end the path, exactly as
+    /// [`Self::end_path_if_illegal_opcode`] does for disabled float operators. The access could
+    /// never have done anything else, so nothing but the metering of the dead tail changes.
+    fn is_statically_out_of_bounds(&self, memarg: &MemArg) -> bool {
+        let memory = self.resolve_memory_type(DEFAULT_MEMORY_INDEX);
+        let max_bytes = memory.maximum.map_or(1u64 << 32, |pages| {
+            pages.saturating_mul(u64::from(N_BYTES_PER_MEMORY_PAGE))
+        });
+        // `max_align` is the natural alignment of the access, i.e. log2 of its size in bytes
+        let access_size = 1u64 << memarg.max_align;
+        memarg.offset.saturating_add(access_size) > max_bytes
+    }
+
+    /// Lowers a memory access, or the unconditional trap it amounts to when
+    /// [`Self::is_statically_out_of_bounds`]. Disabled float accesses keep their
+    /// `Trap(IllegalOpcode)` lowering, which the Wasmtime backend also applies first.
+    fn emit_memory_access(
+        &mut self,
+        memarg: &MemArg,
+        value_type: ValType,
+        emitter: fn(&mut InstructionSet, offset: AddressOffset),
+    ) {
+        let float_disabled =
+            !cfg!(feature = "fpu") && matches!(value_type, ValType::F32 | ValType::F64);
+        if !float_disabled && self.is_statically_out_of_bounds(memarg) {
+            self.alloc
+                .instruction_set
+                .op_trap(TrapCode::MemoryOutOfBounds);
+            self.reachable = false;
+            return;
+        }
+        let offset = AddressOffset::from(memarg.offset as u32);
+        emitter(&mut self.alloc.instruction_set, offset);
+        self.end_path_if_illegal_opcode();
     }
 
     /// Translates into `rwasm` bytecode if the current code path is reachable.
@@ -4020,9 +4065,7 @@ impl InstructionTranslator {
             builder.stack_height.push_type(loaded_type);
             builder.stack_height.pop_n(max_stack_height);
             builder.alloc.stack_types.push(loaded_type);
-            let offset = AddressOffset::from(memarg.offset as u32);
-            emitter(&mut builder.alloc.instruction_set, offset);
-            builder.end_path_if_illegal_opcode();
+            builder.emit_memory_access(&memarg, loaded_type, emitter);
             Ok(())
         })
     }
@@ -4045,9 +4088,7 @@ impl InstructionTranslator {
             debug_assert_eq!(addr_type, ValType::I32);
             builder.stack_height.pop_type(addr_type);
             builder.stack_height.pop_n(max_stack_height);
-            let offset = AddressOffset::from(memarg.offset as u32);
-            emitter(&mut builder.alloc.instruction_set, offset);
-            builder.end_path_if_illegal_opcode();
+            builder.emit_memory_access(&memarg, stored_value, emitter);
             Ok(())
         })
     }
