@@ -351,4 +351,22 @@ mod tests {
             N_MAX_ALLOWED_MEMORY_PAGES
         );
     }
+
+    /// `reset(false)` forgets every dropped segment whether the bitset fits in one word or not;
+    /// the wide case swaps the allocation out instead of clearing it in place. `reset(true)`
+    /// keeps the flags either way.
+    #[test]
+    fn reset_forgets_dropped_segments_of_any_count() {
+        for count in [1, size_of::<usize>(), size_of::<usize>() + 1, 200] {
+            let mut store = RwasmStore::<()>::default();
+            store.empty_data_segments.resize(count, true);
+            store.empty_elem_segments.resize(count, true);
+            store.reset(true);
+            assert_eq!(store.empty_data_segments.count_ones(), count);
+            assert_eq!(store.empty_elem_segments.count_ones(), count);
+            store.reset(false);
+            assert!(store.empty_data_segments.not_any(), "{count} data segments");
+            assert!(store.empty_elem_segments.not_any(), "{count} elem segments");
+        }
+    }
 }

@@ -258,11 +258,13 @@ mod tests {
     /// the preimage changes on purpose.
     #[test]
     fn default_identity_is_pinned() {
-        let expected = if cfg!(feature = "fpu") {
-            hex_literal::hex!("cba46c439e7d617ce172ef036e5781555e1664b22651425f88625eb4cc4b0690")
-        } else {
-            hex_literal::hex!("12124ae76ec807e80a81f238312ddd29db5db1f77fe1d64c9538453f6f4c3ab5")
-        };
+        let pinned = [
+            // default build
+            hex_literal::hex!("12124ae76ec807e80a81f238312ddd29db5db1f77fe1d64c9538453f6f4c3ab5"),
+            // `fpu` build
+            hex_literal::hex!("cba46c439e7d617ce172ef036e5781555e1664b22651425f88625eb4cc4b0690"),
+        ];
+        let expected = pinned[usize::from(cfg!(feature = "fpu"))];
         assert_eq!(CompilationConfig::default().codegen_identity(), expected);
     }
 

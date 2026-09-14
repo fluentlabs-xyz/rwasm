@@ -1,8 +1,9 @@
 //! Replacement initialization must preserve the old instance until it can commit.
 
 use rwasm::{
-    CompilationConfig, ExecutionEngine, ImportLinker, ImportName, RwasmModule, RwasmStore, StoreTr,
-    SyscallFuelParams, TrapCode, TypedCaller, Value,
+    instruction_set, CompilationConfig, ExecutionEngine, ImportLinker, ImportName, RwasmInstance,
+    RwasmModule, RwasmModuleBuilder, RwasmStore, StoreTr, SyscallFuelParams, TrapCode, TypedCaller,
+    Value,
 };
 use std::{collections::VecDeque, sync::Arc};
 
@@ -223,4 +224,19 @@ fn successful_resumed_initialization_commits_the_replacement() {
             .instantiate(&mut store, engine, compile(&linker, ORIGINAL))
             .is_ok());
     }
+}
+
+/// A module assembled without an initialization prologue (`source_pc == 0`, what the builder
+/// produces) has nothing to run at instantiation: the handle becomes live at once and executes
+/// the code section from its start.
+#[test]
+fn module_without_prologue_instantiates_without_running_anything() {
+    let module = RwasmModuleBuilder::new(instruction_set! { I32Const(42) Return }).build();
+    assert_eq!(module.source_pc, 0);
+    let mut store = RwasmStore::<()>::default();
+    let instance = RwasmInstance::new(&mut store, ExecutionEngine::new(), module).unwrap();
+    assert_eq!(store.fuel_consumed(), 0);
+    let mut result = [Value::I32(0)];
+    instance.execute(&mut store, &[], &mut result).unwrap();
+    assert_eq!(result, [Value::I32(42)]);
 }

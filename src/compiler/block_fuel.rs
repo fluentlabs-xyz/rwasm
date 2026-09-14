@@ -152,12 +152,10 @@ mod tests {
             (&[I32, F64][..], 1),
             (&[F32][..], 1),
         ] {
+            let error = param_slot_depth(params, index).unwrap_err();
             assert!(
-                matches!(
-                    param_slot_depth(params, index),
-                    Err(CompilationError::InvalidSyscallFuelParam)
-                ),
-                "{params:?} at {index}"
+                matches!(error, CompilationError::InvalidSyscallFuelParam),
+                "{params:?} at {index}: {error:?}"
             );
         }
     }

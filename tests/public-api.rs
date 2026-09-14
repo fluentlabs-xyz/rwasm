@@ -226,6 +226,47 @@ fn compilation_errors_have_stable_messages() {
             CompilationError::StartSectionsAreNotAllowed,
             "start sections are not allowed",
         ),
+        (
+            CompilationError::InvalidSyscallFuelParam,
+            "syscall fuel parameter index is out of range",
+        ),
+        (
+            CompilationError::StackHeightExceeded {
+                height: 9000,
+                limit: 8192,
+            },
+            "function needs 9000 value stack slots, above the limit 8192",
+        ),
+        (
+            CompilationError::MissingMemoryExport,
+            "the module declares a linear memory but does not export it",
+        ),
+        (
+            CompilationError::TooManyFunctionTypes {
+                count: 1025,
+                limit: 1024,
+            },
+            "function type count 1025 exceeds compilation limit 1024",
+        ),
+        (
+            CompilationError::CodeSizeExceeded {
+                len: 2_097_153,
+                limit: 2_097_152,
+            },
+            "compiled code size 2097153 instructions exceeds compilation limit 2097152",
+        ),
+        (
+            CompilationError::StrategyIncompatibleConfig,
+            "compilation config enables rwasm-only fuel injections; use \
+             CompilationConfig::default_strategy_compatible()",
+        ),
+        (
+            CompilationError::TableSizeExceedsLimit {
+                size: 65537,
+                limit: 65536,
+            },
+            "table size 65537 exceeds compilation limit 65536",
+        ),
     ];
     for (error, expected) in cases {
         assert_eq!(error.to_string(), expected);

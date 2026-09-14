@@ -1,5 +1,7 @@
 use crate::{
-    wasmtime::{compile_wasmtime_module, WasmtimeExecutor, WasmtimeModule},
+    wasmtime::{
+        compile_wasmtime_module, deserialize_wasmtime_module, WasmtimeExecutor, WasmtimeModule,
+    },
     CompilationConfig, ImportLinker, ImportName, StoreTr, TrapCode, TypedCaller, Value,
     N_BYTES_PER_MEMORY_PAGE,
 };
@@ -158,6 +160,41 @@ fn test_wasmtime_executor_missing_entrypoint_returns_trap() {
         .execute("missing_export", &[], &mut [])
         .unwrap_err();
     assert_eq!(err, TrapCode::UnknownExternalFunction);
+}
+
+/// A module loaded back from `wasmtime::Module::serialize` output carries the same syscall fuel
+/// schedule as a freshly compiled one, so its imports are charged identically; `into_module`
+/// hands the bare Wasmtime module back to callers that only need the compiled code.
+#[test]
+fn test_deserialized_module_keeps_its_syscall_fuel_schedule() {
+    let (module, import_linker) = get_test_wasmtime_module();
+    let compilation_config = CompilationConfig::default()
+        .with_consume_fuel(true)
+        .with_builtins_consume_fuel(true)
+        .with_import_linker(import_linker.clone());
+    let serialized = module.serialize().unwrap();
+    // SAFETY: the bytes were produced by `serialize` on this very build a moment ago.
+    let restored = unsafe { deserialize_wasmtime_module(compilation_config, &serialized) }.unwrap();
+    assert_eq!(restored.syscall_fuel(), module.syscall_fuel());
+    assert_eq!(restored.syscall_fuel().len(), 2);
+
+    let mut wasmtime_worker = WasmtimeExecutor::new(
+        restored,
+        import_linker,
+        (),
+        |_caller, _sys_func_idx, _params, _result| -> Result<(), TrapCode> { Ok(()) },
+        Some(100_000),
+        None,
+    )
+    .unwrap();
+    wasmtime_worker.execute("main", &[], &mut []).unwrap();
+    assert_eq!(
+        wasmtime_worker.store.get_fuel().unwrap(),
+        100_000 - (1 + 1 + 10 + 10 * 5 + 7)
+    );
+
+    let bare = module.into_module();
+    assert!(bare.exports().any(|export| export.name() == "main"));
 }
 
 fn get_test_memory_module() -> (WasmtimeModule, Arc<ImportLinker>) {
