@@ -1325,3 +1325,76 @@ fn test_misaddressed_syscall_fuel_parameter_is_rejected_at_instantiation() {
     .expect("the executor must not be built");
     assert_eq!(err, TrapCode::BadSignature);
 }
+
+/// Characterisation of HIGH-8 (`audits/2026-09-13-rwasm-audit.md`): the Wasmtime backend prices
+/// every bulk memory and table operation flat, whatever the config says. A module compiled with
+/// `consume_fuel_for_bulk_ops` — which meters `memory.fill` at `(n + 63) >> 6` on the rwasm VM —
+/// still pays a fixed entity cost per fill here, so 1 MiB costs a handful of fuel instead of
+/// 16 384, and the strategy layer refuses the config rather than run it unmetered. Both facts are
+/// pinned; when the fork charges by size, the first assertion flips to the metered amount and
+/// the second to an accepted config.
+#[test]
+fn test_bulk_operations_are_priced_flat_on_wasmtime() {
+    const FILL_BYTES: u32 = 1024 * 1024;
+    const FILLS: i32 = 20;
+    let wasm = wat::parse_str(format!(
+        r#"(module (memory (export "memory") 16)
+          (func (export "main") (param $n i32)
+            (block (loop
+              (br_if 1 (i32.eqz (local.get $n)))
+              (memory.fill (i32.const 0) (i32.const 8) (i32.const {FILL_BYTES}))
+              (local.set $n (i32.sub (local.get $n) (i32.const 1)))
+              (br 0)))))"#
+    ))
+    .unwrap();
+    let metered = CompilationConfig::default()
+        .with_consume_fuel_for_params_and_locals(false)
+        .with_entrypoint_name("main".into());
+    assert!(metered.consume_fuel_for_bulk_ops);
+
+    // the raw compile path takes the config and silently drops the bulk charge
+    let module = compile_wasmtime_module(metered.clone(), &wasm).unwrap();
+    let mut executor = WasmtimeExecutor::new(
+        module,
+        Arc::new(ImportLinker::default()),
+        (),
+        crate::always_failing_syscall_handler,
+        Some(100_000_000),
+        None,
+    )
+    .unwrap();
+    executor
+        .execute("main", &[Value::I32(FILLS)], &mut [])
+        .unwrap();
+    let consumed = 100_000_000 - executor.remaining_fuel().unwrap();
+    let per_fill = consumed / FILLS as u64;
+    let metered_per_fill = u64::from(FILL_BYTES.div_ceil(64));
+    assert!(
+        per_fill < metered_per_fill / 100,
+        "wasmtime charged {per_fill} fuel per 1 MiB fill; the size-metered charge is {metered_per_fill}"
+    );
+
+    // the same module on the rwasm VM pays the size-metered charge
+    let rwasm = crate::StrategyDefinition::new_as_rwasm(metered.clone(), &wasm)
+        .unwrap()
+        .create_executor(
+            Arc::new(ImportLinker::default()),
+            (),
+            crate::always_failing_syscall_handler,
+            Some(100_000_000),
+            None,
+        )
+        .unwrap();
+    let mut rwasm = rwasm;
+    rwasm
+        .execute("main", &[Value::I32(FILLS)], &mut [])
+        .unwrap();
+    let rwasm_per_fill = (100_000_000 - rwasm.remaining_fuel().unwrap()) / FILLS as u64;
+    assert!(rwasm_per_fill >= metered_per_fill, "{rwasm_per_fill}");
+
+    // which is why the strategy layer refuses the metered config for this backend
+    assert!(matches!(
+        crate::StrategyDefinition::new_as_wasmtime(metered, &wasm, None),
+        Err(crate::CompilationError::StrategyIncompatibleConfig)
+    ));
+}
