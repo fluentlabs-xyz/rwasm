@@ -153,6 +153,14 @@ impl ModuleParser {
             .entrypoint_bytecode;
         let entrypoint_length = code_section.len() as u32;
         code_section.extend(self.allocations.translation.instruction_set.iter());
+        // The functions were bounded as they were translated; the init prologue, the snippets
+        // and the state router come on top and the whole section has to fit as well.
+        if code_section.len() > self.config.max_code_len as usize {
+            return Err(CompilationError::CodeSizeExceeded {
+                len: u32::try_from(code_section.len()).unwrap_or(u32::MAX),
+                limit: self.config.max_code_len,
+            });
+        }
 
         // TODO(dmitry123): "optimize it"
         for instr in code_section.iter_mut() {
@@ -523,6 +531,7 @@ impl ModuleParser {
                 self.config.consume_fuel_for_bulk_ops,
                 self.config.consume_fuel_for_params_and_locals,
                 self.config.max_allowed_memory_pages,
+                self.config.max_code_len,
             );
             translator.prepare(func_idx)?;
             let signature_index = translator
@@ -532,11 +541,15 @@ impl ModuleParser {
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
 
             if self.config.builtins_consume_fuel {
-                compile_block_params(
+                let temporary_slots = compile_block_params(
                     &mut translator.alloc.instruction_set,
                     import_linker_entity.syscall_fuel_param,
                     import_linker_entity.params,
                 )?;
+                // This prologue is emitted directly rather than through the Wasm translator.
+                // Include its peak so the trampoline grows the stack before using temporaries.
+                translator.stack_height.push_n(temporary_slots);
+                translator.stack_height.pop_n(temporary_slots);
             }
 
             translator
@@ -765,9 +778,9 @@ impl ModuleParser {
                     offset_expr,
                 } => {
                     let compiled_expr = CompiledExpr::new(offset_expr)?;
-                    // We can fail-fast here because we already that know that there an overflow
-                    let element_offset = u32::try_from(self.eval_const(compiled_expr)?)
-                        .map_err(|_| CompilationError::TableOutOfBounds)?;
+                    // Validation requires an i32 offset. Its bits denote an unsigned index;
+                    // an out-of-bounds active segment traps when the initializer runs.
+                    let element_offset = self.eval_const(compiled_expr)? as u32;
                     let table_idx = TableIdx::try_from(table_index).unwrap();
                     self.allocations
                         .translation
@@ -833,9 +846,9 @@ impl ModuleParser {
                         return Err(CompilationError::NonDefaultMemoryIndex);
                     }
                     let compiled_expr = CompiledExpr::new(offset_expr)?;
-                    // We can fail-fast here because we already that know that there an overflow
-                    let data_offset = u32::try_from(self.eval_const(compiled_expr)?)
-                        .map_err(|_| CompilationError::MemoryOutOfBounds)?;
+                    // Preserve the unsigned bits of the validated i32 expression, including
+                    // negative literals. Bounds belong to the emitted initialization code.
+                    let data_offset = self.eval_const(compiled_expr)? as u32;
                     self.allocations
                         .translation
                         .segment_builder
@@ -932,6 +945,7 @@ impl ModuleParser {
             self.config.consume_fuel_for_bulk_ops,
             self.config.consume_fuel_for_params_and_locals,
             self.config.max_allowed_memory_pages,
+            self.config.max_code_len,
         )
         .translate()?;
         let _ = replace(&mut self.allocations, allocations);
@@ -975,5 +989,146 @@ mod tests {
             .process_unsupported_component_model(0..0)
             .expect_err("component-model payload must be rejected");
         assert!(matches!(err, CompilationError::NotSupportedExtension));
+    }
+
+    /// A memory access that can never be in bounds — immediate offset plus access size beyond
+    /// the declared maximum, or beyond 4 GiB without one — lowers to an unconditional
+    /// `Trap(MemoryOutOfBounds)` and ends the path, the way Cranelift treats it, so both engines
+    /// charge the region only up to the access (audit round 7, R7-1). An access that can be in
+    /// bounds keeps its ordinary lowering.
+    #[test]
+    fn statically_out_of_bounds_access_lowers_to_a_trap() {
+        use crate::TrapCode;
+        fn compiled(memory: &str, body: &str) -> Vec<Opcode> {
+            let wasm = wat::parse_str(format!(
+                r#"(module (memory {memory})
+                     (func (export "main") {body} unreachable))"#
+            ))
+            .unwrap();
+            let config = CompilationConfig::default_strategy_compatible()
+                .with_entrypoint_name("main".into());
+            let module = RwasmModule::compile(config, &wasm).unwrap().0;
+            // the init prologue carries its own `MemoryOutOfBounds` guard; look at the body only
+            module
+                .code_section
+                .iter()
+                .skip(module.source_pc as usize)
+                .copied()
+                .collect()
+        }
+        let has = |code: &[Opcode], pred: fn(&Opcode) -> bool| code.iter().any(pred);
+        let is_oob_trap = |op: &Opcode| matches!(op, Opcode::Trap(TrapCode::MemoryOutOfBounds));
+        let is_load = |op: &Opcode| matches!(op, Opcode::I32Load(_));
+        let is_store = |op: &Opcode| matches!(op, Opcode::I32Store(_));
+        let is_unreachable = |op: &Opcode| matches!(op, Opcode::Unreachable);
+
+        // static: the trap replaces the access and the dead tail is not emitted
+        for (memory, body) in [
+            ("1 2", "(drop (i32.load offset=131072 (i32.const 0)))"),
+            ("1 2", "(drop (i32.load offset=131069 (i32.const 0)))"),
+            ("0 0", "(drop (i32.load (i32.const 0)))"),
+            ("1", "(drop (i64.load offset=0xffffffff (i32.const 0)))"),
+        ] {
+            let code = compiled(memory, body);
+            assert!(has(&code, is_oob_trap), "{memory} {body}: trap expected");
+            assert!(!has(&code, is_load), "{memory} {body}: no load expected");
+            assert!(
+                !has(&code, is_unreachable),
+                "{memory} {body}: dead tail expected"
+            );
+        }
+        let code = compiled(
+            "0 1",
+            "(i32.store offset=65536 (i32.const 0) (i32.const 0))",
+        );
+        assert!(has(&code, is_oob_trap) && !has(&code, is_store));
+
+        // dynamic: the access and everything after it are emitted
+        for (memory, body) in [
+            ("1 2", "(drop (i32.load offset=131068 (i32.const 0)))"),
+            ("1", "(drop (i32.load offset=0xfffffffc (i32.const 0)))"),
+            ("0", "(drop (i32.load (i32.const 0)))"),
+        ] {
+            let code = compiled(memory, body);
+            assert!(
+                !has(&code, is_oob_trap),
+                "{memory} {body}: no trap expected"
+            );
+            assert!(has(&code, is_load), "{memory} {body}: load expected");
+            assert!(has(&code, is_unreachable), "{memory} {body}: tail expected");
+        }
+    }
+
+    /// The fuel prologue `compile_block_params` emits into an import trampoline is written
+    /// straight into the instruction set, outside the translator's stack-height tracking. Its
+    /// temporaries still have to be part of the trampoline's `StackCheck`: with `StackCheck(0)`
+    /// a `LinearFuel` (two temporaries) or `QuadraticFuel` (four) import called while the value
+    /// stack sat within that many slots of its capacity trapped `StackOverflow` on the rwasm VM
+    /// for a module Wasmtime executes (audit round 5, R5-2).
+    #[test]
+    fn import_trampoline_stack_check_covers_the_fuel_prologue() {
+        use crate::ImportLinker;
+        use alloc::sync::Arc;
+        use rwasm_fuel_policy::{LinearFuelParams, QuadraticFuelParams, SyscallFuelParams};
+
+        let cases = [
+            ("none", SyscallFuelParams::None, 0),
+            ("const", SyscallFuelParams::Const(5), 0),
+            (
+                "linear",
+                SyscallFuelParams::LinearFuel(LinearFuelParams {
+                    base_fuel: 1,
+                    param_index: 1,
+                    word_cost: 1,
+                }),
+                2,
+            ),
+            (
+                "quadratic",
+                SyscallFuelParams::QuadraticFuel(QuadraticFuelParams {
+                    local_depth: 1,
+                    word_cost: 1,
+                    divisor: 1,
+                    fuel_denom_rate: 1,
+                }),
+                4,
+            ),
+        ];
+        for (name, policy, expected_peak) in cases {
+            let mut linker = ImportLinker::default();
+            linker.insert_function(
+                ImportName::new("env", "builtin"),
+                1,
+                policy,
+                &[ValType::I32],
+                &[],
+            );
+            let wasm = wat::parse_str(
+                r#"(module
+                  (import "env" "builtin" (func $builtin (param i32)))
+                  (func (export "main") (i32.const 0) (call $builtin)))"#,
+            )
+            .unwrap();
+            let config = CompilationConfig::default()
+                .with_entrypoint_name("main".into())
+                .with_builtins_consume_fuel(true)
+                .with_import_linker(Arc::new(linker));
+            let module = RwasmModule::compile(config, &wasm).unwrap().0;
+            // the trampoline is the first compiled function: it starts right after the init
+            // prologue's `Return`, with `SignatureCheck; ConsumeFuel; StackCheck`
+            let stack_check = module
+                .code_section
+                .iter()
+                .skip(module.source_pc as usize)
+                .find_map(|opcode| match opcode {
+                    Opcode::StackCheck(height) => Some(*height),
+                    _ => None,
+                })
+                .expect("the trampoline carries a StackCheck");
+            assert_eq!(
+                stack_check, expected_peak,
+                "{name}: the trampoline must reserve the fuel prologue's temporaries"
+            );
+        }
     }
 }

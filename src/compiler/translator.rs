@@ -18,8 +18,8 @@ use crate::{
     },
     AddressOffset, BranchOffset, BranchTableTargets, ConstructorParams, DataSegmentIdx,
     ElementSegmentIdx, FuncIdx, FuncTypeIdx, GlobalVariable, InstrLoc, InstructionSet, LabelRef,
-    Opcode, TableIdx, TrapCode, DEFAULT_MEMORY_INDEX, N_MAX_STACK_SIZE, N_MAX_TABLE_SIZE,
-    SNIPPET_FUNC_IDX_UNRESOLVED,
+    Opcode, TableIdx, TrapCode, DEFAULT_MEMORY_INDEX, N_BYTES_PER_MEMORY_PAGE, N_MAX_STACK_SIZE,
+    N_MAX_TABLE_SIZE, SNIPPET_FUNC_IDX_UNRESOLVED,
 };
 use alloc::{boxed::Box, vec::Vec};
 use bitvec::macros::internal::funty::Fundamental;
@@ -172,6 +172,9 @@ pub struct InstructionTranslator {
     pub(crate) consume_fuel_for_bulk_ops: bool,
     /// Max allowed memory pages
     pub(crate) max_allowed_memory_pages: u32,
+    /// Bound on the total number of emitted instructions
+    /// ([`crate::CompilationConfig::max_code_len`]).
+    pub(crate) max_code_len: u32,
 }
 
 impl InstructionTranslator {
@@ -182,6 +185,7 @@ impl InstructionTranslator {
         consume_fuel_for_bulk_ops: bool,
         consume_fuel_for_params_and_locals: bool,
         max_allowed_memory_pages: u32,
+        max_code_len: u32,
     ) -> Self {
         Self {
             reachable: true,
@@ -194,7 +198,25 @@ impl InstructionTranslator {
             consume_fuel_for_bulk_ops,
             consume_fuel_for_params_and_locals,
             max_allowed_memory_pages,
+            max_code_len,
         }
+    }
+
+    /// Rejects the module once `emitted` instructions exceed the configured code bound.
+    ///
+    /// The translator expands a single operator into up to `2k + 1` instructions for a branch
+    /// keeping `k` values, and a `br_table` into that much *per target*, so the output is not
+    /// proportional to the input. The check runs after every operator and after every `br_table`
+    /// target, i.e. before the next expansion is allocated, which keeps the cost of rejecting a
+    /// module at the bound itself.
+    pub(crate) fn check_code_len(&self, emitted: usize) -> Result<(), CompilationError> {
+        if emitted > self.max_code_len as usize {
+            return Err(CompilationError::CodeSizeExceeded {
+                len: u32::try_from(emitted).unwrap_or(u32::MAX),
+                limit: self.max_code_len,
+            });
+        }
+        Ok(())
     }
 
     /// Returns `true` if the code at the current translation position is reachable.
@@ -582,6 +604,51 @@ impl InstructionTranslator {
         }
     }
 
+    /// Returns `true` if a memory access with `memarg` can never be in bounds: its immediate
+    /// offset plus its access size exceeds the largest size the memory can ever have.
+    ///
+    /// This mirrors the compile-time bounds check of the Wasmtime backend
+    /// (`bounds_check_and_compute_addr`: `offset + access_size > maximum_byte_size`, where the
+    /// maximum is the declared one, or 4 GiB for a memory that declares none). Cranelift lowers
+    /// such an access to an unconditional trap and treats the code after it as unreachable, so it
+    /// charges the region only up to and including the access. rwasm has to charge the same
+    /// amount; [`Self::translate_load`] and [`Self::translate_store`] therefore emit the same
+    /// unconditional `Trap(MemoryOutOfBounds)` and end the path, exactly as
+    /// [`Self::end_path_if_illegal_opcode`] does for disabled float operators. The access could
+    /// never have done anything else, so nothing but the metering of the dead tail changes.
+    fn is_statically_out_of_bounds(&self, memarg: &MemArg) -> bool {
+        let memory = self.resolve_memory_type(DEFAULT_MEMORY_INDEX);
+        let max_bytes = memory.maximum.map_or(1u64 << 32, |pages| {
+            pages.saturating_mul(u64::from(N_BYTES_PER_MEMORY_PAGE))
+        });
+        // `max_align` is the natural alignment of the access, i.e. log2 of its size in bytes
+        let access_size = 1u64 << memarg.max_align;
+        memarg.offset.saturating_add(access_size) > max_bytes
+    }
+
+    /// Lowers a memory access, or the unconditional trap it amounts to when
+    /// [`Self::is_statically_out_of_bounds`]. Disabled float accesses keep their
+    /// `Trap(IllegalOpcode)` lowering, which the Wasmtime backend also applies first.
+    fn emit_memory_access(
+        &mut self,
+        memarg: &MemArg,
+        value_type: ValType,
+        emitter: fn(&mut InstructionSet, offset: AddressOffset),
+    ) {
+        let float_disabled =
+            !cfg!(feature = "fpu") && matches!(value_type, ValType::F32 | ValType::F64);
+        if !float_disabled && self.is_statically_out_of_bounds(memarg) {
+            self.alloc
+                .instruction_set
+                .op_trap(TrapCode::MemoryOutOfBounds);
+            self.reachable = false;
+            return;
+        }
+        let offset = AddressOffset::from(memarg.offset as u32);
+        emitter(&mut self.alloc.instruction_set, offset);
+        self.end_path_if_illegal_opcode();
+    }
+
     /// Translates into `rwasm` bytecode if the current code path is reachable.
     ///
     /// # Note
@@ -593,6 +660,7 @@ impl InstructionTranslator {
     {
         if self.is_reachable() {
             translator(self)?;
+            self.check_code_len(self.alloc.instruction_set.len())?;
         }
         Ok(())
     }
@@ -1042,11 +1110,21 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                 }
             }
 
+            /// Trampolines already emitted for this `br_table`, by target and `DropKeep`, as
+            /// offsets into `trampoline_ixs`.
+            ///
+            /// A target that keeps `k` values costs a `2k + 1` instruction trampoline, so a table
+            /// whose targets repeat used to grow by that much per *entry*: every entry got its own
+            /// copy. Entries with the same target and the same `DropKeep` now share one
+            /// trampoline, which is exact — the trampoline depends on nothing else.
+            type Trampolines = HashMap<(Option<LabelRef>, DropKeep), usize>;
+
             /// Encodes the [`BrTableTarget`] into the given [`Instruction`] stream.
             fn encode_br_table_target(
                 builder: &mut InstructionTranslator,
                 target: BrTableTarget,
                 trampoline_ixs: &mut InstructionSet,
+                trampolines: &mut Trampolines,
                 final_len: usize,
             ) -> Result<(), CompilationError> {
                 match target {
@@ -1058,14 +1136,24 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
                             builder.alloc.br_table_branches.op_return();
                             builder.alloc.br_table_branches.op_return();
                         } else {
+                            let trampoline = match trampolines.get(&(None, drop_keep)) {
+                                Some(offset) => *offset,
+                                None => {
+                                    let offset = trampoline_ixs.len();
+                                    trampolines.insert((None, drop_keep), offset);
+                                    drop_keep.translate_drop_keep(
+                                        trampoline_ixs,
+                                        &mut builder.stack_height,
+                                    );
+                                    trampoline_ixs.op_return();
+                                    offset
+                                }
+                            };
                             builder.alloc.br_table_branches.op_br(
-                                (final_len - builder.alloc.br_table_branches.len()
-                                    + trampoline_ixs.len()) as i32,
+                                (final_len - builder.alloc.br_table_branches.len() + trampoline)
+                                    as i32,
                             );
                             builder.alloc.br_table_branches.op_return();
-                            drop_keep
-                                .translate_drop_keep(trampoline_ixs, &mut builder.stack_height);
-                            trampoline_ixs.op_return();
                         }
                     }
                     BrTableTarget::Label(label, drop_keep) => {
@@ -1080,22 +1168,32 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
                             builder.alloc.br_table_branches.op_return();
                         } else {
+                            let trampoline = match trampolines.get(&(Some(label), drop_keep)) {
+                                Some(offset) => *offset,
+                                None => {
+                                    let offset = trampoline_ixs.len();
+                                    trampolines.insert((Some(label), drop_keep), offset);
+                                    drop_keep.translate_drop_keep(
+                                        trampoline_ixs,
+                                        &mut builder.stack_height,
+                                    );
+                                    trampoline_ixs.op_return();
+
+                                    let instr =
+                                        offset_instr(base, final_len + trampoline_ixs.len());
+                                    let label_offset =
+                                        builder.try_resolve_label_for(label, instr)?;
+                                    *trampoline_ixs.last_mut().unwrap() = Opcode::Br(label_offset);
+                                    offset
+                                }
+                            };
                             let br_offset = (final_len - builder.alloc.br_table_branches.len()
-                                + trampoline_ixs.len())
-                                as i32;
+                                + trampoline) as i32;
                             builder
                                 .alloc
                                 .br_table_branches
                                 .op_br(BranchOffset::from(br_offset));
                             builder.alloc.br_table_branches.op_return();
-
-                            drop_keep
-                                .translate_drop_keep(trampoline_ixs, &mut builder.stack_height);
-                            trampoline_ixs.op_return();
-
-                            let instr = offset_instr(base, final_len + trampoline_ixs.len());
-                            let offset = builder.try_resolve_label_for(label, instr)?;
-                            *trampoline_ixs.last_mut().unwrap() = Opcode::Br(offset);
                         }
                     }
                 }
@@ -1125,11 +1223,25 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
 
             let final_len = builder.alloc.instruction_set.len() + target_len;
             let mut trampoline_ixs = InstructionSet::new();
+            let mut trampolines = Trampolines::default();
             for (n, depth) in targets.into_iter().enumerate() {
                 builder.add_branch(depth.into_u32());
                 let target = compute_instr(builder, n, depth)?;
 
-                encode_br_table_target(builder, target, &mut trampoline_ixs, target_len)?;
+                encode_br_table_target(
+                    builder,
+                    target,
+                    &mut trampoline_ixs,
+                    &mut trampolines,
+                    target_len,
+                )?;
+                // Every target may add a full trampoline; stop before the table outgrows the
+                // code bound instead of allocating it all and rejecting the module afterwards.
+                builder.check_code_len(
+                    builder.alloc.instruction_set.len()
+                        + builder.alloc.br_table_branches.len()
+                        + trampoline_ixs.len(),
+                )?;
             }
 
             // We include the default target in `len_branches`. Each branch takes up 2 instruction
@@ -1139,7 +1251,13 @@ impl<'a> VisitOperator<'a> for InstructionTranslator {
             let default_branch = compute_instr(builder, len_branches, default)?;
             let len_targets = BranchTableTargets::try_from(len_branches + 1)
                 .map_err(|_| CompilationError::BranchTableTargetsOutOfBounds)?;
-            encode_br_table_target(builder, default_branch, &mut trampoline_ixs, target_len)?;
+            encode_br_table_target(
+                builder,
+                default_branch,
+                &mut trampoline_ixs,
+                &mut trampolines,
+                target_len,
+            )?;
             builder.alloc.instruction_set.op_br_table(len_targets);
 
             builder.alloc.br_table_branches.append(&mut trampoline_ixs);
@@ -3947,9 +4065,7 @@ impl InstructionTranslator {
             builder.stack_height.push_type(loaded_type);
             builder.stack_height.pop_n(max_stack_height);
             builder.alloc.stack_types.push(loaded_type);
-            let offset = AddressOffset::from(memarg.offset as u32);
-            emitter(&mut builder.alloc.instruction_set, offset);
-            builder.end_path_if_illegal_opcode();
+            builder.emit_memory_access(&memarg, loaded_type, emitter);
             Ok(())
         })
     }
@@ -3972,9 +4088,7 @@ impl InstructionTranslator {
             debug_assert_eq!(addr_type, ValType::I32);
             builder.stack_height.pop_type(addr_type);
             builder.stack_height.pop_n(max_stack_height);
-            let offset = AddressOffset::from(memarg.offset as u32);
-            emitter(&mut builder.alloc.instruction_set, offset);
-            builder.end_path_if_illegal_opcode();
+            builder.emit_memory_access(&memarg, stored_value, emitter);
             Ok(())
         })
     }

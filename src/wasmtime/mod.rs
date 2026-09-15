@@ -14,18 +14,100 @@ pub use self::{
 };
 use crate::{
     wasmtime::{context::WrappedContext, engine::wasmtime_engine},
-    CompilationConfig, CompilationError, N_MAX_TABLE_SIZE,
+    CompilationConfig, CompilationError, ImportName, N_MAX_TABLE_SIZE,
 };
 use lru::LruCache;
+use rwasm_fuel_policy::SyscallFuelParams;
 use std::{
+    collections::HashMap,
     num::NonZeroUsize,
-    sync::{Mutex, OnceLock},
+    ops::Deref,
+    sync::{Arc, Mutex, OnceLock},
     time::Instant,
 };
 use wasmparser::{Parser, Payload};
 
-pub type WasmtimeModule = wasmtime::Module;
 pub type WasmtimeLinker<T> = wasmtime::Linker<WrappedContext<T>>;
+
+/// A compiled Wasmtime module together with the syscall fuel schedule it was compiled under.
+///
+/// The rwasm compiler bakes `SyscallFuelParams` into the import trampoline of the bytecode, so
+/// every way of reaching an import (`call`, `call_indirect`, tail calls, an exported or `start`
+/// import) charges it. The Wasmtime engine used to receive the same schedule and charge it at
+/// Cranelift `call` sites, which left every other path unmetered. The schedule now travels with
+/// the module and is charged by the host trampolines that [`WasmtimeExecutor`] installs, which
+/// are the only way any of those paths can reach the host.
+///
+/// Derefs to the underlying [`wasmtime::Module`], so exports and types are read as before.
+#[derive(Clone, Debug)]
+pub struct WasmtimeModule {
+    module: wasmtime::Module,
+    /// Syscall fuel of every import the compiling config's linker knew, by import name, when the
+    /// config enabled `builtins_consume_fuel`; empty otherwise.
+    syscall_fuel: Arc<HashMap<ImportName, SyscallFuelParams>>,
+}
+
+impl WasmtimeModule {
+    /// Pairs a module compiled by `compilation_config`'s engine with that config's syscall fuel
+    /// schedule.
+    pub fn new(module: wasmtime::Module, compilation_config: &CompilationConfig) -> Self {
+        Self {
+            module,
+            syscall_fuel: Arc::new(syscall_fuel_schedule(compilation_config)),
+        }
+    }
+
+    /// The underlying Wasmtime module.
+    pub fn module(&self) -> &wasmtime::Module {
+        &self.module
+    }
+
+    /// Returns the underlying Wasmtime module, dropping the syscall fuel schedule.
+    pub fn into_module(self) -> wasmtime::Module {
+        self.module
+    }
+
+    /// The syscall fuel charged for each import, by import name.
+    pub fn syscall_fuel(&self) -> &HashMap<ImportName, SyscallFuelParams> {
+        &self.syscall_fuel
+    }
+}
+
+impl Deref for WasmtimeModule {
+    type Target = wasmtime::Module;
+
+    fn deref(&self) -> &Self::Target {
+        &self.module
+    }
+}
+
+/// A bare module charges no syscall fuel, like a config with `builtins_consume_fuel` off.
+impl From<wasmtime::Module> for WasmtimeModule {
+    fn from(module: wasmtime::Module) -> Self {
+        Self {
+            module,
+            syscall_fuel: Arc::default(),
+        }
+    }
+}
+
+/// The syscall fuel a config compiles into its import trampolines: the linker's parameters when
+/// `builtins_consume_fuel` is set (mirrors `ModuleParser::process_imports`), nothing otherwise.
+fn syscall_fuel_schedule(
+    compilation_config: &CompilationConfig,
+) -> HashMap<ImportName, SyscallFuelParams> {
+    compilation_config
+        .import_linker
+        .as_ref()
+        .filter(|_| compilation_config.builtins_consume_fuel)
+        .map(|import_linker| {
+            import_linker
+                .iter()
+                .map(|(name, entity)| (name, entity.syscall_fuel_param))
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
 /// Loads a module from bytes produced by `wasmtime::Module::serialize` on a compatible build.
 ///
@@ -49,7 +131,7 @@ pub unsafe fn deserialize_wasmtime_module(
     let module = unsafe { wasmtime::Module::deserialize(&engine, wasmtime_binary) };
     #[cfg(feature = "debug-print")]
     println!("{:?}", start.elapsed());
-    module
+    module.map(|module| WasmtimeModule::new(module, &compilation_config))
 }
 
 /// Applies the rwasm compile-time resource caps to a wasm binary before Wasmtime compiles it.
@@ -121,7 +203,7 @@ pub fn compile_wasmtime_module(
         .map_err(CompilationError::WasmtimeCompilationFailed);
     #[cfg(feature = "debug-print")]
     println!("{:?}", start.elapsed());
-    module
+    module.map(|module| WasmtimeModule::new(module, &compilation_config))
 }
 
 const MAX_CACHED_COMPILED_MODULES: usize = 10_000;
@@ -129,10 +211,10 @@ const MAX_CACHED_COMPILED_MODULES: usize = 10_000;
 /// Like [`compile_wasmtime_module`], but memoizes the compiled module in a process-wide LRU cache.
 ///
 /// The entry is keyed by `module_caching_key` together with the config's
-/// [`CompilationConfig::codegen_identity`]. A compiled module embeds its engine, and the engine
-/// bakes in the config's fuel schedule, stack limit and syscall fuel parameters, so two callers
-/// sharing a key but not a config get two modules instead of the second silently running on the
-/// first caller's metering.
+/// [`CompilationConfig::codegen_identity`]. A compiled module embeds its engine, which bakes in
+/// the config's fuel schedule and stack limit, and carries the config's syscall fuel parameters
+/// (see [`WasmtimeModule`]), so two callers sharing a key but not a config get two modules
+/// instead of the second silently running on the first caller's metering.
 ///
 /// Entries made here are validated by Wasmtime only and never satisfy a lookup from
 /// [`crate::StrategyDefinition::new_as_wasmtime`], which caches under its own

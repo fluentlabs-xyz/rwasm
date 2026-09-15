@@ -37,6 +37,16 @@ pub use value::*;
 /// We keep value 32 since it's the most optimal.
 pub const N_DEFAULT_STACK_SIZE: usize = 32;
 pub const N_MAX_STACK_SIZE: usize = 8192;
+/// Slots the runtime value stack keeps above [`N_MAX_STACK_SIZE`] for the import trampoline.
+///
+/// A call to an import has no frame of its own in Wasm, but the rwasm trampoline that charges
+/// the import's syscall fuel needs up to four temporaries (`compile_block_params`: two for
+/// `LinearFuel`, four for `QuadraticFuel`). The compile-time frame check bounds each function's
+/// own peak by [`N_MAX_STACK_SIZE`] and cannot see its callees, so a function calling an import
+/// at that peak would trap `StackOverflow` on the rwasm VM while the Wasmtime backend, where the
+/// call costs no Wasm stack, runs it. The headroom pays for exactly that invisible frame; the
+/// import's results never need it, since the caller's frame already accounts for them.
+pub const N_STACK_TRAMPOLINE_HEADROOM: usize = 4;
 pub const N_MAX_RECURSION_DEPTH: usize = 1024;
 
 /// This constant is driven by WebAssembly standard, default
@@ -74,10 +84,8 @@ pub const DEFAULT_MEMORY_INDEX: u32 = 0;
 pub const N_MAX_DATA_SEGMENTS: usize = 100_000;
 pub const N_MAX_ELEM_SEGMENTS: usize = 100_000;
 
-pub const N_MAX_DATA_SEGMENTS_BITS: usize =
-    N_MAX_DATA_SEGMENTS.div_ceil(usize::BITS as usize);
-pub const N_MAX_ELEM_SEGMENTS_BITS: usize =
-    N_MAX_ELEM_SEGMENTS.div_ceil(usize::BITS as usize);
+pub const N_MAX_DATA_SEGMENTS_BITS: usize = N_MAX_DATA_SEGMENTS.div_ceil(usize::BITS as usize);
+pub const N_MAX_ELEM_SEGMENTS_BITS: usize = N_MAX_ELEM_SEGMENTS.div_ceil(usize::BITS as usize);
 
 /// For null RefFunc/ExternRef types we use 0. We can do this
 /// because 0 offset is reserved under an entrypoint that can't be re-called
@@ -112,6 +120,18 @@ pub const N_MAX_TABLES: u32 = 100;
 /// `i32::MAX` requires switching those guards to unsigned comparisons and overflow-safe fuel
 /// arithmetic first.
 pub const N_MAX_TABLE_SIZE: u32 = 1024;
+
+/// Default bound on the number of instructions a compiled module may contain
+/// ([`crate::CompilationConfig::max_code_len`]): 2 Mi instructions, 16 MiB of bytecode.
+///
+/// The translator expands some operators into many instructions — a branch that keeps `k`
+/// values costs `2k + 1` of them, and `k` is bounded only by Wasm's 1000 block results — so the
+/// output size is not proportional to the input size. Compilation runs on untrusted deployments
+/// before anything is metered, which makes an unbounded output an out-of-memory attack on the
+/// compiler: a 1 MiB `br_table` module used to expand to ~16 GiB. The bound is checked while
+/// the code is emitted, before the next expansion is allocated, so a rejected module never costs
+/// more than the bound itself.
+pub const N_DEFAULT_MAX_CODE_LEN: u32 = 2 * 1024 * 1024;
 
 pub type InstrLoc = u32;
 pub type LabelRef = u32;

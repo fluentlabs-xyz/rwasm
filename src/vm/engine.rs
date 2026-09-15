@@ -19,6 +19,7 @@ use core::mem::take;
 pub struct ExecutionEngine;
 
 impl ExecutionEngine {
+    /// Creates a stateless engine that can execute modules on independent stores.
     pub fn new() -> Self {
         Self
     }
@@ -31,6 +32,14 @@ impl ExecutionEngine {
         Self
     }
 
+    /// Runs a module's initialization prologue, parking its stacks if a syscall interrupts it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TrapCode::IllegalOpcode`] when an execution is parked in the store, or when the
+    /// store holds an instance of another module: instance state is reachable only through the
+    /// module it was initialized for (see [`crate::RwasmInstance`]). A store that was never
+    /// instantiated runs any module, which is how modules without a prologue are driven.
     #[inline(always)]
     pub fn entrypoint<T>(
         &self,
@@ -39,10 +48,10 @@ impl ExecutionEngine {
     ) -> Result<(), TrapCode> {
         let mut value_stack = ValueStack::default();
         let mut call_stack = CallStack::default();
-        debug_assert!(
-            store.resumable_context.is_none(),
-            "rwasm: resumable context is presented"
-        );
+        if store.resumable_context.is_some() {
+            return Err(TrapCode::IllegalOpcode);
+        }
+        store.check_module(module)?;
         let mut executor =
             RwasmExecutor::entrypoint(module, &mut value_stack, &mut call_stack, store);
         match executor.run_raw(&[], &mut []) {
@@ -65,6 +74,16 @@ impl ExecutionEngine {
     }
 
     /// Executes a rWasm module's function with the given parameters and stores the result.
+    ///
+    /// `result` must have the entrypoint's result shape (one `Value` of the declared type per
+    /// result). The module carries no signature, so the shape is checked against what the call
+    /// left on the stack after it returns: a mismatch is [`TrapCode::IllegalOpcode`], with the
+    /// store's memory and host context left as the call modified them.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TrapCode::IllegalOpcode`] when an execution is parked in the store, or when the
+    /// store holds an instance of another module; see [`Self::entrypoint`].
     #[inline(always)]
     pub fn execute<T>(
         &self,
@@ -75,10 +94,10 @@ impl ExecutionEngine {
     ) -> Result<(), TrapCode> {
         let mut value_stack = ValueStack::default();
         let mut call_stack = CallStack::default();
-        debug_assert!(
-            store.resumable_context.is_none(),
-            "rwasm: resumable context is presented"
-        );
+        if store.resumable_context.is_some() {
+            return Err(TrapCode::IllegalOpcode);
+        }
+        store.check_module(module)?;
         let sp = value_stack.stack_ptr();
         // `source_pc` is a module-declared entry offset. It used to be checked with a
         // `debug_assert!` only, so a module whose entry offset is outside the code section made
@@ -110,6 +129,7 @@ impl ExecutionEngine {
     }
 
     /// Resumes an execution on `store` that returned [`TrapCode::InterruptionCalled`].
+    /// Completing a replacement initializer commits its state; a trap restores the old instance.
     ///
     /// # Errors
     ///
@@ -154,10 +174,12 @@ impl ExecutionEngine {
                     },
                 )
             }
+            res if initializing => store.finish_instantiation(res),
             res => res,
         }
     }
 
+    /// Parks interpreter stacks and instruction position for the next resume call.
     fn remember_context<T>(
         &self,
         store: &mut RwasmStore<T>,

@@ -813,3 +813,313 @@ fn reset_fuel_matches() {
     );
     assert_eq!(outcomes[0], outcomes[1], "rwasm and wasmtime diverged");
 }
+
+/// Syscall fuel is part of the import, not of the call site: an import reached through a table
+/// entry (`call_indirect`, `return_call_indirect`, a `ref.func` the guest stored itself), an
+/// import exported as the entrypoint and an import used as `start` all charge what a direct
+/// `call` charges. rwasm charges it in the import trampoline; Wasmtime used to charge it at
+/// Cranelift `call` sites only, so every other path ran the builtin for free there (audit round
+/// 5, R5-1). Each case charges 17 + 1 entry + the dispatch itself, and the numbers below are
+/// pinned so a regression on either engine is visible even if both regress together.
+#[test]
+fn syscall_fuel_matches_on_every_dispatch_path() {
+    let cases = [
+        (
+            "call",
+            "(func (export \"main\") call $c)",
+            1_000 - 17 - 1 - 10,
+        ),
+        (
+            "call_indirect",
+            "(func (export \"main\") (call_indirect (type $t) (i32.const 0)))",
+            1_000 - 17 - 1 - 1 - 10,
+        ),
+        (
+            "return_call_indirect",
+            "(func (export \"main\") (return_call_indirect (type $t) (i32.const 0)))",
+            1_000 - 17 - 1 - 1 - 10,
+        ),
+        (
+            "ref.func + table.set + call_indirect",
+            "(func (export \"main\") (table.set 0 (i32.const 1) (ref.func $c)) \
+             (call_indirect (type $t) (i32.const 1)))",
+            1_000 - 17 - 1 - 1 - 1 - 3 - 1 - 10,
+        ),
+        (
+            "export-of-import",
+            "(export \"main\" (func $c))",
+            1_000 - 17,
+        ),
+    ];
+    for (label, body, expected_remaining) in cases {
+        let wat = format!(
+            r#"
+            (module
+              (type $t (func))
+              (import "env" "const_call" (func $c))
+              (table 2 funcref)
+              (elem (i32.const 0) $c)
+              {body}
+            )
+            "#
+        );
+        let run = Run {
+            import_linker: linker_with_one_import("const_call", SyscallFuelParams::Const(17)),
+            syscall_handler: accepting_syscall_handler,
+            ..Run::plain(&wat, Some(1_000))
+        };
+        let (rwasm, wasmtime) = run.execute();
+        assert_eq!(rwasm.trap, None, "{label}");
+        assert_eq!(rwasm.remaining_fuel, Some(expected_remaining), "{label}");
+        assert_aligned(&rwasm, &wasmtime);
+    }
+}
+
+/// The `start` variant of the previous test: the import runs during instantiation, before the
+/// entrypoint, and charges its fuel there on both engines.
+#[test]
+fn syscall_fuel_matches_when_start_is_an_import() {
+    let wasm_binary = wat::parse_str(
+        r#"
+        (module
+          (import "env" "const_call" (func $c))
+          (start $c)
+          (func (export "main"))
+        )
+        "#,
+    )
+    .unwrap();
+    let import_linker = linker_with_one_import("const_call", SyscallFuelParams::Const(17));
+    let outcomes = for_each_strategy(
+        |strategy| {
+            let mut executor = strategy.create_executor(
+                import_linker.clone(),
+                (),
+                accepting_syscall_handler,
+                Some(1_000),
+                None,
+            )?;
+            let after_instantiation = executor.remaining_fuel();
+            executor.execute("main", &[], &mut [])?;
+            Ok((after_instantiation, executor.remaining_fuel()))
+        },
+        CompilationConfig::default_strategy_compatible()
+            .with_entrypoint_name("main".into())
+            .with_allow_start_section(true)
+            .with_import_linker(import_linker.clone())
+            .with_builtins_consume_fuel(true),
+        &wasm_binary,
+    )
+    .unwrap();
+    assert_eq!(outcomes[0], (Some(1_000 - 17), Some(1_000 - 17 - 1)));
+    assert_eq!(outcomes[0], outcomes[1], "rwasm and wasmtime diverged");
+}
+
+/// A `LinearFuel` builtin reached through a table with a 1 MiB length is charged
+/// 7 + 5 * 32768 on both engines; a loop of them runs out of fuel at the same iteration instead of
+/// completing 100 MiB of metered host work for the loop's own cost on one engine.
+#[test]
+fn out_of_fuel_matches_for_metered_builtins_called_through_a_table() {
+    let mut import_linker = ImportLinker::default();
+    import_linker.insert_function(
+        ImportName::new("env", "linear_call"),
+        1,
+        SyscallFuelParams::LinearFuel(LinearFuelParams {
+            base_fuel: 7,
+            param_index: 1,
+            word_cost: 5,
+        }),
+        &[ValType::I32],
+        &[],
+    );
+    let run = Run {
+        import_linker: Arc::new(import_linker),
+        syscall_handler: accepting_syscall_handler,
+        params: &[Value::I32(1_048_576), Value::I32(100)],
+        ..Run::plain(
+            r#"
+            (module
+              (type $t (func (param i32)))
+              (import "env" "linear_call" (func $l (param i32)))
+              (table 1 funcref)
+              (elem (i32.const 0) $l)
+              (func (export "main") (param $bytes i32) (param $iters i32)
+                (block
+                  (loop
+                    (br_if 1 (i32.eqz (local.get $iters)))
+                    (call_indirect (type $t) (local.get $bytes) (i32.const 0))
+                    (local.set $iters (i32.sub (local.get $iters) (i32.const 1)))
+                    (br 0)))
+              )
+            )
+            "#,
+            Some(1_000_000),
+        )
+    };
+    let (rwasm, wasmtime) = run.execute();
+    assert_eq!(rwasm.trap, Some(TrapCode::OutOfFuel));
+    assert_aligned(&rwasm, &wasmtime);
+}
+
+/// The import trampoline reserves the temporaries of its fuel prologue (two slots for
+/// `LinearFuel`, four for `QuadraticFuel`). A function whose stack peak sits exactly at the
+/// value stack's initial capacity — one parameter, the locals below and one argument make 32 —
+/// used to trap `StackOverflow` on rwasm at the prologue's first push while Wasmtime ran it
+/// (audit round 5, R5-2). Every peak from well below to well above the boundary must agree.
+#[test]
+fn metered_builtin_call_at_stack_capacity_matches() {
+    let mut import_linker = ImportLinker::default();
+    import_linker.insert_function(
+        ImportName::new("env", "linear_call"),
+        1,
+        SyscallFuelParams::LinearFuel(LinearFuelParams {
+            base_fuel: 7,
+            param_index: 1,
+            word_cost: 5,
+        }),
+        &[ValType::I32],
+        &[],
+    );
+    import_linker.insert_function(
+        ImportName::new("env", "quadratic_call"),
+        2,
+        SyscallFuelParams::QuadraticFuel(QuadraticFuelParams {
+            local_depth: 1,
+            word_cost: 3,
+            divisor: 2,
+            fuel_denom_rate: 4,
+        }),
+        &[ValType::I32],
+        &[],
+    );
+    let import_linker = Arc::new(import_linker);
+    for import in ["linear_call", "quadratic_call"] {
+        for locals in 24..=36 {
+            let wat = format!(
+                r#"
+                (module
+                  (import "env" "{import}" (func $builtin (param i32)))
+                  (func (export "main") (param i32) (result i32) (local {locals})
+                    (call $builtin (local.get 0))
+                    (local.get 0))
+                )
+                "#,
+                locals = vec!["i32"; locals].join(" ")
+            );
+            let run = Run {
+                import_linker: import_linker.clone(),
+                syscall_handler: accepting_syscall_handler,
+                params: &[Value::I32(64)],
+                results: &[Value::I32(0)],
+                ..Run::plain(&wat, Some(10_000))
+            };
+            let (rwasm, wasmtime) = run.execute();
+            assert_eq!(rwasm.trap, None, "{import} with {locals} locals");
+            assert_eq!(
+                rwasm.result,
+                vec![Value::I32(64)],
+                "{import} with {locals} locals"
+            );
+            assert_aligned(&rwasm, &wasmtime);
+        }
+    }
+}
+
+/// A memory access whose immediate offset plus its size exceeds the largest size the memory can
+/// ever have — a declared maximum, or 4 GiB without one — can only trap. Cranelift proves that at
+/// compile time, lowers the access to an unconditional trap and stops translating the block, so
+/// the Wasmtime backend charges the region only up to and including the access. rwasm used to
+/// emit the ordinary access and charge the whole region (audit round 7, R7-1); it now emits the
+/// same unconditional trap and ends the path, so both engines charge 1 entry + the operators up
+/// to the access and leave the rest of the region unpaid. The dynamic and boundary cases below
+/// pin the other side of the rule: an access that *can* be in bounds still charges its whole
+/// region on both engines.
+#[test]
+fn fuel_matches_after_statically_out_of_bounds_access() {
+    // (label, module, remaining fuel out of 1000, trap)
+    let mut cases: Vec<(&str, &str, u64, TrapCode)> = vec![
+        (
+            "offset beyond the declared maximum",
+            r#"(module (memory (export "memory") 1 2)
+               (func (export "main")
+                 (drop (i32.load offset=131072 (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2,
+            TrapCode::MemoryOutOfBounds,
+        ),
+        (
+            "offset + size beyond the declared maximum",
+            r#"(module (memory (export "memory") 1 2)
+               (func (export "main")
+                 (drop (i32.load offset=131069 (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2,
+            TrapCode::MemoryOutOfBounds,
+        ),
+        (
+            "offset + size exactly the maximum is a dynamic access",
+            r#"(module (memory (export "memory") 1 2)
+               (func (export "main")
+                 (drop (i32.load offset=131068 (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2 - 1 - 1,
+            TrapCode::MemoryOutOfBounds,
+        ),
+        (
+            "a zero-maximum memory makes every access static",
+            r#"(module (memory (export "memory") 0 0)
+               (func (export "main")
+                 (drop (i32.load (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2,
+            TrapCode::MemoryOutOfBounds,
+        ),
+        (
+            "stores follow the same rule",
+            r#"(module (memory (export "memory") 0 1)
+               (func (export "main")
+                 (i32.store offset=65536 (i32.const 0) (i32.const 0))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 1 - 2,
+            TrapCode::MemoryOutOfBounds,
+        ),
+        (
+            "without a maximum the bound is 4 GiB: an i64 at 0xffffffff is static",
+            r#"(module (memory (export "memory") 1)
+               (func (export "main")
+                 (drop (i64.load offset=0xffffffff (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2,
+            TrapCode::MemoryOutOfBounds,
+        ),
+        (
+            "without a maximum an i32 at 0xfffffffc still fits and is dynamic",
+            r#"(module (memory (export "memory") 1)
+               (func (export "main")
+                 (drop (i32.load offset=0xfffffffc (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2 - 1 - 1,
+            TrapCode::MemoryOutOfBounds,
+        ),
+    ];
+    // Without `fpu` a float access is a disabled opcode on both engines, and that lowering takes
+    // precedence over the bounds rule. (An `fpu` build pairs with a Wasmtime build that still
+    // disables floats, so float operators are not comparable there; see the feature's docs.)
+    if !cfg!(feature = "fpu") {
+        cases.push((
+            "a disabled float access traps as an illegal opcode before the bounds rule",
+            r#"(module (memory (export "memory") 1 1)
+               (func (export "main")
+                 (drop (f32.load offset=65536 (i32.const 0)))
+                 (drop (i32.const 1)) (drop (i32.const 1)) unreachable))"#,
+            1000 - 1 - 1 - 2,
+            TrapCode::IllegalOpcode,
+        ));
+    }
+    for (label, wat, remaining, trap) in cases {
+        let (rwasm, wasmtime) = Run::plain(wat, Some(1_000)).execute();
+        assert_eq!(rwasm.trap, Some(trap), "{label}");
+        assert_eq!(rwasm.remaining_fuel, Some(remaining), "{label}");
+        assert_aligned(&rwasm, &wasmtime);
+    }
+}

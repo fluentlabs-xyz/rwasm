@@ -2,13 +2,14 @@ use crate::{
     checked_memory_range_end,
     wasmtime::{
         context::RecordingStoreLimits, types::map_wasmtime_error, wasmtime_import_linker,
-        WrappedContext,
+        WasmtimeModule, WrappedContext,
     },
     ImportLinker, SyscallHandler, TrapCode, Value, F32, F64, N_BYTES_PER_MEMORY_PAGE,
     N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES, N_MAX_TABLE_SIZE,
 };
+use rwasm_fuel_policy::SyscallFuelParams;
 use smallvec::SmallVec;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use wasmtime::{AsContext, AsContextMut, Extern, StoreContext, StoreContextMut, ValRaw, ValType};
 
 /// Type of an exported function, recorded once so calls can marshal values without `Val`.
@@ -24,14 +25,17 @@ struct ExportedFunction {
 pub struct WasmtimeExecutor<T: 'static> {
     pub linker: wasmtime::Linker<WrappedContext<T>>,
     pub store: wasmtime::Store<WrappedContext<T>>,
+    /// The import linker `linker` was built from; resolves a module's syscall fuel schedule to
+    /// syscall indices when a module is instantiated.
+    import_linker: Arc<ImportLinker>,
     pub instance_pre: wasmtime::InstancePre<WrappedContext<T>>,
-    pub instance: wasmtime::Instance,
-    /// The instance whose exports are currently cached in `functions` and in the store's
-    /// memory handle. Compared against `instance` before every use, so swapping `instance`
-    /// directly still resolves the right exports.
-    cached_instance: wasmtime::Instance,
-    /// Exported functions of `cached_instance`, resolved once so calls don't look them up by
-    /// name. Entry points are few, so a linear scan beats hashing the name.
+    /// The live instance. Replaced only through [`Self::instantiate`], which swaps the cached
+    /// exports and the store's syscall fuel schedule in the same step: the host trampolines read
+    /// that schedule before every syscall, so an instance installed without it would be charged
+    /// for the previous module's imports.
+    instance: wasmtime::Instance,
+    /// Exported functions of `instance`, resolved once so calls don't look them up by name.
+    /// Entry points are few, so a linear scan beats hashing the name.
     functions: Vec<ExportedFunction>,
     /// Export the module was compiled for, when the config selected one.
     ///
@@ -54,16 +58,13 @@ impl<T: 'static> AsContextMut for WasmtimeExecutor<T> {
 }
 
 impl<T: 'static> WasmtimeExecutor<T> {
-    fn exported_memory(&mut self) -> Result<wasmtime::Memory, TrapCode> {
-        self.ensure_exports_current();
-        self.store.data().memory.ok_or(TrapCode::MemoryOutOfBounds)
+    /// The live Wasmtime instance; see [`Self::instantiate`] to replace it.
+    pub fn instance(&self) -> wasmtime::Instance {
+        self.instance
     }
 
-    /// Re-resolves the cached exports when `instance` was replaced since the last use.
-    fn ensure_exports_current(&mut self) {
-        if self.cached_instance != self.instance {
-            self.refresh_exports();
-        }
+    fn exported_memory(&self) -> Result<wasmtime::Memory, TrapCode> {
+        self.store.data().memory.ok_or(TrapCode::MemoryOutOfBounds)
     }
 
     /// Resolves the exported functions and the exported memory of `instance` once.
@@ -105,7 +106,6 @@ impl<T: 'static> WasmtimeExecutor<T> {
             })
             .collect();
         self.store.data_mut().memory = memory;
-        self.cached_instance = self.instance;
     }
 
     /// Creates an executor by instantiating an already-compiled Wasmtime module.
@@ -123,7 +123,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
     ///
     /// Use [`Self::try_new`] to get the underlying Wasmtime error instead.
     pub fn new(
-        module: wasmtime::Module,
+        module: WasmtimeModule,
         import_linker: Arc<ImportLinker>,
         data: T,
         syscall_handler: SyscallHandler<T>,
@@ -147,7 +147,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
     /// The error carries the [`TrapCode`] described on [`Self::new`] as context, so
     /// `downcast_ref::<TrapCode>()` recovers it.
     pub fn try_new(
-        module: wasmtime::Module,
+        module: WasmtimeModule,
         import_linker: Arc<ImportLinker>,
         data: T,
         syscall_handler: SyscallHandler<T>,
@@ -176,6 +176,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
             fuel_enabled: false,
             fuel_unbounded: false,
             memory: None,
+            syscall_fuel: Self::resolve_syscall_fuel(&module, &import_linker)?,
             resource_limiter,
             data,
         };
@@ -199,15 +200,15 @@ impl<T: 'static> WasmtimeExecutor<T> {
             Self::link_spectest_globals(&mut linker, &mut store);
         }
         let instance_pre = linker
-            .instantiate_pre(&module)
+            .instantiate_pre(module.module())
             .map_err(|err| err.context(TrapCode::UnknownExternalFunction))?;
         let instance = Self::instantiate_in(&instance_pre, &mut store)?;
         let mut executor = Self {
             linker,
             store,
+            import_linker,
             instance_pre,
             instance,
-            cached_instance: instance,
             functions: Vec::new(),
             entrypoint_name: None,
         };
@@ -222,19 +223,69 @@ impl<T: 'static> WasmtimeExecutor<T> {
     }
 
     /// Instantiates `module` in this executor's store with its linker, replacing the current
-    /// instance and its cached exports.
+    /// instance, its cached exports and its syscall fuel schedule.
     ///
+    /// The new fuel schedule applies during initialization. If initialization fails, the
+    /// previous schedule is restored without refunding fuel consumed by the failed start.
     /// Errors carry the same [`TrapCode`] context as [`Self::try_new`].
-    pub fn instantiate(&mut self, module: &wasmtime::Module) -> wasmtime::Result<()> {
+    pub fn instantiate(&mut self, module: &WasmtimeModule) -> wasmtime::Result<()> {
+        let syscall_fuel = Self::resolve_syscall_fuel(module, &self.import_linker)?;
         let instance_pre = self
             .linker
-            .instantiate_pre(module)
+            .instantiate_pre(module.module())
             .map_err(|err| err.context(TrapCode::UnknownExternalFunction))?;
-        let instance = Self::instantiate_in(&instance_pre, &mut self.store)?;
+        let previous_syscall_fuel =
+            std::mem::replace(&mut self.store.data_mut().syscall_fuel, syscall_fuel);
+        let instance = match Self::instantiate_in(&instance_pre, &mut self.store) {
+            Ok(instance) => instance,
+            Err(err) => {
+                self.store.data_mut().syscall_fuel = previous_syscall_fuel;
+                return Err(err);
+            }
+        };
         self.instance_pre = instance_pre;
         self.instance = instance;
         self.refresh_exports();
         Ok(())
+    }
+
+    /// Resolves the module's syscall fuel schedule (by import name) to the syscall indices the
+    /// host trampolines are keyed by.
+    ///
+    /// A policy whose metered parameter does not name an `i32` parameter of the import is
+    /// rejected up front with [`TrapCode::BadSignature`], as the rwasm compiler rejects the
+    /// same linker entry at compile time; charging it would trap every call instead.
+    fn resolve_syscall_fuel(
+        module: &WasmtimeModule,
+        import_linker: &ImportLinker,
+    ) -> wasmtime::Result<HashMap<u32, SyscallFuelParams>> {
+        let mut syscall_fuel = HashMap::new();
+        for (import_name, entity) in import_linker.iter() {
+            let Some(policy) = module.syscall_fuel().get(&import_name) else {
+                continue;
+            };
+            let metered = match policy {
+                SyscallFuelParams::None | SyscallFuelParams::Const(_) => None,
+                SyscallFuelParams::LinearFuel(params) => Some(params.param_index),
+                SyscallFuelParams::QuadraticFuel(params) => Some(params.local_depth),
+            };
+            if let Some(param_index) = metered {
+                let is_i32 = usize::try_from(param_index)
+                    .ok()
+                    .filter(|index| *index >= 1)
+                    .and_then(|index| entity.params.len().checked_sub(index))
+                    .and_then(|index| entity.params.get(index))
+                    .is_some_and(|ty| *ty == wasmparser::ValType::I32);
+                if !is_i32 {
+                    return Err(wasmtime::Error::msg(format!(
+                        "wasmtime: syscall fuel of import `{import_name}` meters a parameter that is not an i32"
+                    ))
+                    .context(TrapCode::BadSignature));
+                }
+            }
+            syscall_fuel.insert(entity.sys_func_idx, policy.clone());
+        }
+        Ok(syscall_fuel)
     }
 
     /// Instantiates `instance_pre` in `store`.
@@ -266,8 +317,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
     }
 
     /// Looks up an exported function in the cached export table.
-    fn exported_function(&mut self, func_name: &str) -> Option<usize> {
-        self.ensure_exports_current();
+    fn exported_function(&self, func_name: &str) -> Option<usize> {
         self.functions
             .iter()
             .position(|function| &*function.name == func_name)

@@ -1,4 +1,4 @@
-use crate::{ImportLinker, Opcode, N_DEFAULT_MAX_MEMORY_PAGES};
+use crate::{ImportLinker, Opcode, N_DEFAULT_MAX_CODE_LEN, N_DEFAULT_MAX_MEMORY_PAGES};
 use alloc::{boxed::Box, sync::Arc};
 use wasmparser::WasmFeatures;
 
@@ -73,6 +73,11 @@ pub struct CompilationConfig {
     /// linearly; coordinate it with the host's compilation budget. It does not change emitted
     /// bytecode.
     pub max_allowed_function_types: u32,
+    /// Maximum number of instructions in the compiled module (default:
+    /// [`N_DEFAULT_MAX_CODE_LEN`]). Checked while code is emitted, so a module that would exceed
+    /// it is rejected with [`crate::CompilationError::CodeSizeExceeded`] before the excess is
+    /// allocated. It does not change emitted bytecode; it decides which inputs compile at all.
+    pub max_code_len: u32,
 }
 
 /// The default config maximizes rwasm-side metering: it enables
@@ -96,6 +101,7 @@ impl Default for CompilationConfig {
             allow_start_section: false,
             max_allowed_memory_pages: N_DEFAULT_MAX_MEMORY_PAGES,
             max_allowed_function_types: 4096,
+            max_code_len: N_DEFAULT_MAX_CODE_LEN,
         }
     }
 }
@@ -112,9 +118,16 @@ impl CompilationConfig {
     /// depending on which strategy the crate was built with. This constructor disables the
     /// rwasm-only injections so both strategies charge from the same schedule.
     ///
-    /// Use this whenever the produced module may run on either strategy (consensus-critical
-    /// paths); use [`CompilationConfig::default`] only when execution is pinned to the rwasm VM
-    /// and the extra metering is wanted.
+    /// Use this whenever the produced module may run on either strategy; use
+    /// [`CompilationConfig::default`] when execution is pinned to the rwasm VM and the extra
+    /// metering is wanted.
+    ///
+    /// **Not for untrusted code.** Without `consume_fuel_for_bulk_ops` a bulk memory or table
+    /// operation costs a flat entity cost however much it touches — 64 MiB of `memory.fill` for
+    /// a handful of fuel — on both engines, so a guest can buy unbounded host work per fuel unit.
+    /// Untrusted Wasm belongs on the rwasm VM with [`CompilationConfig::default`]; the Wasmtime
+    /// strategy is for trusted (system) code until the engine meters bulk operations itself
+    /// (<https://github.com/fluentlabs-xyz/wasmtime/pull/12>).
     pub fn default_strategy_compatible() -> Self {
         Self {
             consume_fuel_for_bulk_ops: false,
@@ -251,6 +264,11 @@ impl CompilationConfig {
 
     pub fn with_max_allowed_function_types(mut self, max_allowed_function_types: u32) -> Self {
         self.max_allowed_function_types = max_allowed_function_types;
+        self
+    }
+
+    pub fn with_max_code_len(mut self, max_code_len: u32) -> Self {
+        self.max_code_len = max_code_len;
         self
     }
 }

@@ -5,12 +5,21 @@ use crate::{
 };
 use alloc::{sync::Arc, vec::Vec};
 use bitvec::{order::Lsb0, vec::BitVec};
+use core::mem::{replace, take};
 use hashbrown::HashMap;
 
 /// Host-side store that holds memory, tables, globals, and host context for a rwasm instance.
 /// It also tracks fuel for metering and provides access to imported functions and syscalls.
 /// The store is passed to host callbacks and persists across invocations of the same module.
 pub struct RwasmStore<T: 'static> {
+    /// Identity of the one instance whose state this store currently holds.
+    pub(crate) active_instance: Option<Arc<()>>,
+    /// The module that instance was created from. [`crate::ExecutionEngine`] refuses to run any
+    /// other module on this store while the instance is active, so the store's memory, tables,
+    /// globals and segment state can only be reached by the code they were initialized for.
+    active_module: Option<RwasmModule>,
+    /// Previous instance state retained until replacement initialization completes.
+    pending_instance: Option<InstanceState>,
     /// Total amount of fuel consumed by the currently running instance.
     pub(crate) consumed_fuel: u64,
     /// The linear memory shared by the running module and the host.
@@ -46,6 +55,18 @@ pub(crate) struct ReusableContext {
     pub ip: InstructionPtr,
     pub value_stack: ValueStack,
     pub initializing: bool,
+}
+
+/// Instance-owned allocations moved aside during initialization, without copying memory.
+struct InstanceState {
+    identity: Option<Arc<()>>,
+    module: Option<RwasmModule>,
+    memory: GlobalMemory,
+    tables: HashMap<TableIdx, TableEntity>,
+    globals: HashMap<GlobalIdx, UntypedValue>,
+    data_segments: BitVec,
+    elem_segments: BitVec,
+    last_signature: Option<SignatureIdx>,
 }
 
 impl<T: 'static + Default> Default for RwasmStore<T> {
@@ -109,6 +130,7 @@ impl<T: 'static> StoreTr<T> for RwasmStore<T> {
 }
 
 impl<T: 'static> RwasmStore<T> {
+    /// Creates an empty store with the supplied host context, syscall handler, and resource limits.
     pub fn new(
         import_linker: Arc<ImportLinker>,
         context: T,
@@ -122,6 +144,9 @@ impl<T: 'static> RwasmStore<T> {
         let global_memory =
             GlobalMemory::new(Pages::new_unchecked(0), Pages::new_unchecked(memory_pages));
         Self {
+            active_instance: None,
+            active_module: None,
+            pending_instance: None,
             consumed_fuel: 0,
             global_memory,
             data: context,
@@ -139,31 +164,121 @@ impl<T: 'static> RwasmStore<T> {
         }
     }
 
-    /// Resets the state of the current execution context.
+    /// Starts replacement with empty instance state, retaining the old allocations for rollback.
+    /// Parked executions and nested initialization must finish or be canceled first.
+    pub(crate) fn begin_instantiation(
+        &mut self,
+        identity: Arc<()>,
+        module: &RwasmModule,
+    ) -> Result<(), TrapCode> {
+        if self.resumable_context.is_some() || self.pending_instance.is_some() {
+            return Err(TrapCode::IllegalOpcode);
+        }
+        let memory = GlobalMemory::new(
+            Pages::new_unchecked(0),
+            self.global_memory.max_allowed_memory_pages,
+        );
+        self.pending_instance = Some(InstanceState {
+            identity: self.active_instance.replace(identity),
+            module: self.active_module.replace(module.clone()),
+            memory: replace(&mut self.global_memory, memory),
+            tables: take(&mut self.tables),
+            globals: take(&mut self.global_variables),
+            data_segments: take(&mut self.empty_data_segments),
+            elem_segments: take(&mut self.empty_elem_segments),
+            last_signature: self.last_signature.take(),
+        });
+        Ok(())
+    }
+
+    /// Commits successful initialization, retains suspended work, or rolls back a trapped start.
+    /// Fuel, host context, and trace events describe the attempted execution and are not refunded.
+    pub(crate) fn finish_instantiation(
+        &mut self,
+        outcome: Result<(), TrapCode>,
+    ) -> Result<(), TrapCode> {
+        match outcome {
+            Ok(()) => self.pending_instance = None,
+            Err(TrapCode::InterruptionCalled) => {}
+            Err(_) => {
+                self.rollback_instantiation();
+            }
+        }
+        outcome
+    }
+
+    /// Restores the previous instance if a replacement was in progress.
+    fn rollback_instantiation(&mut self) -> bool {
+        let Some(previous) = self.pending_instance.take() else {
+            return false;
+        };
+        self.active_instance = previous.identity;
+        self.active_module = previous.module;
+        self.global_memory = previous.memory;
+        self.tables = previous.tables;
+        self.global_variables = previous.globals;
+        self.empty_data_segments = previous.data_segments;
+        self.empty_elem_segments = previous.elem_segments;
+        self.last_signature = previous.last_signature;
+        true
+    }
+
+    /// Rejects running `module` while the store holds the state of an instance of another
+    /// module.
+    ///
+    /// The instance's own module is accepted by allocation or, for a module decoded again from
+    /// the same bytes, by content; a store that was never instantiated through
+    /// [`crate::RwasmInstance`] runs any module, as the legacy direct engine API always did.
+    pub(crate) fn check_module(&self, module: &RwasmModule) -> Result<(), TrapCode> {
+        match &self.active_module {
+            Some(active) if active == module => Ok(()),
+            Some(_) => Err(TrapCode::IllegalOpcode),
+            None => Ok(()),
+        }
+    }
+
+    /// Clears the data/element segment drop state.
+    ///
+    /// The bitsets describe *one instance*: `data.drop`/`elem.drop` in a module must not make the
+    /// next module instantiated on the same store look like it already dropped its segments.
+    pub(crate) fn clear_segment_flags(&mut self) {
+        // we don't do any assumptions regarding how data segments are used,
+        // maybe there is a way to optimize reuse of bitset.
+        if self.empty_data_segments.len() <= size_of::<usize>() {
+            self.empty_data_segments.fill(false);
+        } else {
+            self.empty_data_segments = BitVec::<usize, Lsb0>::EMPTY;
+        }
+        // we don't do any assumptions regarding how tables are used inside the applications,
+        // so keep it always empty, probably there is an optimization here.
+        if self.empty_elem_segments.len() <= size_of::<usize>() {
+            self.empty_elem_segments.fill(false);
+        } else {
+            self.empty_elem_segments = BitVec::<usize, Lsb0>::EMPTY;
+        }
+    }
+
+    /// Cancels parked execution and resets consumed fuel.
+    ///
+    /// Canceling initialization restores the previous instance, including its segment flags,
+    /// regardless of `keep_flags`. Otherwise `keep_flags` controls whether segment drops survive.
     pub fn reset(&mut self, keep_flags: bool) {
+        // Reset cancels any interrupted execution, even when instance segment flags survive.
+        self.resumable_context = None;
         // reset consumed fuel to 0
         self.consumed_fuel = 0;
+        if self.rollback_instantiation() {
+            return;
+        }
         // we might want to keep data/elem flags between calls, it's required for e2e tests
         if !keep_flags {
-            // we don't do any assumptions regarding how data segments are used,
-            // maybe there is a way to optimize reuse of bitset.
-            if self.empty_data_segments.len() <= size_of::<usize>() {
-                self.empty_data_segments.fill(false);
-            } else {
-                self.empty_data_segments = BitVec::<usize, Lsb0>::EMPTY;
-            }
-            // we don't do any assumptions regarding how tables are used inside the applications,
-            // so keep it always empty, probably there is an optimization here.
-            if self.empty_elem_segments.len() <= size_of::<usize>() {
-                self.empty_elem_segments.fill(false);
-            } else {
-                self.empty_elem_segments = BitVec::<usize, Lsb0>::EMPTY;
-            }
+            self.clear_segment_flags();
         }
         // in case of a trap, we might have this flag remains active
         self.last_signature = None;
     }
 
+    /// Returns fuel consumed since construction or the most recent fuel reset.
     pub fn fuel_consumed(&self) -> u64 {
         self.consumed_fuel
     }
@@ -261,5 +376,23 @@ mod tests {
             u32::from(store.global_memory.max_allowed_memory_pages),
             N_MAX_ALLOWED_MEMORY_PAGES
         );
+    }
+
+    /// `reset(false)` forgets every dropped segment whether the bitset fits in one word or not;
+    /// the wide case swaps the allocation out instead of clearing it in place. `reset(true)`
+    /// keeps the flags either way.
+    #[test]
+    fn reset_forgets_dropped_segments_of_any_count() {
+        for count in [1, size_of::<usize>(), size_of::<usize>() + 1, 200] {
+            let mut store = RwasmStore::<()>::default();
+            store.empty_data_segments.resize(count, true);
+            store.empty_elem_segments.resize(count, true);
+            store.reset(true);
+            assert_eq!(store.empty_data_segments.count_ones(), count);
+            assert_eq!(store.empty_elem_segments.count_ones(), count);
+            store.reset(false);
+            assert!(store.empty_data_segments.not_any(), "{count} data segments");
+            assert!(store.empty_elem_segments.not_any(), "{count} elem segments");
+        }
     }
 }

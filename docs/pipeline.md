@@ -85,6 +85,36 @@ meter rather than what the language allows.
   `new_as_wasmtime` and `for_each_strategy` alike. Use
   `CompilationConfig::default_strategy_compatible()` for modules that may run on either engine;
   `new_as_rwasm` and `RwasmModule::compile` keep accepting the rwasm-only injections.
+- **Syscall fuel (`builtins_consume_fuel`)** — the rwasm compiler charges an import's
+  `SyscallFuelParams` inside the import trampoline, so every way of reaching the import pays it:
+  `call`, `return_call`, `call_indirect`/`return_call_indirect` through a table entry, an import
+  exported as the entrypoint and an import used as `start`. On the Wasmtime strategy the same
+  schedule travels with the compiled module (`WasmtimeModule::syscall_fuel`, by import name) and
+  is charged by the host trampolines `WasmtimeExecutor` installs, before the handler runs and
+  after the same `IntegerOverflow` guard on the metered parameter. It is deliberately *not*
+  handed to the Wasmtime engine: Cranelift could only charge it at direct `call` sites, which
+  left every other path unmetered. A bare `wasmtime::Module` converted with
+  `WasmtimeModule::from` carries no schedule and charges nothing. A schedule that meters a wide
+  (`i64`/`f64`) parameter is rejected with `InvalidSyscallFuelParam` on both strategies: the
+  policies are defined over 32-bit byte lengths.
+- **Statically out-of-bounds memory accesses** — a load or store whose immediate offset plus its
+  access size exceeds the largest size the memory can ever have (its declared maximum, or 4 GiB
+  without one) is lowered to an unconditional `Trap(MemoryOutOfBounds)` and ends the code path,
+  exactly as Cranelift does on the Wasmtime strategy. The access could never succeed, so only the
+  metering of the dead tail changes: both engines charge the region up to and including the
+  access. Without this the Wasmtime backend, which never translates the dead tail, charged less
+  than rwasm for the same trap. Disabled float accesses keep their `Trap(IllegalOpcode)`
+  lowering, which takes precedence on both engines.
+- **Code size (`max_code_len`)** — the translator expands some operators into many instructions
+  (a branch keeping `k` values costs `2k + 1`, `k` up to Wasm's 1000 block results), so the
+  output is not proportional to the input: a 1 MiB `br_table` module used to compile to ~16 GiB
+  of bytecode before anything was metered. `CompilationConfig::max_code_len` (default
+  `N_DEFAULT_MAX_CODE_LEN`, 2 Mi instructions) is checked after every operator and after every
+  `br_table` target, i.e. before the next expansion is allocated, and rejects the module with
+  `CompilationError::CodeSizeExceeded`. `br_table` entries with the same target and the same
+  `DropKeep` share one trampoline, which removes the expansion for the common repeated-target
+  case; the bound covers the rest. The Wasmtime strategy inherits the bound through the rwasm
+  front end it runs first.
 
 ### Backend differences that remain
 
@@ -120,6 +150,20 @@ Executors are created with:
 - host context/state
 - optional fuel limit
 - optional tracer
+
+An `RwasmStore` holds one current instance's memory, tables, globals, and segment state.
+Replacement initialization temporarily moves that state aside without copying its memory.
+Success commits the replacement and invalidates old `RwasmInstance` handles; a trap restores the
+previous state and handle. An interrupted initializer keeps the transaction pending until
+`ExecutionEngine::resume` completes or `reset` cancels it. Cancellation restores the previous
+instance's segment flags for either `keep_flags` value. Consumed fuel and host callback side effects
+are not rolled back; `reset` still resets consumed fuel. A replacement attempted while an execution
+is parked is rejected before changing its state. Handles reject a different store or a successfully
+replaced instance with `IllegalOpcode`. The store also remembers the active instance's module:
+`ExecutionEngine::entrypoint` and `execute` reject any other module on that store with
+`IllegalOpcode` (the same module decoded again from its bytes is accepted), so a host using the
+engine directly cannot run one module's code over another module's state. A store that was never
+instantiated through `RwasmInstance` runs any module, as before.
 
 ## 5) Runtime execution
 

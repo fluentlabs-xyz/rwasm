@@ -14,17 +14,36 @@ arbitrary = "1.4.2"
 # Use the same package/version as `rwasm` itself to avoid version skew.
 wasmparser = { version = "0.100.1", package = "wasmparser-nostd", default-features = false }
 wasmtime = { package = "wasmtime-rwasm", version = "45.0.0-rwasm.2" }
-wasm-smith = "0.258.0"
+wasm-smith = { version = "0.258.0", features = ["wasmparser"] }
 hex = "0.4.3"
 log = "0.4.26"
 env_logger = "0.11.8"
 anyhow = "1.0"
-rwasm = { path = "..", default-features = false, features = ["std", "fpu", "full-wasm-mode"] }
+rwasm = { path = "..", default-features = false, features = ["std", "fpu", "full-wasm-mode", "wasmtime"] }
+rwasm-fuel-policy = { version = "0.0.2", default-features = false }
 wat = "1.230.0"
 
 [[bin]]
 name = "differential"
 path = "fuzz_targets/differential.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "differential_imports"
+path = "fuzz_targets/differential_imports.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "resume_equivalence"
+path = "fuzz_targets/resume_equivalence.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "compile_malformed"
+path = "fuzz_targets/compile_malformed.rs"
 test = false
 doc = false
 
