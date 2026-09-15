@@ -14,6 +14,10 @@ use hashbrown::HashMap;
 pub struct RwasmStore<T: 'static> {
     /// Identity of the one instance whose state this store currently holds.
     pub(crate) active_instance: Option<Arc<()>>,
+    /// The module that instance was created from. [`crate::ExecutionEngine`] refuses to run any
+    /// other module on this store while the instance is active, so the store's memory, tables,
+    /// globals and segment state can only be reached by the code they were initialized for.
+    active_module: Option<RwasmModule>,
     /// Previous instance state retained until replacement initialization completes.
     pending_instance: Option<InstanceState>,
     /// Total amount of fuel consumed by the currently running instance.
@@ -56,6 +60,7 @@ pub(crate) struct ReusableContext {
 /// Instance-owned allocations moved aside during initialization, without copying memory.
 struct InstanceState {
     identity: Option<Arc<()>>,
+    module: Option<RwasmModule>,
     memory: GlobalMemory,
     tables: HashMap<TableIdx, TableEntity>,
     globals: HashMap<GlobalIdx, UntypedValue>,
@@ -140,6 +145,7 @@ impl<T: 'static> RwasmStore<T> {
             GlobalMemory::new(Pages::new_unchecked(0), Pages::new_unchecked(memory_pages));
         Self {
             active_instance: None,
+            active_module: None,
             pending_instance: None,
             consumed_fuel: 0,
             global_memory,
@@ -160,7 +166,11 @@ impl<T: 'static> RwasmStore<T> {
 
     /// Starts replacement with empty instance state, retaining the old allocations for rollback.
     /// Parked executions and nested initialization must finish or be canceled first.
-    pub(crate) fn begin_instantiation(&mut self, identity: Arc<()>) -> Result<(), TrapCode> {
+    pub(crate) fn begin_instantiation(
+        &mut self,
+        identity: Arc<()>,
+        module: &RwasmModule,
+    ) -> Result<(), TrapCode> {
         if self.resumable_context.is_some() || self.pending_instance.is_some() {
             return Err(TrapCode::IllegalOpcode);
         }
@@ -170,6 +180,7 @@ impl<T: 'static> RwasmStore<T> {
         );
         self.pending_instance = Some(InstanceState {
             identity: self.active_instance.replace(identity),
+            module: self.active_module.replace(module.clone()),
             memory: replace(&mut self.global_memory, memory),
             tables: take(&mut self.tables),
             globals: take(&mut self.global_variables),
@@ -202,6 +213,7 @@ impl<T: 'static> RwasmStore<T> {
             return false;
         };
         self.active_instance = previous.identity;
+        self.active_module = previous.module;
         self.global_memory = previous.memory;
         self.tables = previous.tables;
         self.global_variables = previous.globals;
@@ -209,6 +221,20 @@ impl<T: 'static> RwasmStore<T> {
         self.empty_elem_segments = previous.elem_segments;
         self.last_signature = previous.last_signature;
         true
+    }
+
+    /// Rejects running `module` while the store holds the state of an instance of another
+    /// module.
+    ///
+    /// The instance's own module is accepted by allocation or, for a module decoded again from
+    /// the same bytes, by content; a store that was never instantiated through
+    /// [`crate::RwasmInstance`] runs any module, as the legacy direct engine API always did.
+    pub(crate) fn check_module(&self, module: &RwasmModule) -> Result<(), TrapCode> {
+        match &self.active_module {
+            Some(active) if active == module => Ok(()),
+            Some(_) => Err(TrapCode::IllegalOpcode),
+            None => Ok(()),
+        }
     }
 
     /// Clears the data/element segment drop state.

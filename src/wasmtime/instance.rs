@@ -29,13 +29,13 @@ pub struct WasmtimeExecutor<T: 'static> {
     /// syscall indices when a module is instantiated.
     import_linker: Arc<ImportLinker>,
     pub instance_pre: wasmtime::InstancePre<WrappedContext<T>>,
-    pub instance: wasmtime::Instance,
-    /// The instance whose exports are currently cached in `functions` and in the store's
-    /// memory handle. Compared against `instance` before every use, so swapping `instance`
-    /// directly still resolves the right exports.
-    cached_instance: wasmtime::Instance,
-    /// Exported functions of `cached_instance`, resolved once so calls don't look them up by
-    /// name. Entry points are few, so a linear scan beats hashing the name.
+    /// The live instance. Replaced only through [`Self::instantiate`], which swaps the cached
+    /// exports and the store's syscall fuel schedule in the same step: the host trampolines read
+    /// that schedule before every syscall, so an instance installed without it would be charged
+    /// for the previous module's imports.
+    instance: wasmtime::Instance,
+    /// Exported functions of `instance`, resolved once so calls don't look them up by name.
+    /// Entry points are few, so a linear scan beats hashing the name.
     functions: Vec<ExportedFunction>,
     /// Export the module was compiled for, when the config selected one.
     ///
@@ -58,16 +58,13 @@ impl<T: 'static> AsContextMut for WasmtimeExecutor<T> {
 }
 
 impl<T: 'static> WasmtimeExecutor<T> {
-    fn exported_memory(&mut self) -> Result<wasmtime::Memory, TrapCode> {
-        self.ensure_exports_current();
-        self.store.data().memory.ok_or(TrapCode::MemoryOutOfBounds)
+    /// The live Wasmtime instance; see [`Self::instantiate`] to replace it.
+    pub fn instance(&self) -> wasmtime::Instance {
+        self.instance
     }
 
-    /// Re-resolves the cached exports when `instance` was replaced since the last use.
-    fn ensure_exports_current(&mut self) {
-        if self.cached_instance != self.instance {
-            self.refresh_exports();
-        }
+    fn exported_memory(&self) -> Result<wasmtime::Memory, TrapCode> {
+        self.store.data().memory.ok_or(TrapCode::MemoryOutOfBounds)
     }
 
     /// Resolves the exported functions and the exported memory of `instance` once.
@@ -109,7 +106,6 @@ impl<T: 'static> WasmtimeExecutor<T> {
             })
             .collect();
         self.store.data_mut().memory = memory;
-        self.cached_instance = self.instance;
     }
 
     /// Creates an executor by instantiating an already-compiled Wasmtime module.
@@ -213,7 +209,6 @@ impl<T: 'static> WasmtimeExecutor<T> {
             import_linker,
             instance_pre,
             instance,
-            cached_instance: instance,
             functions: Vec::new(),
             entrypoint_name: None,
         };
@@ -322,8 +317,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
     }
 
     /// Looks up an exported function in the cached export table.
-    fn exported_function(&mut self, func_name: &str) -> Option<usize> {
-        self.ensure_exports_current();
+    fn exported_function(&self, func_name: &str) -> Option<usize> {
         self.functions
             .iter()
             .position(|function| &*function.name == func_name)

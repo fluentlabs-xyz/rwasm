@@ -186,7 +186,6 @@ fn execute_one(data: &[u8]) -> Result<()> {
     cfg.min_element_segments = 3;
     cfg.max_table_elements = rwasm::N_MAX_TABLE_SIZE as u64;
     cfg.min_data_segments = 1;
-    cfg.min_element_segments = 1;
     cfg.export_everything = true;
 
     let wasm = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

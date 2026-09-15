@@ -515,14 +515,10 @@ fn test_wasmtime_executor_exports_follow_the_instance() {
         TrapCode::MemoryOutOfBounds
     );
 
-    // Replacing the public `instance` field directly must resolve the new exports as well.
-    let instance_pre = wasmtime_worker
-        .linker
-        .instantiate_pre(&memory_module)
-        .unwrap();
-    wasmtime_worker.instance = instance_pre
-        .instantiate(&mut wasmtime_worker.store)
-        .unwrap();
+    // Instantiating the first module again brings its exports and memory back.
+    let replaced = wasmtime_worker.instance();
+    wasmtime_worker.instantiate(&memory_module).unwrap();
+    assert_ne!(wasmtime_worker.instance(), replaced);
     wasmtime_worker.execute("read_ok", &[], &mut []).unwrap();
     assert_eq!(wasmtime_worker.data(), &[1, 2, 3, 4, 1, 2, 3, 4]);
     assert_eq!(

@@ -45,9 +45,9 @@ regression tests are in the table that follows.
 
 | Finding | Fix | Commit | Tests |
 | --- | --- | --- | --- |
-| CRIT-1 two live instances share one store | instance identity on the handle (`RwasmInstance::check_store`), transactional replacement in `RwasmStore::{begin_instantiation, finish_instantiation}` with rollback of memory, tables, globals, segment flags and `last_signature` on a failed or cancelled initializer; stale handles and foreign stores are rejected with `IllegalOpcode` | `4c40f702` | `tests/audit_2026_09_13_repro.rs::instance_isolation` (3), `tests/instance_replacement.rs`, `tests/execution_contracts.rs` |
-| HIGH-1 wrong-length result buffer ignored | `run_raw` validates the output slot count against the stack before popping (`IllegalOpcode`), on release and debug alike | `4c40f702` | `::instance_isolation::a_result_buffer_of_the_wrong_length_is_reported_not_ignored` |
-| HIGH-2 syscall fuel charged at Cranelift `call` sites only | the schedule no longer goes to the engine; `WasmtimeModule` is a newtype carrying it by import name, resolved through the executor's linker and charged by both host trampolines (`context::charge_syscall_fuel`, the host-side twin of `compile_block_params`) — every path into an import pays | `5c8465d0` | `::syscall_fuel_dispatch` (4), `tests/fuel_alignment.rs::syscall_fuel_matches_on_every_dispatch_path`, `::syscall_fuel_matches_when_start_is_an_import`, `::out_of_fuel_matches_for_metered_builtins_called_through_a_table`, `src/wasmtime/{context,tests}.rs` |
+| CRIT-1 two live instances share one store | instance identity on the handle (`RwasmInstance::check_store`), transactional replacement in `RwasmStore::{begin_instantiation, finish_instantiation}` with rollback of memory, tables, globals, segment flags and `last_signature` on a failed or cancelled initializer; stale handles and foreign stores are rejected with `IllegalOpcode`. The low-level engine API is bound as well: the store remembers the active instance's module and `ExecutionEngine::{entrypoint, execute}` refuse any other module on it (`RwasmStore::check_module`, by allocation or by content), so instance state is reachable only through the code it was initialized for; a store that was never instantiated still runs any module | `4c40f702`, review follow-up | `tests/audit_2026_09_13_repro.rs::instance_isolation` (4), `tests/instance_replacement.rs`, `tests/execution_contracts.rs` |
+| HIGH-1 wrong-length result buffer ignored | `run_raw` validates the output slot count against the stack before popping (`IllegalOpcode`), on release and debug alike. The check is necessarily post-execution: the rwasm module carries no entrypoint signature, so a result shape of the wrong count (or of equal width but different types) is reported after the call, with the store's memory and host context left as the call modified them; the Wasmtime strategy checks the count before the call. Both report `IllegalOpcode`. The buffer is host-supplied, so this is a host contract rather than guest-reachable state, and it is documented on `ExecutionEngine::execute`; carrying result types in the module format is a format change left out of this audit | `4c40f702` | `::instance_isolation::a_result_buffer_of_the_wrong_length_is_reported_not_ignored` |
+| HIGH-2 syscall fuel charged at Cranelift `call` sites only | the schedule no longer goes to the engine; `WasmtimeModule` is a newtype carrying it by import name, resolved through the executor's linker and charged by both host trampolines (`context::charge_syscall_fuel`, the host-side twin of `compile_block_params`) — every path into an import pays. The schedule follows the instance: `WasmtimeExecutor::instance` is no longer a public field, so an instance can only be replaced through `WasmtimeExecutor::instantiate`, which installs the new module's schedule and exports in the same step | `5c8465d0`, review follow-up | `::syscall_fuel_dispatch` (4), `tests/fuel_alignment.rs::syscall_fuel_matches_on_every_dispatch_path`, `::syscall_fuel_matches_when_start_is_an_import`, `::out_of_fuel_matches_for_metered_builtins_called_through_a_table`, `src/wasmtime/{context,tests}.rs` |
 | HIGH-3 trampoline `StackCheck(0)` | `compile_block_params` returns the prologue's peak (0 / 2 / 4) and `process_imports` accounts it in the trampoline's frame | `4c40f702` | `::syscall_fuel_dispatch::{linear,quadratic}_fuel_trampoline_reserves_its_temporaries`, `src/compiler/parser.rs::import_trampoline_stack_check_covers_the_fuel_prologue`, `tests/fuel_alignment.rs::metered_builtin_call_at_stack_capacity_matches` |
 | HIGH-4 unbounded code expansion | `CompilationConfig::max_code_len` (default `N_DEFAULT_MAX_CODE_LEN`, 2 Mi instructions) checked after every operator and every `br_table` target while emitting, plus on the merged section; `CompilationError::CodeSizeExceeded`; `br_table` entries with the same `(label, DropKeep)` share one trampoline; part of the codegen identity | `7c506511` | `::code_size_bound` (2), `tests/strategy_limits.rs::code_size_bound_*`, `::br_table_entries_with_the_same_target_share_a_trampoline` |
 | HIGH-5 wide metered parameter accepted by rwasm only | `param_slot_depth` rejects a non-`i32` metered parameter with `InvalidSyscallFuelParam`, so both strategies refuse it together (it never metered correctly: the trampoline read the high word, Cranelift the whole value) | `7c506511` | `::metered_import_parameters` (2), `src/compiler/block_fuel.rs` unit tests |
@@ -722,14 +722,16 @@ reset between instances and was not probed.
 ## Reproduction
 
 ```bash
-# every finding of this audit: 22 tests, all green after the fixes (all were red when found)
+# every finding of this audit: 23 tests green after the fixes (all were red when found), plus the
+# two HIGH-8 reproductions, which stay ignored until fluentlabs-xyz/wasmtime#12 is merged
 cargo test --release --features wasmtime --test audit_2026_09_13_repro
 
 # the shared fuel schedule, including the cases added for HIGH-2, HIGH-3 and HIGH-7
 cargo test --release --features wasmtime --test fuel_alignment
 
 # the new fuzz targets
-cd fuzz && cargo +nightly fuzz run differential_imports -- -max_total_time=600 -rss_limit_mb=4096
-cd fuzz && cargo +nightly fuzz run resume_equivalence  -- -max_total_time=600 -rss_limit_mb=4096
-cd fuzz && cargo +nightly fuzz run compile_malformed    -- -max_total_time=600 -rss_limit_mb=4096
+cd fuzz
+cargo +nightly fuzz run differential_imports -- -max_total_time=600 -rss_limit_mb=4096
+cargo +nightly fuzz run resume_equivalence  -- -max_total_time=600 -rss_limit_mb=4096
+cargo +nightly fuzz run compile_malformed    -- -max_total_time=600 -rss_limit_mb=4096
 ```

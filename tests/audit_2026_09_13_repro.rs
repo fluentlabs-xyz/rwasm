@@ -116,6 +116,73 @@ mod instance_isolation {
         );
     }
 
+    /// The handle check alone leaves the low-level engine API open: `ExecutionEngine::execute` and
+    /// `entrypoint` take any module and any store. With an instance active, the store accepts only
+    /// that instance's module (by allocation or, for a module decoded again, by content), so A's
+    /// memory cannot be run under B's code even without going through a handle.
+    #[test]
+    fn direct_engine_execution_is_bound_to_the_active_instances_module() {
+        let linker = Arc::new(ImportLinker::default());
+        let engine = ExecutionEngine::new();
+        let mut store = RwasmStore::new(
+            linker.clone(),
+            (),
+            always_failing_syscall_handler,
+            Some(1_000_000),
+            None,
+        );
+        let module_a = module(&linker, INSTANCE_A);
+        let module_b = module(&linker, INSTANCE_B);
+        let _instance = linker
+            .instantiate(&mut store, engine, module_a.clone())
+            .expect("module A instantiates");
+
+        let mut result = [Value::I64(-1)];
+        assert_eq!(
+            engine.execute(&mut store, &module_b, &[], &mut result),
+            Err(TrapCode::IllegalOpcode),
+            "B must not run on A's state"
+        );
+        assert_eq!(
+            engine.entrypoint(&mut store, &module_b),
+            Err(TrapCode::IllegalOpcode),
+            "B's prologue must not run on A's state"
+        );
+        assert_eq!(
+            store
+                .memory_read_into_vec(0, 4)
+                .expect("A's memory is intact"),
+            b"AAAA"
+        );
+
+        // A itself runs, also through a fresh decoding of the same bytecode.
+        engine
+            .execute(&mut store, &module_a, &[], &mut result)
+            .expect("A runs on its own store");
+        assert_eq!(result, [Value::I64(65)]);
+        let decoded_again = RwasmModule::new(&module_a.serialize()).0;
+        engine
+            .execute(&mut store, &decoded_again, &[], &mut result)
+            .expect("the same module decoded again is still A");
+        assert_eq!(result, [Value::I64(65)]);
+
+        // A store that was never instantiated keeps running any module.
+        let mut legacy_store = RwasmStore::new(
+            linker.clone(),
+            (),
+            always_failing_syscall_handler,
+            Some(1_000_000),
+            None,
+        );
+        engine
+            .entrypoint(&mut legacy_store, &module_b)
+            .expect("legacy stores are not bound");
+        engine
+            .execute(&mut legacy_store, &module_b, &[], &mut result)
+            .expect("legacy stores are not bound");
+        assert_eq!(result, [Value::I64(66)]);
+    }
+
     /// The same aliasing on the write side: A's store at offset 4 must land in A's memory, not in the
     /// memory of the instance that now owns the store.
     #[test]
@@ -605,7 +672,7 @@ mod code_size_bound {
     //! The bound used here is 2,000,000 instructions, the order of magnitude the host's
     //! `RWASM_MAX_CODE_SIZE` (12 MiB) implies.
 
-    use rwasm::{CompilationConfig, RwasmModule};
+    use rwasm::{CompilationConfig, CompilationError, RwasmModule};
 
     const MAX_INSTRUCTIONS: usize = 2_000_000;
 
@@ -651,16 +718,10 @@ mod code_size_bound {
     fn assert_bounded(label: &str, wasm: &[u8]) {
         let instructions = match RwasmModule::compile(config(), wasm) {
             Ok((module, _)) => module.code_section.len(),
-            // The expected fix rejects an oversized expansion with a dedicated error; the fixture
-            // itself must still be valid Wasm, so any *validation* error is a broken test.
-            Err(err) => {
-                let text = format!("{err:?}");
-                assert!(
-                    !text.contains("MalformedWasmBinary"),
-                    "{label}: the fixture must be valid Wasm, got {text}"
-                );
-                return;
-            }
+            // The fix rejects an oversized expansion with a dedicated error; any other error means
+            // the fixture is broken or an unrelated regression, not a bounded compiler.
+            Err(CompilationError::CodeSizeExceeded { .. }) => return,
+            Err(err) => panic!("{label}: expected CodeSizeExceeded, got {err:?}"),
         };
         assert!(
             instructions <= MAX_INSTRUCTIONS,

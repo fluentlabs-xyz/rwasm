@@ -159,8 +159,11 @@ previous state and handle. An interrupted initializer keeps the transaction pend
 instance's segment flags for either `keep_flags` value. Consumed fuel and host callback side effects
 are not rolled back; `reset` still resets consumed fuel. A replacement attempted while an execution
 is parked is rejected before changing its state. Handles reject a different store or a successfully
-replaced instance with `IllegalOpcode`. Hosts using `ExecutionEngine` directly are responsible for
-pairing the module with its initialized store state.
+replaced instance with `IllegalOpcode`. The store also remembers the active instance's module:
+`ExecutionEngine::entrypoint` and `execute` reject any other module on that store with
+`IllegalOpcode` (the same module decoded again from its bytes is accepted), so a host using the
+engine directly cannot run one module's code over another module's state. A store that was never
+instantiated through `RwasmInstance` runs any module, as before.
 
 ## 5) Runtime execution
 

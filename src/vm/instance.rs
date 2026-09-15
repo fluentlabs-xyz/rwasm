@@ -33,7 +33,7 @@ impl RwasmInstance {
         // Distinct allocations prevent handles from matching another store or a later instance
         // of the same module. The previous identity is restored if initialization fails.
         let identity = Arc::new(());
-        store.begin_instantiation(identity.clone())?;
+        store.begin_instantiation(identity.clone(), &module)?;
         // Legacy modules start at zero and have no separate initialization prologue.
         let outcome = if module.source_pc > 0 {
             engine.entrypoint(store, &module)
@@ -64,6 +64,9 @@ impl RwasmInstance {
     }
 
     /// Executes the compiled entrypoint if this instance still owns the supplied store.
+    ///
+    /// `result` must have the entrypoint's result shape; see [`ExecutionEngine::execute`] for
+    /// how a mismatch is reported.
     pub fn execute<T>(
         &self,
         store: &mut RwasmStore<T>,
