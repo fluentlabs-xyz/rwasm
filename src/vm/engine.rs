@@ -76,9 +76,10 @@ impl ExecutionEngine {
     /// Executes a rWasm module's function with the given parameters and stores the result.
     ///
     /// `result` must have the entrypoint's result shape (one `Value` of the declared type per
-    /// result). The module carries no signature, so the shape is checked against what the call
-    /// left on the stack after it returns: a mismatch is [`TrapCode::IllegalOpcode`], with the
-    /// store's memory and host context left as the call modified them.
+    /// result). Reduced bytecode carries no signature: only the total result slot count is
+    /// checked after execution, with a mismatch reported as [`TrapCode::IllegalOpcode`]. The
+    /// caller is responsible for parameter and result types. Use a named Wasm entrypoint compiled
+    /// through [`crate::StrategyDefinition`] for validation before execution.
     ///
     /// # Errors
     ///

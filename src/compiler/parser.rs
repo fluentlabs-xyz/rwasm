@@ -93,6 +93,21 @@ impl ModuleParser {
         Ok(result)
     }
 
+    /// Preserves the named entrypoint's Wasm signature for the typed strategy API. The reduced
+    /// bytecode itself carries stack slots, so it cannot recover value boundaries at call time.
+    pub(crate) fn entrypoint_type(&self) -> Option<FuncType> {
+        let name = self.config.entrypoint_name.as_ref()?;
+        let translation = &self.allocations.translation;
+        let func_idx = *translation.exported_funcs.get(name)?;
+        let type_idx = translation.resolve_func_type_index(func_idx);
+        Some(
+            translation
+                .func_type_registry
+                .resolve_original_func_type(type_idx)
+                .clone(),
+        )
+    }
+
     pub fn finalize(
         mut self,
         wasm_binary: &[u8],

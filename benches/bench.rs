@@ -2,7 +2,7 @@ use criterion::{criterion_main, Bencher, Criterion};
 use fib_example::FIB_WASM;
 use rwasm::{
     always_failing_syscall_handler, wasmtime::compile_wasmtime_module, CompilationConfig,
-    ExecutionEngine, ImportLinker, RwasmModule, StrategyDefinition, StrategyExecutor, Value,
+    ImportLinker, StrategyDefinition, StrategyExecutor, Value,
 };
 use std::{sync::Arc, time::Duration};
 
@@ -92,12 +92,7 @@ fn bench_comparisons(c: &mut Criterion) {
             .with_entrypoint_name("main".into())
             .with_allow_malformed_entrypoint_func_type(true)
             .with_consume_fuel(true);
-        let (module, _) = RwasmModule::compile(config, FIB_WASM).unwrap();
-        let strategy = StrategyDefinition::Rwasm {
-            module,
-            engine: ExecutionEngine::acquire_shared(),
-            entrypoint_name: Some("main".into()),
-        };
+        let strategy = StrategyDefinition::new_as_rwasm(config, FIB_WASM).unwrap();
         group.bench_function("bench_rwasm_warm", |b| {
             bench_warm(b, strategy.clone());
         });
