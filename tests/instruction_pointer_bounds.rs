@@ -1,7 +1,9 @@
 //! Entry checks and execution guards that remain independent of instruction-pointer bounds.
 //!
 //! The instruction stream is a trusted compiler artifact. These tests cover the retained entry,
-//! linker, and resource checks; they do not execute invalid branch targets or unterminated code.
+//! linker, and resource checks; they do not execute invalid branch targets or unterminated code,
+//! except `out_of_range_branch_target_aborts_the_process`, which does so in a child process and
+//! asserts the fatal signal.
 
 use rwasm::{
     always_failing_syscall_handler, instruction_set, ExecutionEngine, ImportLinker, RwasmModule,
@@ -182,4 +184,84 @@ fn well_formed_control_flow_is_not_affected() {
     })
     .build();
     assert_eq!(execute_mut(&module), Ok(()));
+}
+
+/// The one test here that does execute an out-of-range branch target, in a child process: the
+/// safe public API (`RwasmModuleBuilder`, `RwasmModule::new_checked_exact`) accepts such a module
+/// and the interpreter aborts on it, which the maintainers document as intentional. If rwasm ever
+/// validates branch targets, invert this into "the module is rejected".
+/// Test name of the crashing payload, used to re-invoke this binary in child mode.
+const CRASH_TEST: &str = "out_of_range_branch_target_aborts_the_process";
+
+fn run_payload(which: &str) {
+    let module = match which {
+        // A module built through the safe builder API. `Br` is a compiler-internal opcode, but
+        // `RwasmModuleBuilder` is `pub` and accepts any instruction set.
+        "builder" => RwasmModuleBuilder::new(instruction_set! { Br(i32::MAX) }).build(),
+        // A module loaded from a byte string, the documented way a host restores a cached module.
+        // The branch immediate survives `serialize` / `new_checked` unchanged.
+        "bytecode" => {
+            let bytes = RwasmModuleBuilder::new(instruction_set! { Br(i32::MAX) })
+                .build()
+                .serialize();
+            RwasmModule::new_checked_exact(&bytes).expect("the encoding is well formed")
+        }
+        other => panic!("unknown payload: {other}"),
+    };
+    let engine = ExecutionEngine::new();
+    let mut store = RwasmStore::new(
+        ImportLinker::default().into(),
+        (),
+        always_failing_syscall_handler,
+        None,
+        None,
+    );
+    // The interpreter fetches the next instruction from `code_section + i32::MAX`, far outside
+    // the code section, and dereferences it.
+    let outcome = engine.execute(&mut store, &module, &[], &mut []);
+    panic!("rwasm returned {outcome:?} instead of aborting on an out-of-range branch target");
+}
+
+#[test]
+fn out_of_range_branch_target_aborts_the_process() {
+    // Child mode: perform the crashing execution and let the signal kill this process.
+    if let Some(which) = std::env::var_os("RWASM_IP_BOUNDS_CHILD") {
+        run_payload(&which.to_string_lossy());
+        unreachable!("the child must not return from its payload");
+    }
+
+    // Parent mode: re-invoke this test binary for each payload and require a fatal signal.
+    for which in ["builder", "bytecode"] {
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", CRASH_TEST, "--nocapture"])
+            .env("RWASM_IP_BOUNDS_CHILD", which)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("the test binary must be re-executable");
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let status = loop {
+            match child
+                .try_wait()
+                .expect("waiting for the child must succeed")
+            {
+                Some(status) => break status,
+                None if std::time::Instant::now() > deadline => {
+                    let _ = child.kill();
+                    panic!("the `{which}` payload neither crashed nor returned within 30s");
+                }
+                None => std::thread::sleep(std::time::Duration::from_millis(25)),
+            }
+        };
+
+        use std::os::unix::process::ExitStatusExt;
+        let signal = status.signal();
+        assert!(
+            matches!(signal, Some(4) | Some(6) | Some(10) | Some(11)),
+            "the `{which}` payload must abort the process, but it exited with {status:?} \
+             (signal={signal:?}); a clean exit means the interpreter survived an out-of-range \
+             branch target, which would be a correctness bug instead of a crash"
+        );
+    }
 }

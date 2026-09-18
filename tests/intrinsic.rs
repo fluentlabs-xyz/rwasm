@@ -98,3 +98,70 @@ fn test_intrinsic_remove() {
         .execute(&mut store, &rwasm_module, &[], &mut [])
         .unwrap();
 }
+
+mod intrinsic_tail_call {
+    //! MEDIUM (host must register an `Intrinsic`): `return_call` to an intrinsic import emitted
+    //! the intrinsic's replacement (or the parameter drops) but no `Return`, and the translator
+    //! then treats the rest of the body as unreachable, so the function ended without one. The
+    //! interpreter fell through into whatever function follows in the code section.
+
+    use rwasm::{
+        always_failing_syscall_handler, intrinsic::Intrinsic, CompilationConfig, ExecutionEngine,
+        ImportLinker, ImportName, Opcode, RwasmModule, RwasmStore, StoreTr,
+    };
+    use std::sync::Arc;
+    use wasmparser::ValType;
+
+    #[test]
+    fn return_call_to_an_intrinsic_returns() {
+        // `victim` is laid out right after `main` in the code section and must never run
+        let wasm = wat::parse_str(
+            r#"(module
+                (import "env" "consume_fuel" (func $consume_fuel (param i32)))
+                (memory (export "memory") 1)
+                (func (export "main") (i32.const 5) (return_call $consume_fuel))
+                (func (export "victim") (i32.store (i32.const 0) (i32.const 0xdeadbeef))))"#,
+        )
+        .unwrap();
+        for (name, intrinsic) in [
+            (
+                "replace",
+                Intrinsic::Replace(vec![Opcode::ConsumeFuelStack]),
+            ),
+            ("remove", Intrinsic::Remove),
+        ] {
+            let mut linker = ImportLinker::default();
+            linker.insert_intrinsic(
+                ImportName::new("env", "consume_fuel"),
+                71,
+                intrinsic,
+                &[ValType::I32],
+                &[],
+            );
+            let linker = Arc::new(linker);
+            let config = CompilationConfig::default()
+                .with_entrypoint_name("main".into())
+                .with_import_linker(linker.clone());
+            let (module, _) = RwasmModule::compile(config, &wasm).unwrap();
+            let mut store = RwasmStore::<()>::new(
+                linker.clone(),
+                (),
+                always_failing_syscall_handler,
+                Some(1_000_000),
+                None,
+            );
+            let instance = linker
+                .instantiate(&mut store, ExecutionEngine::new(), module)
+                .unwrap();
+            let outcome = instance.execute(&mut store, &[], &mut []);
+            let mut word = [0u8; 4];
+            store.memory_read(0, &mut word).unwrap();
+            assert_eq!(outcome, Ok(()), "{name}");
+            assert_eq!(
+                u32::from_le_bytes(word),
+                0,
+                "{name}: `main` fell through into `victim`"
+            );
+        }
+    }
+}

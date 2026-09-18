@@ -489,3 +489,39 @@ mod strategy_compatibility {
         }
     }
 }
+
+#[cfg(feature = "wasmtime")]
+mod memory_export {
+    //! Audit 2026-09-13, round 3 (R3-5): the Wasmtime strategy requires an exported memory for host
+    //! access (`docs/pipeline.md`); the rwasm strategy also runs modules that keep their memory private.
+
+    use rwasm::{CompilationConfig, ImportLinker, StateRouterConfig, StrategyDefinition};
+    use std::sync::Arc;
+
+    fn hex(bytes: &str) -> Vec<u8> {
+        (0..bytes.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&bytes[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// The Wasmtime strategy requires exported memory for host access, as documented in
+    /// `docs/pipeline.md`. The interpreter and the Wasm spec harness also support unexported memory.
+    #[test]
+    fn unexported_memory_is_supported_only_by_the_rwasm_strategy() {
+        let wasm = hex("0061736d010000000104016000000302010005030100000a0a01080041002c00001a0b");
+        let linker = Arc::new(ImportLinker::default());
+        let config = CompilationConfig::default_strategy_compatible()
+            .with_allow_malformed_entrypoint_func_type(true)
+            .with_import_linker(linker)
+            .with_state_router(StateRouterConfig {
+                states: Box::new([("f".into(), 0u32)]),
+                opcode: None,
+            });
+        assert!(StrategyDefinition::new_as_rwasm(config.clone(), &wasm).is_ok());
+        assert!(matches!(
+            StrategyDefinition::new_as_wasmtime(config, &wasm, None),
+            Err(rwasm::CompilationError::MissingMemoryExport)
+        ));
+    }
+}
