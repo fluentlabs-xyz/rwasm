@@ -70,6 +70,75 @@ macro_rules! define_snippet {
 }
 
 impl Snippet {
+    /// Every snippet, in declaration order.
+    pub const ALL: [Snippet; 23] = [
+        Snippet::I64Eq,
+        Snippet::I64Ne,
+        Snippet::I64LtS,
+        Snippet::I64LtU,
+        Snippet::I64GtS,
+        Snippet::I64GtU,
+        Snippet::I64LeS,
+        Snippet::I64LeU,
+        Snippet::I64GeS,
+        Snippet::I64GeU,
+        Snippet::I64Add,
+        Snippet::I64Sub,
+        Snippet::I64Mul,
+        Snippet::I64DivS,
+        Snippet::I64DivU,
+        Snippet::I64RemS,
+        Snippet::I64RemU,
+        Snippet::I64Shl,
+        Snippet::I64ShrS,
+        Snippet::I64ShrU,
+        Snippet::I64RotL,
+        Snippet::I64RotR,
+        Snippet::UDivMod64,
+    ];
+
+    /// The largest `StackCheck` any snippet reserves on top of its operands, i.e. the deepest
+    /// frame a single `i64` operator can hide behind a `CallInternal`. A wrapper's peak already
+    /// includes the snippets it calls (`MSH_I64_DIV_S` covers `UDivMod64`), so this is the whole
+    /// hidden frame. The runtime value stack keeps this much room above `N_MAX_STACK_SIZE`
+    /// (`N_STACK_TRAMPOLINE_HEADROOM`); `max_stack_height_is_pinned` keeps the list complete.
+    pub const MAX_STACK_HEIGHT: u32 = {
+        let peaks = [
+            InstructionSet::MSH_I64_EQ,
+            InstructionSet::MSH_I64_NE,
+            InstructionSet::MSH_I64_LT_S,
+            InstructionSet::MSH_I64_LT_U,
+            InstructionSet::MSH_I64_GT_S,
+            InstructionSet::MSH_I64_GT_U,
+            InstructionSet::MSH_I64_LE_S,
+            InstructionSet::MSH_I64_LE_U,
+            InstructionSet::MSH_I64_GE_S,
+            InstructionSet::MSH_I64_GE_U,
+            InstructionSet::MSH_I64_ADD,
+            InstructionSet::MSH_I64_SUB,
+            InstructionSet::MSH_I64_MUL,
+            InstructionSet::MSH_I64_DIV_S,
+            InstructionSet::MSH_I64_DIV_U,
+            InstructionSet::MSH_I64_REM_S,
+            InstructionSet::MSH_I64_REM_U,
+            InstructionSet::MSH_I64_SHL,
+            InstructionSet::MSH_I64_SHR_S,
+            InstructionSet::MSH_I64_SHR_U,
+            InstructionSet::MSH_I64_ROTL,
+            InstructionSet::MSH_I64_ROTR,
+            InstructionSet::MSH_UDIVMOD64,
+        ];
+        let mut max = 0;
+        let mut i = 0;
+        while i < peaks.len() {
+            if peaks[i] > max {
+                max = peaks[i];
+            }
+            i += 1;
+        }
+        max
+    };
+
     fn definition(&self) -> &'static SnippetDefinition {
         use wasmparser::ValType::*;
         use Snippet::*;
@@ -182,4 +251,35 @@ fn expand_i64_to_i32(params: &[ValType]) -> Vec<ValType> {
 pub struct SnippetCall {
     pub snippet: Snippet,
     pub loc: u32, // call instruction index
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::N_STACK_TRAMPOLINE_HEADROOM;
+
+    /// `MAX_STACK_HEIGHT` is computed from a literal list of peaks, so a new snippet has to be
+    /// added there and to `ALL`: this pins the list to the definitions and to the value-stack
+    /// headroom that makes a snippet call at the caller's peak fit (audit 2026-09-18).
+    #[test]
+    fn max_stack_height_is_pinned() {
+        let peak = Snippet::ALL
+            .iter()
+            .map(Snippet::max_stack_height)
+            .max()
+            .unwrap();
+        assert_eq!(peak, Snippet::MAX_STACK_HEIGHT);
+        assert!(Snippet::MAX_STACK_HEIGHT as usize <= N_STACK_TRAMPOLINE_HEADROOM);
+        // every variant is listed once
+        let mut listed = Snippet::ALL.to_vec();
+        listed.sort();
+        listed.dedup();
+        assert_eq!(listed.len(), Snippet::ALL.len());
+        for snippet in Snippet::ALL {
+            // a wrapper's peak covers the snippets it calls into
+            for dependency in snippet.dependencies() {
+                assert!(dependency.max_stack_height() <= snippet.max_stack_height());
+            }
+        }
+    }
 }

@@ -127,6 +127,13 @@ impl FuncTranslatorAllocations {
                     }
                 }
             }
+            // The intrinsic is spliced in place of the call, so a tail call has to return on its
+            // own: the translator treats everything after `return_call` as unreachable and emits
+            // no `Return` for the function body, which used to fall through into the next
+            // function in the code section (audit 2026-09-18).
+            if is_return_call {
+                is.op_return();
+            }
         } else if is_return_call {
             is.op_return_call_internal(function_index + 1);
         } else {
