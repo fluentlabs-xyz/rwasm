@@ -130,14 +130,19 @@ impl StrategyDefinition {
         module_caching_key: Option<[u8; 32]>,
     ) -> Result<Self, CompilationError> {
         use crate::wasmtime::{
-            compile_wasmtime_module, compile_wasmtime_module_cached_with, wasm_identity,
-            CachePolicy,
+            compile_wasmtime_module_cached_with, compile_wasmtime_module_with_frame_heights,
+            wasm_identity, CachePolicy,
         };
         Self::ensure_strategy_compatible(&compilation_config)?;
         let wasm_binary = wasm_binary.as_ref();
         let entrypoint_name = compilation_config.entrypoint_name.clone();
         let compile = |config: CompilationConfig| -> Result<_, CompilationError> {
-            RwasmModule::compile(config.clone(), wasm_binary)?;
+            // `RwasmModule::compile`, keeping the frame heights the Wasmtime backend compiles
+            // into its emulation of the rwasm stack limits
+            let mut parser = ModuleParser::new(config.clone());
+            parser.parse(wasm_binary)?;
+            let frame_heights = parser.frame_heights();
+            parser.finalize(wasm_binary)?;
             // The rwasm VM always has its memory at index 0, while this backend can only reach an
             // instance memory through the module's exports. Requiring the export keeps host memory
             // access (`StoreTr::memory_read`/`memory_write`, syscall handlers) behaviourally
@@ -147,7 +152,7 @@ impl StrategyDefinition {
             if !memory_is_exported(wasm_binary)? {
                 return Err(CompilationError::MissingMemoryExport);
             }
-            compile_wasmtime_module(config, wasm_binary)
+            compile_wasmtime_module_with_frame_heights(config, wasm_binary, &frame_heights)
         };
         let module = match module_caching_key {
             Some(module_caching_key) => compile_wasmtime_module_cached_with(

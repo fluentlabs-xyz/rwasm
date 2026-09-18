@@ -9,13 +9,15 @@ mod tests;
 mod types;
 
 pub use self::{
-    context::WasmtimeCaller, engine::WASMTIME_MAX_WASM_STACK,
-    import_linker::wasmtime_import_linker, instance::WasmtimeExecutor,
+    context::WasmtimeCaller,
+    engine::{wasmtime_engine, WASMTIME_MAX_WASM_STACK},
+    import_linker::wasmtime_import_linker,
+    instance::WasmtimeExecutor,
     syscall_handler::wasmtime_syscall_handler,
 };
 use crate::{
-    wasmtime::{context::WrappedContext, engine::wasmtime_engine},
-    CompilationConfig, CompilationError, ImportName, N_MAX_TABLE_SIZE,
+    wasmtime::context::WrappedContext, CompilationConfig, CompilationError, ImportName,
+    ModuleParser, N_MAX_TABLE_SIZE,
 };
 use lru::LruCache;
 use rwasm_fuel_policy::SyscallFuelParams;
@@ -183,24 +185,112 @@ fn check_compile_limits(
     Ok(())
 }
 
+/// The frame height of every function of `wasm_binary` under `compilation_config`, as the rwasm
+/// translator records it (see [`ModuleParser::frame_heights`]).
+///
+/// Runs the rwasm translator without finalizing a module: the entrypoint, start-section and
+/// code-size policies of [`crate::RwasmModule::compile`] do not apply, the translator's own
+/// rejections (an unresolved import, an unsupported local type, a frame past
+/// `N_MAX_STACK_SIZE`) do.
+fn rwasm_frame_heights(
+    compilation_config: &CompilationConfig,
+    wasm_binary: &[u8],
+) -> Result<Vec<u32>, CompilationError> {
+    let mut parser = ModuleParser::new(compilation_config.clone());
+    parser.parse(wasm_binary)?;
+    Ok(parser.frame_heights())
+}
+
+/// Appends the [`wasmtime::RWASM_FRAMES_SECTION`] custom section to `wasm_binary`: one
+/// little-endian `u32` per function, in Wasm index order. Custom sections may appear anywhere,
+/// so the section goes last and the rest of the binary is left untouched.
+pub(crate) fn with_frame_heights_section(wasm_binary: &[u8], frame_heights: &[u32]) -> Vec<u8> {
+    fn leb128(out: &mut Vec<u8>, mut value: u32) {
+        loop {
+            let byte = (value & 0x7f) as u8;
+            value >>= 7;
+            if value == 0 {
+                out.push(byte);
+                return;
+            }
+            out.push(byte | 0x80);
+        }
+    }
+    let name = wasmtime::RWASM_FRAMES_SECTION.as_bytes();
+    let mut payload = Vec::with_capacity(5 + name.len() + frame_heights.len() * 4);
+    leb128(&mut payload, name.len() as u32);
+    payload.extend_from_slice(name);
+    for height in frame_heights {
+        payload.extend_from_slice(&height.to_le_bytes());
+    }
+    let mut binary = Vec::with_capacity(wasm_binary.len() + 6 + payload.len());
+    binary.extend_from_slice(wasm_binary);
+    binary.push(0); // custom section id
+    leb128(&mut binary, payload.len() as u32);
+    binary.extend_from_slice(&payload);
+    binary
+}
+
 /// Compiles a wasm binary with the Wasmtime engine configured by `compilation_config`.
 ///
-/// Beyond Wasmtime's own validation this only enforces the rwasm compile-time resource caps
-/// (see [`check_compile_limits`]). The rwasm strategy accepts a strict subset of what Wasmtime
-/// accepts (see [`crate::RwasmModule::compile`]); callers that need both strategies to agree on
-/// the accepted language go through [`crate::StrategyDefinition::new_as_wasmtime`], which runs
-/// the rwasm front end first.
+/// The engine emulates the rwasm stack limits (see [`crate::wasmtime::wasmtime_engine`]) and
+/// needs the frame height of every function for that, so the binary is first run through the
+/// rwasm translator (see `rwasm_frame_heights`); the heights travel to Cranelift in the
+/// [`wasmtime::RWASM_FRAMES_SECTION`] custom section. Beyond that and Wasmtime's own validation
+/// this only enforces the rwasm compile-time resource caps (see [`check_compile_limits`]): the
+/// entrypoint and start-section policies of [`crate::RwasmModule::compile`] are not applied.
+/// Callers that need both strategies to agree on the accepted language go through
+/// [`crate::StrategyDefinition::new_as_wasmtime`], which runs the whole rwasm front end first.
 pub fn compile_wasmtime_module(
+    compilation_config: CompilationConfig,
+    wasm_binary: impl AsRef<[u8]>,
+) -> Result<WasmtimeModule, CompilationError> {
+    let engine = wasmtime_engine(&compilation_config);
+    compile_wasmtime_module_on(&engine, compilation_config, wasm_binary)
+}
+
+/// [`compile_wasmtime_module`] on an existing `engine`, which must have been built by
+/// [`wasmtime_engine`] for `compilation_config` (or for a config with the same
+/// [`CompilationConfig::codegen_identity`]).
+///
+/// A store instantiates modules of its own engine only, so a module meant for
+/// [`WasmtimeExecutor::instantiate`] is compiled on the engine of the module the executor was
+/// built with ([`WasmtimeModule::engine`]). A module compiled on an engine of another config
+/// runs on that config's fuel schedule and stack limits.
+pub fn compile_wasmtime_module_on(
+    engine: &wasmtime::Engine,
     compilation_config: CompilationConfig,
     wasm_binary: impl AsRef<[u8]>,
 ) -> Result<WasmtimeModule, CompilationError> {
     let wasm_binary = wasm_binary.as_ref();
     check_compile_limits(&compilation_config, wasm_binary)?;
+    let frame_heights = rwasm_frame_heights(&compilation_config, wasm_binary)?;
+    compile_with_frame_heights(engine, compilation_config, wasm_binary, &frame_heights)
+}
+
+/// [`compile_wasmtime_module`] for a binary whose frame heights the caller already has from
+/// the rwasm front end.
+pub(crate) fn compile_wasmtime_module_with_frame_heights(
+    compilation_config: CompilationConfig,
+    wasm_binary: &[u8],
+    frame_heights: &[u32],
+) -> Result<WasmtimeModule, CompilationError> {
+    let engine = wasmtime_engine(&compilation_config);
+    compile_with_frame_heights(&engine, compilation_config, wasm_binary, frame_heights)
+}
+
+fn compile_with_frame_heights(
+    engine: &wasmtime::Engine,
+    compilation_config: CompilationConfig,
+    wasm_binary: &[u8],
+    frame_heights: &[u32],
+) -> Result<WasmtimeModule, CompilationError> {
+    check_compile_limits(&compilation_config, wasm_binary)?;
     #[cfg(feature = "debug-print")]
     print!("compiling wasmtime module... ");
     let start = Instant::now();
-    let engine = wasmtime_engine(&compilation_config);
-    let module = wasmtime::Module::new(&engine, wasm_binary)
+    let wasm_binary = with_frame_heights_section(wasm_binary, frame_heights);
+    let module = wasmtime::Module::new(engine, &wasm_binary)
         .map_err(CompilationError::WasmtimeCompilationFailed);
     #[cfg(feature = "debug-print")]
     println!("{:?}", start.elapsed());
@@ -243,7 +333,9 @@ pub fn compile_wasmtime_module_cached(
 /// accepted under the same key by the other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum CachePolicy {
-    /// Validated by Wasmtime plus the rwasm compile-time resource caps only.
+    /// Validated by Wasmtime, the rwasm compile-time resource caps and the rwasm translator
+    /// (which records the frame heights), but not by the module-level policies of the rwasm
+    /// front end: entrypoint, start section, memory export.
     WasmtimeOnly,
     /// Validated by the full rwasm front end before Wasmtime compiled it.
     RwasmValidated,

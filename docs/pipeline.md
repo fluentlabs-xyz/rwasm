@@ -118,21 +118,30 @@ meter rather than what the language allows.
   case; the bound covers the rest. The Wasmtime strategy inherits the bound through the rwasm
   front end it runs first.
 
-### Backend differences that remain
+### Stack limits on both backends
 
-Call-depth limits are not synchronized: the rwasm VM stops at `N_MAX_RECURSION_DEPTH` (1024) frames
-or when the value-stack window is exhausted, while the Wasmtime backend stops when its native stack
-(the configured `max_wasm_stack`) is exhausted. The native stack is sized so that every execution
-the rwasm window admits fits (`WASMTIME_MAX_WASM_STACK`: 8 bytes per slot of the window, because
-Cranelift spills every live value into an 8-byte slot, plus a per-frame allowance for the deepest
-chain), so the difference is one-directional: a deeply recursive module that traps `StackOverflow`
-on the rwasm VM may still run, and consume more fuel, on the Wasmtime backend. Prefer explicit
-iteration or tail calls for modules that must run on both.
+The rwasm VM stops an execution at `N_MAX_RECURSION_DEPTH` (1024) frames, or when the frames on
+the call chain no longer fit its value-stack window (`N_MAX_STACK_SIZE` slots plus
+`N_STACK_TRAMPOLINE_HEADROOM`). The Wasmtime backend emulates both limits in compiled code, so a
+call chain traps `StackOverflow` at the same frame on both (`wasmtime::RwasmStackLimits`, set by
+`wasmtime_engine`):
 
-The frames the compiler injects behind a single Wasm instruction — the import trampoline and the
-`i64` snippets — are covered on both engines: the rwasm value stack keeps
-`N_STACK_TRAMPOLINE_HEADROOM` slots above `N_MAX_STACK_SIZE` for the deepest of them, so a frame
-the compiler accepts runs its imports and `i64` operators at its peak.
+- every module compiled for the Wasmtime engine carries the `rwasm.frames` custom section, the
+  `StackCheck` the rwasm translator emitted for each function (`ModuleParser::frame_heights`); a
+  function prologue traps when its frame base plus its parameters and that height exceed the
+  window, like `StackCheck` on rwasm;
+- a call site traps when the call stack is full, then publishes the callee's depth and frame base
+  (the caller's base plus its parameters, locals and the operands below the arguments) to the
+  store and restores its own after the call; a tail call keeps both, like `ReturnCallInternal`;
+- an `i64` operator that rwasm runs in a hidden snippet frame checks that frame's depth (two frames
+  for div/rem, which call the shared `UDivMod64` core) and height before the operator runs;
+- the host trampolines check the import trampoline's frame (the parameters plus the temporaries of
+  its syscall fuel prologue) on every path into an import, next to the syscall fuel.
+
+`WASMTIME_MAX_WASM_STACK` sizes the native stack so that every execution these limits admit fits
+(8 bytes per slot of the window, because Cranelift spills every live value into an 8-byte slot,
+plus a per-frame allowance for the deepest chain): it is a backstop, not a limit a module can
+observe. `tests/stack-overflow.rs` pins both engines to the same outcome at each boundary.
 
 ## 3) Module construction
 

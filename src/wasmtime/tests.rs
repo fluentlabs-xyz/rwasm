@@ -1,9 +1,10 @@
 use crate::{
     wasmtime::{
-        compile_wasmtime_module, deserialize_wasmtime_module, WasmtimeExecutor, WasmtimeModule,
+        compile_wasmtime_module, compile_wasmtime_module_on, deserialize_wasmtime_module,
+        WasmtimeExecutor, WasmtimeModule,
     },
-    CompilationConfig, ImportLinker, ImportName, StoreTr, TrapCode, TypedCaller, Value,
-    N_BYTES_PER_MEMORY_PAGE,
+    CompilationConfig, CompilationError, ImportLinker, ImportName, StoreTr, TrapCode, TypedCaller,
+    Value, N_BYTES_PER_MEMORY_PAGE,
 };
 use rwasm_fuel_policy::{LinearFuelParams, QuadraticFuelParams, SyscallFuelParams};
 use std::sync::Arc;
@@ -465,8 +466,9 @@ fn test_wasmtime_fuel_accessors_use_soft_counter_when_engine_metering_is_off() {
 #[test]
 fn test_wasmtime_executor_exports_follow_the_instance() {
     let (memory_module, import_linker) = get_test_memory_module();
-    let module_without_memory = Module::new(
+    let module_without_memory = compile_wasmtime_module_on(
         memory_module.engine(),
+        CompilationConfig::default().with_import_linker(import_linker.clone()),
         wat::parse_str(
             r#"
             (module
@@ -495,9 +497,7 @@ fn test_wasmtime_executor_exports_follow_the_instance() {
     assert_eq!(wasmtime_worker.data(), &[1, 2, 3, 4]);
 
     // Re-instantiating through the executor swaps both the function table and the memory.
-    wasmtime_worker
-        .instantiate(&module_without_memory.into())
-        .unwrap();
+    wasmtime_worker.instantiate(&module_without_memory).unwrap();
     assert_eq!(
         wasmtime_worker
             .execute("read_missing_memory", &[], &mut [])
@@ -796,8 +796,18 @@ fn test_wasmtime_caller_fuel_accessors_use_soft_counter_when_engine_metering_is_
 #[test]
 fn test_wasmtime_executor_reports_instantiation_errors() {
     let (module, import_linker) = get_test_memory_module();
-    let unlinked_module = Module::new(
+    // compiled against a linker that knows the import, instantiated with the one that does not
+    let mut linking_linker = ImportLinker::default();
+    linking_linker.insert_function(
+        ImportName::new("missing", "import"),
+        0xac,
+        SyscallFuelParams::default(),
+        &[],
+        &[],
+    );
+    let unlinked_module = compile_wasmtime_module_on(
         module.engine(),
+        CompilationConfig::default().with_import_linker(Arc::new(linking_linker)),
         wat::parse_str(
             r#"
             (module
@@ -811,7 +821,7 @@ fn test_wasmtime_executor_reports_instantiation_errors() {
     .unwrap();
 
     assert!(WasmtimeExecutor::try_new(
-        unlinked_module.clone().into(),
+        unlinked_module.clone(),
         import_linker.clone(),
         Vec::new(),
         read_memory_syscall,
@@ -830,9 +840,7 @@ fn test_wasmtime_executor_reports_instantiation_errors() {
         None,
     )
     .unwrap();
-    assert!(wasmtime_worker
-        .instantiate(&unlinked_module.into())
-        .is_err());
+    assert!(wasmtime_worker.instantiate(&unlinked_module).is_err());
     wasmtime_worker.execute("read_ok", &[], &mut []).unwrap();
     assert_eq!(wasmtime_worker.data(), &[1, 2, 3, 4]);
 }
@@ -961,11 +969,21 @@ mod instantiation_failures {
         );
     }
 
+    /// The module is compiled against a linker that knows the import (the rwasm front end
+    /// rejects an unresolved import at compile time) and instantiated with one that does not.
     #[test]
     fn unresolved_import_is_unknown_external_function() {
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("host", "missing"),
+            1,
+            SyscallFuelParams::default(),
+            &[],
+            &[],
+        );
         let module = compile(
             r#"(module (func (import "host" "missing")) (func (export "main")))"#,
-            CompilationConfig::default(),
+            CompilationConfig::default().with_import_linker(Arc::new(import_linker)),
         );
         assert_eq!(
             instantiate(module, None),
@@ -1092,6 +1110,8 @@ fn test_initial_table_above_the_cap_is_table_out_of_bounds() {
         N_MAX_TABLE_SIZE + 1
     ))
     .unwrap();
+    // the engine still needs the frame height of the one (empty) function
+    let wasm = super::with_frame_heights_section(&wasm, &[0]);
     let module = Module::new(&engine, &wasm).unwrap();
     let err = WasmtimeExecutor::new(
         module.into(),
@@ -1241,14 +1261,27 @@ fn test_syscall_fuel_schedule_follows_the_instantiated_module() {
     )
     .unwrap();
     // a store only instantiates modules of its own engine, so the variants share `metered`'s
-    let unmetered = WasmtimeModule::new(
-        Module::new(metered.engine(), &wasm).unwrap(),
-        &CompilationConfig::default()
+    let unmetered = compile_wasmtime_module_on(
+        metered.engine(),
+        CompilationConfig::default()
             .with_consume_fuel(true)
             .with_builtins_consume_fuel(false)
             .with_import_linker(import_linker.clone()),
+        &wasm,
+    )
+    .unwrap();
+    let bare = WasmtimeModule::from(
+        compile_wasmtime_module_on(
+            metered.engine(),
+            CompilationConfig::default()
+                .with_consume_fuel(true)
+                .with_builtins_consume_fuel(true)
+                .with_import_linker(import_linker.clone()),
+            &wasm,
+        )
+        .unwrap()
+        .into_module(),
     );
-    let bare = WasmtimeModule::from(Module::new(metered.engine(), &wasm).unwrap());
 
     let consumed_by = |executor: &mut WasmtimeExecutor<()>| {
         executor.reset_fuel(100_000);
@@ -1285,12 +1318,15 @@ fn test_syscall_fuel_schedule_follows_the_instantiated_module() {
     .unwrap();
     for (previous, enabled, expected) in [(&unmetered, true, 1000), (&metered, false, 0)] {
         executor.instantiate(previous).unwrap();
-        let replacement = WasmtimeModule::new(
-            Module::new(metered.engine(), &start_wasm).unwrap(),
-            &CompilationConfig::default()
+        let replacement = compile_wasmtime_module_on(
+            metered.engine(),
+            CompilationConfig::default()
+                .with_consume_fuel(true)
                 .with_builtins_consume_fuel(enabled)
                 .with_import_linker(import_linker.clone()),
-        );
+            &start_wasm,
+        )
+        .unwrap();
         executor.reset_fuel(100_000);
         executor.instantiate(&replacement).unwrap();
         assert_eq!(100_000 - executor.remaining_fuel().unwrap(), expected);
@@ -1298,17 +1334,19 @@ fn test_syscall_fuel_schedule_follows_the_instantiated_module() {
 
     // A failed start must restore the prior instance's schedule without refunding its charge.
     executor.instantiate(&unmetered).unwrap();
-    let trapping_start = WasmtimeModule::new(
-        Module::new(
-            metered.engine(),
+    let trapping_start = compile_wasmtime_module_on(
+        metered.engine(),
+        CompilationConfig::default()
+            .with_consume_fuel(true)
+            .with_builtins_consume_fuel(true)
+            .with_import_linker(import_linker),
+        wat::parse_str(
             r#"(module (import "env" "flat" (func $flat))
               (func $start call $flat unreachable) (start $start) (func (export "main")))"#,
         )
         .unwrap(),
-        &CompilationConfig::default()
-            .with_builtins_consume_fuel(true)
-            .with_import_linker(import_linker),
-    );
+    )
+    .unwrap();
     executor.reset_fuel(100_000);
     assert!(executor.instantiate(&trapping_start).is_err());
     assert!(100_000 - executor.remaining_fuel().unwrap() >= 1000);
@@ -1316,39 +1354,50 @@ fn test_syscall_fuel_schedule_follows_the_instantiated_module() {
 }
 
 /// A schedule whose metered parameter does not name an `i32` parameter of the import is refused
-/// when the executor is built, as the rwasm compiler refuses the same linker entry.
+/// at compile time, as the rwasm compiler refuses the same linker entry, and again when the
+/// executor is built for a module that reached it under such a schedule (a deserialized module,
+/// or a module paired with the schedule after compilation).
 #[test]
 fn test_misaddressed_syscall_fuel_parameter_is_rejected_at_instantiation() {
-    let mut import_linker = ImportLinker::default();
-    import_linker.insert_function(
-        ImportName::new("env", "lin"),
-        1,
-        SyscallFuelParams::LinearFuel(LinearFuelParams {
-            base_fuel: 0,
-            param_index: 2,
-            word_cost: 1,
-        }),
-        &[wasmparser::ValType::I32],
-        &[],
-    );
-    let import_linker = Arc::new(import_linker);
+    fn linker(schedule: SyscallFuelParams) -> Arc<ImportLinker> {
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("env", "lin"),
+            1,
+            schedule,
+            &[wasmparser::ValType::I32],
+            &[],
+        );
+        Arc::new(import_linker)
+    }
+    fn config(import_linker: &Arc<ImportLinker>) -> CompilationConfig {
+        CompilationConfig::default()
+            .with_consume_fuel(true)
+            .with_builtins_consume_fuel(true)
+            .with_import_linker(import_linker.clone())
+    }
+    let misaddressed = linker(SyscallFuelParams::LinearFuel(LinearFuelParams {
+        base_fuel: 0,
+        param_index: 2,
+        word_cost: 1,
+    }));
     let wasm = wat::parse_str(
         r#"(module
           (import "env" "lin" (func $lin (param i32)))
           (func (export "main") (i32.const 0) (call $lin)))"#,
     )
     .unwrap();
-    let module = compile_wasmtime_module(
-        CompilationConfig::default()
-            .with_consume_fuel(true)
-            .with_builtins_consume_fuel(true)
-            .with_import_linker(import_linker.clone()),
-        &wasm,
-    )
-    .unwrap();
+    assert!(matches!(
+        compile_wasmtime_module(config(&misaddressed), &wasm),
+        Err(CompilationError::InvalidSyscallFuelParam)
+    ));
+    let compiled = compile_wasmtime_module(config(&linker(SyscallFuelParams::Const(1))), &wasm)
+        .unwrap()
+        .into_module();
+    let module = WasmtimeModule::new(compiled, &config(&misaddressed));
     let err = WasmtimeExecutor::new(
         module,
-        import_linker,
+        misaddressed,
         (),
         crate::always_failing_syscall_handler,
         Some(100_000),
@@ -1524,4 +1573,140 @@ mod native_frame_size {
             failures.join("\n")
         );
     }
+}
+
+/// The frame heights the Wasmtime backend checks come from the rwasm translator, attached to the
+/// binary as the `rwasm.frames` custom section: one `u32` per function, imports first.
+#[test]
+fn frame_heights_section_records_every_function() {
+    use crate::{ModuleParser, N_SYSCALL_FUEL_PROLOGUE_SLOTS};
+    use wasmparser::{Parser, Payload};
+    let mut import_linker = ImportLinker::default();
+    import_linker.insert_function(
+        ImportName::new("env", "quad"),
+        1,
+        SyscallFuelParams::QuadraticFuel(QuadraticFuelParams {
+            local_depth: 1,
+            word_cost: 1,
+            divisor: 1,
+            fuel_denom_rate: 1,
+        }),
+        &[wasmparser::ValType::I32],
+        &[],
+    );
+    let wasm = wat::parse_str(
+        r#"(module
+          (import "env" "quad" (func $quad (param i32)))
+          (func (export "main") (local i32 i64) (i32.const 1) (i64.const 2) (i64.const 3)
+            (drop (i64.add)) (call $quad))
+          (func $leaf))"#,
+    )
+    .unwrap();
+    let config = CompilationConfig::default()
+        .with_import_linker(Arc::new(import_linker))
+        .with_builtins_consume_fuel(true);
+    let mut parser = ModuleParser::new(config.clone());
+    parser.parse(&wasm).unwrap();
+    // the trampoline's temporaries; `main`: three local slots plus one i32 and two i64 operands;
+    // `leaf`: nothing
+    let heights = parser.frame_heights();
+    assert_eq!(heights, [N_SYSCALL_FUEL_PROLOGUE_SLOTS as u32, 3 + 5, 0]);
+
+    let binary = super::with_frame_heights_section(&wasm, &heights);
+    let mut found = None;
+    for payload in Parser::new(0).parse_all(&binary) {
+        if let Payload::CustomSection(section) = payload.unwrap() {
+            if section.name() == wasmtime::RWASM_FRAMES_SECTION {
+                found = Some(section.data().to_vec());
+            }
+        }
+    }
+    let expected: Vec<u8> = heights.iter().flat_map(|h| h.to_le_bytes()).collect();
+    assert_eq!(found.as_deref(), Some(expected.as_slice()));
+    // the section changes nothing else: the module still compiles and runs
+    let module = compile_wasmtime_module(config, &wasm).unwrap();
+    assert_eq!(module.module().imports().count(), 1);
+}
+
+/// The frames the engine assumes behind an `i64` operator are the snippets the rwasm compiler
+/// emits: the same frame count and the same `StackCheck`.
+#[test]
+fn snippet_frames_match_the_snippet_definitions() {
+    use crate::compiler::snippets::Snippet;
+    use wasmparser::Operator;
+    let table = [
+        (Operator::I64Eq, Snippet::I64Eq),
+        (Operator::I64Ne, Snippet::I64Ne),
+        (Operator::I64LtS, Snippet::I64LtS),
+        (Operator::I64LtU, Snippet::I64LtU),
+        (Operator::I64GtS, Snippet::I64GtS),
+        (Operator::I64GtU, Snippet::I64GtU),
+        (Operator::I64LeS, Snippet::I64LeS),
+        (Operator::I64LeU, Snippet::I64LeU),
+        (Operator::I64GeS, Snippet::I64GeS),
+        (Operator::I64GeU, Snippet::I64GeU),
+        (Operator::I64Add, Snippet::I64Add),
+        (Operator::I64Sub, Snippet::I64Sub),
+        (Operator::I64Mul, Snippet::I64Mul),
+        (Operator::I64DivS, Snippet::I64DivS),
+        (Operator::I64DivU, Snippet::I64DivU),
+        (Operator::I64RemS, Snippet::I64RemS),
+        (Operator::I64RemU, Snippet::I64RemU),
+        (Operator::I64Shl, Snippet::I64Shl),
+        (Operator::I64ShrS, Snippet::I64ShrS),
+        (Operator::I64ShrU, Snippet::I64ShrU),
+        (Operator::I64Rotl, Snippet::I64RotL),
+        (Operator::I64Rotr, Snippet::I64RotR),
+    ];
+    let mut mismatches = Vec::new();
+    for (op, snippet) in &table {
+        let frames = wasmtime::rwasm_snippet_frames(op);
+        let expected = wasmtime::RwasmSnippetFrames {
+            frames: 1 + snippet.dependencies().len() as u32,
+            max_stack_height: snippet.max_stack_height(),
+        };
+        if frames != Some(expected) {
+            mismatches.push(format!("{op:?}: {frames:?}, rwasm emits {expected:?}"));
+        }
+    }
+    assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    // every snippet an operator can reach is in the table; the core is only called by them
+    let covered: Vec<Snippet> = table.iter().map(|(_, snippet)| *snippet).collect();
+    for snippet in Snippet::ALL {
+        assert!(
+            covered.contains(&snippet) || snippet == Snippet::UDivMod64,
+            "{snippet:?} is not covered"
+        );
+    }
+    // operators the compiler inlines push no frame
+    for op in [
+        Operator::I64And,
+        Operator::I64Clz,
+        Operator::I32Add,
+        Operator::I64Eqz,
+    ] {
+        assert_eq!(wasmtime::rwasm_snippet_frames(&op), None, "{op:?}");
+    }
+}
+
+/// The Wasmtime compile path runs the rwasm translator for the frame heights, so a frame the
+/// rwasm compiler rejects is rejected here as well, with the same error.
+#[test]
+fn oversized_frame_is_rejected_on_the_wasmtime_path() {
+    let wasm = wat::parse_str(format!(
+        r#"(module (func (export "main") (result i32) {} (i32.const 42)))"#,
+        "(local i32)".repeat(crate::N_MAX_STACK_SIZE)
+    ))
+    .unwrap();
+    let outcome = compile_wasmtime_module(CompilationConfig::default(), &wasm).map(|_| ());
+    assert!(
+        matches!(
+            outcome,
+            Err(CompilationError::StackHeightExceeded {
+                height: 8193,
+                limit: 8192
+            })
+        ),
+        "{outcome:?}"
+    );
 }
