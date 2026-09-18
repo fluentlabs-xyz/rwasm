@@ -54,19 +54,15 @@ pub const N_SYSCALL_FUEL_PROLOGUE_SLOTS: usize = 4;
 /// rwasm VM while the Wasmtime backend, where neither costs any Wasm stack, runs it. The headroom
 /// pays for exactly that one invisible frame; the results never need it, since the caller's frame
 /// already accounts for them.
-pub const N_STACK_TRAMPOLINE_HEADROOM: usize = max_usize(
-    N_SYSCALL_FUEL_PROLOGUE_SLOTS,
-    crate::compiler::snippets::Snippet::MAX_STACK_HEIGHT as usize,
-);
-
-/// `core::cmp::max` is not `const`; this is, for the headroom computed above.
-const fn max_usize(a: usize, b: usize) -> usize {
-    if a > b {
-        a
+pub const N_STACK_TRAMPOLINE_HEADROOM: usize = {
+    // `core::cmp::max` is not `const`; evaluated here at compile time
+    let snippet_peak = crate::compiler::snippets::Snippet::MAX_STACK_HEIGHT as usize;
+    if N_SYSCALL_FUEL_PROLOGUE_SLOTS > snippet_peak {
+        N_SYSCALL_FUEL_PROLOGUE_SLOTS
     } else {
-        b
+        snippet_peak
     }
-}
+};
 pub const N_MAX_RECURSION_DEPTH: usize = 1024;
 
 /// This constant is driven by WebAssembly standard, default

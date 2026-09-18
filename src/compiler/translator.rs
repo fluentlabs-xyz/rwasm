@@ -4343,10 +4343,12 @@ mod tests {
         let mut reader = wasmparser::BinaryReader::new(&[
             0xfd, 0x0c, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ]);
-        let v128 = match reader.read_operator().unwrap() {
-            wasmparser::Operator::V128Const { value } => value,
-            operator => panic!("expected v128.const, got {operator:?}"),
-        };
+        // decoded rather than constructed: `V128` has no public constructor in this wasmparser
+        let mut v128 = None;
+        if let wasmparser::Operator::V128Const { value } = reader.read_operator().unwrap() {
+            v128 = Some(value);
+        }
+        let v128 = v128.expect("the byte string decodes to `v128.const`");
 
         assert_unsupported!(
             visitor;

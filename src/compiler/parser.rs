@@ -1189,7 +1189,9 @@ mod tests {
             ("i64.div_s", 13, InstructionSet::MSH_I64_DIV_S),
             ("i64.rem_s", 0, InstructionSet::MSH_I64_REM_S),
         ];
-        let mut failures = Vec::new();
+        // `(operator, frame) -> outcome` for every accepted frame from `limit - peak` to the limit
+        let mut outcomes = Vec::new();
+        let mut expected_outcomes = Vec::new();
         for (op, expected, msh) in ops {
             // the frame is `locals + 4` (two i64 operands); the compiler accepts up to the limit
             let max_locals = N_MAX_STACK_SIZE - 4;
@@ -1203,15 +1205,13 @@ mod tests {
                 let config = CompilationConfig::default().with_entrypoint_name("main".into());
                 let mut result = [Value::I64(0)];
                 let outcome = run_on_the_vm(&wasm, config, &mut result).map(|_| result[0].clone());
-                if outcome != Ok(Value::I64(expected)) {
-                    failures.push(format!("{op} at frame {}: {outcome:?}", locals + 4));
-                }
+                outcomes.push((op, locals + 4, outcome));
+                expected_outcomes.push((op, locals + 4, Ok(Value::I64(expected))));
             }
         }
-        assert!(
-            failures.is_empty(),
-            "an accepted frame must run its snippets on the VM:\n{}",
-            failures.join("\n")
+        assert_eq!(
+            outcomes, expected_outcomes,
+            "an accepted frame must run its snippets on the VM"
         );
     }
 
