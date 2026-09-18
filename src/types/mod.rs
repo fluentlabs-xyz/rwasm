@@ -37,16 +37,32 @@ pub use value::*;
 /// We keep value 32 since it's the most optimal.
 pub const N_DEFAULT_STACK_SIZE: usize = 32;
 pub const N_MAX_STACK_SIZE: usize = 8192;
-/// Slots the runtime value stack keeps above [`N_MAX_STACK_SIZE`] for the import trampoline.
+/// Temporaries the import trampoline's syscall fuel prologue pushes on top of the import's
+/// parameters: two for `LinearFuel`, four for `QuadraticFuel` (`compile_block_params`).
+pub const N_SYSCALL_FUEL_PROLOGUE_SLOTS: usize = 4;
+
+/// Slots the runtime value stack keeps above [`N_MAX_STACK_SIZE`] for the frames the compiler
+/// injects behind a single Wasm instruction.
 ///
-/// A call to an import has no frame of its own in Wasm, but the rwasm trampoline that charges
-/// the import's syscall fuel needs up to four temporaries (`compile_block_params`: two for
-/// `LinearFuel`, four for `QuadraticFuel`). The compile-time frame check bounds each function's
-/// own peak by [`N_MAX_STACK_SIZE`] and cannot see its callees, so a function calling an import
-/// at that peak would trap `StackOverflow` on the rwasm VM while the Wasmtime backend, where the
-/// call costs no Wasm stack, runs it. The headroom pays for exactly that invisible frame; the
-/// import's results never need it, since the caller's frame already accounts for them.
-pub const N_STACK_TRAMPOLINE_HEADROOM: usize = 4;
+/// Two kinds of call have no frame of their own in Wasm but get one in rwasm bytecode: the import
+/// trampoline, whose syscall fuel prologue needs [`N_SYSCALL_FUEL_PROLOGUE_SLOTS`] temporaries,
+/// and the `i64` operators lowered to code snippets, each a `CallInternal` into a body that
+/// reserves its own peak (`Snippet::MAX_STACK_HEIGHT`, reached by `i64.div_s` and
+/// `i64.rem_s` including their call into the shared `UDivMod64` core). The compile-time frame
+/// check bounds each function's own peak by [`N_MAX_STACK_SIZE`] and cannot see those callees, so
+/// a function reaching an import or an `i64.mul` at that peak would trap `StackOverflow` on the
+/// rwasm VM while the Wasmtime backend, where neither costs any Wasm stack, runs it. The headroom
+/// pays for exactly that one invisible frame; the results never need it, since the caller's frame
+/// already accounts for them.
+pub const N_STACK_TRAMPOLINE_HEADROOM: usize = {
+    // `core::cmp::max` is not `const`; evaluated here at compile time
+    let snippet_peak = crate::compiler::snippets::Snippet::MAX_STACK_HEIGHT as usize;
+    if N_SYSCALL_FUEL_PROLOGUE_SLOTS > snippet_peak {
+        N_SYSCALL_FUEL_PROLOGUE_SLOTS
+    } else {
+        snippet_peak
+    }
+};
 pub const N_MAX_RECURSION_DEPTH: usize = 1024;
 
 /// This constant is driven by WebAssembly standard, default

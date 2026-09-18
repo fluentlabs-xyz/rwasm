@@ -149,3 +149,89 @@ fn zero_type_limit_accepts_only_type_free_modules() {
         Err(CompilationError::TooManyFunctionTypes { count: 1, limit: 0 })
     ));
 }
+
+mod code_size_bound {
+    //! HIGH-4: the translator had no bound on emitted code, so a small input compiled to an
+    //! enormous module.
+    //!
+    //! Both tests assert that the emitted code stays within a sane instruction budget for the input,
+    //! either by rejecting the module with a compile-time size limit or by emitting a bounded amount.
+    //! They failed at the audited revision: a `br_table` emitted ~2001 instructions (16 KB) per
+    //! one-byte target and a `br_if` with a 1000-value `DropKeep` the same per occurrence, with no
+    //! limit anywhere in the compiler.
+    //!
+    //! The bound used here is 2,000,000 instructions, the order of magnitude the host's
+    //! `RWASM_MAX_CODE_SIZE` (12 MiB) implies.
+
+    use rwasm::{CompilationConfig, CompilationError, RwasmModule};
+
+    const MAX_INSTRUCTIONS: usize = 2_000_000;
+
+    fn config() -> CompilationConfig {
+        CompilationConfig::default_strategy_compatible()
+            .with_entrypoint_name("main".into())
+            .with_allow_malformed_entrypoint_func_type(true)
+    }
+
+    /// A `br_table` whose targets all name a 1000-result block, so every target needs a
+    /// `DropKeep`-style trampoline (`2 * keep + 1` instructions) and none of them is shared.
+    fn br_table_module(targets: usize) -> String {
+        let results = "(result i32)".repeat(1000);
+        let consts = "(i32.const 0)".repeat(1000);
+        let target_list = "$b ".repeat(targets);
+        format!(
+            r#"(module
+                 (func (export "main") {results}
+                   (block $b {results}
+                     (i32.const 7)
+                     {consts}
+                     (i32.const 0)
+                     (br_table {target_list}$b))))"#
+        )
+    }
+
+    /// One `br_if` per occurrence, each with a 1000-value `DropKeep` branch to the same block.
+    fn br_if_module(branches: usize) -> String {
+        let results = "(result i32)".repeat(1000);
+        let consts = "(i32.const 0)".repeat(1000);
+        let branch = "(br_if $b (i32.const 0))".repeat(branches);
+        format!(
+            r#"(module
+                 (func (export "main") {results}
+                   (block $b {results}
+                     (i32.const 7)
+                     {consts}
+                     {branch}
+                     (br $b))))"#
+        )
+    }
+
+    fn assert_bounded(label: &str, wasm: &[u8]) {
+        let instructions = match RwasmModule::compile(config(), wasm) {
+            Ok((module, _)) => module.code_section.len(),
+            // The fix rejects an oversized expansion with a dedicated error; any other error means
+            // the fixture is broken or an unrelated regression, not a bounded compiler.
+            Err(CompilationError::CodeSizeExceeded { .. }) => return,
+            Err(err) => panic!("{label}: expected CodeSizeExceeded, got {err:?}"),
+        };
+        assert!(
+            instructions <= MAX_INSTRUCTIONS,
+            "{label}: {} B of Wasm compiled to {instructions} rwasm instructions ({:.1} MiB), which \
+             grows without bound in the target count",
+            wasm.len(),
+            (instructions * core::mem::size_of::<rwasm::Opcode>()) as f64 / (1024.0 * 1024.0),
+        );
+    }
+
+    #[test]
+    fn br_table_expansion_is_bounded() {
+        let wasm = wat::parse_str(br_table_module(10_000)).unwrap();
+        assert_bounded("br_table with 10,000 targets", &wasm);
+    }
+
+    #[test]
+    fn br_if_expansion_is_bounded() {
+        let wasm = wat::parse_str(br_if_module(10_000)).unwrap();
+        assert_bounded("10,000 br_if with a 1000-value drop-keep", &wasm);
+    }
+}

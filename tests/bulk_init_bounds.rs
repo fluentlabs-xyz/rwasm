@@ -351,3 +351,47 @@ fn highest_valid_segment_can_be_dropped_and_initialized_empty() {
     .unwrap();
     assert_strategies_agree(&table, &[], Ok(42));
 }
+
+mod active_segment_offsets {
+    //! Audit 2026-09-13, round 3 (R3-4): an active data segment with a negative (i.e. large unsigned)
+    //! offset is valid Wasm that must trap at instantiation, not fail to compile.
+
+    use rwasm::{
+        CompilationConfig, ExecutionEngine, ImportLinker, RwasmModule, RwasmStore,
+        StateRouterConfig, TrapCode,
+    };
+    use std::sync::Arc;
+
+    fn hex(bytes: &str) -> Vec<u8> {
+        (0..bytes.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&bytes[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// `R3-4`: `(memory 1) (data (i32.const -1) "a")` is valid Wasm — `-1` is the i32 `0xFFFF_FFFF` —
+    /// and the spec requires the *instantiation* to trap out of bounds. Preserve the offset's bit
+    /// pattern during compilation and let the initialization bounds check reject it.
+    #[test]
+    fn negative_active_segment_offset_is_not_a_compile_error() {
+        let wasm = hex("0061736d0100000005030100010b070100417f0b0161");
+        let linker = Arc::new(ImportLinker::default());
+        let config = CompilationConfig::default_strategy_compatible()
+            .with_allow_malformed_entrypoint_func_type(true)
+            .with_import_linker(linker)
+            .with_state_router(StateRouterConfig {
+                states: Box::new([]),
+                opcode: None,
+            });
+        let (module, _) = RwasmModule::compile(config, &wasm)
+            .expect("the unsigned i32 offset is valid at compile time");
+        let mut store = RwasmStore::<()>::default();
+        assert_eq!(
+            ImportLinker::default()
+                .instantiate(&mut store, ExecutionEngine::new(), module)
+                .err(),
+            Some(TrapCode::MemoryOutOfBounds),
+            "the active segment must trap during initialization"
+        );
+    }
+}

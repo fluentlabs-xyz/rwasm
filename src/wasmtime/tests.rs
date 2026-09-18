@@ -1358,3 +1358,170 @@ fn test_misaddressed_syscall_fuel_parameter_is_rejected_at_instantiation() {
     .expect("the executor must not be built");
     assert_eq!(err, TrapCode::BadSignature);
 }
+
+/// The engine's `max_wasm_stack` must hold every frame the rwasm compiler accepts. The compiler
+/// bounds a frame by `N_MAX_STACK_SIZE` 32-bit slots and the engine used to be sized as that many
+/// bytes times four, but Cranelift spills each live value into an 8-byte slot, so a single
+/// function whose live operands filled more than about half of the rwasm window was executed by
+/// the rwasm VM and trapped `StackOverflow` at entry on this backend (audit 2026-09-18).
+mod native_frame_size {
+    use super::*;
+    use crate::{always_failing_syscall_handler, ExecutionEngine, RwasmModule, RwasmStore};
+
+    /// `n` i32 locals loaded from memory (so nothing folds), all live until the final sum.
+    fn live_frame(n: usize) -> Vec<u8> {
+        let mut body = String::new();
+        for i in 0..n {
+            body.push_str(&format!(
+                "(local.set {i} (i32.load (i32.const {})))\n",
+                (i * 4) % N_BYTES_PER_MEMORY_PAGE as usize
+            ));
+        }
+        body.push_str("(i32.const 0)\n");
+        for i in 0..n {
+            body.push_str(&format!("(local.get {i}) (i32.add)\n"));
+        }
+        wat::parse_str(format!(
+            r#"(module
+                (memory (export "memory") 1)
+                (data (i32.const 0) "\01\00\00\00")
+                (func (export "main") (result i32) (local {locals})
+                  {body}))"#,
+            locals = "i32 ".repeat(n)
+        ))
+        .unwrap()
+    }
+
+    /// Compiles `wasm` for the Wasmtime backend and runs `main` there.
+    fn run(wasm: &[u8]) -> Result<Value, TrapCode> {
+        let config = CompilationConfig::default().with_entrypoint_name("main".into());
+        let module = compile_wasmtime_module(config, wasm).unwrap();
+        let mut executor = WasmtimeExecutor::new(
+            module,
+            Arc::new(ImportLinker::default()),
+            (),
+            always_failing_syscall_handler,
+            None,
+            None,
+        )?;
+        let mut result = [Value::I32(0)];
+        executor.execute("main", &[], &mut result)?;
+        Ok(result[0].clone())
+    }
+
+    /// `f(depth)` keeps `live` i32 locals (loaded from memory, so not folded) alive across its
+    /// recursive call, so a chain of `depth + 1` frames spills `live` values per frame. Returns
+    /// the number of frames that saw a non-zero first local, i.e. `depth + 1` when `live > 0`.
+    fn call_chain(live: usize, depth: u32) -> Vec<u8> {
+        let mut sets = String::new();
+        let mut uses = String::new();
+        for i in 0..live {
+            sets.push_str(&format!(
+                "(local.set {} (i32.load (i32.const {})))\n",
+                i + 1,
+                (i * 4) % N_BYTES_PER_MEMORY_PAGE as usize
+            ));
+            uses.push_str(&format!("(local.get {}) (i32.add)\n", i + 1));
+        }
+        wat::parse_str(format!(
+            r#"(module
+                (memory (export "memory") 1)
+                (data (i32.const 0) "\01\00\00\00")
+                (func $f (param i32) (result i32) (local {locals})
+                  {sets}
+                  (if (result i32) (i32.eqz (local.get 0))
+                    (then (i32.const 0))
+                    (else (call $f (i32.sub (local.get 0) (i32.const 1)))))
+                  {uses})
+                (func (export "main") (result i32) (call $f (i32.const {depth}))))"#,
+            locals = "i32 ".repeat(live)
+        ))
+        .unwrap()
+    }
+
+    /// Runs `main` on the rwasm VM; the chains below must be accepted there before they mean
+    /// anything for the Wasmtime backend.
+    fn run_on_rwasm(wasm: &[u8]) -> Result<Value, TrapCode> {
+        let config = CompilationConfig::default().with_entrypoint_name("main".into());
+        let module = RwasmModule::compile(config, wasm)
+            .expect("the module is within the compiler's limits")
+            .0;
+        let linker = Arc::new(ImportLinker::default());
+        let mut store = RwasmStore::<()>::new(
+            linker.clone(),
+            (),
+            always_failing_syscall_handler,
+            None,
+            None,
+        );
+        let instance = linker.instantiate(&mut store, ExecutionEngine::new(), module)?;
+        let mut result = [Value::I32(0)];
+        instance.execute(&mut store, &[], &mut result)?;
+        Ok(result[0].clone())
+    }
+
+    /// The deepest call chains the rwasm VM accepts (up to `N_MAX_RECURSION_DEPTH` frames, or
+    /// the value-stack window, whichever is reached first) must fit the native stack too: the
+    /// per-frame allowance in `WASMTIME_MAX_WASM_STACK` is what pays for their fixed frame cost.
+    #[test]
+    fn an_accepted_call_chain_fits_the_native_stack() {
+        let mut failures = Vec::new();
+        // (live i32 locals per frame, recursion depth): the deepest chain, one with a few live
+        // values per frame, and wider frames that fill the rwasm window at a lower depth
+        for (live, depth) in [(0usize, 1023u32), (3, 1023), (7, 700), (15, 400), (60, 120)] {
+            let wasm = call_chain(live, depth);
+            let expected = Value::I32(if live > 0 { depth as i32 + 1 } else { 0 });
+            assert_eq!(
+                run_on_rwasm(&wasm),
+                Ok(expected.clone()),
+                "{live} live locals x {depth} frames: the rwasm VM accepts the chain"
+            );
+            let outcome = run(&wasm);
+            if outcome != Ok(expected) {
+                failures.push(format!("{live} live locals x {depth} frames: {outcome:?}"));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "a call chain the rwasm VM runs must run on the Wasmtime backend:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    #[test]
+    fn an_accepted_frame_fits_the_native_stack() {
+        let mut failures = Vec::new();
+        for n in [4000usize, 6000, 8000] {
+            let wasm = live_frame(n);
+            // the rwasm compiler accepts the frame and its VM runs it
+            let config = CompilationConfig::default().with_entrypoint_name("main".into());
+            let module = RwasmModule::compile(config, &wasm)
+                .expect("the frame is within the compiler's limit")
+                .0;
+            let linker = Arc::new(ImportLinker::default());
+            let mut store = RwasmStore::<()>::new(
+                linker.clone(),
+                (),
+                always_failing_syscall_handler,
+                None,
+                None,
+            );
+            let instance = linker
+                .instantiate(&mut store, ExecutionEngine::new(), module)
+                .unwrap();
+            let mut result = [Value::I32(0)];
+            instance.execute(&mut store, &[], &mut result).unwrap();
+            assert_eq!(result[0], Value::I32(1), "{n} locals: rwasm VM");
+
+            let outcome = run(&wasm);
+            if outcome != Ok(Value::I32(1)) {
+                failures.push(format!("{n} live i32 locals: {outcome:?}"));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "a frame the compiler accepts must run on the Wasmtime backend:\n{}",
+            failures.join("\n")
+        );
+    }
+}

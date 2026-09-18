@@ -254,13 +254,25 @@ impl ModuleParser {
             entrypoint_bytecode.op_local_get(1u32);
             entrypoint_bytecode.op_i32_const(*state_value);
             entrypoint_bytecode.op_i32_eq();
-            entrypoint_bytecode.op_br_if_eqz(3);
+            // the branch skips the drop and the call; its offset is resolved once the call is
+            // emitted, because an import the linker replaces with an intrinsic expands to more
+            // than the one `ReturnCallInternal` a compiled function costs
+            let skip_call = entrypoint_bytecode.len();
+            entrypoint_bytecode.op_br_if_eqz(0i32);
             // it's super important to drop the original state from the stack
             // because input params might be passed though the stack
             entrypoint_bytecode.op_drop();
             self.allocations
                 .translation
                 .emit_function_call(func_idx, true, true);
+            let entrypoint_bytecode = &mut self
+                .allocations
+                .translation
+                .segment_builder
+                .entrypoint_bytecode;
+            let offset = i32::try_from(entrypoint_bytecode.len() - skip_call)
+                .map_err(|_| CompilationError::BranchOffsetOutOfBounds)?;
+            entrypoint_bytecode[skip_call].update_branch_offset(offset);
         }
         // drop input state from the stack
         self.allocations
@@ -1128,6 +1140,156 @@ mod tests {
             assert_eq!(
                 stack_check, expected_peak,
                 "{name}: the trampoline must reserve the fuel prologue's temporaries"
+            );
+        }
+    }
+
+    /// Compiles a module with `main` as its entrypoint and runs it on the rwasm VM.
+    fn run_on_the_vm(
+        wasm: &[u8],
+        config: CompilationConfig,
+        result: &mut [crate::Value],
+    ) -> Result<(), crate::TrapCode> {
+        use crate::{always_failing_syscall_handler, ExecutionEngine, RwasmStore};
+        use alloc::sync::Arc;
+        let linker = config
+            .import_linker
+            .clone()
+            .unwrap_or_else(|| Arc::new(crate::ImportLinker::default()));
+        let module = RwasmModule::compile(config, wasm)
+            .expect("the compiler accepts the module")
+            .0;
+        let mut store = RwasmStore::<()>::new(
+            linker.clone(),
+            (),
+            always_failing_syscall_handler,
+            None,
+            None,
+        );
+        let instance = linker.instantiate(&mut store, ExecutionEngine::new(), module)?;
+        instance.execute(&mut store, &[], result)
+    }
+
+    /// An `i64` operator lowered to a code snippet runs in a frame of its own: the snippet's
+    /// `StackCheck` reserves its temporaries on top of the caller's operands. The compile-time
+    /// frame check (`params + peak <= N_MAX_STACK_SIZE`) bounds the caller only, so a frame the
+    /// compiler accepts must still leave room for that hidden frame at run time, as it does for
+    /// the import trampoline (`N_STACK_TRAMPOLINE_HEADROOM`). Otherwise the rwasm VM traps
+    /// `StackOverflow` on a module the Wasmtime backend, where the operator is one native
+    /// instruction, executes (audit 2026-09-18).
+    #[test]
+    fn snippet_frames_fit_the_runtime_value_stack() {
+        use crate::{InstructionSet, Value, N_MAX_STACK_SIZE};
+        // (operator, expected result of `91 op 7`, the snippet's own `StackCheck`)
+        let ops = [
+            ("i64.add", 98, InstructionSet::MSH_I64_ADD),
+            ("i64.mul", 637, InstructionSet::MSH_I64_MUL),
+            ("i64.div_u", 13, InstructionSet::MSH_I64_DIV_U),
+            ("i64.rem_u", 0, InstructionSet::MSH_I64_REM_U),
+            ("i64.div_s", 13, InstructionSet::MSH_I64_DIV_S),
+            ("i64.rem_s", 0, InstructionSet::MSH_I64_REM_S),
+        ];
+        // `(operator, frame) -> outcome` for every accepted frame from `limit - peak` to the limit
+        let mut outcomes = Vec::new();
+        let mut expected_outcomes = Vec::new();
+        for (op, expected, msh) in ops {
+            // the frame is `locals + 4` (two i64 operands); the compiler accepts up to the limit
+            let max_locals = N_MAX_STACK_SIZE - 4;
+            for locals in (max_locals - msh as usize)..=max_locals {
+                let wasm = wat::parse_str(format!(
+                    r#"(module (func (export "main") (result i64) {locals}
+                         i64.const 91 i64.const 7 {op}))"#,
+                    locals = "(local i32)".repeat(locals)
+                ))
+                .unwrap();
+                let config = CompilationConfig::default().with_entrypoint_name("main".into());
+                let mut result = [Value::I64(0)];
+                let outcome = run_on_the_vm(&wasm, config, &mut result).map(|_| result[0].clone());
+                outcomes.push((op, locals + 4, outcome));
+                expected_outcomes.push((op, locals + 4, Ok(Value::I64(expected))));
+            }
+        }
+        assert_eq!(
+            outcomes, expected_outcomes,
+            "an accepted frame must run its snippets on the VM"
+        );
+    }
+
+    /// `return_call` to an import the linker replaces with an intrinsic must still leave the
+    /// function through a `Return`: the intrinsic body is spliced in place of the call, and the
+    /// translator treats the rest of the body as unreachable, so nothing else emits one. Without
+    /// it the VM falls through into the next function in the code section (audit 2026-09-18).
+    #[test]
+    fn return_call_to_an_intrinsic_returns() {
+        use crate::{intrinsic::Intrinsic, ImportLinker, StoreTr, TrapCode};
+        use alloc::sync::Arc;
+        // `victim` is laid out right after `main` and must never run
+        let wasm = wat::parse_str(
+            r#"(module
+                (import "env" "consume_fuel" (func $consume_fuel (param i32)))
+                (memory 1)
+                (func (export "main") (i32.const 5) (return_call $consume_fuel))
+                (func (export "victim") (i32.store (i32.const 0) (i32.const 0xdeadbeef))))"#,
+        )
+        .unwrap();
+        for (name, intrinsic) in [
+            (
+                "replace",
+                Intrinsic::Replace(vec![Opcode::ConsumeFuelStack]),
+            ),
+            ("remove", Intrinsic::Remove),
+        ] {
+            let mut linker = ImportLinker::default();
+            linker.insert_intrinsic(
+                ImportName::new("env", "consume_fuel"),
+                71,
+                intrinsic,
+                &[ValType::I32],
+                &[],
+            );
+            let config = CompilationConfig::default()
+                .with_entrypoint_name("main".into())
+                .with_import_linker(Arc::new(linker));
+
+            // the compiled `main` is the second function after the init prologue (the import
+            // trampoline comes first); its last instruction must be the `Return`
+            let module = RwasmModule::compile(config.clone(), &wasm).unwrap().0;
+            let starts: Vec<usize> = module
+                .code_section
+                .iter()
+                .enumerate()
+                .skip(module.source_pc as usize)
+                .filter(|(_, op)| matches!(op, Opcode::SignatureCheck(_)))
+                .map(|(pos, _)| pos)
+                .collect();
+            let main_body = &module.code_section[starts[1]..starts[2]];
+            assert_eq!(
+                main_body.last(),
+                Some(&Opcode::Return),
+                "{name}: `main` must end with a Return, got {main_body:?}"
+            );
+
+            // and the VM must return from `main` instead of running `victim`
+            use crate::{always_failing_syscall_handler, ExecutionEngine, RwasmStore};
+            let linker = config.import_linker.clone().unwrap();
+            let mut store = RwasmStore::<()>::new(
+                linker.clone(),
+                (),
+                always_failing_syscall_handler,
+                Some(1_000_000),
+                None,
+            );
+            let instance = linker
+                .instantiate(&mut store, ExecutionEngine::new(), module)
+                .unwrap();
+            let outcome: Result<(), TrapCode> = instance.execute(&mut store, &[], &mut []);
+            let mut word = [0u8; 4];
+            store.memory_read(0, &mut word).unwrap();
+            assert_eq!(outcome, Ok(()), "{name}");
+            assert_eq!(
+                u32::from_le_bytes(word),
+                0,
+                "{name}: `main` fell through into `victim`"
             );
         }
     }

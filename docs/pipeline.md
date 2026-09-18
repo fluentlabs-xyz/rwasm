@@ -120,9 +120,17 @@ meter rather than what the language allows.
 
 Call-depth limits are not synchronized: the rwasm VM stops at `N_MAX_RECURSION_DEPTH` (1024) frames
 or when the value-stack window is exhausted, while the Wasmtime backend stops when its native stack
-(the configured `max_wasm_stack`) is exhausted. Deeply recursive modules can therefore consume
-different fuel, or trap at different depths, on the two engines. Prefer explicit iteration or
-tail calls for modules that must run on both.
+(the configured `max_wasm_stack`) is exhausted. The native stack is sized so that every execution
+the rwasm window admits fits (`WASMTIME_MAX_WASM_STACK`: 8 bytes per slot of the window, because
+Cranelift spills every live value into an 8-byte slot, plus a per-frame allowance for the deepest
+chain), so the difference is one-directional: a deeply recursive module that traps `StackOverflow`
+on the rwasm VM may still run, and consume more fuel, on the Wasmtime backend. Prefer explicit
+iteration or tail calls for modules that must run on both.
+
+The frames the compiler injects behind a single Wasm instruction — the import trampoline and the
+`i64` snippets — are covered on both engines: the rwasm value stack keeps
+`N_STACK_TRAMPOLINE_HEADROOM` slots above `N_MAX_STACK_SIZE` for the deepest of them, so a frame
+the compiler accepts runs its imports and `i64` operators at its peak.
 
 ## 3) Module construction
 

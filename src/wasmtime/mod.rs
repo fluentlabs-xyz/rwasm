@@ -9,7 +9,8 @@ mod tests;
 mod types;
 
 pub use self::{
-    context::WasmtimeCaller, import_linker::wasmtime_import_linker, instance::WasmtimeExecutor,
+    context::WasmtimeCaller, engine::WASMTIME_MAX_WASM_STACK,
+    import_linker::wasmtime_import_linker, instance::WasmtimeExecutor,
     syscall_handler::wasmtime_syscall_handler,
 };
 use crate::{
