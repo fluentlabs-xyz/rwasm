@@ -28,7 +28,8 @@ A node embedding `rwasm` should not need a `catch_unwind` net around the guest-f
 following entry points report every failure on guest-controlled input as a `Result`:
 
 - compilation: `RwasmModule::compile`, `ModuleParser::parse`, `StrategyDefinition::new`,
-  `new_as_rwasm`, `new_as_wasmtime`, `compile_wasmtime_module`, `compile_wasmtime_module_cached`
+  `new_as_rwasm`, `new_as_wasmtime`, `compile_wasmtime_module`, `compile_wasmtime_module_on`,
+  `compile_wasmtime_module_cached`
 - decoding of serialized rWasm: `RwasmModule::new_checked`, `RwasmModule::new_checked_exact`
 - instantiation: `StrategyDefinition::create_executor`, `ImportLinker::instantiate`,
   `WasmtimeExecutor::new`, `WasmtimeExecutor::try_new`

@@ -220,7 +220,9 @@ fn test_interrupted_call_wasmtime() {
     assert_eq!(result[0].i32().unwrap(), 123);
     // run with wasmtime
     let module = compile_wasmtime_module(
-        CompilationConfig::default().with_consume_fuel(false),
+        CompilationConfig::default()
+            .with_consume_fuel(false)
+            .with_import_linker(import_linker.clone()),
         &wasm_binary,
     )
     .unwrap();

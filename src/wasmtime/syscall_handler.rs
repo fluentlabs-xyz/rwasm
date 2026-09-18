@@ -1,6 +1,8 @@
 use crate::{
     wasmtime::{
-        context::{charge_syscall_fuel, WrappedContext},
+        context::{
+            charge_syscall_fuel, check_syscall_frame, check_syscall_results_room, WrappedContext,
+        },
         WasmtimeCaller,
     },
     TrapCode, Value, F32, F64,
@@ -15,9 +17,13 @@ use wasmtime::{Val, ValRaw};
 /// Maps input params and results between Wasmtime (`Val`) and rWasm (`Value`),
 /// then calls `invoke_runtime_handler` with a `CallerAdapter` providing memory/context access.
 ///
+/// `result_types` are the import's declared results: Wasmtime hands `result` over as untyped
+/// placeholders, and the rwasm trampoline reserves the results' slots before the host runs.
+///
 /// Returns `Ok(())` on success, or a Wasmtime error that may wrap a trap.
 pub fn wasmtime_syscall_handler<'a, T: 'static>(
     sys_func_idx: u32,
+    result_types: &[ValType],
     mut caller: wasmtime::Caller<'a, WrappedContext<T>>,
     params: &[Val],
     result: &mut [Val],
@@ -36,9 +42,13 @@ pub fn wasmtime_syscall_handler<'a, T: 'static>(
     buffer.extend(core::iter::repeat_n(Value::I32(0), result.len()));
 
     let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
-    // The syscall fuel is charged here, in the host function, because this is the one place
-    // every path into the import passes through; see `WasmtimeModule`.
+    // The import trampoline's stack checks and the syscall fuel are applied here, in the host
+    // function, because this is the one place every path into the import passes through; see
+    // `WasmtimeModule`. The order is the trampoline's: `StackCheck`, the fuel prologue, then
+    // the `Call` that reserves the result slots.
+    check_syscall_frame(&caller, sys_func_idx, mapped_params).map_err(wasmtime::Error::new)?;
     charge_syscall_fuel(&mut caller, sys_func_idx, mapped_params).map_err(wasmtime::Error::new)?;
+    check_syscall_results_room(&caller, result_types).map_err(wasmtime::Error::new)?;
     let syscall_handler = caller.data().syscall_handler;
 
     // Caller adapter provides memory/context operations expected by `invoke_runtime_handler`.
@@ -114,9 +124,12 @@ pub unsafe fn wasmtime_syscall_handler_raw<'a, T: 'static>(
     buffer.extend(result.iter().copied().map(Value::default));
 
     let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
-    // Charged in the host function so that indirect and tail calls, an exported import and a
-    // `start` import pay the same syscall fuel as a direct call; see `WasmtimeModule`.
+    // Checked and charged in the host function so that indirect and tail calls, an exported
+    // import and a `start` import see the same trampoline frame and pay the same syscall fuel
+    // as a direct call; see `WasmtimeModule` and `wasmtime_syscall_handler`.
+    check_syscall_frame(&caller, sys_func_idx, mapped_params).map_err(wasmtime::Error::new)?;
     charge_syscall_fuel(&mut caller, sys_func_idx, mapped_params).map_err(wasmtime::Error::new)?;
+    check_syscall_results_room(&caller, result).map_err(wasmtime::Error::new)?;
     let syscall_handler = caller.data().syscall_handler;
     let mut caller_adapter = WasmtimeCaller::<'a>::wrap_typed(caller);
     let syscall_result = syscall_handler(
