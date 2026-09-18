@@ -11,10 +11,15 @@ use wasmtime::{Config, Engine, OptLevel, Strategy};
 /// trapped `StackOverflow` at entry on a frame the compiler accepts and the rwasm VM runs.
 const NATIVE_BYTES_PER_SLOT: usize = 8;
 
-/// Native stack bytes allowed per frame of the deepest call chain on top of its spilled values:
-/// return address, frame pointer, callee-saved registers and outgoing arguments (measured: 49 to
-/// 160 bytes per frame on aarch64 for chains that fill the rwasm window).
-const NATIVE_BYTES_PER_FRAME: usize = 128;
+/// Native stack bytes allowed per frame of the deepest call chain, on top of the spill budget
+/// above: return address, frame pointer, callee-saved registers and outgoing arguments.
+///
+/// Measured on aarch64 with Cranelift at `OptLevel::Speed`: a frame with no live values costs
+/// 49 bytes; across recursive chains that fill the rwasm window (1 to 60 live `i32` locals per
+/// frame, 120 to 1023 frames), the native stack divided by the frame count never exceeded 160
+/// bytes, spilled values included. The allowance takes that whole figure, so the spills of a
+/// deep chain are counted twice and the budget stays conservative for other targets.
+const NATIVE_BYTES_PER_FRAME: usize = 160;
 
 /// The native stack the Wasmtime backend gives Wasm code.
 ///

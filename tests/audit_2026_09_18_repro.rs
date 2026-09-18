@@ -57,6 +57,7 @@ mod snippet_frame_headroom {
     use super::strategy::both;
     use rwasm::{Value, N_MAX_STACK_SIZE};
 
+    /// `main` computes `91 op 7` with `locals` i32 locals below the two i64 operands.
     fn module(op: &str, locals: usize) -> Vec<u8> {
         wat::parse_str(format!(
             r#"(module
@@ -133,6 +134,54 @@ mod wasmtime_native_frame {
             locals = "i32 ".repeat(n)
         ))
         .unwrap()
+    }
+
+    /// `f(depth)` keeps `live` i32 locals (loaded, so not folded) alive across its recursive
+    /// call; returns `depth + 1` when `live > 0`, else 0.
+    fn call_chain(live: usize, depth: u32) -> Vec<u8> {
+        let mut sets = String::new();
+        let mut uses = String::new();
+        for i in 0..live {
+            sets.push_str(&format!(
+                "(local.set {} (i32.load (i32.const {})))\n",
+                i + 1,
+                (i * 4) % 65536
+            ));
+            uses.push_str(&format!("(local.get {}) (i32.add)\n", i + 1));
+        }
+        wat::parse_str(format!(
+            r#"(module
+                (memory (export "memory") 1)
+                (data (i32.const 0) "\01\00\00\00")
+                (func $f (param i32) (result i32) (local {locals})
+                  {sets}
+                  (if (result i32) (i32.eqz (local.get 0))
+                    (then (i32.const 0))
+                    (else (call $f (i32.sub (local.get 0) (i32.const 1)))))
+                  {uses})
+                (func (export "main") (result i32) (call $f (i32.const {depth}))))"#,
+            locals = "i32 ".repeat(live)
+        ))
+        .unwrap()
+    }
+
+    /// The deepest call chains the rwasm VM accepts must run on the Wasmtime backend as well;
+    /// the reverse direction (a chain rwasm rejects) is the documented remaining difference.
+    #[test]
+    fn an_accepted_call_chain_runs_on_both_strategies() {
+        let mut divergences = Vec::new();
+        for (live, depth) in [(0usize, 1023u32), (3, 1023), (7, 700), (15, 400), (60, 120)] {
+            let outcomes = both(&call_chain(live, depth), Value::I32(0));
+            let expected = Ok(Value::I32(if live > 0 { depth as i32 + 1 } else { 0 }));
+            if outcomes[0].1 != expected || outcomes[1].1 != expected {
+                divergences.push(format!("{live} live locals x {depth} frames: {outcomes:?}"));
+            }
+        }
+        assert!(
+            divergences.is_empty(),
+            "a call chain the rwasm VM runs must run on both strategies:\n{}",
+            divergences.join("\n")
+        );
     }
 
     #[test]

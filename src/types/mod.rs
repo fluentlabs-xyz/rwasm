@@ -59,6 +59,7 @@ pub const N_STACK_TRAMPOLINE_HEADROOM: usize = max_usize(
     crate::compiler::snippets::Snippet::MAX_STACK_HEIGHT as usize,
 );
 
+/// `core::cmp::max` is not `const`; this is, for the headroom computed above.
 const fn max_usize(a: usize, b: usize) -> usize {
     if a > b {
         a
