@@ -51,7 +51,9 @@ fn test_nitro_verifier_wasmtime() {
     let (rwasm_module, _) = RwasmModule::compile(config, wasm_binary).unwrap();
     // compile & run using wasmtime
     let module = compile_wasmtime_module(
-        CompilationConfig::default().with_consume_fuel(false),
+        CompilationConfig::default()
+            .with_consume_fuel(false)
+            .with_import_linker(import_linker.clone()),
         &rwasm_module.hint_section,
     )
     .unwrap();

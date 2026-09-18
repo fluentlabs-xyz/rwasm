@@ -1,7 +1,27 @@
 use crate::{
     CompilationConfig, N_MAX_RECURSION_DEPTH, N_MAX_STACK_SIZE, N_STACK_TRAMPOLINE_HEADROOM,
 };
-use wasmtime::{Config, Engine, OptLevel, Strategy};
+use wasmtime::{Config, Engine, OptLevel, RwasmStackLimits, Strategy};
+
+/// The value-stack window of the rwasm VM in 32-bit slots: `N_MAX_STACK_SIZE` plus the headroom
+/// for the frame the compiler injects behind a Wasm instruction (`ValueStack::default`).
+pub(crate) const VALUE_STACK_WINDOW: u32 = (N_MAX_STACK_SIZE + N_STACK_TRAMPOLINE_HEADROOM) as u32;
+
+/// The rwasm stack limits the Wasmtime engine emulates for `compilation_config`.
+///
+/// Compiled code traps `StackOverflow` exactly where the rwasm VM does: a call once
+/// `N_MAX_RECURSION_DEPTH` frames are on the call stack, a function prologue whose frame does
+/// not fit the value-stack window, and, when the config compiles `i64` arithmetic to snippets,
+/// the hidden frame such an operator pushes. The frame heights come from the rwasm translator
+/// (see [`crate::wasmtime::compile_wasmtime_module`]); the import trampolines' frames are
+/// checked by the host trampolines (`check_syscall_frame`).
+pub(crate) fn rwasm_stack_limits(compilation_config: &CompilationConfig) -> RwasmStackLimits {
+    RwasmStackLimits {
+        max_call_depth: N_MAX_RECURSION_DEPTH as u32,
+        max_stack_slots: VALUE_STACK_WINDOW,
+        code_snippets: compilation_config.code_snippets,
+    }
+}
 
 /// Native stack bytes Cranelift needs per 32-bit slot of the rwasm value-stack window.
 ///
@@ -24,19 +44,20 @@ const NATIVE_BYTES_PER_FRAME: usize = 160;
 /// The native stack the Wasmtime backend gives Wasm code.
 ///
 /// The rwasm VM bounds an execution by its value-stack window (`N_MAX_STACK_SIZE` plus the
-/// headroom for a compiler-injected frame) and by `N_MAX_RECURSION_DEPTH` frames. This holds
-/// every execution that window admits, so a module the rwasm VM runs never runs out of native
-/// stack here. The reverse stays unsynchronized (see `docs/pipeline.md`): a chain the rwasm
-/// window rejects may still fit here.
+/// headroom for a compiler-injected frame) and by `N_MAX_RECURSION_DEPTH` frames, and the
+/// engine emulates both limits (see [`rwasm_stack_limits`]). This holds every execution those
+/// limits admit, so the native stack never runs out first: it is a backstop, not a limit a
+/// module can observe.
 pub const WASMTIME_MAX_WASM_STACK: usize = (N_MAX_STACK_SIZE + N_STACK_TRAMPOLINE_HEADROOM)
     * NATIVE_BYTES_PER_SLOT
     + N_MAX_RECURSION_DEPTH * NATIVE_BYTES_PER_FRAME;
 
 /// Builds a Wasmtime engine for `compilation_config`.
 ///
-/// The engine bakes in the config's fuel metering and stack limit, so an engine is never shared
-/// between configs: each compiled module carries the engine it was built with, and the module
-/// cache keys on the config identity. The syscall fuel schedule is deliberately *not* handed to
+/// The engine bakes in the config's fuel metering and the rwasm stack limits it emulates (see
+/// [`rwasm_stack_limits`]), so an engine is never shared between configs: each compiled module
+/// carries the engine it was built with, and the module cache keys on the config identity. The
+/// syscall fuel schedule is deliberately *not* handed to
 /// the engine: Cranelift can only charge it at direct `call`/`return_call` sites, which leaves
 /// `call_indirect`, `return_call_indirect`, an exported import and a `start` import unmetered.
 /// It travels with the [`crate::wasmtime::WasmtimeModule`] instead and is charged by the host
@@ -47,6 +68,7 @@ pub fn wasmtime_engine(compilation_config: &CompilationConfig) -> Engine {
     cfg.collector(wasmtime::Collector::Null);
 
     cfg.max_wasm_stack(WASMTIME_MAX_WASM_STACK);
+    cfg.rwasm_stack_limits(Some(rwasm_stack_limits(compilation_config)));
 
     // Leave these alone (defaults are already tuned for 64-bit hosts):
     // - memory_reservation: big VA reservation (e.g. ~4GiB) enabling most bounds checks to disappear

@@ -1,9 +1,11 @@
 use crate::{
-    checked_memory_range_end, CallerTr, StoreTr, SyscallHandler, TrapCode, TypedCaller, Value,
-    N_BYTES_PER_MEMORY_PAGE,
+    checked_memory_range_end, compiler::block_fuel::syscall_fuel_temporary_slots,
+    wasmtime::engine::VALUE_STACK_WINDOW, CallerTr, StoreTr, SyscallHandler, TrapCode, TypedCaller,
+    Value, N_BYTES_PER_MEMORY_PAGE,
 };
 use rwasm_fuel_policy::{SyscallFuelParams, FUEL_MAX_LINEAR_X, FUEL_MAX_QUADRATIC_X};
 use std::collections::HashMap;
+use wasmparser::ValType;
 use wasmtime::{AsContext, AsContextMut, ResourceLimiter, StoreLimits};
 
 const ENGINE_FUEL_EXPECTED: &str = "wasmtime: fuel metering was enabled at store creation";
@@ -123,6 +125,71 @@ pub(crate) fn syscall_fuel_charge(
             Some(u64::from(fuel))
         }
     })
+}
+
+/// The 32-bit value-stack slots `values` take on the rwasm VM.
+fn value_slots(values: &[Value]) -> u32 {
+    values
+        .iter()
+        .map(|value| match value {
+            Value::I64(_) | Value::F64(_) => 2,
+            _ => 1,
+        })
+        .sum()
+}
+
+/// The 32-bit value-stack slots values of `types` take on the rwasm VM.
+fn type_slots(types: &[ValType]) -> u32 {
+    types
+        .iter()
+        .map(|ty| match ty {
+            ValType::I64 | ValType::F64 => 2,
+            _ => 1,
+        })
+        .sum()
+}
+
+/// Traps `StackOverflow` unless `need` more slots fit the value-stack window above `base`, like
+/// `ValueStack::reserve` on the rwasm VM.
+fn check_value_stack_window(base: u32, need: u32) -> Result<(), TrapCode> {
+    if u64::from(base) + u64::from(need) > u64::from(VALUE_STACK_WINDOW) {
+        return Err(TrapCode::StackOverflow);
+    }
+    Ok(())
+}
+
+/// Performs the `StackCheck` of the rwasm import trampoline for the host function about to run.
+///
+/// On rwasm every path into an import goes through a trampoline frame of its own: the caller's
+/// `CallInternal` pushes it (the engine checks the call depth at the call site, see
+/// `rwasm_stack_limits` in the engine module), and its prologue reserves the temporaries
+/// of its syscall fuel prologue on top of the import's `params`, which the caller left on the
+/// value stack above the frame base it published through the store's rwasm stack counters. A
+/// module compiled without `builtins_consume_fuel` has no schedule and no temporaries.
+pub(crate) fn check_syscall_frame<T: 'static>(
+    ctx: impl AsContext<Data = WrappedContext<T>>,
+    sys_func_idx: u32,
+    params: &[Value],
+) -> Result<(), TrapCode> {
+    let ctx = ctx.as_context();
+    let temporaries = ctx
+        .data()
+        .syscall_fuel
+        .get(&sys_func_idx)
+        .map_or(0, syscall_fuel_temporary_slots);
+    let base = ctx.rwasm_stack_counters().stack_slots;
+    check_value_stack_window(base, value_slots(params).saturating_add(temporaries))
+}
+
+/// Reserves the slots of the host function's results, after the syscall fuel was charged: the
+/// rwasm `Call` pops the parameters and reserves the result slots before invoking the host
+/// (`RwasmExecutor::invoke_syscall`), so a full stack traps here rather than in the host.
+pub(crate) fn check_syscall_results_room<T: 'static>(
+    ctx: impl AsContext<Data = WrappedContext<T>>,
+    result_types: &[ValType],
+) -> Result<(), TrapCode> {
+    let base = ctx.as_context().rwasm_stack_counters().stack_slots;
+    check_value_stack_window(base, type_slots(result_types))
 }
 
 /// Charges the syscall fuel the store's schedule assigns to `sys_func_idx`, if any, before the

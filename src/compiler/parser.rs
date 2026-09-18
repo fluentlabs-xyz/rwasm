@@ -93,6 +93,36 @@ impl ModuleParser {
         Ok(result)
     }
 
+    /// The frame height of every function of the parsed module, in Wasm index order with the
+    /// imports first: the `StackCheck` the translator emitted for the function, i.e. the
+    /// value-stack slots of its locals plus its operand peak on top of the parameters its caller
+    /// pushed. An import counts the trampoline the compiler injects for it, whose height is the
+    /// temporaries of its syscall fuel prologue.
+    ///
+    /// The Wasmtime backend compiles these heights into its own `StackCheck`, so both engines
+    /// stop a call chain at the same frame. Only meaningful after [`Self::parse`] and before
+    /// [`Self::finalize`], which appends the snippets.
+    pub fn frame_heights(&self) -> Vec<u32> {
+        let translation = &self.allocations.translation;
+        translation
+            .func_offsets
+            .iter()
+            .map(|&offset| {
+                // `SignatureCheck`, an optional `ConsumeFuel`, then `StackCheck`
+                translation
+                    .instruction_set
+                    .iter()
+                    .skip(offset as usize)
+                    .take(3)
+                    .find_map(|opcode| match opcode {
+                        Opcode::StackCheck(height) => Some(*height),
+                        _ => None,
+                    })
+                    .expect("every function prologue carries a StackCheck")
+            })
+            .collect()
+    }
+
     pub fn finalize(
         mut self,
         wasm_binary: &[u8],
