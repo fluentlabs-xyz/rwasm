@@ -1,4 +1,4 @@
-use crate::{CompilationConfig, ExecutionEngine, RwasmModule};
+use crate::CompilationConfig;
 use alloc::vec::Vec;
 
 mod module;
@@ -29,12 +29,10 @@ pub fn for_each_strategy<R, F: FnMut(StrategyDefinition) -> Result<R, StrategyEr
     let mut result = Vec::new();
     // rwasm case
     {
-        let (module, _) = RwasmModule::compile(compilation_config.clone(), wasm_binary)?;
-        result.push(f(StrategyDefinition::Rwasm {
-            module,
-            engine: ExecutionEngine::acquire_shared(),
-            entrypoint_name: compilation_config.entrypoint_name.clone(),
-        })?);
+        result.push(f(StrategyDefinition::new_as_rwasm(
+            compilation_config.clone(),
+            wasm_binary,
+        )?)?);
     }
     // wasmtime case
     #[cfg(feature = "wasmtime")]

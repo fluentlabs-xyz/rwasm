@@ -1,7 +1,7 @@
 use crate::{
     always_failing_syscall_handler, CompilationConfig, CompilationError, ExecutionEngine,
-    ImportLinker, RwasmInstance, RwasmModule, RwasmStore, StoreTr, StrategyError, SyscallHandler,
-    TrapCode, Value,
+    ImportLinker, ModuleParser, RwasmInstance, RwasmModule, RwasmStore, StoreTr, StrategyError,
+    SyscallHandler, TrapCode, Value,
 };
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
@@ -39,6 +39,9 @@ pub enum StrategyDefinition {
         /// router), so it validates the name it is called with against this value instead of
         /// resolving it like the Wasmtime backend does.
         entrypoint_name: Option<Box<str>>,
+        /// Wasm signature retained by the strategy compiler for host-call validation. Manually
+        /// assembled bytecode may omit it and use the VM's untyped stack-slot calling convention.
+        entrypoint_type: Option<wasmparser::FuncType>,
     },
     #[cfg(feature = "wasmtime")]
     Wasmtime {
@@ -93,11 +96,15 @@ impl StrategyDefinition {
         wasm_binary: impl AsRef<[u8]>,
     ) -> Result<Self, CompilationError> {
         let entrypoint_name = compilation_config.entrypoint_name.clone();
-        let (module, _) = RwasmModule::compile(compilation_config, wasm_binary.as_ref())?;
+        let mut parser = ModuleParser::new(compilation_config);
+        parser.parse(wasm_binary.as_ref())?;
+        let entrypoint_type = parser.entrypoint_type();
+        let (module, _) = parser.finalize(wasm_binary.as_ref())?;
         Ok(Self::Rwasm {
             module,
             engine: ExecutionEngine::new(),
             entrypoint_name,
+            entrypoint_type,
         })
     }
 
@@ -181,6 +188,7 @@ impl StrategyDefinition {
                 engine,
                 module,
                 entrypoint_name,
+                entrypoint_type,
             } => {
                 let mut store = RwasmStore::new(
                     import_linker.clone(),
@@ -191,7 +199,8 @@ impl StrategyDefinition {
                 );
                 let instance = import_linker
                     .instantiate(&mut store, *engine, module.clone())?
-                    .with_entrypoint_name(entrypoint_name.clone());
+                    .with_entrypoint_name(entrypoint_name.clone())
+                    .with_entrypoint_type(entrypoint_type.clone());
                 Ok(StrategyExecutor::Rwasm { store, instance })
             }
             #[cfg(feature = "wasmtime")]
@@ -317,6 +326,9 @@ impl<T: 'static> StrategyExecutor<T> {
         Ok(executor)
     }
 
+    /// Calls the selected export. For named Wasm entrypoints, parameter count/types and result
+    /// count are checked before execution; result placeholders are overwritten with values of
+    /// the declared types on success. A signature mismatch returns [`TrapCode::IllegalOpcode`].
     pub fn execute(
         &mut self,
         func_name: &str,

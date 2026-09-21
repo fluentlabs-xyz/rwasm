@@ -1,5 +1,7 @@
 use crate::{ExecutionEngine, RwasmModule, RwasmStore, TrapCode, Value};
 use alloc::{boxed::Box, sync::Arc};
+use smallvec::SmallVec;
+use wasmparser::FuncType;
 
 /// A handle to the current instance in a store.
 ///
@@ -17,6 +19,8 @@ pub struct RwasmInstance {
     /// resolves it. Recording the name lets [`RwasmInstance::execute_named`] reject the mismatch
     /// instead of silently running the configured entrypoint.
     entrypoint_name: Option<Box<str>>,
+    /// Present when compiled through the typed strategy API; raw bytecode has no signature.
+    entrypoint_type: Option<FuncType>,
 }
 
 impl RwasmInstance {
@@ -46,6 +50,7 @@ impl RwasmInstance {
             module,
             identity,
             entrypoint_name: None,
+            entrypoint_type: None,
         })
     }
 
@@ -63,10 +68,40 @@ impl RwasmInstance {
         self
     }
 
+    pub(crate) fn with_entrypoint_type(mut self, entrypoint_type: Option<FuncType>) -> Self {
+        self.entrypoint_type = entrypoint_type;
+        self
+    }
+
+    /// The typed API treats result values as placeholders, like Wasmtime. Run with the declared
+    /// types and publish them only on success, leaving the caller's buffer intact on a trap.
+    fn with_typed_results(
+        &self,
+        result: &mut [Value],
+        run: impl FnOnce(&mut [Value]) -> Result<(), TrapCode>,
+    ) -> Result<(), TrapCode> {
+        let Some(signature) = &self.entrypoint_type else {
+            return run(result);
+        };
+        if result.len() != signature.results().len() {
+            return Err(TrapCode::IllegalOpcode);
+        }
+        let mut typed: SmallVec<[Value; 8]> = signature
+            .results()
+            .iter()
+            .copied()
+            .map(Value::default)
+            .collect();
+        run(&mut typed)?;
+        result.clone_from_slice(&typed);
+        Ok(())
+    }
+
     /// Executes the compiled entrypoint if this instance still owns the supplied store.
     ///
-    /// `result` must have the entrypoint's result shape; see [`ExecutionEngine::execute`] for
-    /// how a mismatch is reported.
+    /// Strategy-compiled named entrypoints validate parameter types and result count before
+    /// execution, and overwrite result placeholders with the declared types. Raw instances use
+    /// the stack-slot calling convention described by [`ExecutionEngine::execute`].
     pub fn execute<T>(
         &self,
         store: &mut RwasmStore<T>,
@@ -74,7 +109,19 @@ impl RwasmInstance {
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
         self.check_store(store)?;
-        self.engine.execute(store, &self.module, params, result)
+        if let Some(signature) = &self.entrypoint_type {
+            if params.len() != signature.params().len()
+                || params
+                    .iter()
+                    .zip(signature.params())
+                    .any(|(value, ty)| value.ty() != *ty)
+            {
+                return Err(TrapCode::IllegalOpcode);
+            }
+        }
+        self.with_typed_results(result, |result| {
+            self.engine.execute(store, &self.module, params, result)
+        })
     }
 
     /// Executes the entrypoint, checking `func_name` against the configured entrypoint name.
@@ -110,6 +157,6 @@ impl RwasmInstance {
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
         self.check_store(store)?;
-        self.engine.resume(store, params, result)
+        self.with_typed_results(result, |result| self.engine.resume(store, params, result))
     }
 }

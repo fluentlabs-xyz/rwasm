@@ -320,6 +320,7 @@ fn test_memory_write_during_interruption() {
         module,
         engine: ExecutionEngine::acquire_shared(),
         entrypoint_name: Some("main".into()),
+        entrypoint_type: None,
     });
 }
 
