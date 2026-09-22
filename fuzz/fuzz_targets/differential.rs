@@ -153,6 +153,7 @@ fn execute_one(data: &[u8]) -> Result<()> {
     gen_cfg.sign_extension_ops_enabled = true;
     gen_cfg.reference_types_enabled = true;
     gen_cfg.tail_call_enabled = true;
+    gen_cfg.wide_arithmetic_enabled = true;
 
     gen_cfg.memory64_enabled = false;
     gen_cfg.relaxed_simd_enabled = false;
