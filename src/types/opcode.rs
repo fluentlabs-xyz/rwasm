@@ -194,6 +194,16 @@ define_opcode_enum! {
     // lowering, so `Opcode` stays 8 bytes in memory
     I64Const32S(value: UntypedValue) => 88u32,
     I64Const32U(value: UntypedValue) => 89u32,
+    // wide arithmetic (the WebAssembly wide-arithmetic proposal) on two-slot `i64` operands, the
+    // low limb below the high limb as everywhere else. `I64Add128`/`I64Sub128` pop `b` then `a`,
+    // each a (lo, hi) pair of `i64` words (8 slots), and push the 128-bit sum or difference as
+    // lo, hi (4 slots). `I64MulWideS`/`I64MulWideU` pop `b` then `a` (4 slots) and push the
+    // signed or unsigned 128-bit product as lo, hi (4 slots). All four work in place on their
+    // operand slots, so they need no stack headroom.
+    I64Add128 => 90u32,
+    I64Sub128 => 91u32,
+    I64MulWideS => 92u32,
+    I64MulWideU => 93u32,
 
     // fpu
     @fpu F32Load(offset: AddressOffset) => 0u32,
@@ -681,6 +691,10 @@ mod tests {
             Opcode::I32Sub64,
             Opcode::I64Const32S(42.into()),
             Opcode::I64Const32U(42.into()),
+            Opcode::I64Add128,
+            Opcode::I64Sub128,
+            Opcode::I64MulWideS,
+            Opcode::I64MulWideU,
         ];
         for (expected, opcode) in opcodes.iter().enumerate() {
             assert_eq!(opcode.code(), expected as u32, "{opcode:#}");

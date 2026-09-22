@@ -807,6 +807,20 @@ impl ValueStackPtr {
         let (lo, hi) = self.pop2();
         (hi.as_i64() << 32) | lo.as_i64()
     }
+
+    /// Pushes a 128-bit value as two `i64` words, the low word first, so the high word ends up
+    /// on top: the layout of a wide-arithmetic (lo, hi) result.
+    pub fn push_i128(&mut self, value: i128) {
+        self.push_i64(value as i64);
+        self.push_i64((value >> 64) as i64);
+    }
+
+    /// Pops a 128-bit value pushed as two `i64` words, the high word on top.
+    pub fn pop_i128(&mut self) -> i128 {
+        let hi = self.pop_i64();
+        let lo = self.pop_i64();
+        ((hi as i128) << 64) | (lo as u64 as i128)
+    }
 }
 
 #[cfg(test)]

@@ -108,6 +108,41 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.sp.push_i64(res as i64);
         self.ip.add(1);
     }
+
+    /// `i64.add128`: pops `b` then `a`, each a (lo, hi) pair of `i64` words, and pushes the
+    /// wrapping 128-bit sum as lo, hi.
+    pub(crate) fn visit_i64_add128(&mut self) {
+        let rhs = self.sp.pop_i128();
+        let lhs = self.sp.pop_i128();
+        self.sp.push_i128(lhs.wrapping_add(rhs));
+        self.ip.add(1);
+    }
+
+    /// `i64.sub128`: like [`Self::visit_i64_add128`] with a wrapping 128-bit difference.
+    pub(crate) fn visit_i64_sub128(&mut self) {
+        let rhs = self.sp.pop_i128();
+        let lhs = self.sp.pop_i128();
+        self.sp.push_i128(lhs.wrapping_sub(rhs));
+        self.ip.add(1);
+    }
+
+    /// `i64.mul_wide_s`: pops `b` then `a` and pushes their full signed 128-bit product as
+    /// lo, hi. Two `i64` factors never overflow an `i128`.
+    pub(crate) fn visit_i64_mul_wide_s(&mut self) {
+        let rhs = self.sp.pop_i64() as i128;
+        let lhs = self.sp.pop_i64() as i128;
+        self.sp.push_i128(lhs * rhs);
+        self.ip.add(1);
+    }
+
+    /// `i64.mul_wide_u`: pops `b` then `a` and pushes their full unsigned 128-bit product as
+    /// lo, hi.
+    pub(crate) fn visit_i64_mul_wide_u(&mut self) {
+        let rhs = self.sp.pop_i64() as u64 as u128;
+        let lhs = self.sp.pop_i64() as u64 as u128;
+        self.sp.push_i128((lhs * rhs) as i128);
+        self.ip.add(1);
+    }
 }
 
 macro_rules! impl_visit_fallible_binary {
