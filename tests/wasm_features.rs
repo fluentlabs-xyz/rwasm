@@ -48,6 +48,45 @@ fn test_simd_operator_is_rejected_instead_of_desyncing_the_stack() {
     );
 }
 
+/// Wide arithmetic is decoded and validated by this `wasmparser`, and stays disabled until the
+/// translator lowers it: every one of the four operators is rejected by the validator, with its
+/// feature message, before the translator sees it.
+#[test]
+fn test_wide_arithmetic_operators_are_rejected_while_disabled() {
+    let cases = [
+        (
+            "i64.add128",
+            r#"(module (func (export "main") (param i64 i64 i64 i64) (result i64 i64)
+                 local.get 0 local.get 1 local.get 2 local.get 3 i64.add128))"#,
+        ),
+        (
+            "i64.sub128",
+            r#"(module (func (export "main") (param i64 i64 i64 i64) (result i64 i64)
+                 local.get 0 local.get 1 local.get 2 local.get 3 i64.sub128))"#,
+        ),
+        (
+            "i64.mul_wide_s",
+            r#"(module (func (export "main") (param i64 i64) (result i64 i64)
+                 local.get 0 local.get 1 i64.mul_wide_s))"#,
+        ),
+        (
+            "i64.mul_wide_u",
+            r#"(module (func (export "main") (param i64 i64) (result i64 i64)
+                 local.get 0 local.get 1 i64.mul_wide_u))"#,
+        ),
+    ];
+    for (operator, wat_str) in cases {
+        let error = compile(wat_str)
+            .err()
+            .unwrap_or_else(|| panic!("`{operator}` must not compile"));
+        let message = format!("{error}");
+        assert!(
+            message.contains("wide arithmetic support is not enabled"),
+            "`{operator}` was rejected, but not for the expected reason: {message}"
+        );
+    }
+}
+
 /// Every proposal the translator does not implement is rejected, whichever gate catches it first.
 ///
 /// A `wasmparser` upgrade that promotes one of these to on-by-default would otherwise widen the
