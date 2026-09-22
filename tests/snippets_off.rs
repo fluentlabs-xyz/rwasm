@@ -16,7 +16,7 @@ use rwasm::{
 };
 use rwasm_fuel_policy::SyscallFuelParams;
 use std::{str::from_utf8, sync::Arc};
-use wasmparser::{Parser, Payload, Type, TypeRef, ValType};
+use wasmparser::{Parser, Payload, TypeRef, ValType};
 
 fn snippets_off_config() -> CompilationConfig {
     CompilationConfig::default()
@@ -35,16 +35,16 @@ fn import_linker_from_wasm(wasm_binary: &[u8]) -> Arc<ImportLinker> {
     for payload in Parser::new(0).parse_all(wasm_binary) {
         match payload.expect("valid wasm") {
             Payload::TypeSection(reader) => {
-                for ty in reader {
-                    let Type::Func(func_type) = ty.expect("valid type");
-                    func_types.push((
-                        func_type.params().to_vec(),
-                        func_type.results().to_vec(),
-                    ));
+                for rec_group in reader {
+                    for sub_type in rec_group.expect("valid type").into_types() {
+                        let func_type = sub_type.unwrap_func();
+                        func_types
+                            .push((func_type.params().to_vec(), func_type.results().to_vec()));
+                    }
                 }
             }
             Payload::ImportSection(reader) => {
-                for import in reader {
+                for import in reader.into_imports() {
                     let import = import.expect("valid import");
                     if let TypeRef::Func(type_idx) = import.ty {
                         let (params, results) = func_types[type_idx as usize].clone();

@@ -8,12 +8,15 @@
 //!
 //! Two gates keep the sets aligned, and these tests cover both:
 //!
-//! 1. `CompilationConfig::wasm_features` denies every proposal the translator cannot handle, so
-//!    the validator rejects the module before the translator sees it.
-//! 2. The wildcard arm of `impl_visit_operator!` returns `NotSupportedOpcode`, so an operator that
+//! 1. `CompilationConfig::wasm_features` is an explicit union that denies every proposal the
+//!    translator cannot handle, so the validator rejects the module before the translator sees
+//!    it.
+//! 2. The wildcard arm of `impl_visit_operator!` in `FuncBuilder` validates and then rejects an
+//!    operator of any proposal it does not forward with `NotSupportedOpcode`, so an operator that
 //!    slips past the first gate still fails loudly instead of being skipped.
 
 use rwasm::{CompilationConfig, CompilationError, RwasmModule};
+use wasmparser::WasmFeatures;
 
 fn compile(wat_str: &str) -> Result<(), CompilationError> {
     let wasm = wat::parse_str(wat_str).expect("valid WAT");
@@ -23,6 +26,9 @@ fn compile(wat_str: &str) -> Result<(), CompilationError> {
 
 /// The reported CRIT-2 repro: SIMD passed validation, was skipped by the translator, and the
 /// resulting desync panicked in `compute_drop_keep`. It must be a compilation error instead.
+///
+/// The crate builds `wasmparser` without its `simd` feature, so a SIMD operator is not even
+/// decodable: the reader rejects the `0xfd` prefix before validation.
 #[test]
 fn test_simd_operator_is_rejected_instead_of_desyncing_the_stack() {
     let error = compile(
@@ -35,12 +41,10 @@ fn test_simd_operator_is_rejected_instead_of_desyncing_the_stack() {
         "#,
     )
     .expect_err("a SIMD operator must not compile");
-
-    // The operator gate rejects `v128.const` before the validator's type check sees a `v128`,
-    // which is exactly the arm that used to validate-and-ignore.
+    let message = format!("{error}");
     assert!(
-        matches!(error, CompilationError::NotSupportedOpcode),
-        "unexpected error: {error:?}"
+        message.contains("SIMD"),
+        "a SIMD operator was rejected, but not for the expected reason: {message}"
     );
 }
 
@@ -96,6 +100,22 @@ fn test_disabled_proposals_are_rejected() {
             r#"(module (tag $e (param i32)) (func (export "main") nop))"#,
             "exceptions proposal not enabled",
         ),
+        (
+            "function_references",
+            r#"(module (func (export "main") (param (ref func)) nop))"#,
+            "function references",
+        ),
+        (
+            "gc",
+            r#"(module (type (struct)) (func (export "main") nop))"#,
+            "without the gc feature",
+        ),
+        (
+            "tail_call is on, but call_ref is function_references",
+            r#"(module (type $t (func)) (func (export "main") (param (ref $t))
+                 local.get 0 call_ref $t))"#,
+            "function references",
+        ),
     ];
 
     for (proposal, wat_str, expected) in cases {
@@ -112,39 +132,71 @@ fn test_disabled_proposals_are_rejected() {
 
 /// Pins the feature set itself, including the proposals no core module can express in WAT.
 ///
-/// `wasm_features` lists every field explicitly rather than inheriting `Default::default()`, so a
-/// `wasmparser` upgrade that adds a field fails to compile and one that flips a default fails
-/// here, instead of quietly handing the translator a language it does not implement.
+/// `wasm_features` is an explicit union, so a `wasmparser` upgrade that turns a proposal on by
+/// default changes nothing here. The last assertion is what makes an upgrade that adds a flag
+/// fail: every flag this `wasmparser` knows must be in one of the two lists.
 #[test]
 fn test_wasm_features_denies_every_unimplemented_proposal() {
     let features = CompilationConfig::default().wasm_features();
 
-    assert!(!features.simd, "simd must stay disabled");
-    assert!(!features.relaxed_simd, "relaxed_simd must stay disabled");
-    assert!(!features.threads, "threads must stay disabled");
-    assert!(!features.multi_memory, "multi_memory must stay disabled");
-    assert!(!features.memory64, "memory64 must stay disabled");
-    assert!(!features.exceptions, "exceptions must stay disabled");
-    assert!(
-        !features.component_model,
-        "component_model must stay disabled"
-    );
-    assert!(
-        !features.memory_control,
-        "memory_control must stay disabled"
-    );
-
     // The proposals the translator does implement, pinned so the gate cannot be tightened by
     // accident either.
-    assert!(features.mutable_global);
-    assert!(features.saturating_float_to_int);
-    assert!(features.sign_extension);
-    assert!(features.multi_value);
-    assert!(features.bulk_memory);
-    assert!(features.reference_types);
-    assert!(features.tail_call);
-    assert!(features.extended_const);
-    assert!(features.floats);
+    let implemented = WasmFeatures::MUTABLE_GLOBAL
+        | WasmFeatures::SATURATING_FLOAT_TO_INT
+        | WasmFeatures::SIGN_EXTENSION
+        | WasmFeatures::MULTI_VALUE
+        | WasmFeatures::BULK_MEMORY
+        | WasmFeatures::REFERENCE_TYPES
+        | WasmFeatures::TAIL_CALL
+        | WasmFeatures::EXTENDED_CONST
+        | WasmFeatures::FLOATS
+        | WasmFeatures::GC_TYPES;
+    assert_eq!(features, implemented);
+
+    let denied = WasmFeatures::SIMD
+        | WasmFeatures::RELAXED_SIMD
+        | WasmFeatures::THREADS
+        | WasmFeatures::SHARED_EVERYTHING_THREADS
+        | WasmFeatures::MULTI_MEMORY
+        | WasmFeatures::MEMORY64
+        | WasmFeatures::EXCEPTIONS
+        | WasmFeatures::LEGACY_EXCEPTIONS
+        | WasmFeatures::COMPONENT_MODEL
+        | WasmFeatures::FUNCTION_REFERENCES
+        | WasmFeatures::GC
+        | WasmFeatures::MEMORY_CONTROL
+        | WasmFeatures::CUSTOM_PAGE_SIZES
+        | WasmFeatures::STACK_SWITCHING
+        | WasmFeatures::WIDE_ARITHMETIC
+        | WasmFeatures::CUSTOM_DESCRIPTORS
+        | WasmFeatures::COMPACT_IMPORTS
+        // component-model sub-features: no core module can express them
+        | WasmFeatures::CM_VALUES
+        | WasmFeatures::CM_NESTED_NAMES
+        | WasmFeatures::CM_ASYNC
+        | WasmFeatures::CM_ASYNC_STACKFUL
+        | WasmFeatures::CM_MORE_ASYNC_BUILTINS
+        | WasmFeatures::CM_THREADING
+        | WasmFeatures::CM_ERROR_CONTEXT
+        | WasmFeatures::CM_FIXED_LENGTH_LISTS
+        | WasmFeatures::CM_GC
+        | WasmFeatures::CM_MAP
+        | WasmFeatures::CM64;
+    assert!(
+        !features.intersects(denied),
+        "a denied proposal is enabled: {:?}",
+        features.intersection(denied)
+    );
+
+    // `BULK_MEMORY_OPT` and `CALL_INDIRECT_OVERLONG` are subsets of `BULK_MEMORY` and
+    // `REFERENCE_TYPES`; every other flag this wasmparser defines is listed above.
+    let considered =
+        implemented | denied | WasmFeatures::BULK_MEMORY_OPT | WasmFeatures::CALL_INDIRECT_OVERLONG;
+    assert_eq!(
+        WasmFeatures::all().difference(considered),
+        WasmFeatures::empty(),
+        "a wasmparser feature flag is neither implemented nor denied here"
+    );
 }
 
 /// The stricter wildcard arm must not have narrowed the language that already worked.
@@ -182,4 +234,57 @@ fn test_tail_call_still_compiles() {
         "#,
     )
     .expect("tail calls must still compile");
+}
+
+/// Reference-typed values keep compiling: `ref.null`, `ref.func`, `ref.is_null`, a `funcref`
+/// table and an `externref` local all use the reference-types shapes the translator lowers.
+#[test]
+fn test_reference_types_still_compile() {
+    compile(
+        r#"
+        (module
+          (table 2 funcref)
+          (elem declare func $f)
+          (func $f)
+          (func (export "main") (result i32) (local externref)
+            ref.null extern local.set 0
+            i32.const 0 ref.func $f table.set 0
+            ref.null func ref.is_null
+            local.get 0 ref.is_null
+            i32.add))
+        "#,
+    )
+    .expect("reference types must still compile");
+}
+
+/// Decoding is feature-dependent too: `wasmparser` reads the memory index of `memory.grow` as
+/// a single zero byte without `multi_memory` and as a LEB with it, and a fresh `Parser` defaults
+/// to every feature. The module parser hands the parser the same set as the validator, so an
+/// overlong index is malformed here, as the spec's `binary.wast` and Wasmtime say.
+#[test]
+fn test_parser_decodes_with_the_validators_feature_set() {
+    // `(func (export "main") (result i32) i32.const 0 memory.grow)` with the memory index of
+    // `memory.grow` encoded as `0x80 0x00`
+    let overlong = b"\0asm\x01\0\0\0\
+        \x01\x05\x01\x60\x00\x01\x7f\
+        \x03\x02\x01\x00\
+        \x05\x03\x01\x00\x01\
+        \x07\x08\x01\x04main\x00\x00\
+        \x0a\x09\x01\x07\x00\x41\x00\x40\x80\x00\x0b";
+    let config = CompilationConfig::default().with_entrypoint_name("main".into());
+    let error = RwasmModule::compile(config.clone(), overlong)
+        .expect_err("an overlong memory index must not compile");
+    let message = format!("{error}");
+    assert!(
+        message.contains("zero byte expected"),
+        "the overlong index was rejected, but not for the expected reason: {message}"
+    );
+    // the same module with a single zero byte is the valid encoding
+    let canonical = b"\0asm\x01\0\0\0\
+        \x01\x05\x01\x60\x00\x01\x7f\
+        \x03\x02\x01\x00\
+        \x05\x03\x01\x00\x01\
+        \x07\x08\x01\x04main\x00\x00\
+        \x0a\x08\x01\x06\x00\x41\x00\x40\x00\x0b";
+    RwasmModule::compile(config, canonical).expect("the canonical encoding compiles");
 }

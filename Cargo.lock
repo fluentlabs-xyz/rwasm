@@ -829,12 +829,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "indexmap-nostd"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e04e2fd2b8188ea827b32ef11de88377086d690286ab35747ef7f9bf3ccb590"
-
-[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1314,7 +1308,7 @@ dependencies = [
  "serde",
  "smallvec",
  "tiny-keccak",
- "wasmparser-nostd",
+ "wasmparser 0.248.0",
  "wasmtime-rwasm",
  "wat",
 ]
@@ -1824,15 +1818,6 @@ dependencies = [
  "bitflags",
  "indexmap",
  "semver",
-]
-
-[[package]]
-name = "wasmparser-nostd"
-version = "0.100.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5a015fe95f3504a94bb1462c717aae75253e39b9dd6c3fb1062c934535c64aa"
-dependencies = [
- "indexmap-nostd",
 ]
 
 [[package]]

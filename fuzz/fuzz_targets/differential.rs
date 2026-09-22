@@ -84,8 +84,8 @@ impl TryFrom<ParserValType> for DiffValueType {
             ParserValType::I64 => Ok(Self::I64),
             ParserValType::F32 => Ok(Self::F32),
             ParserValType::F64 => Ok(Self::F64),
-            ParserValType::FuncRef => Ok(Self::FuncRef),
-            ParserValType::ExternRef => Ok(Self::ExternRef),
+            ParserValType::FUNCREF => Ok(Self::FuncRef),
+            ParserValType::EXTERNREF => Ok(Self::ExternRef),
             _ => Err(()),
         }
     }
@@ -1025,7 +1025,7 @@ fn parse_export_map(wasm: &[u8]) -> Result<ExportMap, ()> {
             // If we only record kinds from `GlobalSection`, `lhs_snap.get_global` will fail to
             // resolve exported imported globals, and globals won't be compared.
             Payload::ImportSection(s) => {
-                for imp in s {
+                for imp in s.into_imports() {
                     let imp = imp.map_err(|_| ())?;
                     if let wasmparser::TypeRef::Global(g) = imp.ty {
                         let kind = match g.content_type {
@@ -1033,8 +1033,8 @@ fn parse_export_map(wasm: &[u8]) -> Result<ExportMap, ()> {
                             wasmparser::ValType::I64 => Some(GlobalKind::I64),
                             wasmparser::ValType::F32 => Some(GlobalKind::F32),
                             wasmparser::ValType::F64 => Some(GlobalKind::F64),
-                            wasmparser::ValType::FuncRef => Some(GlobalKind::FuncRef),
-                            wasmparser::ValType::ExternRef => Some(GlobalKind::ExternRef),
+                            wasmparser::ValType::FUNCREF => Some(GlobalKind::FuncRef),
+                            wasmparser::ValType::EXTERNREF => Some(GlobalKind::ExternRef),
                             _ => None,
                         };
                         if let Some(kind) = kind {
@@ -1051,8 +1051,8 @@ fn parse_export_map(wasm: &[u8]) -> Result<ExportMap, ()> {
                         wasmparser::ValType::I64 => Some(GlobalKind::I64),
                         wasmparser::ValType::F32 => Some(GlobalKind::F32),
                         wasmparser::ValType::F64 => Some(GlobalKind::F64),
-                        wasmparser::ValType::FuncRef => Some(GlobalKind::FuncRef),
-                        wasmparser::ValType::ExternRef => Some(GlobalKind::ExternRef),
+                        wasmparser::ValType::FUNCREF => Some(GlobalKind::FuncRef),
+                        wasmparser::ValType::EXTERNREF => Some(GlobalKind::ExternRef),
                         _ => None,
                     };
                     if let Some(kind) = kind {

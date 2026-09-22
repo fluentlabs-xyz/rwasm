@@ -787,8 +787,9 @@ impl ValueStackPtr {
             ValType::F32 => Value::F32(self.pop_f32()),
             ValType::F64 => Value::F64(self.pop_f64()),
             ValType::V128 => unreachable!("can't invoke syscall with v128"),
-            ValType::FuncRef => Value::FuncRef(FuncRef::new(self.pop_i32() as u32)),
-            ValType::ExternRef => Value::ExternRef(ExternRef::new(self.pop_i32() as u32)),
+            ValType::FUNCREF => Value::FuncRef(FuncRef::new(self.pop_i32() as u32)),
+            ValType::EXTERNREF => Value::ExternRef(ExternRef::new(self.pop_i32() as u32)),
+            ValType::Ref(_) => unreachable!("can't invoke syscall with a typed reference"),
         }
     }
 
@@ -805,5 +806,22 @@ impl ValueStackPtr {
     pub fn pop_i64(&mut self) -> i64 {
         let (lo, hi) = self.pop2();
         (hi.as_i64() << 32) | lo.as_i64()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wasmparser::RefType;
+
+    /// Syscall signatures carry `i32`, `i64`, floats, `funcref` and `externref`; the runtime
+    /// models no other reference type, so popping one is a host-side programming error.
+    #[test]
+    #[should_panic(expected = "typed reference")]
+    fn pop_value_of_unsupported_reference_type_panics() {
+        let mut stack = ValueStack::default();
+        let mut sp = stack.stack_ptr();
+        sp.push(UntypedValue::from(0u32));
+        let _ = sp.pop_value(ValType::Ref(RefType::FUNC));
     }
 }

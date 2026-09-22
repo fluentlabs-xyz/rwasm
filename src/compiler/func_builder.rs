@@ -2,6 +2,8 @@ use crate::{
     compiler::translator::{FuncTranslatorAllocations, InstructionTranslator, ReusableAllocations},
     CompilationError, FuncIdx,
 };
+// `for_each_visit_operator!` spells operand types like `Vec<ValType>` unqualified
+use alloc::vec::Vec;
 use rwasm_fuel_policy::FuelCosts;
 use wasmparser::{
     BinaryReaderError, FuncValidator, FunctionBody, ValType, ValidatorResources, VisitOperator,
@@ -52,8 +54,7 @@ impl<'a> FuncBuilder<'a> {
         // emit special opcodes before the beginning of the function
         self.translate_stack_alloc();
         self.translate_locals()?;
-        let offset = self.translate_operators()?;
-        self.validator.finish(offset)?;
+        self.translate_operators()?;
         self.translator.finish()?;
         Ok(ReusableAllocations {
             translation: self.translator.alloc,
@@ -87,7 +88,7 @@ impl<'a> FuncBuilder<'a> {
                 // TODO(dmitry123): "make sure this type is not allowed with floats disabled"
                 ValType::F32 | ValType::F64 => {}
                 ValType::V128 => return Err(CompilationError::NotSupportedLocalType),
-                ValType::FuncRef | ValType::ExternRef => {}
+                ValType::FUNCREF | ValType::EXTERNREF => {}
                 #[allow(unreachable_patterns)]
                 _ => return Err(CompilationError::NotSupportedLocalType),
             }
@@ -126,9 +127,7 @@ impl<'a> FuncBuilder<'a> {
     }
 
     /// Translates the Wasm operators of the Wasm function.
-    ///
-    /// Returns the offset of the `End` Wasm operator.
-    fn translate_operators(&mut self) -> Result<usize, CompilationError> {
+    fn translate_operators(&mut self) -> Result<(), CompilationError> {
         let mut reader = self.func_body.get_operators_reader()?;
         while !reader.eof() {
             // #[cfg(feature = "debug-print")]
@@ -139,8 +138,9 @@ impl<'a> FuncBuilder<'a> {
             self.pos = reader.original_position();
             reader.visit_operator(self)??;
         }
-        reader.ensure_end()?;
-        Ok(reader.original_position())
+        // every control frame is closed and the code entry has no bytes after the final `end`
+        reader.finish()?;
+        Ok(())
     }
 
     /// Translates into `rwasm` bytecode if the current code path is reachable.
@@ -160,7 +160,7 @@ impl<'a> FuncBuilder<'a> {
 }
 
 macro_rules! impl_visit_operator {
-    ( @mvp BrTable { $arg:ident: $argty:ty } => $visit:ident $($rest:tt)* ) => {
+    ( @mvp BrTable { $arg:ident: $argty:ty } => $visit:ident ($($ann:tt)*) $($rest:tt)* ) => {
         // We need to special case the `BrTable` operand since its
         // arguments (a.k.a. `BrTable<'a>`) are not `Copy` which all
         // the other impls make use of.
@@ -186,13 +186,18 @@ macro_rules! impl_visit_operator {
     ( @bulk_memory $($rest:tt)* ) => {
         impl_visit_operator!(@@supported $($rest)*);
     };
+    ( @reference_types TypedSelectMulti $($rest:tt)* ) => {
+        // `select` with a result-type vector whose length is not 1 is invalid in every
+        // proposal; wasmparser decodes it as its own operator only to report that.
+        impl_visit_operator!(@@unsupported TypedSelectMulti $($rest)*);
+    };
     ( @reference_types $($rest:tt)* ) => {
         impl_visit_operator!(@@supported $($rest)*);
     };
     ( @tail_call $($rest:tt)* ) => {
         impl_visit_operator!(@@supported $($rest)*);
     };
-    ( @@supported $op:ident $({ $($arg:ident: $argty:ty),* })? => $visit:ident $($rest:tt)* ) => {
+    ( @@supported $op:ident $({ $($arg:ident: $argty:ty),* })? => $visit:ident ($($ann:tt)*) $($rest:tt)* ) => {
         fn $visit(&mut self $($(,$arg: $argty)*)?) -> Self::Output {
             let offset = self.pos;
             self.validate_then_translate(
@@ -202,22 +207,30 @@ macro_rules! impl_visit_operator {
         }
         impl_visit_operator!($($rest)*);
     };
-    ( @$proposal:ident $op:ident $({ $($arg:ident: $argty:ty),* })? => $visit:ident $($rest:tt)* ) => {
-        // Wildcard match arm for all the other (yet) unsupported Wasm proposals.
+    ( @@unsupported $op:ident $({ $($arg:ident: $argty:ty),* })? => $visit:ident ($($ann:tt)*) $($rest:tt)* ) => {
+        // Every operator of a proposal the translator does not implement lands here.
         //
-        // These operators are rejected rather than validated, because validating one without
-        // translating it advances the validator's operand stack while emitting no code and no
-        // `stack_height`/`stack_types` update. The desync is silent: it surfaces either as a panic
-        // in `compute_drop_keep` or, on a path that happens not to assert, as a wrong `DropKeep`
+        // The operator is validated first, so a proposal `wasm_features` denies is reported
+        // with the validator's message (`... support is not enabled`), and then rejected
+        // unconditionally: validating an operator without translating it advances the
+        // validator's operand stack while emitting no code and no `stack_height`/`stack_types`
+        // update, and that desync would be silent, surfacing either as a panic in
+        // `compute_drop_keep` or, on a path that happens not to assert, as a wrong `DropKeep`
         // and wrong local depths in an otherwise valid-looking module.
         //
         // `wasm_features` already denies every proposal that reaches this arm, so this is the
-        // second of two gates. It is what keeps the two lists from drifting apart again: any
-        // proposal enabled there but not implemented here fails loudly instead of miscompiling.
-        fn $visit(&mut self $($(, _: $argty)*)?) -> Self::Output {
+        // second of two gates. It is what keeps the two lists from drifting apart: a proposal
+        // enabled there but not forwarded here fails loudly instead of miscompiling.
+        fn $visit(&mut self $($(, $arg: $argty)*)?) -> Self::Output {
+            let offset = self.pos;
+            self.validator.visitor(offset).$visit($($($arg),*)?)?;
             Err(CompilationError::NotSupportedOpcode)
         }
         impl_visit_operator!($($rest)*);
+    };
+    ( @$proposal:ident $($rest:tt)* ) => {
+        // Wildcard match arm for all the other (yet) unsupported Wasm proposals.
+        impl_visit_operator!(@@unsupported $($rest)*);
     };
     () => {};
 }
@@ -225,5 +238,5 @@ macro_rules! impl_visit_operator {
 impl<'a> VisitOperator<'a> for FuncBuilder<'a> {
     type Output = Result<(), CompilationError>;
 
-    wasmparser::for_each_operator!(impl_visit_operator);
+    wasmparser::for_each_visit_operator!(impl_visit_operator);
 }

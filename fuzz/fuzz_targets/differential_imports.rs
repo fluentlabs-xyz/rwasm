@@ -316,13 +316,15 @@ fn exported_functions(wasm: &[u8]) -> (Vec<Export>, bool) {
     for payload in Parser::new(0).parse_all(wasm) {
         match payload.unwrap() {
             Payload::TypeSection(section) => {
-                for ty in section.into_iter() {
-                    let wasmparser::Type::Func(ty) = ty.unwrap();
-                    types.push((ty.params().to_vec(), ty.results().to_vec()));
+                for rec_group in section.into_iter() {
+                    for ty in rec_group.unwrap().into_types() {
+                        let ty = ty.unwrap_func();
+                        types.push((ty.params().to_vec(), ty.results().to_vec()));
+                    }
                 }
             }
             Payload::ImportSection(section) => {
-                for import in section.into_iter() {
+                for import in section.into_imports() {
                     if let TypeRef::Func(index) = import.unwrap().ty {
                         func_types.push(index);
                     }
