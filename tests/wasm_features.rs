@@ -48,11 +48,10 @@ fn test_simd_operator_is_rejected_instead_of_desyncing_the_stack() {
     );
 }
 
-/// Wide arithmetic is decoded and validated by this `wasmparser`, and stays disabled until the
-/// translator lowers it: every one of the four operators is rejected by the validator, with its
-/// feature message, before the translator sees it.
+/// The four wide-arithmetic operators are translated (`tests/wide_arithmetic.rs` checks what
+/// they compute); here they must pass both gates.
 #[test]
-fn test_wide_arithmetic_operators_are_rejected_while_disabled() {
+fn test_wide_arithmetic_operators_compile() {
     let cases = [
         (
             "i64.add128",
@@ -76,14 +75,7 @@ fn test_wide_arithmetic_operators_are_rejected_while_disabled() {
         ),
     ];
     for (operator, wat_str) in cases {
-        let error = compile(wat_str)
-            .err()
-            .unwrap_or_else(|| panic!("`{operator}` must not compile"));
-        let message = format!("{error}");
-        assert!(
-            message.contains("wide arithmetic support is not enabled"),
-            "`{operator}` was rejected, but not for the expected reason: {message}"
-        );
+        compile(wat_str).unwrap_or_else(|error| panic!("`{operator}` must compile: {error}"));
     }
 }
 
@@ -188,6 +180,7 @@ fn test_wasm_features_denies_every_unimplemented_proposal() {
         | WasmFeatures::REFERENCE_TYPES
         | WasmFeatures::TAIL_CALL
         | WasmFeatures::EXTENDED_CONST
+        | WasmFeatures::WIDE_ARITHMETIC
         | WasmFeatures::FLOATS
         | WasmFeatures::GC_TYPES;
     assert_eq!(features, implemented);
@@ -206,7 +199,6 @@ fn test_wasm_features_denies_every_unimplemented_proposal() {
         | WasmFeatures::MEMORY_CONTROL
         | WasmFeatures::CUSTOM_PAGE_SIZES
         | WasmFeatures::STACK_SWITCHING
-        | WasmFeatures::WIDE_ARITHMETIC
         | WasmFeatures::CUSTOM_DESCRIPTORS
         | WasmFeatures::COMPACT_IMPORTS
         // component-model sub-features: no core module can express them

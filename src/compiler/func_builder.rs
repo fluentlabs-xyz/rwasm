@@ -197,6 +197,9 @@ macro_rules! impl_visit_operator {
     ( @tail_call $($rest:tt)* ) => {
         impl_visit_operator!(@@supported $($rest)*);
     };
+    ( @wide_arithmetic $($rest:tt)* ) => {
+        impl_visit_operator!(@@supported $($rest)*);
+    };
     ( @@supported $op:ident $({ $($arg:ident: $argty:ty),* })? => $visit:ident ($($ann:tt)*) $($rest:tt)* ) => {
         fn $visit(&mut self $($(,$arg: $argty)*)?) -> Self::Output {
             let offset = self.pos;

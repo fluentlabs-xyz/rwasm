@@ -170,6 +170,9 @@ impl CompilationConfig {
             | WasmFeatures::REFERENCE_TYPES
             | WasmFeatures::TAIL_CALL
             | WasmFeatures::EXTENDED_CONST
+            // `i64.add128`, `i64.sub128`, `i64.mul_wide_s` and `i64.mul_wide_u` lower to the
+            // `I64Add128`, `I64Sub128`, `I64MulWideS` and `I64MulWideU` opcodes
+            | WasmFeatures::WIDE_ARITHMETIC
             // Not proposals: floats are translated, and `GC_TYPES` is the validator's gate for
             // `externref` (GC instructions and types stay behind `GC`, which is off).
             | WasmFeatures::FLOATS
@@ -177,9 +180,7 @@ impl CompilationConfig {
         // Off: `SIMD`, `RELAXED_SIMD`, `THREADS`, `SHARED_EVERYTHING_THREADS`, `MULTI_MEMORY`,
         // `MEMORY64`, `EXCEPTIONS`, `LEGACY_EXCEPTIONS`, `COMPONENT_MODEL` and its `CM_*`
         // sub-features, `FUNCTION_REFERENCES`, `GC`, `CUSTOM_DESCRIPTORS`, `MEMORY_CONTROL`,
-        // `CUSTOM_PAGE_SIZES`, `COMPACT_IMPORTS`, `STACK_SWITCHING` and `WIDE_ARITHMETIC`
-        // (decoded and validated by this wasmparser; enabled once the translator lowers
-        // `i64.add128`, `i64.sub128`, `i64.mul_wide_s` and `i64.mul_wide_u`).
+        // `CUSTOM_PAGE_SIZES`, `COMPACT_IMPORTS` and `STACK_SWITCHING`.
     }
 
     pub fn with_state_router(mut self, state_router: StateRouterConfig) -> Self {
