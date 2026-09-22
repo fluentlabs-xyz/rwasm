@@ -148,6 +148,49 @@ injections that only the interpreter implements, so the same module would burn d
 `StrategyDefinition::new` and `new_as_wasmtime` reject such a config with `CompilationError::StrategyIncompatibleConfig`
 (`new_as_rwasm` accepts it). Details are in [vm-and-fuel.md](./docs/vm-and-fuel.md#engine-alignment).
 
+## WebAssembly proposal support
+
+The accepted language is fixed per release and is consensus surface: a module that one node accepts must be
+accepted by every node, so proposals are enabled through explicit feature flags
+(`CompilationConfig::wasm_features`, mirrored by the Wasmtime engine configuration) and never by a parser
+upgrade alone. rustc's default `wasm32-unknown-unknown` feature set (bulk memory, multi-value, mutable
+globals, non-trapping float-to-int, reference types, sign extension) is fully covered, so a stock Rust build
+validates.
+
+Status legend: **implemented** means validated, translated and executed on both backends with matching fuel;
+**ignored** means the module validates and the feature has no effect; **planned** means accepted work not yet
+on `devel`; **not planned** means rejected at validation on both backends.
+
+| Proposal                                  | Spec      | Status          | Notes                                                                                             |
+| ----------------------------------------- | --------- | --------------- | ------------------------------------------------------------------------------------------------- |
+| MVP, import/export of mutable globals     | 1.0       | implemented     |                                                                                                   |
+| Non-trapping float-to-int conversions     | 2.0       | implemented     |                                                                                                   |
+| Sign-extension operators                  | 2.0       | implemented     |                                                                                                   |
+| Multi-value                               | 2.0       | implemented     |                                                                                                   |
+| Reference types                           | 2.0       | implemented     | tables are bounded by `N_MAX_TABLE_SIZE`                                                          |
+| Bulk memory operations                    | 2.0       | implemented     | bulk operations are fuel-metered by size                                                          |
+| Fixed-width SIMD                          | 2.0       | not planned     | `v128` is rejected at validation; a new value type and a few hundred opcodes for no gain on integer workloads |
+| JavaScript BigInt integration             | 2.0       | not applicable  | JavaScript embedding only                                                                         |
+| Tail calls                                | 3.0       | implemented     |                                                                                                   |
+| Extended constant expressions             | 3.0       | implemented     |                                                                                                   |
+| Branch hinting                            | 3.0       | ignored         | a custom section; accepted, not used for code layout                                              |
+| Typed function references                 | 3.0       | not planned     | not emitted by Rust guests                                                                        |
+| Garbage collection                        | 3.0       | not planned     | not emitted by Rust guests                                                                        |
+| Exception handling                        | 3.0       | not planned     | guests build with `panic = "abort"`                                                               |
+| Multiple memories                         | 3.0       | not planned     |                                                                                                   |
+| Memory64                                  | 3.0       | not planned     | guests are 32-bit; 64-bit addressing reintroduces bounds checks on the native backend             |
+| Relaxed SIMD                              | 3.0       | not planned     | non-deterministic by design                                                                       |
+| Custom annotation syntax, JS string builtins | 3.0    | not applicable  | text format and JavaScript embedding only                                                         |
+| Wide arithmetic                           | phase 4   | planned         | `i64.mul_wide_s/u`, `i64.add128`, `i64.sub128`: the widening multiply and carry that 256-bit and 384-bit arithmetic lacks on wasm32; needs the parser, four opcodes in the translator and interpreter, fuel entries and the Wasmtime flag |
+| Threads                                   | phase 4   | not planned     | execution is single-threaded and deterministic                                                    |
+| Compact import section                    | phase 4   | not planned     | encoding-only change; modules import a few dozen functions                                        |
+| Custom page sizes                         | phase 3   | not planned     |                                                                                                   |
+| Stack switching                           | phase 3   | not planned     |                                                                                                   |
+| Component model, memory control           | proposals | not planned     |                                                                                                   |
+
+Phase numbers follow the [WebAssembly proposals process](https://github.com/WebAssembly/proposals); phase 4
+proposals are finished and land in the specification release after 3.0.
+
 ## Fuel
 
 Fuel bounds execution so that untrusted code terminates deterministically. Pass `Some(limit)` when creating an
