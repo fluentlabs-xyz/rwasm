@@ -50,6 +50,15 @@ macro_rules! define_spec_tests {
     };
 }
 
+// Proposal spec tests the `testsuite` submodule does not carry yet, copied verbatim into
+// `src/local/proposals/<proposal>/`.
+define_tests! {
+    let folder = "src/local";
+    let runner = run::run_wasm_spec_test;
+
+    fn wasm_wide_arithmetic("proposals/wide-arithmetic/wide-arithmetic");
+}
+
 define_spec_tests! {
     let runner = run::run_wasm_spec_test;
 
