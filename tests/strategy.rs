@@ -646,3 +646,103 @@ mod missing_memory {
         }
     }
 }
+
+mod imported_globals {
+    //! An imported global takes `default_imported_global_value` on the rwasm strategy, where the
+    //! compiler turns it into a global of the module. The Wasmtime linker only defined functions,
+    //! so the same module failed to instantiate there with `UnknownExternalFunction`.
+
+    use super::*;
+    use rwasm::for_each_strategy;
+
+    fn run(wat: &str) -> Vec<Result<Value, TrapCode>> {
+        let wasm = wat::parse_str(wat).unwrap();
+        let outcomes = for_each_strategy(
+            |strategy| {
+                let mut executor = strategy.create_executor(
+                    Arc::new(ImportLinker::default()),
+                    (),
+                    always_failing_syscall_handler,
+                    None,
+                    None,
+                )?;
+                let mut result = [Value::I32(0)];
+                Ok(executor
+                    .execute("main", &[], &mut result)
+                    .map(|()| result[0].clone()))
+            },
+            strategy_config().with_default_imported_global_value(7),
+            &wasm,
+        )
+        .unwrap();
+        assert_eq!(outcomes.len(), 2);
+        assert_eq!(outcomes[0], outcomes[1], "rwasm and wasmtime diverged");
+        outcomes
+    }
+
+    #[test]
+    fn numeric_imports_take_the_default_on_both_strategies() {
+        let outcomes = run(r#"(module
+                (import "env" "a" (global i32))
+                (import "env" "b" (global (mut i64)))
+                (import "env" "c" (global f32))
+                (import "env" "d" (global f64))
+                (func (export "main") (result i32)
+                    (global.set 1 (i64.add (global.get 1) (i64.const 100)))
+                    (i32.add
+                        (i32.add (global.get 0) (i32.wrap_i64 (global.get 1)))
+                        (i32.add
+                            (i32.reinterpret_f32 (global.get 2))
+                            (i32.wrap_i64 (i64.reinterpret_f64 (global.get 3)))))))"#);
+        assert_eq!(outcomes[0], Ok(Value::I32(7 + 107 + 7 + 7)));
+    }
+
+    /// A module may import the same name as a function and as a global: valid Wasm that the rwasm
+    /// compiler accepts, resolving the function from the linker and making the global. The
+    /// Wasmtime executor used to link through a `Linker`, which has one entry per name, so the
+    /// global shadowed the function and the module failed to instantiate there.
+    #[test]
+    fn the_same_name_imported_as_function_and_global_links_on_both_strategies() {
+        fn answer_42(
+            _caller: &mut TypedCaller<'_, ()>,
+            _sys_func_idx: u32,
+            _params: &[Value],
+            result: &mut [Value],
+        ) -> Result<(), TrapCode> {
+            result[0] = Value::I32(42);
+            Ok(())
+        }
+        let wasm = wat::parse_str(
+            r#"(module
+                (import "env" "same" (func $same (result i32)))
+                (import "env" "same" (global i32))
+                (func (export "main") (result i32)
+                    (i32.add (call $same) (global.get 0))))"#,
+        )
+        .unwrap();
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("env", "same"),
+            1,
+            SyscallFuelParams::default(),
+            &[],
+            &[ValType::I32],
+        );
+        let import_linker = Arc::new(import_linker);
+        let outcomes = for_each_strategy(
+            |strategy| {
+                let mut executor =
+                    strategy.create_executor(import_linker.clone(), (), answer_42, None, None)?;
+                let mut result = [Value::I32(0)];
+                executor.execute("main", &[], &mut result)?;
+                Ok(result[0].clone())
+            },
+            strategy_config()
+                .with_import_linker(import_linker.clone())
+                .with_default_imported_global_value(7),
+            &wasm,
+        )
+        .unwrap();
+        assert_eq!(outcomes, [Value::I32(42 + 7), Value::I32(42 + 7)]);
+    }
+}

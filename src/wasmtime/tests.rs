@@ -1799,3 +1799,130 @@ fn oversized_frame_is_rejected_on_the_wasmtime_path() {
         "{outcome:?}"
     );
 }
+
+mod imported_globals {
+    //! The globals a module imports with `default_imported_global_value` are module state: they
+    //! link through a copy of the executor's linker, so they neither replace a host function of
+    //! the same name for the modules instantiated afterwards nor survive into a replacement whose
+    //! config defines no default.
+
+    use super::*;
+    use crate::{always_failing_syscall_handler, ValType};
+
+    fn host_linker() -> Arc<ImportLinker> {
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("env", "f"),
+            1,
+            SyscallFuelParams::default(),
+            &[],
+            &[ValType::I32],
+        );
+        Arc::new(import_linker)
+    }
+
+    fn answer_42(
+        _caller: &mut TypedCaller<'_, ()>,
+        _sys_func_idx: u32,
+        _params: &[Value],
+        result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        result[0] = Value::I32(42);
+        Ok(())
+    }
+
+    fn main_result(executor: &mut WasmtimeExecutor<()>) -> Result<i32, TrapCode> {
+        let mut result = [Value::I32(0)];
+        executor.execute("main", &[], &mut result)?;
+        Ok(result[0].i32().unwrap())
+    }
+
+    /// A global import carrying the name of a host function links, the global winning for that
+    /// module as on the rwasm strategy, and a module instantiated afterwards still reaches the
+    /// host function under that name.
+    #[test]
+    fn a_global_named_like_a_host_function_does_not_replace_it() {
+        let import_linker = host_linker();
+        let with_global = compile_wasmtime_module(
+            CompilationConfig::default()
+                .with_import_linker(import_linker.clone())
+                .with_default_imported_global_value(7),
+            wat::parse_str(
+                r#"(module (import "env" "f" (global i32))
+                    (func (export "main") (result i32) global.get 0))"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let mut executor = WasmtimeExecutor::new(
+            with_global,
+            import_linker.clone(),
+            (),
+            answer_42,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(main_result(&mut executor), Ok(7));
+
+        let calls_function = compile_wasmtime_module_on(
+            executor.store.engine(),
+            CompilationConfig::default().with_import_linker(import_linker),
+            wat::parse_str(
+                r#"(module (import "env" "f" (func (result i32)))
+                    (func (export "main") (result i32) call 0))"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        executor.instantiate(&calls_function).unwrap();
+        assert_eq!(main_result(&mut executor), Ok(42));
+    }
+
+    /// A replacement compiled without a default for imported globals does not inherit the global
+    /// the previous module defined under the same name: its import stays unresolved.
+    #[test]
+    fn a_replacement_without_a_default_does_not_inherit_a_global() {
+        let wasm = wat::parse_str(
+            r#"(module (import "env" "g" (global i32))
+                (func (export "main") (result i32) global.get 0))"#,
+        )
+        .unwrap();
+        let with_default = compile_wasmtime_module(
+            CompilationConfig::default().with_default_imported_global_value(7),
+            &wasm,
+        )
+        .unwrap();
+        let mut executor = WasmtimeExecutor::new(
+            with_default,
+            Arc::new(ImportLinker::default()),
+            (),
+            always_failing_syscall_handler,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(main_result(&mut executor), Ok(7));
+
+        // the same code under a config without a default, on the executor's engine
+        let without_default = WasmtimeModule::new(
+            compile_wasmtime_module_on(
+                executor.store.engine(),
+                CompilationConfig::default().with_default_imported_global_value(7),
+                &wasm,
+            )
+            .unwrap()
+            .into_module(),
+            &CompilationConfig::default(),
+        );
+        let err = executor
+            .instantiate(&without_default)
+            .expect_err("the global import must stay unresolved");
+        assert_eq!(
+            err.downcast_ref::<TrapCode>(),
+            Some(&TrapCode::UnknownExternalFunction)
+        );
+        // the previous instance is still the live one
+        assert_eq!(main_result(&mut executor), Ok(7));
+    }
+}

@@ -54,6 +54,11 @@ pub struct WasmtimeModule {
     /// exceeds it whatever the store allows. Wasmtime has no such code, so the executor applies
     /// the cap through its store limiter instead.
     max_allowed_memory_pages: u32,
+    /// The compiling config's `default_imported_global_value`.
+    ///
+    /// The rwasm compiler turns every imported global into a global of the module with this
+    /// value; the executor defines the imports with it so the module links here as well.
+    default_imported_global_value: Option<i64>,
 }
 
 impl WasmtimeModule {
@@ -64,7 +69,14 @@ impl WasmtimeModule {
             module,
             syscall_fuel: Arc::new(syscall_fuel_schedule(compilation_config)),
             max_allowed_memory_pages: compilation_config.max_allowed_memory_pages,
+            default_imported_global_value: compilation_config.default_imported_global_value,
         }
+    }
+
+    /// The value the compiling config gave every imported global; see
+    /// [`CompilationConfig::default_imported_global_value`].
+    pub fn default_imported_global_value(&self) -> Option<i64> {
+        self.default_imported_global_value
     }
 
     /// The compile-time cap on the instance memory, in pages; see
@@ -105,6 +117,7 @@ impl From<wasmtime::Module> for WasmtimeModule {
             module,
             syscall_fuel: Arc::default(),
             max_allowed_memory_pages: N_MAX_ALLOWED_MEMORY_PAGES,
+            default_imported_global_value: None,
         }
     }
 }

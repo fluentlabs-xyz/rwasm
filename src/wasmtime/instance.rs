@@ -27,12 +27,13 @@ struct ExportedFunction {
 }
 
 pub struct WasmtimeExecutor<T: 'static> {
+    /// The host functions (and, in the `e2e` build, the spectest globals). Every import a module
+    /// does not get a global of its own for resolves against it, see [`Self::imports`].
     pub linker: wasmtime::Linker<WrappedContext<T>>,
     pub store: wasmtime::Store<WrappedContext<T>>,
     /// The import linker `linker` was built from; resolves a module's syscall fuel schedule to
     /// syscall indices when a module is instantiated.
     import_linker: Arc<ImportLinker>,
-    pub instance_pre: wasmtime::InstancePre<WrappedContext<T>>,
     /// The live instance. Replaced only through [`Self::instantiate`], which swaps the cached
     /// exports and the store's syscall fuel schedule in the same step: the host trampolines read
     /// that schedule before every syscall, so an instance installed without it would be charged
@@ -189,15 +190,12 @@ impl<T: 'static> WasmtimeExecutor<T> {
         {
             Self::link_spectest_globals(&mut linker, &mut store);
         }
-        let instance_pre = linker
-            .instantiate_pre(module.module())
-            .map_err(|err| err.context(TrapCode::UnknownExternalFunction))?;
-        let instance = Self::instantiate_in(&instance_pre, &mut store)?;
+        let imports = Self::imports(&linker, &mut store, &module)?;
+        let instance = Self::instantiate_in(module.module(), &imports, &mut store)?;
         let mut executor = Self {
             linker,
             store,
             import_linker,
-            instance_pre,
             instance,
             functions: Vec::new(),
             entrypoint_name: None,
@@ -221,10 +219,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
     /// Errors carry the same [`TrapCode`] context as [`Self::try_new`].
     pub fn instantiate(&mut self, module: &WasmtimeModule) -> wasmtime::Result<()> {
         let syscall_fuel = Self::resolve_syscall_fuel(module, &self.import_linker)?;
-        let instance_pre = self
-            .linker
-            .instantiate_pre(module.module())
-            .map_err(|err| err.context(TrapCode::UnknownExternalFunction))?;
+        let imports = Self::imports(&self.linker, &mut self.store, module)?;
         let previous_syscall_fuel =
             std::mem::replace(&mut self.store.data_mut().syscall_fuel, syscall_fuel);
         // the replacement brings its own compile-time memory cap
@@ -232,7 +227,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
             &mut self.store.data_mut().resource_limiter,
             Self::store_limits(self.max_allowed_memory_pages, module),
         );
-        let instance = match Self::instantiate_in(&instance_pre, &mut self.store) {
+        let instance = match Self::instantiate_in(module.module(), &imports, &mut self.store) {
             Ok(instance) => instance,
             Err(err) => {
                 self.store.data_mut().syscall_fuel = previous_syscall_fuel;
@@ -240,10 +235,93 @@ impl<T: 'static> WasmtimeExecutor<T> {
                 return Err(err);
             }
         };
-        self.instance_pre = instance_pre;
         self.instance = instance;
         self.refresh_exports();
         Ok(())
+    }
+
+    /// The externs `module` instantiates with, one per import in the module's import order.
+    ///
+    /// A global import of a module compiled with `default_imported_global_value` gets a fresh
+    /// global holding that default, in the layout the rwasm compiler gives the global it makes of
+    /// the import (see `ModuleParser::process_imports`): the number for a numeric global, its low
+    /// limb for a 32-bit one, null for a reference. Every other import resolves to the entry of
+    /// `linker` under its name (a host function, or a spectest global of the `e2e` build), which
+    /// has to be of the imported kind and type; a missing or mismatched entry is
+    /// [`TrapCode::UnknownExternalFunction`], as the linker's own resolution reported it.
+    ///
+    /// Resolving per import, rather than by defining the globals in a `Linker`, keeps them out of
+    /// the persistent linker (a module's global must not replace a host function for the modules
+    /// that follow, and a replacement without a default must not inherit one) and lets a module
+    /// import the same name as a function and as a global, which is valid Wasm that the rwasm
+    /// compiler accepts: a linker has one entry per name and failed to instantiate such a module.
+    fn imports(
+        linker: &wasmtime::Linker<WrappedContext<T>>,
+        store: &mut wasmtime::Store<WrappedContext<T>>,
+        module: &WasmtimeModule,
+    ) -> wasmtime::Result<Vec<Extern>> {
+        use wasmtime::{ExternType, Global, Val};
+        let default_value = module.default_imported_global_value();
+        let mut imports = Vec::with_capacity(module.module().imports().len());
+        for import in module.module().imports() {
+            let import_type = import.ty();
+            if let (ExternType::Global(global_type), Some(default_value)) =
+                (&import_type, default_value)
+            {
+                let value = match global_type.content().clone() {
+                    ValType::I32 => Val::I32(default_value as i32),
+                    ValType::I64 => Val::I64(default_value),
+                    // a 32-bit global carries its initializer in the low limb of the value, see
+                    // `SegmentBuilder::add_global_variable`
+                    ValType::F32 => Val::F32(default_value as u32),
+                    ValType::F64 => Val::F64(default_value as u64),
+                    // a reference global starts null, whatever the default
+                    ty if ty.is_funcref() => Val::FuncRef(None),
+                    ty if ty.is_externref() => Val::ExternRef(None),
+                    ty => {
+                        return Err(wasmtime::Error::msg(format!(
+                            "wasmtime: unsupported type `{ty}` of the imported global `{}::{}`",
+                            import.module(),
+                            import.name()
+                        )))
+                    }
+                };
+                let global = Global::new(&mut *store, global_type.clone(), value)?;
+                imports.push(Extern::Global(global));
+                continue;
+            }
+            let unknown = |err: wasmtime::Error| err.context(TrapCode::UnknownExternalFunction);
+            let definition = linker
+                .get(&mut *store, import.module(), import.name())
+                .map_err(unknown)?;
+            if !Self::import_matches(&definition.ty(&*store), &import_type) {
+                return Err(unknown(wasmtime::Error::msg(format!(
+                    "wasmtime: import `{}::{}` differs in type from the linker's definition",
+                    import.module(),
+                    import.name()
+                ))));
+            }
+            imports.push(definition);
+        }
+        Ok(imports)
+    }
+
+    /// Whether a linker definition of type `actual` satisfies an import of type `expected`.
+    ///
+    /// Functions and globals, the kinds the rwasm compiler admits as imports, are checked here;
+    /// any other kind is left to Wasmtime's own check at instantiation.
+    fn import_matches(actual: &wasmtime::ExternType, expected: &wasmtime::ExternType) -> bool {
+        use wasmtime::ExternType;
+        match (actual, expected) {
+            (ExternType::Func(actual), ExternType::Func(expected)) => actual.matches(expected),
+            (ExternType::Global(actual), ExternType::Global(expected)) => {
+                actual.mutability() == expected.mutability()
+                    && actual.content().matches(expected.content())
+            }
+            (ExternType::Func(_) | ExternType::Global(_), _)
+            | (_, ExternType::Func(_) | ExternType::Global(_)) => false,
+            _ => true,
+        }
     }
 
     /// The store limits for running `module` under a run-time cap of `max_allowed_memory_pages`.
@@ -310,13 +388,14 @@ impl<T: 'static> WasmtimeExecutor<T> {
         Ok(syscall_fuel)
     }
 
-    /// Instantiates `instance_pre` in `store`.
+    /// Instantiates `module` with `imports` in `store`.
     ///
     /// A failure caused by the store's resource limits is tagged with the trap the rwasm
     /// entrypoint prologue raises for the same module, so both strategies report an oversized
     /// initial memory or table identically.
     fn instantiate_in(
-        instance_pre: &wasmtime::InstancePre<WrappedContext<T>>,
+        module: &wasmtime::Module,
+        imports: &[Extern],
         store: &mut wasmtime::Store<WrappedContext<T>>,
     ) -> wasmtime::Result<wasmtime::Instance> {
         store.data_mut().resource_limiter.reset_denied();
@@ -327,7 +406,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
             call_depth: 1,
             stack_slots: 0,
         });
-        match instance_pre.instantiate(store.as_context_mut()) {
+        match wasmtime::Instance::new(store.as_context_mut(), module, imports) {
             Ok(instance) => Ok(instance),
             Err(err) => {
                 // A refused initial memory or table aborts instantiation with a plain error. A
