@@ -388,7 +388,18 @@ impl<T: 'static> WasmtimeExecutor<T> {
         if function.numeric {
             return Self::execute_raw(&mut self.store, function, params, result);
         }
-        self.execute_checked(function.func, params, result)
+        // The result placeholders are the declared types' zeros. A halted call writes no results
+        // and the caller then gets the placeholders, as the rwasm VM reports zeros of the declared
+        // types; `i32` placeholders used to report `I32(0)` for a `funcref` result there.
+        let placeholders = function
+            .results
+            .iter()
+            .map(|ty| {
+                wasmtime::Val::default_for_ty(ty)
+                    .expect("wasmtime: every result type of the rwasm language has a zero value")
+            })
+            .collect::<SmallVec<[wasmtime::Val; 8]>>();
+        self.execute_checked(function.func, placeholders, params, result)
     }
 
     /// Calls a numeric-only export through raw value slots, skipping `Val` marshalling.
@@ -439,23 +450,35 @@ impl<T: 'static> WasmtimeExecutor<T> {
     }
 
     /// Calls an export through wasmtime's checked `Val` interface; needed for reference types.
+    ///
+    /// An `externref` carries its index across. A `funcref` crosses only as the null reference:
+    /// the rwasm VM's function references are code offsets, which have no counterpart in a
+    /// Wasmtime `Func`, so a non-null parameter is a type mismatch (`IllegalOpcode`) before the
+    /// call runs and a non-null result one after it, with the caller's buffer left as it was.
+    /// The compiler admits such an entrypoint only under `allow_func_ref_function_types` (the
+    /// spec harness), but a module compiled through `compile_wasmtime_module` gets here without
+    /// that policy, so the marshalling is not tied to a build feature.
     fn execute_checked(
         &mut self,
         entrypoint: wasmtime::Func,
+        placeholders: SmallVec<[wasmtime::Val; 8]>,
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
         use wasmtime::Val;
+        // a wrong result count is the signature mismatch the raw path reports as well
+        if result.len() != placeholders.len() {
+            return Err(TrapCode::IllegalOpcode);
+        }
         let mut buffer = Vec::<Val>::default();
-        for (i, value) in params.iter().enumerate() {
+        for value in params {
             let value = match value {
                 Value::I32(value) => Val::I32(*value),
                 Value::I64(value) => Val::I64(*value),
                 Value::F32(value) => Val::F32(value.to_bits()),
                 Value::F64(value) => Val::F64(value.to_bits()),
-                #[cfg(feature = "e2e")]
-                Value::FuncRef(value) => Val::FuncRef(None),
-                #[cfg(feature = "e2e")]
+                Value::FuncRef(value) if value.is_null() => Val::FuncRef(None),
+                Value::FuncRef(_) => return Err(TrapCode::IllegalOpcode),
                 Value::ExternRef(value) => {
                     let func_idx = value.0;
                     if func_idx == 0 {
@@ -464,13 +487,10 @@ impl<T: 'static> WasmtimeExecutor<T> {
                         Val::ExternRef(wasmtime::ExternRef::new(&mut self.store, func_idx).ok())
                     }
                 }
-                // this should never happen because rWasm rejects such binaries during compilation
-                #[allow(unreachable_patterns)]
-                _ => unreachable!("wasmtime: not supported type: {:?}", value),
             };
             buffer.push(value);
         }
-        buffer.extend(std::iter::repeat_n(Val::I32(0), result.len()));
+        buffer.extend(placeholders);
         let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
         entrypoint
             .call(self.store.as_context_mut(), mapped_params, mapped_result)
@@ -482,15 +502,15 @@ impl<T: 'static> WasmtimeExecutor<T> {
                     Err(trap_code)
                 }
             })?;
-        for (i, x) in mapped_result.iter().cloned().enumerate() {
-            result[i] = match x {
+        let mut values = SmallVec::<[Value; 8]>::new();
+        for x in mapped_result.iter().cloned() {
+            values.push(match x {
                 Val::I32(value) => Value::I32(value),
                 Val::I64(value) => Value::I64(value),
                 Val::F32(value) => Value::F32(F32::from_bits(value)),
                 Val::F64(value) => Value::F64(F64::from_bits(value)),
-                #[cfg(feature = "e2e")]
-                Val::FuncRef(value) => Value::FuncRef(crate::FuncRef::new(0)),
-                #[cfg(feature = "e2e")]
+                Val::FuncRef(None) => Value::FuncRef(crate::FuncRef::null()),
+                Val::FuncRef(Some(_)) => return Err(TrapCode::IllegalOpcode),
                 Val::ExternRef(value) => {
                     let value: Option<&u32> = value
                         .and_then(|ext_ref| ext_ref.data(&mut self.store).ok().flatten())
@@ -498,8 +518,9 @@ impl<T: 'static> WasmtimeExecutor<T> {
                     Value::ExternRef(crate::ExternRef::new(value.copied().unwrap_or_default()))
                 }
                 _ => unreachable!("wasmtime: not supported type: {:?}", x),
-            };
+            });
         }
+        result.clone_from_slice(&values);
         Ok(())
     }
 

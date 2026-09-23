@@ -100,6 +100,35 @@ impl ModuleParser {
         Ok(result)
     }
 
+    /// Rejects an entrypoint whose signature carries a `funcref` or `externref` unless the config
+    /// allows reference-typed function types.
+    ///
+    /// The typed API marshals numbers only: the Wasmtime backend has no `Value` for a reference
+    /// outside the `e2e` build, so such an export used to panic there while the rwasm VM ran it.
+    /// This is the entrypoint counterpart of the import check in [`Self::process_imports`].
+    fn ensure_entrypoint_has_no_reference_types(
+        &self,
+        func_idx: FuncIdx,
+    ) -> Result<(), CompilationError> {
+        if self.config.allow_func_ref_function_types {
+            return Ok(());
+        }
+        let translation = &self.allocations.translation;
+        let func_type_idx = translation.resolve_func_type_index(func_idx);
+        let func_type = translation
+            .func_type_registry
+            .resolve_original_func_type(func_type_idx);
+        let has_reference_type = func_type
+            .params()
+            .iter()
+            .chain(func_type.results())
+            .any(|ty| matches!(ty, ValType::Ref(_)));
+        if has_reference_type {
+            return Err(CompilationError::MalformedFuncType);
+        }
+        Ok(())
+    }
+
     /// Preserves the named entrypoint's Wasm signature for the typed strategy API. The reduced
     /// bytecode itself carries stack slots, so it cannot recover value boundaries at call time.
     pub(crate) fn entrypoint_type(&self) -> Option<FuncType> {
@@ -179,6 +208,7 @@ impl ModuleParser {
                 .get(entrypoint_name)
                 .copied()
                 .ok_or(CompilationError::MissingEntrypoint)?;
+            self.ensure_entrypoint_has_no_reference_types(func_idx)?;
             self.allocations
                 .translation
                 .emit_function_call(func_idx, true, true);
@@ -298,6 +328,7 @@ impl ModuleParser {
             if !is_empty_func_type && !allow_malformed_entrypoint_func_type {
                 return Err(CompilationError::MalformedFuncType);
             }
+            self.ensure_entrypoint_has_no_reference_types(func_idx)?;
             let entrypoint_bytecode = &mut self
                 .allocations
                 .translation

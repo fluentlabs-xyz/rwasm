@@ -931,6 +931,36 @@ fn test_wasmtime_raw_imports_return_float_results() {
     );
 }
 
+/// `compile_wasmtime_module` applies no entrypoint policy, so an export with a reference in its
+/// signature reaches the executor. The reference marshalling used to exist in the `e2e` build
+/// only, and the call hit `unreachable!` in every other build; it now reports the null reference
+/// the rwasm VM reports for the same export.
+#[test]
+fn reference_typed_export_reports_a_null_reference() {
+    use crate::{always_failing_syscall_handler, FuncRef};
+    let wasm = wat::parse_str(
+        r#"(module
+            (func (export "main") (result funcref) ref.null func)
+            (func (export "numeric") (result i32) i32.const 7))"#,
+    )
+    .unwrap();
+    let module = compile_wasmtime_module(CompilationConfig::default(), wasm).unwrap();
+    let mut executor = WasmtimeExecutor::new(
+        module,
+        Arc::new(ImportLinker::default()),
+        (),
+        always_failing_syscall_handler,
+        None,
+        None,
+    )
+    .unwrap();
+    let mut result = [Value::I32(0)];
+    executor.execute("main", &[], &mut result).unwrap();
+    assert_eq!(result, [Value::FuncRef(FuncRef::null())]);
+    executor.execute("numeric", &[], &mut result).unwrap();
+    assert_eq!(result, [Value::I32(7)]);
+}
+
 /// A module whose instantiation fails must be reported as the trap the rwasm strategy raises for
 /// it, never as a panic: the input reaching `WasmtimeExecutor::new` is not pre-validated against
 /// the import linker or the store limits.

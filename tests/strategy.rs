@@ -365,6 +365,40 @@ mod accepted_language {
         ));
     }
 
+    /// A named entrypoint that takes or returns a reference is rejected everywhere: the typed
+    /// API marshals numbers only, and the Wasmtime executor used to panic on such an export
+    /// while the rwasm VM ran it.
+    #[test]
+    fn reference_typed_entrypoint_is_rejected_on_every_constructor() {
+        for wat in [
+            r#"(module (func (export "main") (result funcref) ref.null func))"#,
+            r#"(module (func (export "main") (param externref)))"#,
+        ] {
+            let wasm = wat::parse_str(wat).unwrap();
+            assert!(matches!(
+                StrategyDefinition::new_as_rwasm(strategy_config(), &wasm),
+                Err(CompilationError::MalformedFuncType)
+            ));
+            assert!(matches!(
+                StrategyDefinition::new_as_wasmtime(strategy_config(), &wasm, None),
+                Err(CompilationError::MalformedFuncType)
+            ));
+            let routed = CompilationConfig::default_strategy_compatible()
+                .with_allow_malformed_entrypoint_func_type(true)
+                .with_state_router(rwasm::StateRouterConfig {
+                    states: Box::new([("main".into(), 0u32)]),
+                    opcode: None,
+                });
+            assert!(matches!(
+                StrategyDefinition::new_as_rwasm(routed, &wasm),
+                Err(CompilationError::MalformedFuncType)
+            ));
+            // the spec harness opts in through the same flag that admits reference-typed imports
+            let allowed = strategy_config().with_allow_func_ref_function_types(true);
+            assert!(StrategyDefinition::new_as_rwasm(allowed, &wasm).is_ok());
+        }
+    }
+
     /// `compile_wasmtime_module_cached` validates with Wasmtime only. A module it primed under a
     /// key must not satisfy `new_as_wasmtime` under the same key, or the constructor's rwasm
     /// validation could be skipped.
