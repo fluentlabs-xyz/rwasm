@@ -261,3 +261,49 @@ fn runtime_preserves_full_width_i64_loads() {
         assert_eq!(result[0].i64(), Some(expected));
     }
 }
+
+/// The Wasm `min` and `max` (the `Float` trait the VM runs, not the wrappers' inherent methods,
+/// which have Rust semantics) return a NaN operand where the spec asks for an arithmetic NaN: a
+/// signaling NaN used to pass through them unchanged, while `add` quiets it. The quiet bit is
+/// set and the payload and sign are kept, as the hardware operators do.
+#[test]
+fn float_min_max_quiet_a_signaling_nan() {
+    use rwasm::Float;
+    const F32_SNAN: u32 = 0x7fa0_0000;
+    const F32_QNAN: u32 = 0x7fe0_0000;
+    const F64_SNAN: u64 = 0x7ff4_0000_0000_0000;
+    const F64_QNAN: u64 = 0x7ffc_0000_0000_0000;
+    let (min, max) = (<F32 as Float<F32>>::min, <F32 as Float<F32>>::max);
+    let (snan, one) = (F32::from_bits(F32_SNAN), F32::from(1.0));
+    for result in [
+        min(snan, one),
+        min(one, snan),
+        max(snan, one),
+        max(one, snan),
+    ] {
+        assert_eq!(result.to_bits(), F32_QNAN);
+    }
+    let both = min(snan, F32::from_bits(F32_SNAN | 1));
+    assert_ne!(
+        both.to_bits() & 0x0040_0000,
+        0,
+        "both NaN: {:#x}",
+        both.to_bits()
+    );
+    let negative = max(F32::from_bits(F32_SNAN | 0x8000_0000), one);
+    assert_eq!(negative.to_bits(), F32_QNAN | 0x8000_0000);
+    // a quiet NaN and the numbers are untouched
+    assert_eq!(min(F32::from_bits(F32_QNAN), one).to_bits(), F32_QNAN);
+    assert_eq!(min(F32::from(2.0), one).to_bits(), one.to_bits());
+    assert_eq!(max(F32::from(2.0), one).to_bits(), 2.0_f32.to_bits());
+    let (min, max) = (<F64 as Float<F64>>::min, <F64 as Float<F64>>::max);
+    let (snan, one) = (F64::from_bits(F64_SNAN), F64::from(1.0));
+    for result in [
+        min(snan, one),
+        min(one, snan),
+        max(snan, one),
+        max(one, snan),
+    ] {
+        assert_eq!(result.to_bits(), F64_QNAN);
+    }
+}
