@@ -745,4 +745,18 @@ mod imported_globals {
         .unwrap();
         assert_eq!(outcomes, [Value::I32(42 + 7), Value::I32(42 + 7)]);
     }
+
+    /// A reference global starts null whatever the default. The rwasm compiler used to take the
+    /// default for a function index, which panicked in the `RefFunc` remapping once it exceeded
+    /// the function count (two functions here, default 7).
+    #[test]
+    fn reference_imports_start_null_on_both_strategies() {
+        let outcomes = run(r#"(module
+                (import "env" "f" (global funcref))
+                (import "env" "e" (global externref))
+                (func $unused)
+                (func (export "main") (result i32)
+                    (i32.add (ref.is_null (global.get 0)) (ref.is_null (global.get 1)))))"#);
+        assert_eq!(outcomes[0], Ok(Value::I32(2)));
+    }
 }

@@ -543,6 +543,15 @@ impl ModuleParser {
                     let Some(default_value) = self.config.default_imported_global_value else {
                         return Err(CompilationError::NotSupportedImportType);
                     };
+                    // A reference global starts null. The default is a number; taken as the
+                    // initializer of a `funcref`/`externref` global it was remapped as a function
+                    // index in `finalize`, which panicked past the function count and otherwise
+                    // pointed the global at an arbitrary code offset.
+                    let default_value = if matches!(global_type.content_type, ValType::Ref(_)) {
+                        0
+                    } else {
+                        default_value
+                    };
                     let global_index = self.allocations.translation.globals.len() as u32;
                     let global_variable = GlobalVariable::new(global_type, default_value);
                     self.allocations
