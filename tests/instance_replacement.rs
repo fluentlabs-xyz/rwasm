@@ -570,9 +570,8 @@ mod instance_state {
     //! across calls of one instance, and `RwasmStore::reset` must discard a parked interruption.
 
     use rwasm::{
-        wasmtime::{WasmtimeExecutor, WasmtimeModule},
-        CompilationConfig, ExecutionEngine, ImportLinker, ImportName, RwasmModule, RwasmStore,
-        StoreTr, SyscallFuelParams, TrapCode, TypedCaller, Value,
+        wasmtime::WasmtimeExecutor, CompilationConfig, ExecutionEngine, ImportLinker, ImportName,
+        RwasmModule, RwasmStore, StoreTr, SyscallFuelParams, TrapCode, TypedCaller, Value,
     };
     use std::sync::{Arc, Mutex};
 
@@ -628,12 +627,21 @@ mod instance_state {
         .expect("wasmtime instantiates the test module")
     }
 
-    fn wasmtime_instantiate(executor: &mut WasmtimeExecutor<Ctx>, wat: &str) {
+    /// Compiles `wat` on the executor's engine, the only engine its store instantiates.
+    fn wasmtime_instantiate(
+        executor: &mut WasmtimeExecutor<Ctx>,
+        linker: &Arc<ImportLinker>,
+        wat: &str,
+    ) {
         let wasm = wat::parse_str(wat).expect("the test module parses");
-        let module = wasmtime::Module::new(executor.store.engine(), &wasm)
-            .expect("wasmtime builds the second module");
+        let module = rwasm::wasmtime::compile_wasmtime_module_on(
+            executor.store.engine(),
+            test_config(linker),
+            &wasm,
+        )
+        .expect("wasmtime builds the second module");
         executor
-            .instantiate(&WasmtimeModule::from(module))
+            .instantiate(&module)
             .expect("wasmtime instantiates the second module");
     }
 
@@ -689,7 +697,7 @@ mod instance_state {
         let mut first = [Value::I64(-1)];
         wasmtime.execute("main", &[], &mut first).unwrap();
         assert_eq!(first, [Value::I64(111)]);
-        wasmtime_instantiate(&mut wasmtime, TABLE_B);
+        wasmtime_instantiate(&mut wasmtime, &linker, TABLE_B);
         let mut second = [Value::I64(-1)];
         let wasmtime = wasmtime
             .execute("main", &[], &mut second)
@@ -744,7 +752,7 @@ mod instance_state {
         let mut wasmtime = wasmtime_executor(&linker, MEMORY_A);
         let mut first = [Value::I64(-1)];
         wasmtime.execute("main", &[], &mut first).unwrap();
-        wasmtime_instantiate(&mut wasmtime, MEMORY_B);
+        wasmtime_instantiate(&mut wasmtime, &linker, MEMORY_B);
         let mut second = [Value::I64(-1)];
         let wasmtime = wasmtime
             .execute("main", &[], &mut second)
@@ -801,7 +809,7 @@ mod instance_state {
         let mut wasmtime = wasmtime_executor(&linker, SEGMENTS_A);
         let mut first = [Value::I64(-1)];
         wasmtime.execute("main", &[], &mut first).unwrap();
-        wasmtime_instantiate(&mut wasmtime, SEGMENTS_B);
+        wasmtime_instantiate(&mut wasmtime, &linker, SEGMENTS_B);
         let mut second = [Value::I64(-1)];
         let wasmtime = wasmtime
             .execute("main", &[], &mut second)
@@ -881,7 +889,7 @@ mod instance_state {
         let mut wasmtime = wasmtime_executor(&linker, &large_a);
         let mut result = [Value::I64(-1)];
         wasmtime.execute("main", &[], &mut result).unwrap();
-        wasmtime_instantiate(&mut wasmtime, TABLE_B);
+        wasmtime_instantiate(&mut wasmtime, &linker, TABLE_B);
         let mut second = [Value::I64(-1)];
         let wasmtime = wasmtime
             .execute("main", &[], &mut second)
@@ -923,7 +931,7 @@ mod instance_state {
         let mut wasmtime = wasmtime_executor(&linker, ELEMENTS_A);
         let mut first = [Value::I64(-1)];
         wasmtime.execute("main", &[], &mut first).unwrap();
-        wasmtime_instantiate(&mut wasmtime, ELEMENTS_B);
+        wasmtime_instantiate(&mut wasmtime, &linker, ELEMENTS_B);
         let mut second = [Value::I64(-1)];
         let wasmtime = wasmtime
             .execute("main", &[], &mut second)
@@ -999,7 +1007,7 @@ mod instance_state {
         let mut wasmtime = wasmtime_executor(&linker, PAGES);
         let mut wasmtime_first = [Value::I64(-1)];
         wasmtime.execute("main", &[], &mut wasmtime_first).unwrap();
-        wasmtime_instantiate(&mut wasmtime, PAGES);
+        wasmtime_instantiate(&mut wasmtime, &linker, PAGES);
         let mut wasmtime_second = [Value::I64(-1)];
         wasmtime.execute("main", &[], &mut wasmtime_second).unwrap();
 

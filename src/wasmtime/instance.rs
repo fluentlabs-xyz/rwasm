@@ -10,7 +10,10 @@ use crate::{
 use rwasm_fuel_policy::SyscallFuelParams;
 use smallvec::SmallVec;
 use std::{collections::HashMap, sync::Arc};
-use wasmtime::{AsContext, AsContextMut, Extern, StoreContext, StoreContextMut, ValRaw, ValType};
+use wasmtime::{
+    AsContext, AsContextMut, Extern, RwasmStackCounters, StoreContext, StoreContextMut, ValRaw,
+    ValType,
+};
 
 /// Type of an exported function, recorded once so calls can marshal values without `Val`.
 struct ExportedFunction {
@@ -298,6 +301,13 @@ impl<T: 'static> WasmtimeExecutor<T> {
         store: &mut wasmtime::Store<WrappedContext<T>>,
     ) -> wasmtime::Result<wasmtime::Instance> {
         store.data_mut().resource_limiter.reset_denied();
+        // The rwasm entrypoint calls a `start` function as a frame of its own, so it runs one
+        // frame deep. It runs above the entrypoint's parameters on rwasm, which are unknown at
+        // instantiation; they are taken as none.
+        store.set_rwasm_stack_counters(RwasmStackCounters {
+            call_depth: 1,
+            stack_slots: 0,
+        });
         match instance_pre.instantiate(store.as_context_mut()) {
             Ok(instance) => Ok(instance),
             Err(err) => {
@@ -371,6 +381,10 @@ impl<T: 'static> WasmtimeExecutor<T> {
             .exported_function(func_name)
             .ok_or(TrapCode::UnknownExternalFunction)?;
         let function = &self.functions[index];
+        // The rwasm entrypoint tail-calls the export the host asked for: it runs as the
+        // outermost frame, with nothing on the value stack below its parameters.
+        self.store
+            .set_rwasm_stack_counters(RwasmStackCounters::default());
         if function.numeric {
             return Self::execute_raw(&mut self.store, function, params, result);
         }

@@ -92,7 +92,13 @@ pub fn wasmtime_import_linker<T: 'static>(
                 import_name.name(),
                 func_type,
                 move |caller, params, result| {
-                    wasmtime_syscall_handler(import_entity.sys_func_idx, caller, params, result)
+                    wasmtime_syscall_handler(
+                        import_entity.sys_func_idx,
+                        import_entity.result,
+                        caller,
+                        params,
+                        result,
+                    )
                 },
             )
         };

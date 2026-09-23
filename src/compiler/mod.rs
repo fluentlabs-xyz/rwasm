@@ -1,4 +1,4 @@
-mod block_fuel;
+pub(crate) mod block_fuel;
 mod codegen_identity;
 mod compiled_expr;
 mod config;
