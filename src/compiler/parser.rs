@@ -587,6 +587,7 @@ impl ModuleParser {
                 .compiled_funcs
                 .push(func_type_index);
 
+            let is_intrinsic = import_linker_entity.intrinsic.is_some();
             if let Some(intrinsic) = import_linker_entity.intrinsic {
                 self.allocations
                     .translation
@@ -612,22 +613,30 @@ impl ModuleParser {
                 .resolve_func_type_signature(func_type_index);
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
 
-            if self.config.builtins_consume_fuel {
-                let temporary_slots = compile_block_params(
-                    &mut translator.alloc.instruction_set,
-                    import_linker_entity.syscall_fuel_param,
-                    import_linker_entity.params,
-                )?;
-                // This prologue is emitted directly rather than through the Wasm translator.
-                // Include its peak so the trampoline grows the stack before using temporaries.
-                translator.stack_height.push_n(temporary_slots);
-                translator.stack_height.pop_n(temporary_slots);
+            if is_intrinsic {
+                // An intrinsic stands in for the syscall wherever the import is called. A direct
+                // call splices it into the caller, so the trampoline, which `ref.func`, element
+                // segments and `call_indirect` reach, carries it as well: it used to make the
+                // syscall instead, which the host does not serve for an intrinsic import. The
+                // metering prologue belongs to the syscall and is left out as at a direct call.
+                translator.alloc.emit_function_call(func_idx, false, false);
+            } else {
+                if self.config.builtins_consume_fuel {
+                    let temporary_slots = compile_block_params(
+                        &mut translator.alloc.instruction_set,
+                        import_linker_entity.syscall_fuel_param,
+                        import_linker_entity.params,
+                    )?;
+                    // This prologue is emitted directly rather than through the Wasm translator.
+                    // Include its peak so the trampoline grows the stack before using temporaries.
+                    translator.stack_height.push_n(temporary_slots);
+                    translator.stack_height.pop_n(temporary_slots);
+                }
+                translator
+                    .alloc
+                    .instruction_set
+                    .op_call(import_linker_entity.sys_func_idx);
             }
-
-            translator
-                .alloc
-                .instruction_set
-                .op_call(import_linker_entity.sys_func_idx);
             translator.alloc.instruction_set.op_return();
             translator.finish()?;
             let _ = replace(
