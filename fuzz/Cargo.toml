@@ -14,7 +14,7 @@ arbitrary = "1.4.2"
 # Use the same version as `rwasm` itself to avoid version skew.
 wasmparser = { version = "0.248.0", default-features = false, features = ["std", "features", "hash-collections"] }
 wasmtime = { package = "wasmtime-rwasm", version = "45.0.0-rwasm.2" }
-wasm-smith = { version = "0.258.0", features = ["wasmparser"] }
+wasm-smith = { version = "0.259.0", features = ["wasmparser"] }
 hex = "0.4.3"
 log = "0.4.26"
 env_logger = "0.11.8"
