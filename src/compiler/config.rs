@@ -147,40 +147,39 @@ impl CompilationConfig {
         !self.consume_fuel_for_bulk_ops && !self.consume_fuel_for_params_and_locals
     }
 
-    /// Returns the WebAssembly features configuration for the current instance.
+    /// Returns the WebAssembly features the validator accepts.
     ///
-    /// Every field is listed explicitly and `..Default::default()` is deliberately not used. The
-    /// validator decides which language the compiler is handed, and the translator implements a
-    /// strictly smaller set: an operator that validates but has no translation is skipped silently
-    /// and leaves the emulated value stack out of sync with the emitted code, which yields wrong
-    /// `DropKeep` amounts and `local.get`/`local.set` depths rather than an error. Inheriting
-    /// defaults would let a `wasmparser` upgrade that promotes a proposal to on-by-default widen
-    /// the accepted language without a change here; spelling the fields out means such an upgrade
-    /// fails to compile instead, and a new field has to be considered explicitly.
+    /// The set is an explicit union of flags, never derived from `WasmFeatures::default()`.
+    /// The validator decides which language the compiler is handed, and the translator
+    /// implements a strictly smaller set: an operator that validates but has no translation
+    /// would leave the emulated value stack out of sync with the emitted code, which yields
+    /// wrong `DropKeep` amounts and `local.get`/`local.set` depths rather than an error. With an
+    /// explicit union, a `wasmparser` upgrade that adds a proposal or turns one on by default
+    /// leaves it disabled here; a proposal is enabled by adding it to this list, to the operator
+    /// gate in `FuncBuilder` and to the Wasmtime engine configuration together.
+    /// `tests/wasm_features.rs` pins the set.
     pub fn wasm_features(&self) -> WasmFeatures {
-        WasmFeatures {
-            // Proposals the translator implements
-            mutable_global: true,
-            saturating_float_to_int: true,
-            sign_extension: true,
-            multi_value: true,
-            bulk_memory: true,
-            reference_types: true,
-            tail_call: true,
-            extended_const: true,
-            // Not a proposal: floats are translated, so they stay enabled
-            floats: true,
-            // Proposals the translator does not implement. `simd` in particular is on by default
-            // in wasmparser, which is what let `v128` operators reach the translator unhandled.
-            simd: false,
-            relaxed_simd: false,
-            threads: false,
-            multi_memory: false,
-            memory64: false,
-            exceptions: false,
-            component_model: false,
-            memory_control: false,
-        }
+        // Proposals the translator implements. `REFERENCE_TYPES` carries the overlong
+        // `call_indirect` table-index encoding (`CALL_INDIRECT_OVERLONG`) and `BULK_MEMORY` the
+        // `memory.copy`/`memory.fill` subset (`BULK_MEMORY_OPT`), as in wasmparser's own sets.
+        WasmFeatures::MUTABLE_GLOBAL
+            | WasmFeatures::SATURATING_FLOAT_TO_INT
+            | WasmFeatures::SIGN_EXTENSION
+            | WasmFeatures::MULTI_VALUE
+            | WasmFeatures::BULK_MEMORY
+            | WasmFeatures::REFERENCE_TYPES
+            | WasmFeatures::TAIL_CALL
+            | WasmFeatures::EXTENDED_CONST
+            // Not proposals: floats are translated, and `GC_TYPES` is the validator's gate for
+            // `externref` (GC instructions and types stay behind `GC`, which is off).
+            | WasmFeatures::FLOATS
+            | WasmFeatures::GC_TYPES
+        // Off: `SIMD`, `RELAXED_SIMD`, `THREADS`, `SHARED_EVERYTHING_THREADS`, `MULTI_MEMORY`,
+        // `MEMORY64`, `EXCEPTIONS`, `LEGACY_EXCEPTIONS`, `COMPONENT_MODEL` and its `CM_*`
+        // sub-features, `FUNCTION_REFERENCES`, `GC`, `CUSTOM_DESCRIPTORS`, `MEMORY_CONTROL`,
+        // `CUSTOM_PAGE_SIZES`, `COMPACT_IMPORTS`, `STACK_SWITCHING` and `WIDE_ARITHMETIC`
+        // (decoded and validated by this wasmparser; enabled once the translator lowers
+        // `i64.add128`, `i64.sub128`, `i64.mul_wide_s` and `i64.mul_wide_u`).
     }
 
     pub fn with_state_router(mut self, state_router: StateRouterConfig) -> Self {

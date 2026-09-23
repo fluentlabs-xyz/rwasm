@@ -208,9 +208,15 @@ impl CompiledExpr {
                 wasmparser::Operator::F32Const { value } => Op::constant(F32::from(value.bits())),
                 wasmparser::Operator::F64Const { value } => Op::constant(F64::from(value.bits())),
                 wasmparser::Operator::GlobalGet { global_index } => Op::global(global_index),
-                wasmparser::Operator::RefNull { ty } => match ty {
-                    wasmparser::ValType::FuncRef => Op::constant(Value::from(FuncRef::null())),
-                    wasmparser::ValType::ExternRef => Op::constant(Value::from(ExternRef::null())),
+                wasmparser::Operator::RefNull { hty } => match hty {
+                    wasmparser::HeapType::Abstract {
+                        shared: false,
+                        ty: wasmparser::AbstractHeapType::Func,
+                    } => Op::constant(Value::from(FuncRef::null())),
+                    wasmparser::HeapType::Abstract {
+                        shared: false,
+                        ty: wasmparser::AbstractHeapType::Extern,
+                    } => Op::constant(Value::from(ExternRef::null())),
                     _ => return Err(CompilationError::NotSupportedOpcode),
                 },
                 wasmparser::Operator::RefFunc { function_index } => Op::funcref(function_index),
@@ -235,7 +241,7 @@ impl CompiledExpr {
             };
             ops.push(op);
         }
-        reader.ensure_end()?;
+        reader.finish()?;
         if height != 1 {
             return Err(CompilationError::ConstEvaluationFailed);
         }
@@ -370,7 +376,7 @@ mod tests {
     }
 
     fn parse_const_expr(bytes: &[u8]) -> ConstExpr<'_> {
-        ConstExpr::new(bytes, 0)
+        ConstExpr::new(wasmparser::BinaryReader::new(bytes, 0))
     }
 
     fn compile(bytes: &[u8]) -> CompiledExpr {

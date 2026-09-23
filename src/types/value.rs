@@ -793,6 +793,14 @@ fn copysign_regression_works() {
     )
 }
 
+/// The runtime models only the nullable `funcref` and `externref`; validation rejects every
+/// other reference type long before a default value is needed.
+#[test]
+#[should_panic(expected = "not supported reference type")]
+fn default_of_unsupported_reference_type_panics() {
+    let _ = Value::default(ValType::Ref(wasmparser::RefType::FUNC));
+}
+
 #[cfg(not(feature = "std"))]
 mod libm_adapters {
     pub mod f32 {
@@ -941,8 +949,9 @@ impl Value {
             ValType::F32 => Self::F32(0f32.into()),
             ValType::F64 => Self::F64(0f64.into()),
             ValType::V128 => unreachable!("not supported v128 type"),
-            ValType::FuncRef => Self::FuncRef(FuncRef::null()),
-            ValType::ExternRef => Self::ExternRef(ExternRef::null()),
+            ValType::FUNCREF => Self::FuncRef(FuncRef::null()),
+            ValType::EXTERNREF => Self::ExternRef(ExternRef::null()),
+            ValType::Ref(_) => unreachable!("not supported reference type"),
         }
     }
 
@@ -954,8 +963,8 @@ impl Value {
             Self::I64(_) => ValType::I64,
             Self::F32(_) => ValType::F32,
             Self::F64(_) => ValType::F64,
-            Self::FuncRef(_) => ValType::FuncRef,
-            Self::ExternRef(_) => ValType::ExternRef,
+            Self::FuncRef(_) => ValType::FUNCREF,
+            Self::ExternRef(_) => ValType::EXTERNREF,
         }
     }
 

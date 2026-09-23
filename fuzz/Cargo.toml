@@ -11,8 +11,8 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 arbitrary = "1.4.2"
 # Needed to map export names -> indices for snapshotting globals/tables/memory.
-# Use the same package/version as `rwasm` itself to avoid version skew.
-wasmparser = { version = "0.100.1", package = "wasmparser-nostd", default-features = false }
+# Use the same version as `rwasm` itself to avoid version skew.
+wasmparser = { version = "0.248.0", default-features = false, features = ["std", "features", "hash-collections"] }
 wasmtime = { package = "wasmtime-rwasm", version = "45.0.0-rwasm.2" }
 wasm-smith = { version = "0.258.0", features = ["wasmparser"] }
 hex = "0.4.3"

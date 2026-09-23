@@ -5,7 +5,9 @@ This is the end-to-end flow from input Wasm to runtime execution.
 ## 1) Input
 
 - A `.wasm` module is loaded by compiler entrypoints.
-- Validation/parsing uses wasmparser-based infrastructure.
+- Validation/parsing uses `wasmparser`. `CompilationConfig::wasm_features` is the explicit
+  list of proposals the validator accepts, and `FuncBuilder` rejects every operator outside it,
+  so a `wasmparser` upgrade cannot widen the accepted language on its own.
 
 ## 2) Compilation/translation
 

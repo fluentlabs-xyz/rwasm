@@ -135,8 +135,8 @@ mod tests {
                     1 => ValType::I64,
                     2 => ValType::F32,
                     3 => ValType::F64,
-                    4 => ValType::FuncRef,
-                    5 => ValType::ExternRef,
+                    4 => ValType::FUNCREF,
+                    5 => ValType::EXTERNREF,
                     _ => ValType::I64,
                 };
                 stack.push(ty);

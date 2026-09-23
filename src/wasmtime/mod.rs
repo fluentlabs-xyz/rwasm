@@ -165,11 +165,11 @@ fn check_compile_limits(
                 }
             }
             Payload::TableSection(section) => {
-                for table_type in section.into_iter() {
-                    let size = table_type?.initial;
-                    if size > N_MAX_TABLE_SIZE {
+                for table in section.into_iter() {
+                    let size = table?.ty.initial;
+                    if size > u64::from(N_MAX_TABLE_SIZE) {
                         return Err(CompilationError::TableSizeExceedsLimit {
-                            size,
+                            size: u32::try_from(size).unwrap_or(u32::MAX),
                             limit: N_MAX_TABLE_SIZE,
                         });
                     }

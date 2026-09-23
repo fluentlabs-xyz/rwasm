@@ -57,7 +57,7 @@ impl SegmentBuilder {
                 self.entrypoint_bytecode.op_i32_const(lower);
                 self.entrypoint_bytecode.op_i32_const(upper)
             }
-            ValType::FuncRef | ValType::ExternRef => self
+            ValType::FUNCREF | ValType::EXTERNREF => self
                 .entrypoint_bytecode
                 .op_ref_func(global_variable.default_value as u32),
             _ => return Err(CompilationError::NotSupportedGlobalType),
@@ -114,16 +114,17 @@ impl SegmentBuilder {
         // the runtime caps every table at `N_MAX_TABLE_SIZE` and the grow below discards its
         // result, so a larger declared size would leave the rwasm VM running on an empty table
         // while Wasmtime honours the declaration; reject it here so the module never compiles
-        if table_type.initial > N_MAX_TABLE_SIZE {
+        if table_type.initial > u64::from(N_MAX_TABLE_SIZE) {
             return Err(CompilationError::TableSizeExceedsLimit {
-                size: table_type.initial,
+                size: u32::try_from(table_type.initial).unwrap_or(u32::MAX),
                 limit: N_MAX_TABLE_SIZE,
             });
         }
         // Wasm validation guarantees that the number of table segments can't exceed 100 items,
         // that is why there is no need to check for potential overflow
         self.entrypoint_bytecode.op_ref_func(NULL_FUNC_IDX);
-        self.entrypoint_bytecode.op_i32_const(table_type.initial);
+        self.entrypoint_bytecode
+            .op_i32_const(table_type.initial as u32);
         self.entrypoint_bytecode.op_table_grow(table_index);
         // `table.grow` reports failure as `u32::MAX` (the compiler bounds `initial` by
         // `N_MAX_TABLE_SIZE`, but the allocation itself can still fail). Dropping the result would

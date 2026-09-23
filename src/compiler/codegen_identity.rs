@@ -147,14 +147,17 @@ impl IdentityHasher {
     fn val_types(&mut self, val_types: &[ValType]) {
         self.u64(val_types.len() as u64);
         for val_type in val_types {
-            self.u8(match val_type {
+            self.u8(match *val_type {
                 ValType::I32 => 0,
                 ValType::I64 => 1,
                 ValType::F32 => 2,
                 ValType::F64 => 3,
                 ValType::V128 => 4,
-                ValType::FuncRef => 5,
-                ValType::ExternRef => 6,
+                ValType::FUNCREF => 5,
+                ValType::EXTERNREF => 6,
+                // no other reference type reaches a linker signature; hashed apart so the
+                // match stays total
+                ValType::Ref(_) => 7,
             });
         }
     }
@@ -341,6 +344,36 @@ mod tests {
             router([("deploy", 0), ("main", 1)]),
             router([("main", 1), ("deploy", 0)])
         );
+    }
+
+    /// `funcref`, `externref` and any other reference type hash apart from each other and from
+    /// the value types: a linker signature is part of the identity.
+    #[test]
+    fn identity_separates_reference_types() {
+        let identity = |params: &'static [ValType]| {
+            let mut import_linker = ImportLinker::default();
+            import_linker.insert_function(
+                ImportName::new("env", "f"),
+                0,
+                SyscallFuelParams::None,
+                params,
+                &[],
+            );
+            CompilationConfig::default()
+                .with_import_linker(Arc::new(import_linker))
+                .codegen_identity()
+        };
+        let identities = [
+            identity(&[ValType::I32]),
+            identity(&[ValType::FUNCREF]),
+            identity(&[ValType::EXTERNREF]),
+            identity(&[ValType::Ref(wasmparser::RefType::FUNC)]),
+        ];
+        for (i, lhs) in identities.iter().enumerate() {
+            for rhs in &identities[i + 1..] {
+                assert_ne!(lhs, rhs);
+            }
+        }
     }
 
     #[test]

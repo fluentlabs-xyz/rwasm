@@ -98,7 +98,7 @@ impl ValueStackHeight {
             ValType::I32 | ValType::F32 => self.pop1(),
             ValType::I64 | ValType::F64 => self.pop2(),
             ValType::V128 => self.pop4(),
-            ValType::FuncRef | ValType::ExternRef => self.pop1(),
+            ValType::Ref(_) => self.pop1(),
         }
     }
 
@@ -107,7 +107,7 @@ impl ValueStackHeight {
             ValType::I32 | ValType::F32 => self.push1(),
             ValType::I64 | ValType::F64 => self.push2(),
             ValType::V128 => self.push4(),
-            ValType::FuncRef | ValType::ExternRef => self.push1(),
+            ValType::Ref(_) => self.push1(),
         }
     }
 
@@ -121,5 +121,26 @@ impl ValueStackHeight {
     pub fn shrink_to(&mut self, new_height: u32) {
         assert!(new_height <= self.height);
         self.height = new_height;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A reference occupies one slot whichever reference type it carries; `i64` takes two.
+    #[test]
+    fn reference_types_take_one_slot() {
+        let mut stack = ValueStackHeight::default();
+        stack.push_type(ValType::FUNCREF);
+        stack.push_type(ValType::EXTERNREF);
+        stack.push_type(ValType::I64);
+        assert_eq!(stack.height(), 4);
+        stack.pop_type(ValType::I64);
+        stack.pop_type(ValType::EXTERNREF);
+        assert_eq!(stack.height(), 1);
+        stack.pop_type(ValType::FUNCREF);
+        assert_eq!(stack.height(), 0);
+        assert_eq!(stack.max_stack_height(), 4);
     }
 }

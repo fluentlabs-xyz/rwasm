@@ -17,10 +17,11 @@ use core::{
 };
 use hashbrown::HashMap;
 use wasmparser::{
-    CustomSectionReader, DataKind, DataSectionReader, ElementItems, ElementKind,
-    ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType, FunctionBody,
-    FunctionSectionReader, GlobalSectionReader, ImportSectionReader, MemorySectionReader, Parser,
-    Payload, TableSectionReader, Type, TypeRef, TypeSectionReader, ValType, Validator,
+    CompositeInnerType, CustomSectionReader, DataKind, DataSectionReader, ElementItems,
+    ElementKind, ElementSectionReader, Encoding, ExportSectionReader, ExternalKind, FuncType,
+    FunctionBody, FunctionSectionReader, GlobalSectionReader, ImportSectionReader,
+    MemorySectionReader, Parser, Payload, SubType, Table, TableInit, TableSectionReader, TableType,
+    TypeRef, TypeSectionReader, ValType, Validator,
 };
 
 /// Single-pass Wasm front-end that validates, translates, and assembles rwasm bytecode.
@@ -48,7 +49,13 @@ impl ModuleParser {
     }
 
     pub fn parse(&mut self, wasm_binary: &[u8]) -> Result<(), CompilationError> {
-        let parser = Parser::new(0);
+        let mut parser = Parser::new(0);
+        // Decoding itself depends on the feature set, not only validation: without
+        // `multi_memory` the memory index of `memory.size`/`memory.grow` must be a single zero
+        // byte, and without `call_indirect_overlong` the `call_indirect` table index may not be
+        // an overlong LEB. The parser's default is more permissive than the validator, so it
+        // gets the same set.
+        parser.set_features(self.config.wasm_features());
         let payloads = parser.parse_all(wasm_binary).collect::<Vec<_>>();
         let mut func_bodies = Vec::new();
         for payload in payloads {
@@ -385,7 +392,6 @@ impl ModuleParser {
             } => self.process_version(num, encoding, range),
             Payload::TypeSection(section) => self.process_types(section),
             Payload::ImportSection(section) => self.process_imports(section),
-            Payload::InstanceSection(section) => self.process_instances(section),
             Payload::FunctionSection(section) => self.process_functions(section),
             Payload::TableSection(section) => self.process_tables(section),
             Payload::MemorySection(section) => self.process_memories(section),
@@ -397,43 +403,17 @@ impl ModuleParser {
             Payload::DataCountSection { count, range } => self.process_data_count(count, range),
             Payload::DataSection(section) => self.process_data(section),
             Payload::CustomSection(section) => self.process_custom_section(section),
-            Payload::CodeSectionStart { count, range, .. } => self.process_code_start(count, range),
+            Payload::CodeSectionStart { range, .. } => self.process_code_start(range),
             Payload::CodeSectionEntry(func_body) => self.process_code_entry(func_body),
             Payload::UnknownSection { id, range, .. } => self.process_unknown(id, range),
-            Payload::ModuleSection { parser: _, range } => {
-                self.process_unsupported_component_model(range)
-            }
-            Payload::CoreTypeSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
-            Payload::ComponentSection { parser: _, range } => {
-                self.process_unsupported_component_model(range)
-            }
-            Payload::ComponentInstanceSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
-            Payload::ComponentAliasSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
-            Payload::ComponentTypeSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
-            Payload::ComponentCanonicalSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
-            Payload::ComponentStartSection { start: _, range } => {
-                self.process_unsupported_component_model(range)
-            }
-            Payload::ComponentImportSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
-            Payload::ComponentExportSection(section) => {
-                self.process_unsupported_component_model(section.range())
-            }
             Payload::End(offset) => {
                 self.process_end(offset)?;
                 return Ok(true);
             }
+            // `Payload` is `#[non_exhaustive]`: a section kind this compiler does not know
+            // (component model sections are behind a wasmparser feature this crate does not
+            // enable; a future proposal may add more) is rejected, never skipped.
+            _ => Err(CompilationError::NotSupportedExtension),
         }?;
         Ok(false)
     }
@@ -468,12 +448,15 @@ impl ModuleParser {
             });
         }
         self.validator.type_section(&section)?;
-        for func_type in section.into_iter() {
-            let Type::Func(func_type) = func_type?;
-            self.allocations
-                .translation
-                .func_type_registry
-                .alloc_func_type(func_type)?;
+        // The section is a sequence of recursion groups. Without the GC proposal the validator
+        // admits only implicit groups of exactly one type, so the count above counts types.
+        for rec_group in section.into_iter() {
+            for sub_type in rec_group?.into_types() {
+                self.allocations
+                    .translation
+                    .func_type_registry
+                    .alloc_func_type(function_type(sub_type)?)?;
+            }
         }
         Ok(())
     }
@@ -490,7 +473,8 @@ impl ModuleParser {
     /// - If an unsupported import declaration is encountered.
     fn process_imports(&mut self, section: ImportSectionReader) -> Result<(), CompilationError> {
         self.validator.import_section(&section)?;
-        for import in section.into_iter() {
+        // `into_imports` flattens compact import groups into single imports
+        for import in section.into_imports() {
             let import = import?;
             let func_type_index = match import.ty {
                 TypeRef::Func(func_type_index) => func_type_index,
@@ -530,7 +514,7 @@ impl ModuleParser {
             // don't allow funcref/externref in imported functions
             if !self.config.allow_func_ref_function_types {
                 for x in func_type.params().iter().chain(func_type.results()) {
-                    if x == &ValType::FuncRef || x == &ValType::ExternRef {
+                    if matches!(x, ValType::Ref(_)) {
                         return Err(CompilationError::MalformedImportFunctionType);
                     }
                 }
@@ -596,21 +580,6 @@ impl ModuleParser {
         Ok(())
     }
 
-    /// Process module instances.
-    ///
-    /// # Note
-    ///
-    /// This is part of the module linking a Wasm proposal and not yet supported
-    /// by `rwasm`.
-    fn process_instances(
-        &mut self,
-        section: wasmparser::InstanceSectionReader,
-    ) -> Result<(), CompilationError> {
-        self.validator
-            .instance_section(&section)
-            .map_err(Into::into)
-    }
-
     /// Process module function declarations.
     ///
     /// # Note
@@ -646,8 +615,8 @@ impl ModuleParser {
     /// If a table declaration fails to validate.
     fn process_tables(&mut self, section: TableSectionReader) -> Result<(), CompilationError> {
         self.validator.table_section(&section)?;
-        for (table_idx, table_type) in section.into_iter().enumerate() {
-            let table_type = table_type?;
+        for (table_idx, table) in section.into_iter().enumerate() {
+            let table_type = table_type(table?)?;
             let table_idx = TableIdx::try_from(table_idx).unwrap();
             self.allocations
                 .translation
@@ -782,7 +751,7 @@ impl ModuleParser {
             let element_segment_idx = ElementSegmentIdx::from(element_segment_idx as u32);
 
             let element_items_vec = match element.items {
-                ElementItems::Expressions(section) => section
+                ElementItems::Expressions(_, section) => section
                     .into_iter()
                     .map(|v| {
                         let compiled_expr = CompiledExpr::new(v?)?;
@@ -808,7 +777,8 @@ impl ModuleParser {
                     // Validation requires an i32 offset. Its bits denote an unsigned index;
                     // an out-of-bounds active segment traps when the initializer runs.
                     let element_offset = self.eval_const(compiled_expr)? as u32;
-                    let table_idx = TableIdx::try_from(table_index).unwrap();
+                    // the pre-reference-types segment form carries no table index
+                    let table_idx = TableIdx::try_from(table_index.unwrap_or(0)).unwrap();
                     self.allocations
                         .translation
                         .segment_builder
@@ -928,12 +898,8 @@ impl ModuleParser {
     /// # Errors
     ///
     /// If the code start section fails to validate.
-    fn process_code_start(
-        &mut self,
-        count: u32,
-        range: Range<usize>,
-    ) -> Result<(), CompilationError> {
-        self.validator.code_section_start(count, &range)?;
+    fn process_code_start(&mut self, range: Range<usize>) -> Result<(), CompilationError> {
+        self.validator.code_section_start(&range)?;
         Ok(())
     }
 
@@ -990,14 +956,6 @@ impl ModuleParser {
             .map_err(Into::into)
     }
 
-    /// Process the entries for the Wasm component model proposal.
-    fn process_unsupported_component_model(
-        &mut self,
-        _range: Range<usize>,
-    ) -> Result<(), CompilationError> {
-        Err(CompilationError::NotSupportedExtension)
-    }
-
     /// Processes the end of the Wasm binary.
     fn process_end(&mut self, offset: usize) -> Result<(), CompilationError> {
         self.validator.end(offset)?;
@@ -1005,17 +963,97 @@ impl ModuleParser {
     }
 }
 
+/// The function type a type-section entry declares.
+///
+/// Struct, array and continuation types belong to proposals `wasm_features` denies, so the
+/// validator has rejected them before the entry gets here; the error keeps a rejected module
+/// rather than a panic should that ever change.
+fn function_type(sub_type: SubType) -> Result<FuncType, CompilationError> {
+    match sub_type.composite_type.inner {
+        CompositeInnerType::Func(func_type) => Ok(func_type),
+        _ => Err(CompilationError::NotSupportedExtension),
+    }
+}
+
+/// The type of a table-section entry.
+///
+/// A table initialized by an expression is function-references syntax, which `wasm_features`
+/// denies; like [`function_type`], the error is defense in depth behind the validator.
+fn table_type(table: Table<'_>) -> Result<TableType, CompilationError> {
+    match table.init {
+        TableInit::RefNull => Ok(table.ty),
+        TableInit::Expr(_) => Err(CompilationError::NotSupportedExtension),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasmparser::{BinaryReader, CompositeType, ConstExpr, RefType, StructType};
+
+    fn sub_type(inner: CompositeInnerType) -> SubType {
+        SubType {
+            is_final: true,
+            supertype_idx: None,
+            composite_type: CompositeType {
+                inner,
+                shared: false,
+                descriptor_idx: None,
+                describes_idx: None,
+            },
+        }
+    }
 
     #[test]
-    fn unsupported_component_model_returns_error() {
+    fn function_type_accepts_functions_only() {
+        let func_type = FuncType::new([ValType::I32], [ValType::I64]);
+        assert_eq!(
+            function_type(sub_type(CompositeInnerType::Func(func_type.clone()))).unwrap(),
+            func_type
+        );
+        let struct_type = CompositeInnerType::Struct(StructType {
+            fields: Box::new([]),
+        });
+        assert!(matches!(
+            function_type(sub_type(struct_type)),
+            Err(CompilationError::NotSupportedExtension)
+        ));
+    }
+
+    #[test]
+    fn table_type_rejects_initializer_expressions() {
+        let ty = TableType {
+            element_type: RefType::FUNCREF,
+            table64: false,
+            initial: 1,
+            maximum: None,
+            shared: false,
+        };
+        assert_eq!(
+            table_type(Table {
+                ty,
+                init: TableInit::RefNull,
+            })
+            .unwrap(),
+            ty
+        );
+        // `end` alone: the expression's contents do not matter for the rejection
+        let init = TableInit::Expr(ConstExpr::new(BinaryReader::new(&[0x0b], 0)));
+        assert!(matches!(
+            table_type(Table { ty, init }),
+            Err(CompilationError::NotSupportedExtension)
+        ));
+    }
+
+    /// A component (preamble version 13, layer 1) is not a core module: the parser must reject
+    /// it instead of treating its sections as module sections.
+    #[test]
+    fn component_binary_is_rejected() {
+        let component = b"\0asm\x0d\x00\x01\x00";
         let mut parser = ModuleParser::new(CompilationConfig::default());
-        let err = parser
-            .process_unsupported_component_model(0..0)
-            .expect_err("component-model payload must be rejected");
-        assert!(matches!(err, CompilationError::NotSupportedExtension));
+        parser
+            .parse(component)
+            .expect_err("a component binary must be rejected");
     }
 
     /// A memory access that can never be in bounds — immediate offset plus access size beyond
