@@ -231,6 +231,10 @@ fn compilation_errors_have_stable_messages() {
             "syscall fuel parameter index is out of range",
         ),
         (
+            CompilationError::SyscallFuelOutOfBounds,
+            "syscall fuel constant out of bounds",
+        ),
+        (
             CompilationError::StackHeightExceeded {
                 height: 9000,
                 limit: 8192,

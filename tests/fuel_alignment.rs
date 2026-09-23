@@ -1938,3 +1938,39 @@ mod bulk_operation_metering {
         );
     }
 }
+
+/// A constant syscall cost travels as a `ConsumeFuel(u32)` immediate. One above `u32::MAX` used
+/// to be cut to its low 32 bits by the compiler, and charged as that on both engines; it is
+/// rejected at compile time now, on both strategies.
+#[test]
+fn constant_syscall_fuel_above_u32_is_rejected() {
+    use rwasm::{CompilationError, RwasmModule, StrategyDefinition};
+    let mut import_linker = ImportLinker::default();
+    import_linker.insert_function(
+        ImportName::new("env", "const_call"),
+        1,
+        SyscallFuelParams::Const((1 << 32) + 5),
+        &[],
+        &[],
+    );
+    let run = Run {
+        wat: r#"(module
+            (import "env" "const_call" (func $const_call))
+            (func (export "main") (call $const_call)))"#,
+        import_linker: Arc::new(import_linker),
+        syscall_handler: accepting_syscall_handler,
+        fuel_limit: Some(100),
+        params: &[],
+        results: &[],
+        memory_prefix: 0,
+    };
+    let wasm = wat::parse_str(run.wat).unwrap();
+    assert!(matches!(
+        RwasmModule::compile(run.config(), &wasm),
+        Err(CompilationError::SyscallFuelOutOfBounds)
+    ));
+    assert!(matches!(
+        StrategyDefinition::new_as_wasmtime(run.config(), &wasm, None),
+        Err(CompilationError::SyscallFuelOutOfBounds)
+    ));
+}
