@@ -2070,6 +2070,22 @@ impl InstructionTranslator {
         self.translate_to_snippet_call(Snippet::I64RotR)
     }
 
+    pub(crate) fn visit_i64_add128(&mut self) -> Result<(), CompilationError> {
+        self.translate_wide_arithmetic(2, InstructionSet::op_i64_add128)
+    }
+
+    pub(crate) fn visit_i64_sub128(&mut self) -> Result<(), CompilationError> {
+        self.translate_wide_arithmetic(2, InstructionSet::op_i64_sub128)
+    }
+
+    pub(crate) fn visit_i64_mul_wide_s(&mut self) -> Result<(), CompilationError> {
+        self.translate_wide_arithmetic(1, InstructionSet::op_i64_mul_wide_s)
+    }
+
+    pub(crate) fn visit_i64_mul_wide_u(&mut self) -> Result<(), CompilationError> {
+        self.translate_wide_arithmetic(1, InstructionSet::op_i64_mul_wide_u)
+    }
+
     pub(crate) fn visit_f32_abs(&mut self) -> Result<(), CompilationError> {
         self.translate_unary(InstructionSet::op_f32_abs, 0)
     }
@@ -2951,6 +2967,33 @@ impl InstructionTranslator {
                 .alloc
                 .snippet_calls
                 .push(SnippetCall { loc, snippet });
+            Ok(())
+        })
+    }
+
+    /// Lowers a wide-arithmetic operator to its single rwasm opcode.
+    ///
+    /// Each side of the operator is `words_per_operand` `i64` words (two for the 128-bit add and
+    /// subtract, one for the widening multiplies) and the result is one 128-bit value as two
+    /// `i64` words. The opcode works in place on the operand slots, so it adds no stack height
+    /// beyond its operands, and it costs the base fuel like the other arithmetic.
+    fn translate_wide_arithmetic(
+        &mut self,
+        words_per_operand: u32,
+        emitter: fn(&mut InstructionSet),
+    ) -> Result<(), CompilationError> {
+        self.translate_if_reachable(|builder| {
+            builder.bump_fuel_consumption(|| FuelCosts::BASE)?;
+            for _ in 0..2 * words_per_operand {
+                let popped_type = builder.alloc.stack_types.pop().unwrap();
+                debug_assert_eq!(popped_type, ValType::I64);
+                builder.stack_height.pop_type(ValType::I64);
+            }
+            for _ in 0..2 {
+                builder.alloc.stack_types.push(ValType::I64);
+                builder.stack_height.push_type(ValType::I64);
+            }
+            emitter(&mut builder.alloc.instruction_set);
             Ok(())
         })
     }

@@ -77,7 +77,7 @@ pub fn wasmtime_engine(compilation_config: &CompilationConfig) -> Engine {
     cfg.wasm_exceptions(false);
     cfg.wasm_component_model(false);
     cfg.wasm_gc(false);
-    cfg.wasm_wide_arithmetic(false);
+    cfg.wasm_wide_arithmetic(true);
     cfg.wasm_custom_page_sizes(false);
 
     // Fuel accounting is handled externally via RuntimeContext.

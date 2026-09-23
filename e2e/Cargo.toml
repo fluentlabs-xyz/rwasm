@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 rwasm = { path = "..", features = ["std", "fpu", "wasmtime", "e2e"], default-features = false }
 anyhow = "1.0.71"
-wast = "=64.0"
+wast = "252.0.0"
 
 [features]
 default = ["rwasm/full-wasm-mode"]

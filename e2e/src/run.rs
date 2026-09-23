@@ -2,7 +2,7 @@ use super::{error::TestError, TestContext, TestDescriptor};
 use anyhow::Result;
 use rwasm::{ExternRef, FuncRef, Value, F32, F64};
 use wast::{
-    core::{HeapType, NanPattern, WastRetCore},
+    core::{AbstractHeapType, HeapType, NanPattern, WastRetCore},
     lexer::Lexer,
     parser::ParseBuffer,
     token::Span,
@@ -49,11 +49,11 @@ fn execute_directives(wast: Wast, test_context: &mut TestContext) -> Result<()> 
         let span = directive.span();
         test_context.profile().bump_directives();
         match directive {
-            WastDirective::Wat(QuoteWat::Wat(Wat::Module(module))) => {
+            WastDirective::Module(QuoteWat::Wat(Wat::Module(module))) => {
                 module_compilation_succeeds(test_context, span, module);
                 test_context.profile().bump_module();
             }
-            WastDirective::Wat(_) => {
+            WastDirective::Module(_) => {
                 test_context.profile().bump_quote_module();
                 // For the purpose of testing `rwasm` we are not
                 // interested in parsing `.wat` files, therefore
@@ -180,6 +180,12 @@ fn execute_directives(wast: Wast, test_context: &mut TestContext) -> Result<()> 
                     )
                 }
             }
+            // module definitions and instances, custom-section assertions, suspensions and
+            // threads belong to proposals `rwasm` does not implement
+            directive => panic!(
+                "{}: unsupported `.wast` directive: {directive:?}",
+                test_context.spanned(span)
+            ),
         }
     }
     Ok(())
@@ -223,6 +229,10 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
             "{:?}: `rwasm` does not support the Wasm `component-model` proposal but found {expected:?}",
             context.spanned(span),
         ),
+        expected => panic!(
+            "{:?}: unsupported `.wast` result: {expected:?}",
+            context.spanned(span),
+        ),
     }).collect::<Vec<_>>();
     for (expected, result) in expected.iter().zip(results.iter()) {
         match (result, expected) {
@@ -259,13 +269,25 @@ fn assert_results(context: &TestContext, span: Span, results: &[Value], expected
                     );
                 }
             },
-            (Value::FuncRef(funcref), WastRetCore::RefNull(Some(HeapType::Func))) => {
+            (
+                Value::FuncRef(funcref),
+                WastRetCore::RefNull(Some(HeapType::Abstract {
+                    shared: false,
+                    ty: AbstractHeapType::Func,
+                })),
+            ) => {
                 assert!(funcref.is_null());
             }
-            (Value::ExternRef(externref), WastRetCore::RefNull(Some(HeapType::Extern))) => {
+            (
+                Value::ExternRef(externref),
+                WastRetCore::RefNull(Some(HeapType::Abstract {
+                    shared: false,
+                    ty: AbstractHeapType::Extern,
+                })),
+            ) => {
                 assert!(externref.is_null());
             }
-            (Value::ExternRef(externref), WastRetCore::RefExtern(expected)) => {
+            (Value::ExternRef(externref), WastRetCore::RefExtern(Some(expected))) => {
                 let value = externref.resolve_index();
                 assert_eq!(value, *expected + 1);
             }
@@ -332,7 +354,7 @@ fn execute_wast_execute(
             context.compile_and_instantiate(module).map(|_| Vec::new())
         }
         WastExecute::Wat(Wat::Component(_)) => Ok(vec![]),
-        WastExecute::Get { module, global } => context
+        WastExecute::Get { module, global, .. } => context
             .get_global(module, global)
             .map(|result| vec![result]),
     }
@@ -358,6 +380,10 @@ fn execute_wast_invoke(
                 "{}: `rwasm` does not support the Wasm `component-model` but found {arg:?}",
                 context.spanned(span)
             ),
+            arg => panic!(
+                "{}: unsupported `.wast` argument: {arg:?}",
+                context.spanned(span)
+            ),
         };
         args.push(value);
     }
@@ -373,8 +399,14 @@ fn value(value: &wast::core::WastArgCore) -> Option<Value> {
         wast::core::WastArgCore::I64(arg) => Value::I64(*arg),
         wast::core::WastArgCore::F32(arg) => Value::F32(F32::from_bits(arg.bits)),
         wast::core::WastArgCore::F64(arg) => Value::F64(F64::from_bits(arg.bits)),
-        wast::core::WastArgCore::RefNull(HeapType::Func) => Value::FuncRef(FuncRef::null()),
-        wast::core::WastArgCore::RefNull(HeapType::Extern) => Value::ExternRef(ExternRef::null()),
+        wast::core::WastArgCore::RefNull(HeapType::Abstract {
+            shared: false,
+            ty: AbstractHeapType::Func,
+        }) => Value::FuncRef(FuncRef::null()),
+        wast::core::WastArgCore::RefNull(HeapType::Abstract {
+            shared: false,
+            ty: AbstractHeapType::Extern,
+        }) => Value::ExternRef(ExternRef::null()),
         wast::core::WastArgCore::RefExtern(value) => {
             // We add +1 here because 0 is reserved for null
             Value::ExternRef(ExternRef::new(*value + 1))
