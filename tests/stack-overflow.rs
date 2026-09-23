@@ -765,3 +765,79 @@ mod stack_limits {
         }
     }
 }
+
+/// Blocks in dead code used to push their results onto the emulated stack with nothing ever
+/// popping them, so every dead block raised the function's `StackCheck` reservation: a deep
+/// recursion then overflowed the rwasm value stack while the Wasmtime backend ran it, and enough
+/// dead blocks made a valid module fail with `StackHeightExceeded`.
+#[test]
+fn dead_code_does_not_grow_the_stack_reservation() {
+    use rwasm::{for_each_strategy, Opcode};
+
+    /// `$f(n)` recurses `n` deep; `dead_blocks` blocks follow its `return`.
+    fn after_return(dead_blocks: usize) -> Vec<u8> {
+        let dead = "(block (result i32) unreachable) ".repeat(dead_blocks);
+        wat::parse_str(format!(
+            r#"(module
+                (func $f (export "main") (param i32) (result i32)
+                  (if (result i32) (local.get 0)
+                    (then (i32.add (call $f (i32.sub (local.get 0) (i32.const 1))) (i32.const 1)))
+                    (else (i32.const 0)))
+                  return
+                  {dead}
+                  unreachable))"#
+        ))
+        .unwrap()
+    }
+    /// The blocks are reachable per validation, but nothing leaves the first one.
+    fn after_dead_block(dead_blocks: usize) -> Vec<u8> {
+        let dead = "(block (result i32) unreachable) ".repeat(dead_blocks);
+        wat::parse_str(format!(
+            r#"(module (func (export "main") (result i32) {dead} unreachable))"#
+        ))
+        .unwrap()
+    }
+    let config =
+        CompilationConfig::default_strategy_compatible().with_entrypoint_name("main".into());
+    let stack_checks = |wasm: &[u8]| {
+        let (module, _) = RwasmModule::compile(config.clone(), wasm).unwrap();
+        module
+            .code_section
+            .iter()
+            .filter_map(|opcode| match opcode {
+                Opcode::StackCheck(slots) => Some(*slots),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    // the reservation is the real peak whatever the amount of dead code
+    assert_eq!(
+        stack_checks(&after_return(4000)),
+        stack_checks(&after_return(0))
+    );
+    assert_eq!(
+        stack_checks(&after_dead_block(4000)),
+        stack_checks(&after_dead_block(1))
+    );
+    assert!(RwasmModule::compile(config.clone(), &after_return(40_000)).is_ok());
+    // a recursion of 500 frames completes on both strategies
+    let outcomes = for_each_strategy(
+        |strategy| {
+            let mut executor = strategy.create_executor(
+                Default::default(),
+                (),
+                rwasm::always_failing_syscall_handler,
+                None,
+                None,
+            )?;
+            let mut result = [Value::I32(0)];
+            Ok(executor
+                .execute("main", &[Value::I32(500)], &mut result)
+                .map(|()| result[0].clone()))
+        },
+        config,
+        &after_return(4000),
+    )
+    .unwrap();
+    assert_eq!(outcomes, [Ok(Value::I32(500)), Ok(Value::I32(500))]);
+}
