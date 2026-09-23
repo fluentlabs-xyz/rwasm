@@ -1185,3 +1185,61 @@ mod syscall_results {
         );
     }
 }
+
+/// An active segment recorded its memory (table) destination where a passive segment records its
+/// position in the flattened data (element) section. Instantiation drops active segments, so the
+/// wrong position only showed once `reset(false)` forgot the drops: a `memory.init` or
+/// `table.init` from the segment then read another segment's bytes or functions.
+#[test]
+fn active_segments_record_their_position_in_the_flattened_section() {
+    let linker = Arc::new(ImportLinker::default());
+    let data = compile_instance(
+        &linker,
+        r#"(module (memory 1)
+            (data (i32.const 4) "abcd")
+            (data "0123456789")
+            (func (export "main") (result i32)
+                (memory.init 0 (i32.const 200) (i32.const 0) (i32.const 4))
+                (i32.load (i32.const 200))))"#,
+    );
+    let elements = compile_instance(
+        &linker,
+        r#"(module (table 8 funcref)
+            (type $ret (func (result i32)))
+            (func $f0 (result i32) i32.const 100)
+            (func $f1 (result i32) i32.const 101)
+            (func $f2 (result i32) i32.const 102)
+            (func $f3 (result i32) i32.const 103)
+            (elem (i32.const 2) $f0)
+            (elem func $f1 $f2 $f3)
+            (func (export "main") (result i32)
+                (table.init 0 (i32.const 5) (i32.const 0) (i32.const 1))
+                (call_indirect (type $ret) (i32.const 5))))"#,
+    );
+    for (module, dropped, revived) in [
+        (
+            data,
+            TrapCode::MemoryOutOfBounds,
+            i32::from_le_bytes(*b"abcd"),
+        ),
+        (elements, TrapCode::TableOutOfBounds, 100),
+    ] {
+        let mut store = RwasmStore::new(
+            linker.clone(),
+            (),
+            rwasm::always_failing_syscall_handler,
+            None,
+            None,
+        );
+        let instance = linker
+            .instantiate(&mut store, ExecutionEngine::new(), module)
+            .unwrap();
+        let mut result = [Value::I32(0)];
+        // instantiation dropped the active segment
+        assert_eq!(instance.execute(&mut store, &[], &mut result), Err(dropped));
+        // `reset(false)` forgets the drops; the segment then reads its own bytes
+        store.reset(false);
+        instance.execute(&mut store, &[], &mut result).unwrap();
+        assert_eq!(result, [Value::I32(revived)]);
+    }
+}
