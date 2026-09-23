@@ -559,3 +559,90 @@ mod memory_export {
         ));
     }
 }
+
+mod missing_memory {
+    //! A module that declares no memory: the rwasm VM runs it with a memory of zero pages, so
+    //! host access to an empty range at offset 0 succeeds and everything else traps. The
+    //! Wasmtime executor used to fail every access, and the snapshot, with `MemoryOutOfBounds`.
+
+    use super::*;
+    use rwasm::for_each_strategy;
+
+    fn probe(
+        caller: &mut TypedCaller<'_, ()>,
+        _sys_func_idx: u32,
+        params: &[Value],
+        result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        let offset = params[0].i32().unwrap() as usize;
+        let length = params[1].i32().unwrap() as usize;
+        caller.memory_read_into_vec(offset, length)?;
+        caller.memory_write(offset, &vec![0; length])?;
+        caller.memory_read(offset, &mut vec![0; length])?;
+        result[0] = Value::I32(1);
+        Ok(())
+    }
+
+    /// The result of `main` and the memory snapshot taken after it.
+    type Outcome = (Result<Value, TrapCode>, Result<Vec<u8>, TrapCode>);
+
+    /// Runs `main(offset, length)` on both strategies and returns the outcomes with the memory
+    /// snapshots, checking that the two agree.
+    fn run(offset: i32, length: i32) -> Vec<Outcome> {
+        let wasm = wat::parse_str(
+            r#"(module
+                (import "env" "probe" (func $probe (param i32 i32) (result i32)))
+                (func (export "main") (param i32 i32) (result i32)
+                    (call $probe (local.get 0) (local.get 1))))"#,
+        )
+        .unwrap();
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("env", "probe"),
+            1,
+            SyscallFuelParams::default(),
+            &[ValType::I32, ValType::I32],
+            &[ValType::I32],
+        );
+        let import_linker = Arc::new(import_linker);
+        let outcomes = for_each_strategy(
+            |strategy| {
+                let mut executor =
+                    strategy.create_executor(import_linker.clone(), (), probe, None, None)?;
+                let mut result = [Value::I32(0)];
+                let outcome = executor
+                    .execute(
+                        "main",
+                        &[Value::I32(offset), Value::I32(length)],
+                        &mut result,
+                    )
+                    .map(|()| result[0].clone());
+                Ok((outcome, executor.snapshot_memory()))
+            },
+            strategy_config().with_import_linker(import_linker.clone()),
+            &wasm,
+        )
+        .unwrap();
+        assert_eq!(outcomes.len(), 2);
+        assert_eq!(outcomes[0], outcomes[1], "rwasm and wasmtime diverged");
+        outcomes
+    }
+
+    #[test]
+    fn empty_access_at_offset_zero_succeeds_on_both_strategies() {
+        let outcomes = run(0, 0);
+        assert_eq!(outcomes[0], (Ok(Value::I32(1)), Ok(Vec::new())));
+    }
+
+    #[test]
+    fn any_other_range_is_out_of_bounds_on_both_strategies() {
+        for (offset, length) in [(1, 0), (0, 1), (4, 4)] {
+            let outcomes = run(offset, length);
+            assert_eq!(
+                outcomes[0],
+                (Err(TrapCode::MemoryOutOfBounds), Ok(Vec::new())),
+                "offset {offset}, length {length}"
+            );
+        }
+    }
+}

@@ -1,7 +1,9 @@
 use crate::{
     checked_memory_range_end,
     wasmtime::{
-        context::RecordingStoreLimits, types::map_wasmtime_error, wasmtime_import_linker,
+        context::{missing_memory_access, RecordingStoreLimits},
+        types::map_wasmtime_error,
+        wasmtime_import_linker,
         WasmtimeModule, WrappedContext,
     },
     ImportLinker, SyscallHandler, TrapCode, Value, F32, F64, N_BYTES_PER_MEMORY_PAGE,
@@ -64,10 +66,6 @@ impl<T: 'static> WasmtimeExecutor<T> {
     /// The live Wasmtime instance; see [`Self::instantiate`] to replace it.
     pub fn instance(&self) -> wasmtime::Instance {
         self.instance
-    }
-
-    fn exported_memory(&self) -> Result<wasmtime::Memory, TrapCode> {
-        self.store.data().memory.ok_or(TrapCode::MemoryOutOfBounds)
     }
 
     /// Resolves the exported functions and the exported memory of `instance` once.
@@ -536,7 +534,10 @@ impl<T: 'static> WasmtimeExecutor<T> {
     }
 
     pub fn snapshot_memory(&mut self) -> Result<Vec<u8>, TrapCode> {
-        let global_memory = self.exported_memory()?;
+        // a module without memory snapshots as the zero-page memory the rwasm VM gives it
+        let Some(global_memory) = self.store.data().memory else {
+            return Ok(Vec::new());
+        };
         let memory_size = global_memory
             .size(self.store.as_context_mut())
             .checked_mul(N_BYTES_PER_MEMORY_PAGE as u64)
@@ -551,7 +552,9 @@ impl<T: 'static> WasmtimeExecutor<T> {
 
 impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        let global_memory = self.exported_memory()?;
+        let Some(global_memory) = self.store.data().memory else {
+            return missing_memory_access(offset, buffer.len());
+        };
         global_memory
             .read(self.store.as_context(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)
@@ -559,7 +562,9 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
 
     fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
         let end = checked_memory_range_end(offset, length)?;
-        let global_memory = self.exported_memory()?;
+        let Some(global_memory) = self.store.data().memory else {
+            return missing_memory_access(offset, length).map(|()| Vec::new());
+        };
         let memory_size = (global_memory.size(self.store.as_context_mut()) as usize)
             .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
             .ok_or(TrapCode::MemoryOutOfBounds)?;
@@ -572,7 +577,9 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        let global_memory = self.exported_memory()?;
+        let Some(global_memory) = self.store.data().memory else {
+            return missing_memory_access(offset, buffer.len());
+        };
         global_memory
             .write(self.store.as_context_mut(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)

@@ -325,15 +325,27 @@ impl<'a, T: 'static> WasmtimeCaller<'a, T> {
     pub fn unwrap(self) -> wasmtime::Caller<'a, WrappedContext<T>> {
         self.caller
     }
+}
 
-    fn exported_memory(&self) -> Result<wasmtime::Memory, TrapCode> {
-        self.caller.data().memory.ok_or(TrapCode::MemoryOutOfBounds)
+/// Host access to a module that exports no memory.
+///
+/// The rwasm VM gives every instance a memory of zero pages, so an empty access at offset 0
+/// succeeds there and every other range is out of bounds. Answer the same way instead of
+/// failing every access, or a guest that hands the host an empty range would run on one
+/// strategy and trap on the other.
+pub(crate) fn missing_memory_access(offset: usize, length: usize) -> Result<(), TrapCode> {
+    if offset == 0 && length == 0 {
+        Ok(())
+    } else {
+        Err(TrapCode::MemoryOutOfBounds)
     }
 }
 
 impl<'a, T: 'static> StoreTr<T> for WasmtimeCaller<'a, T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        let global_memory = self.exported_memory()?;
+        let Some(global_memory) = self.caller.data().memory else {
+            return missing_memory_access(offset, buffer.len());
+        };
         global_memory
             .read(self.caller.as_context(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)
@@ -341,7 +353,9 @@ impl<'a, T: 'static> StoreTr<T> for WasmtimeCaller<'a, T> {
 
     fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
         let end = checked_memory_range_end(offset, length)?;
-        let global_memory = self.exported_memory()?;
+        let Some(global_memory) = self.caller.data().memory else {
+            return missing_memory_access(offset, length).map(|()| Vec::new());
+        };
         let memory_size = (global_memory.size(self.caller.as_context()) as usize)
             .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
             .ok_or(TrapCode::MemoryOutOfBounds)?;
@@ -354,7 +368,9 @@ impl<'a, T: 'static> StoreTr<T> for WasmtimeCaller<'a, T> {
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        let global_memory = self.exported_memory()?;
+        let Some(global_memory) = self.caller.data().memory else {
+            return missing_memory_access(offset, buffer.len());
+        };
         global_memory
             .write(self.caller.as_context_mut(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)

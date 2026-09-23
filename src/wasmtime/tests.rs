@@ -307,8 +307,9 @@ fn test_wasmtime_caller_missing_memory_returns_trap() {
     );
 }
 
+/// A module without memory snapshots as the zero-page memory the rwasm VM gives it.
 #[test]
-fn test_wasmtime_snapshot_missing_memory_returns_trap() {
+fn test_wasmtime_snapshot_missing_memory_is_empty() {
     let (module, import_linker) = get_test_module_without_memory();
     let mut wasmtime_worker = WasmtimeExecutor::new(
         module,
@@ -320,10 +321,7 @@ fn test_wasmtime_snapshot_missing_memory_returns_trap() {
     )
     .unwrap();
 
-    assert_eq!(
-        wasmtime_worker.snapshot_memory().unwrap_err(),
-        TrapCode::MemoryOutOfBounds
-    );
+    assert_eq!(wasmtime_worker.snapshot_memory(), Ok(Vec::new()));
 }
 
 #[test]

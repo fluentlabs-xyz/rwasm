@@ -7,7 +7,8 @@ use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
 /// Returns `true` when every linear memory the module declares is exported.
 ///
-/// A module without a memory needs no export: host memory access fails on both backends for it.
+/// A module without a memory needs no export: both backends give host memory access a memory of
+/// zero pages for it, so an empty access at offset 0 succeeds and every other range traps.
 fn memory_is_exported(wasm_binary: &[u8]) -> Result<bool, CompilationError> {
     use wasmparser::{ExternalKind, Parser, Payload};
     let mut has_memory = false;
