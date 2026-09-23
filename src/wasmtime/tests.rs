@@ -959,6 +959,67 @@ fn reference_typed_export_reports_a_null_reference() {
     assert_eq!(result, [Value::I32(7)]);
 }
 
+/// The store limiter follows the compile-time page cap of the module it runs, and a replacement
+/// instantiated through `instantiate` brings its own cap.
+#[test]
+fn memory_grow_follows_the_compile_time_page_cap_of_the_live_module() {
+    use crate::always_failing_syscall_handler;
+    let wasm = wat::parse_str(
+        r#"(module (memory (export "memory") 1)
+            (func (export "main") (param i32) (result i32) (memory.grow (local.get 0))))"#,
+    )
+    .unwrap();
+    let compile = |max_allowed_memory_pages: u32| {
+        compile_wasmtime_module(
+            CompilationConfig::default().with_max_allowed_memory_pages(max_allowed_memory_pages),
+            &wasm,
+        )
+        .unwrap()
+    };
+    let grow = |executor: &mut WasmtimeExecutor<()>, delta: i32| {
+        let mut result = [Value::I32(0)];
+        executor
+            .execute("main", &[Value::I32(delta)], &mut result)
+            .unwrap();
+        result[0].i32().unwrap()
+    };
+    let mut executor = WasmtimeExecutor::new(
+        compile(2),
+        Arc::new(ImportLinker::default()),
+        (),
+        always_failing_syscall_handler,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(grow(&mut executor, 2), -1);
+    assert_eq!(grow(&mut executor, 1), 1);
+    assert_eq!(grow(&mut executor, 1), -1);
+
+    // the replacement may grow to its own cap, the run-time cap still applies on top
+    let replacement = compile_wasmtime_module_on(
+        executor.store.engine(),
+        CompilationConfig::default().with_max_allowed_memory_pages(4),
+        &wasm,
+    )
+    .unwrap();
+    executor.instantiate(&replacement).unwrap();
+    assert_eq!(grow(&mut executor, 4), -1);
+    assert_eq!(grow(&mut executor, 3), 1);
+    assert_eq!(grow(&mut executor, 1), -1);
+    let mut executor = WasmtimeExecutor::new(
+        compile(4),
+        Arc::new(ImportLinker::default()),
+        (),
+        always_failing_syscall_handler,
+        None,
+        Some(3),
+    )
+    .unwrap();
+    assert_eq!(grow(&mut executor, 3), -1);
+    assert_eq!(grow(&mut executor, 2), 1);
+}
+
 /// A module whose instantiation fails must be reported as the trap the rwasm strategy raises for
 /// it, never as a panic: the input reaching `WasmtimeExecutor::new` is not pre-validated against
 /// the import linker or the store limits.

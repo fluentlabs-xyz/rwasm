@@ -3,8 +3,7 @@ use crate::{
     wasmtime::{
         context::{missing_memory_access, RecordingStoreLimits},
         types::map_wasmtime_error,
-        wasmtime_import_linker,
-        WasmtimeModule, WrappedContext,
+        wasmtime_import_linker, WasmtimeModule, WrappedContext,
     },
     ImportLinker, SyscallHandler, TrapCode, Value, F32, F64, N_BYTES_PER_MEMORY_PAGE,
     N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES, N_MAX_TABLE_SIZE,
@@ -47,6 +46,9 @@ pub struct WasmtimeExecutor<T: 'static> {
     /// The strategy layer exposes a single entrypoint, matching the rwasm backend, which has no
     /// way to resolve an arbitrary export name at run time.
     entrypoint_name: Option<Box<str>>,
+    /// The run-time cap on the instance memory, in pages, as the store was created with. Each
+    /// module's compile-time cap is applied on top of it; see [`Self::store_limits`].
+    max_allowed_memory_pages: u32,
 }
 
 impl<T: 'static> AsContext for WasmtimeExecutor<T> {
@@ -155,22 +157,9 @@ impl<T: 'static> WasmtimeExecutor<T> {
         fuel_limit: Option<u64>,
         max_allowed_memory_pages: Option<u32>,
     ) -> wasmtime::Result<Self> {
-        let memory_pages = max_allowed_memory_pages
+        let max_allowed_memory_pages = max_allowed_memory_pages
             .unwrap_or(N_DEFAULT_MAX_MEMORY_PAGES)
             .min(N_MAX_ALLOWED_MEMORY_PAGES);
-        let memory_size_limit = (memory_pages as usize)
-            .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
-            .expect("wasmtime: memory limit is bounded by N_MAX_ALLOWED_MEMORY_PAGES");
-        // the rwasm VM caps every table at `N_MAX_TABLE_SIZE` elements (`TableEntity::grow_untyped`
-        // fails any grow beyond it); apply the same per-table cap here so `table.grow` reports
-        // the same failures on both strategies
-        let resource_limiter = RecordingStoreLimits::new(
-            wasmtime::StoreLimitsBuilder::new()
-                .memory_size(memory_size_limit)
-                .table_elements(N_MAX_TABLE_SIZE as usize)
-                .build(),
-        );
-
         let context = WrappedContext {
             syscall_handler,
             fuel: None,
@@ -178,7 +167,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
             fuel_unbounded: false,
             memory: None,
             syscall_fuel: Self::resolve_syscall_fuel(&module, &import_linker)?,
-            resource_limiter,
+            resource_limiter: Self::store_limits(max_allowed_memory_pages, &module),
             data,
         };
         let mut store = wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context);
@@ -212,6 +201,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
             instance,
             functions: Vec::new(),
             entrypoint_name: None,
+            max_allowed_memory_pages,
         };
         executor.refresh_exports();
         Ok(executor)
@@ -237,10 +227,16 @@ impl<T: 'static> WasmtimeExecutor<T> {
             .map_err(|err| err.context(TrapCode::UnknownExternalFunction))?;
         let previous_syscall_fuel =
             std::mem::replace(&mut self.store.data_mut().syscall_fuel, syscall_fuel);
+        // the replacement brings its own compile-time memory cap
+        let previous_resource_limiter = std::mem::replace(
+            &mut self.store.data_mut().resource_limiter,
+            Self::store_limits(self.max_allowed_memory_pages, module),
+        );
         let instance = match Self::instantiate_in(&instance_pre, &mut self.store) {
             Ok(instance) => instance,
             Err(err) => {
                 self.store.data_mut().syscall_fuel = previous_syscall_fuel;
+                self.store.data_mut().resource_limiter = previous_resource_limiter;
                 return Err(err);
             }
         };
@@ -248,6 +244,31 @@ impl<T: 'static> WasmtimeExecutor<T> {
         self.instance = instance;
         self.refresh_exports();
         Ok(())
+    }
+
+    /// The store limits for running `module` under a run-time cap of `max_allowed_memory_pages`.
+    ///
+    /// The memory may grow up to the lower of the run-time cap and the module's compile-time cap:
+    /// the rwasm VM bounds its memory by the store's cap and every compiled `memory.grow` by the
+    /// config's, so a grow past either reports `-1` there. Applying only the run-time cap here
+    /// used to let the same module grow further on this backend.
+    fn store_limits(
+        max_allowed_memory_pages: u32,
+        module: &WasmtimeModule,
+    ) -> RecordingStoreLimits {
+        let memory_pages = max_allowed_memory_pages.min(module.max_allowed_memory_pages());
+        let memory_size_limit = (memory_pages as usize)
+            .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
+            .expect("wasmtime: memory limit is bounded by N_MAX_ALLOWED_MEMORY_PAGES");
+        // the rwasm VM caps every table at `N_MAX_TABLE_SIZE` elements (`TableEntity::grow_untyped`
+        // fails any grow beyond it); apply the same per-table cap here so `table.grow` reports
+        // the same failures on both strategies
+        RecordingStoreLimits::new(
+            wasmtime::StoreLimitsBuilder::new()
+                .memory_size(memory_size_limit)
+                .table_elements(N_MAX_TABLE_SIZE as usize)
+                .build(),
+        )
     }
 
     /// Resolves the module's syscall fuel schedule (by import name) to the syscall indices the

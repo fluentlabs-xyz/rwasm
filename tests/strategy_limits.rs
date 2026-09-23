@@ -484,3 +484,52 @@ fn br_table_entries_with_the_same_target_share_a_trampoline() {
         }
     }
 }
+
+/// `memory.grow` is bounded by the compile-time page cap on both backends. The rwasm compiler
+/// bakes the cap into every grow, while the Wasmtime store limiter used to know only the
+/// run-time cap, so a module compiled under a lower cap could grow further there.
+#[test]
+fn memory_grow_is_bounded_by_the_compile_time_page_cap_on_both() {
+    let wasm = wat::parse_str(
+        r#"(module (memory (export "memory") 1)
+             (func (export "main") (param i32) (result i32) (memory.grow (local.get 0))))"#,
+    )
+    .unwrap();
+    // (run-time cap, grow deltas, expected results, final size in pages)
+    let cases = [
+        (None, [5, 1, 1], [-1, 1, -1], 2),
+        (Some(1), [1, 0, 1], [-1, 1, -1], 1),
+    ];
+    for (max_allowed_memory_pages, deltas, expected, pages) in cases {
+        let outcomes = rwasm::for_each_strategy(
+            |strategy| {
+                let mut executor = strategy.create_executor(
+                    Default::default(),
+                    (),
+                    rwasm::always_failing_syscall_handler,
+                    None,
+                    max_allowed_memory_pages,
+                )?;
+                let mut grown = Vec::new();
+                for delta in deltas {
+                    let mut result = [rwasm::Value::I32(0)];
+                    executor.execute("main", &[rwasm::Value::I32(delta)], &mut result)?;
+                    grown.push(result[0].i32().unwrap());
+                }
+                Ok((grown, executor.snapshot_memory()?.len()))
+            },
+            config().with_max_allowed_memory_pages(2),
+            &wasm,
+        )
+        .unwrap();
+        assert_eq!(outcomes[0], outcomes[1], "rwasm and wasmtime diverged");
+        assert_eq!(
+            outcomes[0],
+            (
+                expected.to_vec(),
+                pages * rwasm::N_BYTES_PER_MEMORY_PAGE as usize
+            ),
+            "run-time cap {max_allowed_memory_pages:?}"
+        );
+    }
+}
