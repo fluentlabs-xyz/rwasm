@@ -183,7 +183,12 @@ impl<'a, T> RwasmExecutor<'a, T> {
             let instr = self.ip.get();
             #[cfg(feature = "debug-print")]
             self.debug_print(&instr);
-            let return_reached = self.step(instr)?;
+            // a trap leaves the loop through `status`, never through `?`: the cleanup below has to
+            // run for it
+            let return_reached = match self.step(instr) {
+                Ok(return_reached) => return_reached,
+                Err(trap_code) => break Err(trap_code),
+            };
             if return_reached {
                 break Ok(());
             }
