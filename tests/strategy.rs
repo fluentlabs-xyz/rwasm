@@ -586,8 +586,9 @@ mod missing_memory {
     /// The result of `main` and the memory snapshot taken after it.
     type Outcome = (Result<Value, TrapCode>, Result<Vec<u8>, TrapCode>);
 
-    /// Runs `main(offset, length)` on both strategies and returns the outcomes with the memory
-    /// snapshots, checking that the two agree.
+    /// Runs `main(offset, length)` on both strategies, where the host probes the range from
+    /// inside the call and the test probes it again through the executor, and returns the
+    /// outcomes with the memory snapshots, checking that the two strategies agree.
     fn run(offset: i32, length: i32) -> Vec<Outcome> {
         let wasm = wat::parse_str(
             r#"(module
@@ -617,6 +618,13 @@ mod missing_memory {
                         &mut result,
                     )
                     .map(|()| result[0].clone());
+                // the executor answers the same way the caller did inside the call
+                let (offset, length) = (offset as usize, length as usize);
+                let from_executor = executor
+                    .memory_read_into_vec(offset, length)
+                    .and_then(|_| executor.memory_write(offset, &vec![0; length]))
+                    .and_then(|()| executor.memory_read(offset, &mut vec![0; length]));
+                assert_eq!(from_executor, outcome.as_ref().map(|_| ()).map_err(|e| *e));
                 Ok((outcome, executor.snapshot_memory()))
             },
             strategy_config().with_import_linker(import_linker.clone()),
@@ -657,10 +665,20 @@ mod imported_globals {
 
     fn run(wat: &str) -> Vec<Result<Value, TrapCode>> {
         let wasm = wat::parse_str(wat).unwrap();
+        // the modules also import `env.noop`, which the linker knows; only globals get a default
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("env", "noop"),
+            1,
+            SyscallFuelParams::default(),
+            &[],
+            &[],
+        );
+        let import_linker = Arc::new(import_linker);
         let outcomes = for_each_strategy(
             |strategy| {
                 let mut executor = strategy.create_executor(
-                    Arc::new(ImportLinker::default()),
+                    import_linker.clone(),
                     (),
                     always_failing_syscall_handler,
                     None,
@@ -671,7 +689,9 @@ mod imported_globals {
                     .execute("main", &[], &mut result)
                     .map(|()| result[0].clone()))
             },
-            strategy_config().with_default_imported_global_value(7),
+            strategy_config()
+                .with_import_linker(import_linker.clone())
+                .with_default_imported_global_value(7),
             &wasm,
         )
         .unwrap();
@@ -683,6 +703,7 @@ mod imported_globals {
     #[test]
     fn numeric_imports_take_the_default_on_both_strategies() {
         let outcomes = run(r#"(module
+                (import "env" "noop" (func))
                 (import "env" "a" (global i32))
                 (import "env" "b" (global (mut i64)))
                 (import "env" "c" (global f32))
@@ -752,6 +773,7 @@ mod imported_globals {
     #[test]
     fn reference_imports_start_null_on_both_strategies() {
         let outcomes = run(r#"(module
+                (import "env" "noop" (func))
                 (import "env" "f" (global funcref))
                 (import "env" "e" (global externref))
                 (func $unused)

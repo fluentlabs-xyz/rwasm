@@ -932,14 +932,18 @@ fn test_wasmtime_raw_imports_return_float_results() {
 /// `compile_wasmtime_module` applies no entrypoint policy, so an export with a reference in its
 /// signature reaches the executor. The reference marshalling used to exist in the `e2e` build
 /// only, and the call hit `unreachable!` in every other build; it now reports the null reference
-/// the rwasm VM reports for the same export.
+/// the rwasm VM reports for the same export, and passes a reference parameter through by
+/// nullness (`funcref`) or by index (`externref`).
 #[test]
 fn reference_typed_export_reports_a_null_reference() {
-    use crate::{always_failing_syscall_handler, FuncRef};
+    use crate::{always_failing_syscall_handler, ExternRef, FuncRef};
     let wasm = wat::parse_str(
         r#"(module
             (func (export "main") (result funcref) ref.null func)
-            (func (export "numeric") (result i32) i32.const 7))"#,
+            (func (export "numeric") (result i32) i32.const 7)
+            (func (export "funcref_id") (param funcref) (result funcref) local.get 0)
+            (func (export "externref_id") (param externref) (result externref) local.get 0)
+            (func (export "non_null") (result funcref) ref.func 0))"#,
     )
     .unwrap();
     let module = compile_wasmtime_module(CompilationConfig::default(), wasm).unwrap();
@@ -957,6 +961,77 @@ fn reference_typed_export_reports_a_null_reference() {
     assert_eq!(result, [Value::FuncRef(FuncRef::null())]);
     executor.execute("numeric", &[], &mut result).unwrap();
     assert_eq!(result, [Value::I32(7)]);
+    executor
+        .execute(
+            "funcref_id",
+            &[Value::FuncRef(FuncRef::null())],
+            &mut result,
+        )
+        .unwrap();
+    assert_eq!(result, [Value::FuncRef(FuncRef::null())]);
+    for index in [0, 5] {
+        executor
+            .execute(
+                "externref_id",
+                &[Value::ExternRef(ExternRef::new(index))],
+                &mut result,
+            )
+            .unwrap();
+        assert_eq!(result, [Value::ExternRef(ExternRef::new(index))]);
+    }
+    // a result buffer of another length than the signature is the same mismatch as on the raw path
+    assert_eq!(
+        executor.execute("main", &[], &mut []),
+        Err(TrapCode::IllegalOpcode)
+    );
+    // a non-null function reference has no counterpart on this backend: a parameter is refused
+    // before the call, a result after it, and the buffer keeps what it held
+    let mut result = [Value::I32(-1)];
+    assert_eq!(
+        executor.execute(
+            "funcref_id",
+            &[Value::FuncRef(FuncRef::new(3))],
+            &mut result
+        ),
+        Err(TrapCode::IllegalOpcode)
+    );
+    assert_eq!(
+        executor.execute("non_null", &[], &mut result),
+        Err(TrapCode::IllegalOpcode)
+    );
+    assert_eq!(result, [Value::I32(-1)]);
+}
+
+/// The default value has no layout for a global type the rwasm compiler never admits. A module
+/// compiled outside the rwasm front end, on an engine with SIMD, can import a `v128` global;
+/// linking reports it instead of instantiating the module with a made-up value.
+#[test]
+fn imported_global_of_an_unsupported_type_is_a_linking_error() {
+    use crate::always_failing_syscall_handler;
+    let mut config = wasmtime::Config::new();
+    config.wasm_simd(true);
+    let engine = wasmtime::Engine::new(&config).unwrap();
+    let wasm =
+        wat::parse_str(r#"(module (import "env" "v" (global v128)) (func (export "main")))"#)
+            .unwrap();
+    let module = WasmtimeModule::new(
+        Module::new(&engine, &wasm).unwrap(),
+        &CompilationConfig::default().with_default_imported_global_value(7),
+    );
+    let err = WasmtimeExecutor::try_new(
+        module,
+        Arc::new(ImportLinker::default()),
+        (),
+        always_failing_syscall_handler,
+        None,
+        None,
+    )
+    .err()
+    .expect("linking must fail");
+    assert!(
+        err.to_string().contains("unsupported type `v128`"),
+        "unexpected error: {err}"
+    );
 }
 
 /// The store limiter follows the compile-time page cap of the module it runs, and a replacement
@@ -1178,6 +1253,52 @@ mod instantiation_failures {
             err.downcast_ref::<TrapCode>(),
             Some(&TrapCode::MemoryOutOfBounds)
         );
+    }
+
+    /// A replacement that fails to instantiate leaves the previous module's store limits in
+    /// place: the executor installs the replacement's compile-time cap before instantiating and
+    /// has to put the previous limits back.
+    #[test]
+    fn failed_replacement_keeps_the_previous_store_limits() {
+        let mut executor = WasmtimeExecutor::new(
+            compile(
+                r#"(module (memory (export "memory") 1)
+                    (func (export "main") (param i32) (result i32)
+                        (memory.grow (local.get 0))))"#,
+                CompilationConfig::default().with_max_allowed_memory_pages(2),
+            ),
+            Arc::new(ImportLinker::default()),
+            (),
+            always_failing_syscall_handler,
+            None,
+            Some(3),
+        )
+        .unwrap();
+        // five initial pages exceed the run-time cap of three; the replacement's own cap of
+        // eight would let the live module grow to three pages if it stayed in place
+        let replacement = compile_wasmtime_module_on(
+            executor.store.engine(),
+            CompilationConfig::default().with_max_allowed_memory_pages(8),
+            wat::parse_str(r#"(module (memory (export "memory") 5) (func (export "main")))"#)
+                .unwrap(),
+        )
+        .unwrap();
+        let err = executor
+            .instantiate(&replacement)
+            .expect_err("instantiation must fail");
+        assert_eq!(
+            err.downcast_ref::<TrapCode>(),
+            Some(&TrapCode::MemoryOutOfBounds)
+        );
+        let mut grow = |delta: i32| {
+            let mut result = [Value::I32(0)];
+            executor
+                .execute("main", &[Value::I32(delta)], &mut result)
+                .unwrap();
+            result[0].i32().unwrap()
+        };
+        assert_eq!(grow(1), 1);
+        assert_eq!(grow(1), -1, "the replacement's cap stayed in place");
     }
 }
 
@@ -1877,6 +1998,105 @@ mod imported_globals {
         .unwrap();
         executor.instantiate(&calls_function).unwrap();
         assert_eq!(main_result(&mut executor), Ok(42));
+    }
+
+    /// A linker definition of another type than the import is `UnknownExternalFunction`, as the
+    /// linker's own resolution reported it: the module was compiled against a host function
+    /// `env.f: () -> i32` and is instantiated with a linker whose `env.f` takes an `i32`.
+    #[test]
+    fn a_definition_of_another_type_is_unknown_external_function() {
+        let module = compile_wasmtime_module(
+            CompilationConfig::default().with_import_linker(host_linker()),
+            wat::parse_str(
+                r#"(module (import "env" "f" (func (result i32)))
+                    (func (export "main") (result i32) call 0))"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let mut other_linker = ImportLinker::default();
+        other_linker.insert_function(
+            ImportName::new("env", "f"),
+            1,
+            SyscallFuelParams::default(),
+            &[ValType::I32],
+            &[],
+        );
+        let err = WasmtimeExecutor::new(
+            module,
+            Arc::new(other_linker),
+            (),
+            always_failing_syscall_handler,
+            None,
+            None,
+        )
+        .err()
+        .expect("the import must not resolve");
+        assert_eq!(err, TrapCode::UnknownExternalFunction);
+    }
+
+    /// Imports that get no global of their own resolve against the executor's linker whatever
+    /// their kind: a global has to match in type and mutability, a memory is left to Wasmtime's
+    /// check. Modules of the rwasm language never import these (the compiler rejects them), so a
+    /// bare module on a plain engine exercises the path.
+    #[test]
+    fn linker_globals_and_memories_resolve_by_kind() {
+        use wasmtime::{Global, GlobalType, Memory, MemoryType, Mutability, Val};
+        let engine = wasmtime::Engine::new(&wasmtime::Config::new()).unwrap();
+        let module = |wat: &str| {
+            WasmtimeModule::from(Module::new(&engine, wat::parse_str(wat).unwrap()).unwrap())
+        };
+        let mut executor = WasmtimeExecutor::new(
+            module(r#"(module (func (export "main")))"#),
+            Arc::new(ImportLinker::default()),
+            (),
+            always_failing_syscall_handler,
+            None,
+            None,
+        )
+        .unwrap();
+        let global = Global::new(
+            &mut executor.store,
+            GlobalType::new(wasmtime::ValType::I32, Mutability::Const),
+            Val::I32(5),
+        )
+        .unwrap();
+        executor
+            .linker
+            .define(&mut executor.store, "env", "g", global)
+            .unwrap();
+        let memory = Memory::new(&mut executor.store, MemoryType::new(1, None)).unwrap();
+        executor
+            .linker
+            .define(&mut executor.store, "env", "m", memory)
+            .unwrap();
+
+        executor
+            .instantiate(&module(
+                r#"(module (import "env" "g" (global i32)) (import "env" "m" (memory 1))
+                    (func (export "main") (result i32) global.get 0))"#,
+            ))
+            .unwrap();
+        assert_eq!(main_result(&mut executor), Ok(5));
+
+        // a global of another type or mutability does not resolve, nor does a function import
+        // under the name of a global
+        for wat in [
+            r#"(module (import "env" "g" (global i64)) (func (export "main")))"#,
+            r#"(module (import "env" "g" (global (mut i32))) (func (export "main")))"#,
+            r#"(module (import "env" "g" (func)) (func (export "main")))"#,
+        ] {
+            let err = executor
+                .instantiate(&module(wat))
+                .expect_err("the global must not resolve");
+            assert_eq!(
+                err.downcast_ref::<TrapCode>(),
+                Some(&TrapCode::UnknownExternalFunction),
+                "{wat}"
+            );
+        }
+        // the previous instance is still the live one
+        assert_eq!(main_result(&mut executor), Ok(5));
     }
 
     /// A replacement compiled without a default for imported globals does not inherit the global
