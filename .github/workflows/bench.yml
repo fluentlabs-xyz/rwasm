@@ -28,16 +28,18 @@ jobs:
           CRITERION_WARM_UP_TIME: "3"
           CRITERION_MEASUREMENT_TIME: "5"
           CRITERION_SAMPLE_SIZE: "50"
+        # A bare `cargo bench` also runs the lib unit tests under libtest, which rejects
+        # Criterion's flags; `--bench bench` limits the run to the Criterion target.
         run: |
           rustup target add wasm32-unknown-unknown
           rustup +nightly-2025-09-20 target add wasm32-unknown-unknown
-          make && cargo bench -- --save-baseline devel
+          make && cargo bench --bench bench -- --save-baseline devel
 
       - name: Upload baseline artifact
         uses: actions/upload-artifact@v7
         with:
           name: criterion-baseline-devel
-          path: benchmarks/target/criterion
+          path: target/criterion
           if-no-files-found: error
           compression-level: 6
 
@@ -67,7 +69,7 @@ jobs:
           workflow_conclusion: success
           name: criterion-baseline-devel
           branch: devel
-          path: benchmarks/target/criterion
+          path: target/criterion
 
       - name: Run Criterion (compare if baseline exists)
         env:
@@ -76,19 +78,21 @@ jobs:
           CRITERION_MEASUREMENT_TIME: "2"
           CRITERION_SAMPLE_SIZE: "20"
         run: |
+          # rust-cache restores target/criterion as an empty tree, so the directory's
+          # existence says nothing about the baseline; trust the download step instead.
           BASEFLAG=""
-          if [ -d "benchmarks/target/criterion" ]; then
+          if [ "${{ steps.dl.outcome }}" = "success" ]; then
             BASEFLAG="--baseline devel"
           fi
           rustup target add wasm32-unknown-unknown
           rustup +nightly-2025-09-20 target add wasm32-unknown-unknown
-          make && cargo bench -- $BASEFLAG | tee bench_output.txt
+          make && cargo bench --bench bench -- $BASEFLAG | tee bench_output.txt
 
       - name: Upload full report
         uses: actions/upload-artifact@v7
         with:
           name: criterion-report-${{ github.sha }}
-          path: benchmarks/target/criterion
+          path: target/criterion
           compression-level: 6
 
       - name: Post summary in PR
