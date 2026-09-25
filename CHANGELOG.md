@@ -7,6 +7,58 @@ minor version moves only when the instruction set changes (a module compiled by 
 not run on an older VM), the patch version for everything else. The rule and the release procedure
 are in `.claude/skills/bump-version/SKILL.md`.
 
+## [0.7.1] - 2026-09-25
+
+No new opcodes. The bytes emitted for the same wasm change (a smaller `StackCheck` for a function
+with dead code after `end`, the entries of active segments in the data and element tables, the
+intrinsic in an import trampoline), so module hashes move while older artifacts still decode. The
+fuel schedule is unchanged. The Wasmtime backend now traps and caps memory where the rwasm VM does:
+a module that recursed past `N_MAX_RECURSION_DEPTH` or the value-stack window, or grew its memory
+past the compile-time page cap, ran on Wasmtime before and traps on both engines now.
+
+### Changed
+- The Wasmtime backend emulates the rwasm stack limits (#213). Compiled code traps `StackOverflow`
+  at `N_MAX_RECURSION_DEPTH` (1024) frames and when a frame does not fit the value-stack window,
+  the hidden `i64` snippet frames and the import trampoline included, so both engines stop a call
+  chain at the same frame (`tests/stack-overflow.rs`). Needs `wasmtime-rwasm` 45.0.0-rwasm.3
+  (`Config::rwasm_stack_limits`); every module compiled for the Wasmtime engine carries the
+  `rwasm.frames` custom section (`ModuleParser::frame_heights`). Call-heavy recursion runs 3% to
+  5% slower under Wasmtime. Downstreams adapt: `compile_wasmtime_module` runs the rwasm
+  translator first, so a config without an import linker no longer compiles a module with
+  imports; `wasmtime_syscall_handler` takes the import's result types; `compile_wasmtime_module_on`
+  compiles a module for `WasmtimeExecutor::instantiate` on the executor's engine, and
+  `wasmtime_engine` is public.
+- `WasmtimeExecutor` resolves a module's imports itself, one extern per import (#220): a global
+  import of a module compiled with `default_imported_global_value` gets a fresh global holding the
+  default (null for a reference), every other import the linker's definition of the same kind and
+  type, so a module may import one name as a function and as a global, as on rwasm. The public
+  `instance_pre` field is gone. `WasmtimeModule` carries the compiling config's
+  `max_allowed_memory_pages` and `default_imported_global_value`.
+- New compile-time error `SyscallFuelOutOfBounds`: a `SyscallFuelParams::Const` above `u32::MAX`
+  used to be cut to its low 32 bits (#220). A named entrypoint whose signature carries a `funcref`
+  or `externref` is `MalformedFuncType` unless `allow_func_ref_function_types` (#220).
+
+### Fixed
+- Backend divergence (#220): `memory.grow` on Wasmtime is bounded by the compile-time page cap as
+  on rwasm, also across `instantiate`; host memory access to a module without memory succeeds for
+  an empty range at offset 0 and traps for every other range on both engines; a reference-typed
+  export no longer panics the Wasmtime executor, and a halted checked call reports the declared
+  result types' zeros (`FuncRef(null)` for a `funcref`); a module importing globals links on
+  Wasmtime with the configured default; an imported reference global starts null instead of
+  pointing at a code offset.
+- Compiler (#220): dead code after `end` no longer grows the function's `StackCheck`, which made
+  a valid function exceed the window with enough dead blocks; active data and element segments
+  record their position in the flattened section, so `memory.init` and `table.init` from one
+  after `reset(false)` read the right bytes; the import trampoline reached by `ref.func`, element
+  segments and `call_indirect` carries the intrinsic instead of making the syscall.
+- VM (#220): `run_with_stack_check` cleans up its frames after a trap, so the next entry on the
+  store no longer fails with `BadSignature`.
+- `fpu` builds (#220): `f32/f64.min/max` return a quiet NaN for a signaling NaN operand, as the
+  spec and Wasmtime do.
+
+### Docs
+- `docs/pipeline.md` describes the stack-limit emulation instead of the backend difference (#213).
+
 ## [0.7.0] - 2026-09-23
 
 Instruction-set change: four new opcodes. Modules that use the wide-arithmetic operators need this
