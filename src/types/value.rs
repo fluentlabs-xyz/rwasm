@@ -639,6 +639,18 @@ mod fmath {
     pub use super::libm_adapters::{f32, f64};
 }
 
+/// The NaN `$value` with its quiet bit set, payload and sign kept.
+///
+/// `min`/`max` return a NaN operand as it is, where the spec asks for an arithmetic (quiet) NaN:
+/// a signaling NaN passed through them unchanged, unlike through `add`, whose hardware
+/// implementation quiets it.
+macro_rules! quiet_nan {
+    ($value:expr, $fXX:ident) => {{
+        let bits = <$fXX>::from($value).to_bits() | (1 << (<$fXX>::MANTISSA_DIGITS - 2));
+        <$fXX>::from_bits(bits).into()
+    }};
+}
+
 // We cannot call the math functions directly, because they are not all available in `core`.
 // In no-std cases we instead rely on `libm`.
 // These wrappers handle that delegation.
@@ -703,10 +715,9 @@ macro_rules! impl_float {
                 // specification. Note: In other contexts this API is also known as:
                 // `nan_min`.
                 match (self.is_nan(), other.is_nan()) {
-                    (true, false) => self,
-                    (false, true) => other,
-                    _ => {
-                        // Case: Both values are NaN; OR both values are non-NaN.
+                    (true, _) => quiet_nan!(self, $fXX),
+                    (false, true) => quiet_nan!(other, $fXX),
+                    (false, false) => {
                         if other.is_sign_negative() {
                             return other.min(self);
                         }
@@ -720,10 +731,9 @@ macro_rules! impl_float {
                 // specification. Note: In other contexts this API is also known as:
                 // `nan_max`.
                 match (self.is_nan(), other.is_nan()) {
-                    (true, false) => self,
-                    (false, true) => other,
-                    _ => {
-                        // Case: Both values are NaN; OR both values are non-NaN.
+                    (true, _) => quiet_nan!(self, $fXX),
+                    (false, true) => quiet_nan!(other, $fXX),
+                    (false, false) => {
                         if other.is_sign_positive() {
                             return other.max(self);
                         }

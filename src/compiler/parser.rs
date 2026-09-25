@@ -100,6 +100,35 @@ impl ModuleParser {
         Ok(result)
     }
 
+    /// Rejects an entrypoint whose signature carries a `funcref` or `externref` unless the config
+    /// allows reference-typed function types.
+    ///
+    /// The typed API marshals numbers only: the Wasmtime backend has no `Value` for a reference
+    /// outside the `e2e` build, so such an export used to panic there while the rwasm VM ran it.
+    /// This is the entrypoint counterpart of the import check in [`Self::process_imports`].
+    fn ensure_entrypoint_has_no_reference_types(
+        &self,
+        func_idx: FuncIdx,
+    ) -> Result<(), CompilationError> {
+        if self.config.allow_func_ref_function_types {
+            return Ok(());
+        }
+        let translation = &self.allocations.translation;
+        let func_type_idx = translation.resolve_func_type_index(func_idx);
+        let func_type = translation
+            .func_type_registry
+            .resolve_original_func_type(func_type_idx);
+        let has_reference_type = func_type
+            .params()
+            .iter()
+            .chain(func_type.results())
+            .any(|ty| matches!(ty, ValType::Ref(_)));
+        if has_reference_type {
+            return Err(CompilationError::MalformedFuncType);
+        }
+        Ok(())
+    }
+
     /// Preserves the named entrypoint's Wasm signature for the typed strategy API. The reduced
     /// bytecode itself carries stack slots, so it cannot recover value boundaries at call time.
     pub(crate) fn entrypoint_type(&self) -> Option<FuncType> {
@@ -179,6 +208,7 @@ impl ModuleParser {
                 .get(entrypoint_name)
                 .copied()
                 .ok_or(CompilationError::MissingEntrypoint)?;
+            self.ensure_entrypoint_has_no_reference_types(func_idx)?;
             self.allocations
                 .translation
                 .emit_function_call(func_idx, true, true);
@@ -298,6 +328,7 @@ impl ModuleParser {
             if !is_empty_func_type && !allow_malformed_entrypoint_func_type {
                 return Err(CompilationError::MalformedFuncType);
             }
+            self.ensure_entrypoint_has_no_reference_types(func_idx)?;
             let entrypoint_bytecode = &mut self
                 .allocations
                 .translation
@@ -512,6 +543,15 @@ impl ModuleParser {
                     let Some(default_value) = self.config.default_imported_global_value else {
                         return Err(CompilationError::NotSupportedImportType);
                     };
+                    // A reference global starts null. The default is a number; taken as the
+                    // initializer of a `funcref`/`externref` global it was remapped as a function
+                    // index in `finalize`, which panicked past the function count and otherwise
+                    // pointed the global at an arbitrary code offset.
+                    let default_value = if matches!(global_type.content_type, ValType::Ref(_)) {
+                        0
+                    } else {
+                        default_value
+                    };
                     let global_index = self.allocations.translation.globals.len() as u32;
                     let global_variable = GlobalVariable::new(global_type, default_value);
                     self.allocations
@@ -556,6 +596,7 @@ impl ModuleParser {
                 .compiled_funcs
                 .push(func_type_index);
 
+            let is_intrinsic = import_linker_entity.intrinsic.is_some();
             if let Some(intrinsic) = import_linker_entity.intrinsic {
                 self.allocations
                     .translation
@@ -581,22 +622,30 @@ impl ModuleParser {
                 .resolve_func_type_signature(func_type_index);
             translator.alloc.instruction_set.op_stack_check(u32::MAX);
 
-            if self.config.builtins_consume_fuel {
-                let temporary_slots = compile_block_params(
-                    &mut translator.alloc.instruction_set,
-                    import_linker_entity.syscall_fuel_param,
-                    import_linker_entity.params,
-                )?;
-                // This prologue is emitted directly rather than through the Wasm translator.
-                // Include its peak so the trampoline grows the stack before using temporaries.
-                translator.stack_height.push_n(temporary_slots);
-                translator.stack_height.pop_n(temporary_slots);
+            if is_intrinsic {
+                // An intrinsic stands in for the syscall wherever the import is called. A direct
+                // call splices it into the caller, so the trampoline, which `ref.func`, element
+                // segments and `call_indirect` reach, carries it as well: it used to make the
+                // syscall instead, which the host does not serve for an intrinsic import. The
+                // metering prologue belongs to the syscall and is left out as at a direct call.
+                translator.alloc.emit_function_call(func_idx, false, false);
+            } else {
+                if self.config.builtins_consume_fuel {
+                    let temporary_slots = compile_block_params(
+                        &mut translator.alloc.instruction_set,
+                        import_linker_entity.syscall_fuel_param,
+                        import_linker_entity.params,
+                    )?;
+                    // This prologue is emitted directly rather than through the Wasm translator.
+                    // Include its peak so the trampoline grows the stack before using temporaries.
+                    translator.stack_height.push_n(temporary_slots);
+                    translator.stack_height.pop_n(temporary_slots);
+                }
+                translator
+                    .alloc
+                    .instruction_set
+                    .op_call(import_linker_entity.sys_func_idx);
             }
-
-            translator
-                .alloc
-                .instruction_set
-                .op_call(import_linker_entity.sys_func_idx);
             translator.alloc.instruction_set.op_return();
             translator.finish()?;
             let _ = replace(

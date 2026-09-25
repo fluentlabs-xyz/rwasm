@@ -54,7 +54,11 @@ pub(crate) fn compile_block_params(
     let temporary_slots = syscall_fuel_temporary_slots(&syscall_fuel_param);
     match syscall_fuel_param {
         SyscallFuelParams::None => {}
-        SyscallFuelParams::Const(base) => isa.op_consume_fuel(base as u32),
+        // the bytecode carries the constant as a `ConsumeFuel(u32)` immediate; a larger one
+        // used to be cut to its low 32 bits and charged as that
+        SyscallFuelParams::Const(base) => isa.op_consume_fuel(
+            u32::try_from(base).map_err(|_| CompilationError::SyscallFuelOutOfBounds)?,
+        ),
         SyscallFuelParams::LinearFuel(fuel_params) => {
             let depth = param_slot_depth(params, fuel_params.param_index)?;
             isa.op_local_get(depth);

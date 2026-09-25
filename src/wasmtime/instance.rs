@@ -1,8 +1,9 @@
 use crate::{
     checked_memory_range_end,
     wasmtime::{
-        context::RecordingStoreLimits, types::map_wasmtime_error, wasmtime_import_linker,
-        WasmtimeModule, WrappedContext,
+        context::{missing_memory_access, RecordingStoreLimits},
+        types::map_wasmtime_error,
+        wasmtime_import_linker, WasmtimeModule, WrappedContext,
     },
     ImportLinker, SyscallHandler, TrapCode, Value, F32, F64, N_BYTES_PER_MEMORY_PAGE,
     N_DEFAULT_MAX_MEMORY_PAGES, N_MAX_ALLOWED_MEMORY_PAGES, N_MAX_TABLE_SIZE,
@@ -26,12 +27,13 @@ struct ExportedFunction {
 }
 
 pub struct WasmtimeExecutor<T: 'static> {
+    /// The host functions (and, in the `e2e` build, the spectest globals). Every import a module
+    /// does not get a global of its own for resolves against it, see [`Self::imports`].
     pub linker: wasmtime::Linker<WrappedContext<T>>,
     pub store: wasmtime::Store<WrappedContext<T>>,
     /// The import linker `linker` was built from; resolves a module's syscall fuel schedule to
     /// syscall indices when a module is instantiated.
     import_linker: Arc<ImportLinker>,
-    pub instance_pre: wasmtime::InstancePre<WrappedContext<T>>,
     /// The live instance. Replaced only through [`Self::instantiate`], which swaps the cached
     /// exports and the store's syscall fuel schedule in the same step: the host trampolines read
     /// that schedule before every syscall, so an instance installed without it would be charged
@@ -45,6 +47,9 @@ pub struct WasmtimeExecutor<T: 'static> {
     /// The strategy layer exposes a single entrypoint, matching the rwasm backend, which has no
     /// way to resolve an arbitrary export name at run time.
     entrypoint_name: Option<Box<str>>,
+    /// The run-time cap on the instance memory, in pages, as the store was created with. Each
+    /// module's compile-time cap is applied on top of it; see [`Self::store_limits`].
+    max_allowed_memory_pages: u32,
 }
 
 impl<T: 'static> AsContext for WasmtimeExecutor<T> {
@@ -64,10 +69,6 @@ impl<T: 'static> WasmtimeExecutor<T> {
     /// The live Wasmtime instance; see [`Self::instantiate`] to replace it.
     pub fn instance(&self) -> wasmtime::Instance {
         self.instance
-    }
-
-    fn exported_memory(&self) -> Result<wasmtime::Memory, TrapCode> {
-        self.store.data().memory.ok_or(TrapCode::MemoryOutOfBounds)
     }
 
     /// Resolves the exported functions and the exported memory of `instance` once.
@@ -157,22 +158,9 @@ impl<T: 'static> WasmtimeExecutor<T> {
         fuel_limit: Option<u64>,
         max_allowed_memory_pages: Option<u32>,
     ) -> wasmtime::Result<Self> {
-        let memory_pages = max_allowed_memory_pages
+        let max_allowed_memory_pages = max_allowed_memory_pages
             .unwrap_or(N_DEFAULT_MAX_MEMORY_PAGES)
             .min(N_MAX_ALLOWED_MEMORY_PAGES);
-        let memory_size_limit = (memory_pages as usize)
-            .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
-            .expect("wasmtime: memory limit is bounded by N_MAX_ALLOWED_MEMORY_PAGES");
-        // the rwasm VM caps every table at `N_MAX_TABLE_SIZE` elements (`TableEntity::grow_untyped`
-        // fails any grow beyond it); apply the same per-table cap here so `table.grow` reports
-        // the same failures on both strategies
-        let resource_limiter = RecordingStoreLimits::new(
-            wasmtime::StoreLimitsBuilder::new()
-                .memory_size(memory_size_limit)
-                .table_elements(N_MAX_TABLE_SIZE as usize)
-                .build(),
-        );
-
         let context = WrappedContext {
             syscall_handler,
             fuel: None,
@@ -180,7 +168,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
             fuel_unbounded: false,
             memory: None,
             syscall_fuel: Self::resolve_syscall_fuel(&module, &import_linker)?,
-            resource_limiter,
+            resource_limiter: Self::store_limits(max_allowed_memory_pages, &module),
             data,
         };
         let mut store = wasmtime::Store::<WrappedContext<T>>::new(module.engine(), context);
@@ -202,18 +190,16 @@ impl<T: 'static> WasmtimeExecutor<T> {
         {
             Self::link_spectest_globals(&mut linker, &mut store);
         }
-        let instance_pre = linker
-            .instantiate_pre(module.module())
-            .map_err(|err| err.context(TrapCode::UnknownExternalFunction))?;
-        let instance = Self::instantiate_in(&instance_pre, &mut store)?;
+        let imports = Self::imports(&linker, &mut store, &module)?;
+        let instance = Self::instantiate_in(module.module(), &imports, &mut store)?;
         let mut executor = Self {
             linker,
             store,
             import_linker,
-            instance_pre,
             instance,
             functions: Vec::new(),
             entrypoint_name: None,
+            max_allowed_memory_pages,
         };
         executor.refresh_exports();
         Ok(executor)
@@ -233,23 +219,134 @@ impl<T: 'static> WasmtimeExecutor<T> {
     /// Errors carry the same [`TrapCode`] context as [`Self::try_new`].
     pub fn instantiate(&mut self, module: &WasmtimeModule) -> wasmtime::Result<()> {
         let syscall_fuel = Self::resolve_syscall_fuel(module, &self.import_linker)?;
-        let instance_pre = self
-            .linker
-            .instantiate_pre(module.module())
-            .map_err(|err| err.context(TrapCode::UnknownExternalFunction))?;
+        let imports = Self::imports(&self.linker, &mut self.store, module)?;
         let previous_syscall_fuel =
             std::mem::replace(&mut self.store.data_mut().syscall_fuel, syscall_fuel);
-        let instance = match Self::instantiate_in(&instance_pre, &mut self.store) {
+        // the replacement brings its own compile-time memory cap
+        let previous_resource_limiter = std::mem::replace(
+            &mut self.store.data_mut().resource_limiter,
+            Self::store_limits(self.max_allowed_memory_pages, module),
+        );
+        let instance = match Self::instantiate_in(module.module(), &imports, &mut self.store) {
             Ok(instance) => instance,
             Err(err) => {
                 self.store.data_mut().syscall_fuel = previous_syscall_fuel;
+                self.store.data_mut().resource_limiter = previous_resource_limiter;
                 return Err(err);
             }
         };
-        self.instance_pre = instance_pre;
         self.instance = instance;
         self.refresh_exports();
         Ok(())
+    }
+
+    /// The externs `module` instantiates with, one per import in the module's import order.
+    ///
+    /// A global import of a module compiled with `default_imported_global_value` gets a fresh
+    /// global holding that default, in the layout the rwasm compiler gives the global it makes of
+    /// the import (see `ModuleParser::process_imports`): the number for a numeric global, its low
+    /// limb for a 32-bit one, null for a reference. Every other import resolves to the entry of
+    /// `linker` under its name (a host function, or a spectest global of the `e2e` build), which
+    /// has to be of the imported kind and type; a missing or mismatched entry is
+    /// [`TrapCode::UnknownExternalFunction`], as the linker's own resolution reported it.
+    ///
+    /// Resolving per import, rather than by defining the globals in a `Linker`, keeps them out of
+    /// the persistent linker (a module's global must not replace a host function for the modules
+    /// that follow, and a replacement without a default must not inherit one) and lets a module
+    /// import the same name as a function and as a global, which is valid Wasm that the rwasm
+    /// compiler accepts: a linker has one entry per name and failed to instantiate such a module.
+    fn imports(
+        linker: &wasmtime::Linker<WrappedContext<T>>,
+        store: &mut wasmtime::Store<WrappedContext<T>>,
+        module: &WasmtimeModule,
+    ) -> wasmtime::Result<Vec<Extern>> {
+        use wasmtime::{ExternType, Global, Val};
+        let default_value = module.default_imported_global_value();
+        let mut imports = Vec::with_capacity(module.module().imports().len());
+        for import in module.module().imports() {
+            let import_type = import.ty();
+            if let (ExternType::Global(global_type), Some(default_value)) =
+                (&import_type, default_value)
+            {
+                let value = match global_type.content().clone() {
+                    ValType::I32 => Val::I32(default_value as i32),
+                    ValType::I64 => Val::I64(default_value),
+                    // a 32-bit global carries its initializer in the low limb of the value, see
+                    // `SegmentBuilder::add_global_variable`
+                    ValType::F32 => Val::F32(default_value as u32),
+                    ValType::F64 => Val::F64(default_value as u64),
+                    // a reference global starts null, whatever the default
+                    ty if ty.is_funcref() => Val::FuncRef(None),
+                    ty if ty.is_externref() => Val::ExternRef(None),
+                    ty => {
+                        return Err(wasmtime::Error::msg(format!(
+                            "wasmtime: unsupported type `{ty}` of the imported global `{}::{}`",
+                            import.module(),
+                            import.name()
+                        )))
+                    }
+                };
+                let global = Global::new(&mut *store, global_type.clone(), value)?;
+                imports.push(Extern::Global(global));
+                continue;
+            }
+            let unknown = |err: wasmtime::Error| err.context(TrapCode::UnknownExternalFunction);
+            let definition = linker
+                .get(&mut *store, import.module(), import.name())
+                .map_err(unknown)?;
+            if !Self::import_matches(&definition.ty(&*store), &import_type) {
+                return Err(unknown(wasmtime::Error::msg(format!(
+                    "wasmtime: import `{}::{}` differs in type from the linker's definition",
+                    import.module(),
+                    import.name()
+                ))));
+            }
+            imports.push(definition);
+        }
+        Ok(imports)
+    }
+
+    /// Whether a linker definition of type `actual` satisfies an import of type `expected`.
+    ///
+    /// Functions and globals, the kinds the rwasm compiler admits as imports, are checked here;
+    /// any other kind is left to Wasmtime's own check at instantiation.
+    fn import_matches(actual: &wasmtime::ExternType, expected: &wasmtime::ExternType) -> bool {
+        use wasmtime::ExternType;
+        match (actual, expected) {
+            (ExternType::Func(actual), ExternType::Func(expected)) => actual.matches(expected),
+            (ExternType::Global(actual), ExternType::Global(expected)) => {
+                actual.mutability() == expected.mutability()
+                    && actual.content().matches(expected.content())
+            }
+            (ExternType::Func(_) | ExternType::Global(_), _)
+            | (_, ExternType::Func(_) | ExternType::Global(_)) => false,
+            _ => true,
+        }
+    }
+
+    /// The store limits for running `module` under a run-time cap of `max_allowed_memory_pages`.
+    ///
+    /// The memory may grow up to the lower of the run-time cap and the module's compile-time cap:
+    /// the rwasm VM bounds its memory by the store's cap and every compiled `memory.grow` by the
+    /// config's, so a grow past either reports `-1` there. Applying only the run-time cap here
+    /// used to let the same module grow further on this backend.
+    fn store_limits(
+        max_allowed_memory_pages: u32,
+        module: &WasmtimeModule,
+    ) -> RecordingStoreLimits {
+        let memory_pages = max_allowed_memory_pages.min(module.max_allowed_memory_pages());
+        let memory_size_limit = (memory_pages as usize)
+            .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
+            .expect("wasmtime: memory limit is bounded by N_MAX_ALLOWED_MEMORY_PAGES");
+        // the rwasm VM caps every table at `N_MAX_TABLE_SIZE` elements (`TableEntity::grow_untyped`
+        // fails any grow beyond it); apply the same per-table cap here so `table.grow` reports
+        // the same failures on both strategies
+        RecordingStoreLimits::new(
+            wasmtime::StoreLimitsBuilder::new()
+                .memory_size(memory_size_limit)
+                .table_elements(N_MAX_TABLE_SIZE as usize)
+                .build(),
+        )
     }
 
     /// Resolves the module's syscall fuel schedule (by import name) to the syscall indices the
@@ -291,13 +388,14 @@ impl<T: 'static> WasmtimeExecutor<T> {
         Ok(syscall_fuel)
     }
 
-    /// Instantiates `instance_pre` in `store`.
+    /// Instantiates `module` with `imports` in `store`.
     ///
     /// A failure caused by the store's resource limits is tagged with the trap the rwasm
     /// entrypoint prologue raises for the same module, so both strategies report an oversized
     /// initial memory or table identically.
     fn instantiate_in(
-        instance_pre: &wasmtime::InstancePre<WrappedContext<T>>,
+        module: &wasmtime::Module,
+        imports: &[Extern],
         store: &mut wasmtime::Store<WrappedContext<T>>,
     ) -> wasmtime::Result<wasmtime::Instance> {
         store.data_mut().resource_limiter.reset_denied();
@@ -308,7 +406,7 @@ impl<T: 'static> WasmtimeExecutor<T> {
             call_depth: 1,
             stack_slots: 0,
         });
-        match instance_pre.instantiate(store.as_context_mut()) {
+        match wasmtime::Instance::new(store.as_context_mut(), module, imports) {
             Ok(instance) => Ok(instance),
             Err(err) => {
                 // A refused initial memory or table aborts instantiation with a plain error. A
@@ -388,7 +486,18 @@ impl<T: 'static> WasmtimeExecutor<T> {
         if function.numeric {
             return Self::execute_raw(&mut self.store, function, params, result);
         }
-        self.execute_checked(function.func, params, result)
+        // The result placeholders are the declared types' zeros. A halted call writes no results
+        // and the caller then gets the placeholders, as the rwasm VM reports zeros of the declared
+        // types; `i32` placeholders used to report `I32(0)` for a `funcref` result there.
+        let placeholders = function
+            .results
+            .iter()
+            .map(|ty| {
+                wasmtime::Val::default_for_ty(ty)
+                    .expect("wasmtime: every result type of the rwasm language has a zero value")
+            })
+            .collect::<SmallVec<[wasmtime::Val; 8]>>();
+        self.execute_checked(function.func, placeholders, params, result)
     }
 
     /// Calls a numeric-only export through raw value slots, skipping `Val` marshalling.
@@ -439,23 +548,35 @@ impl<T: 'static> WasmtimeExecutor<T> {
     }
 
     /// Calls an export through wasmtime's checked `Val` interface; needed for reference types.
+    ///
+    /// An `externref` carries its index across. A `funcref` crosses only as the null reference:
+    /// the rwasm VM's function references are code offsets, which have no counterpart in a
+    /// Wasmtime `Func`, so a non-null parameter is a type mismatch (`IllegalOpcode`) before the
+    /// call runs and a non-null result one after it, with the caller's buffer left as it was.
+    /// The compiler admits such an entrypoint only under `allow_func_ref_function_types` (the
+    /// spec harness), but a module compiled through `compile_wasmtime_module` gets here without
+    /// that policy, so the marshalling is not tied to a build feature.
     fn execute_checked(
         &mut self,
         entrypoint: wasmtime::Func,
+        placeholders: SmallVec<[wasmtime::Val; 8]>,
         params: &[Value],
         result: &mut [Value],
     ) -> Result<(), TrapCode> {
         use wasmtime::Val;
+        // a wrong result count is the signature mismatch the raw path reports as well
+        if result.len() != placeholders.len() {
+            return Err(TrapCode::IllegalOpcode);
+        }
         let mut buffer = Vec::<Val>::default();
-        for (i, value) in params.iter().enumerate() {
+        for value in params {
             let value = match value {
                 Value::I32(value) => Val::I32(*value),
                 Value::I64(value) => Val::I64(*value),
                 Value::F32(value) => Val::F32(value.to_bits()),
                 Value::F64(value) => Val::F64(value.to_bits()),
-                #[cfg(feature = "e2e")]
-                Value::FuncRef(value) => Val::FuncRef(None),
-                #[cfg(feature = "e2e")]
+                Value::FuncRef(value) if value.is_null() => Val::FuncRef(None),
+                Value::FuncRef(_) => return Err(TrapCode::IllegalOpcode),
                 Value::ExternRef(value) => {
                     let func_idx = value.0;
                     if func_idx == 0 {
@@ -464,13 +585,10 @@ impl<T: 'static> WasmtimeExecutor<T> {
                         Val::ExternRef(wasmtime::ExternRef::new(&mut self.store, func_idx).ok())
                     }
                 }
-                // this should never happen because rWasm rejects such binaries during compilation
-                #[allow(unreachable_patterns)]
-                _ => unreachable!("wasmtime: not supported type: {:?}", value),
             };
             buffer.push(value);
         }
-        buffer.extend(std::iter::repeat_n(Val::I32(0), result.len()));
+        buffer.extend(placeholders);
         let (mapped_params, mapped_result) = buffer.split_at_mut(params.len());
         entrypoint
             .call(self.store.as_context_mut(), mapped_params, mapped_result)
@@ -482,15 +600,15 @@ impl<T: 'static> WasmtimeExecutor<T> {
                     Err(trap_code)
                 }
             })?;
-        for (i, x) in mapped_result.iter().cloned().enumerate() {
-            result[i] = match x {
+        let mut values = SmallVec::<[Value; 8]>::new();
+        for x in mapped_result.iter().cloned() {
+            values.push(match x {
                 Val::I32(value) => Value::I32(value),
                 Val::I64(value) => Value::I64(value),
                 Val::F32(value) => Value::F32(F32::from_bits(value)),
                 Val::F64(value) => Value::F64(F64::from_bits(value)),
-                #[cfg(feature = "e2e")]
-                Val::FuncRef(value) => Value::FuncRef(crate::FuncRef::new(0)),
-                #[cfg(feature = "e2e")]
+                Val::FuncRef(None) => Value::FuncRef(crate::FuncRef::null()),
+                Val::FuncRef(Some(_)) => return Err(TrapCode::IllegalOpcode),
                 Val::ExternRef(value) => {
                     let value: Option<&u32> = value
                         .and_then(|ext_ref| ext_ref.data(&mut self.store).ok().flatten())
@@ -498,8 +616,9 @@ impl<T: 'static> WasmtimeExecutor<T> {
                     Value::ExternRef(crate::ExternRef::new(value.copied().unwrap_or_default()))
                 }
                 _ => unreachable!("wasmtime: not supported type: {:?}", x),
-            };
+            });
         }
+        result.clone_from_slice(&values);
         Ok(())
     }
 
@@ -515,7 +634,10 @@ impl<T: 'static> WasmtimeExecutor<T> {
     }
 
     pub fn snapshot_memory(&mut self) -> Result<Vec<u8>, TrapCode> {
-        let global_memory = self.exported_memory()?;
+        // a module without memory snapshots as the zero-page memory the rwasm VM gives it
+        let Some(global_memory) = self.store.data().memory else {
+            return Ok(Vec::new());
+        };
         let memory_size = global_memory
             .size(self.store.as_context_mut())
             .checked_mul(N_BYTES_PER_MEMORY_PAGE as u64)
@@ -530,7 +652,9 @@ impl<T: 'static> WasmtimeExecutor<T> {
 
 impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     fn memory_read(&mut self, offset: usize, buffer: &mut [u8]) -> Result<(), TrapCode> {
-        let global_memory = self.exported_memory()?;
+        let Some(global_memory) = self.store.data().memory else {
+            return missing_memory_access(offset, buffer.len());
+        };
         global_memory
             .read(self.store.as_context(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)
@@ -538,7 +662,9 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
 
     fn memory_read_into_vec(&mut self, offset: usize, length: usize) -> Result<Vec<u8>, TrapCode> {
         let end = checked_memory_range_end(offset, length)?;
-        let global_memory = self.exported_memory()?;
+        let Some(global_memory) = self.store.data().memory else {
+            return missing_memory_access(offset, length).map(|()| Vec::new());
+        };
         let memory_size = (global_memory.size(self.store.as_context_mut()) as usize)
             .checked_mul(N_BYTES_PER_MEMORY_PAGE as usize)
             .ok_or(TrapCode::MemoryOutOfBounds)?;
@@ -551,7 +677,9 @@ impl<T> crate::StoreTr<T> for WasmtimeExecutor<T> {
     }
 
     fn memory_write(&mut self, offset: usize, buffer: &[u8]) -> Result<(), TrapCode> {
-        let global_memory = self.exported_memory()?;
+        let Some(global_memory) = self.store.data().memory else {
+            return missing_memory_access(offset, buffer.len());
+        };
         global_memory
             .write(self.store.as_context_mut(), offset, buffer)
             .map_err(|_| TrapCode::MemoryOutOfBounds)

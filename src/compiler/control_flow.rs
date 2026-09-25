@@ -390,6 +390,14 @@ impl IfControlFrame {
         self.end_of_then_is_reachable = Some(reachable);
     }
 
+    /// Returns whether the end of the `then` branch is reachable.
+    ///
+    /// This is `None` until the `else` of the frame has been reached; an `if` that ends without
+    /// an `else` never records it.
+    pub fn end_of_then_is_reachable(&self) -> Option<bool> {
+        self.end_of_then_is_reachable
+    }
+
     /// Returns a reference to the [`ConsumeFuel`] instruction of the
     /// [`BlockControlFrame`] if any.
     ///

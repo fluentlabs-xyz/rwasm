@@ -744,6 +744,54 @@ mod host_boundary {
         );
     }
 
+    /// A halted call reports zeros of the declared result types. The Wasmtime backend used to
+    /// prepare `i32` placeholders for every result of a checked call, so an export returning a
+    /// `funcref` reported `I32(0)` where rwasm reports the null reference.
+    #[test]
+    fn halted_call_zeroes_a_reference_result_on_both_backends() {
+        use rwasm::FuncRef;
+        let wasm = wat::parse_str(
+            r#"(module
+                 (import "env" "exit" (func $exit))
+                 (func (export "main") (result funcref) call $exit ref.null func))"#,
+        )
+        .unwrap();
+        let mut linker = ImportLinker::default();
+        linker.insert_function(
+            ImportName::new("env", "exit"),
+            1,
+            SyscallFuelParams::default(),
+            &[],
+            &[],
+        );
+        let linker = Arc::new(linker);
+
+        fn halting_handler(
+            _caller: &mut TypedCaller<'_, ()>,
+            _sys_func_idx: u32,
+            _params: &[Value],
+            _result: &mut [Value],
+        ) -> Result<(), TrapCode> {
+            Err(TrapCode::ExecutionHalted)
+        }
+
+        let config = config(&linker).with_allow_func_ref_function_types(true);
+        let definitions = [
+            StrategyDefinition::new_as_rwasm(config.clone(), &wasm).expect("rwasm compiles"),
+            StrategyDefinition::new_as_wasmtime(config, &wasm, None).expect("wasmtime compiles"),
+        ];
+        let outcomes = definitions.map(|definition| {
+            let mut executor = definition
+                .create_executor(linker.clone(), (), halting_handler, Some(1_000_000), None)
+                .expect("the module must instantiate");
+            let mut result = [Value::I32(-1)];
+            let outcome = executor.execute("main", &[], &mut result);
+            (outcome, result)
+        });
+        assert_eq!(outcomes[0], outcomes[1], "rwasm and wasmtime diverged");
+        assert_eq!(outcomes[0], (Ok(()), [Value::FuncRef(FuncRef::null())]));
+    }
+
     /// `R2-4`: a start function that halts on a host syscall is accepted by the rwasm entrypoint path
     /// (`ExecutionHalted` is mapped to `Ok(())` there) and rejects instantiation on the Wasmtime
     /// backend, so the same module is deployable on one engine and not on the other.
@@ -1135,5 +1183,63 @@ mod syscall_results {
             "a mistyped handler result must be rejected the same way by both backends: \
              rwasm={rwasm:?}, wasmtime={wasmtime:?}"
         );
+    }
+}
+
+/// An active segment recorded its memory (table) destination where a passive segment records its
+/// position in the flattened data (element) section. Instantiation drops active segments, so the
+/// wrong position only showed once `reset(false)` forgot the drops: a `memory.init` or
+/// `table.init` from the segment then read another segment's bytes or functions.
+#[test]
+fn active_segments_record_their_position_in_the_flattened_section() {
+    let linker = Arc::new(ImportLinker::default());
+    let data = compile_instance(
+        &linker,
+        r#"(module (memory 1)
+            (data (i32.const 4) "abcd")
+            (data "0123456789")
+            (func (export "main") (result i32)
+                (memory.init 0 (i32.const 200) (i32.const 0) (i32.const 4))
+                (i32.load (i32.const 200))))"#,
+    );
+    let elements = compile_instance(
+        &linker,
+        r#"(module (table 8 funcref)
+            (type $ret (func (result i32)))
+            (func $f0 (result i32) i32.const 100)
+            (func $f1 (result i32) i32.const 101)
+            (func $f2 (result i32) i32.const 102)
+            (func $f3 (result i32) i32.const 103)
+            (elem (i32.const 2) $f0)
+            (elem func $f1 $f2 $f3)
+            (func (export "main") (result i32)
+                (table.init 0 (i32.const 5) (i32.const 0) (i32.const 1))
+                (call_indirect (type $ret) (i32.const 5))))"#,
+    );
+    for (module, dropped, revived) in [
+        (
+            data,
+            TrapCode::MemoryOutOfBounds,
+            i32::from_le_bytes(*b"abcd"),
+        ),
+        (elements, TrapCode::TableOutOfBounds, 100),
+    ] {
+        let mut store = RwasmStore::new(
+            linker.clone(),
+            (),
+            rwasm::always_failing_syscall_handler,
+            None,
+            None,
+        );
+        let instance = linker
+            .instantiate(&mut store, ExecutionEngine::new(), module)
+            .unwrap();
+        let mut result = [Value::I32(0)];
+        // instantiation dropped the active segment
+        assert_eq!(instance.execute(&mut store, &[], &mut result), Err(dropped));
+        // `reset(false)` forgets the drops; the segment then reads its own bytes
+        store.reset(false);
+        instance.execute(&mut store, &[], &mut result).unwrap();
+        assert_eq!(result, [Value::I32(revived)]);
     }
 }

@@ -922,23 +922,32 @@ impl InstructionTranslator {
                 .pin_label(frame.end_label(), self.current_pc())
                 .unwrap_or_else(|err| panic!("failed to pin label: {err}"));
         }
-        let is_branches = self.reachable && frame.is_branched_to();
-
-        // These bindings are required because of borrowing issues.
-        let frame_reachable = frame.is_reachable();
+        // The code after `end` is reachable if the frame was entered reachable and control can
+        // leave it through its end: the body falls through, a branch targets the end label, or
+        // the frame is an `if` without `else`, whose false path skips to the end. A `loop` is
+        // only left by falling through, since its branches go to the head. A frame entered in
+        // unreachable code stays unreachable.
+        let end_reachable = match frame {
+            ControlFrame::Block(frame) => self.reachable || frame.is_branched_to(),
+            ControlFrame::Loop(_) => self.reachable,
+            ControlFrame::If(frame) => match frame.end_of_then_is_reachable() {
+                None => true,
+                Some(end_of_then_reachable) => {
+                    end_of_then_reachable || self.reachable || frame.is_branched_to()
+                }
+            },
+            ControlFrame::Unreachable(_) => false,
+        };
 
         // These bindings are required because of borrowing issues.
         let frame_stack_height = frame.stack_height();
-        let block_type = frame.block_type();
         if self.alloc.control_frames.len() == 1 {
             // If the control flow frames stack is empty after this point,
             // we know that we are ending the function body `block`
             // frame, and therefore we have to return from the function.
             self.visit_return()?;
         } else {
-            // The following code is only reachable if the ended control flow
-            // frame was reachable upon entering to begin with.
-            self.reachable = frame_reachable;
+            self.reachable = end_reachable;
         }
         if let Some(frame_stack_height) = frame_stack_height {
             let mut old_stack_height = self.stack_height.height();
@@ -953,30 +962,37 @@ impl InstructionTranslator {
             }
         }
         let frame = self.alloc.control_frames.pop_frame();
-        match frame.block_type() {
-            BlockType::FuncType(func_type_idx) => {
-                let func_type = self
-                    .alloc
-                    .func_type_registry
-                    .resolve_original_func_type(func_type_idx);
-                func_type.results().iter().for_each(|param| {
-                    if *param == ValType::I64 || *param == ValType::F64 {
+        // The results of a frame nothing leaves through its end are never consumed, so they are
+        // not pushed: nothing in the dead code that follows pops them, and pushing them anyway
+        // raised the recorded peak by every such frame, which grew the function's stack
+        // reservation (`StackCheck`) and, with enough of them, made a valid function exceed the
+        // window.
+        if end_reachable {
+            match frame.block_type() {
+                BlockType::FuncType(func_type_idx) => {
+                    let func_type = self
+                        .alloc
+                        .func_type_registry
+                        .resolve_original_func_type(func_type_idx);
+                    func_type.results().iter().for_each(|param| {
+                        if *param == ValType::I64 || *param == ValType::F64 {
+                            self.stack_height.push_n(2);
+                        } else {
+                            self.stack_height.push1();
+                        }
+                        self.alloc.stack_types.push(*param);
+                    });
+                }
+                BlockType::Type(val_type) => {
+                    if val_type == ValType::I64 || val_type == ValType::F64 {
                         self.stack_height.push_n(2);
                     } else {
                         self.stack_height.push1();
                     }
-                    self.alloc.stack_types.push(*param);
-                });
-            }
-            BlockType::Type(val_type) => {
-                if val_type == ValType::I64 || val_type == ValType::F64 {
-                    self.stack_height.push_n(2);
-                } else {
-                    self.stack_height.push1();
+                    self.alloc.stack_types.push(val_type);
                 }
-                self.alloc.stack_types.push(val_type);
+                _ => {}
             }
-            _ => {}
         }
         if self.is_fuel_metering_enabled() && !self.alloc.control_frames.is_empty() {
             let fuel_ix = self.push_consume_fuel_empty();

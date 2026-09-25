@@ -183,9 +183,10 @@ impl SegmentBuilder {
         self.entrypoint_bytecode
             .op_memory_init(DEFAULT_MEMORY_INDEX);
         self.entrypoint_bytecode.op_data_drop(segment_idx + 1);
-        // store passive section info
+        // store the segment's position in the flattened data section, like a passive segment;
+        // the memory destination above is no use to a later `memory.init` from this segment
         self.memory_sections
-            .insert(segment_idx, (offset, data_length));
+            .insert(segment_idx, (data_offset, data_length));
         Ok(())
     }
 
@@ -225,9 +226,10 @@ impl SegmentBuilder {
         self.entrypoint_bytecode.op_table_init(segment_idx + 1);
         self.entrypoint_bytecode.op_table_get(table_idx);
         self.entrypoint_bytecode.op_elem_drop(segment_idx + 1);
-        // store active section info
+        // store the segment's position in the flattened element section, like a passive
+        // segment; the table destination above is no use to a later `table.init` from it
         self.element_sections
-            .insert(segment_idx, (offset, segment_length));
+            .insert(segment_idx, (segment_offset, segment_length));
         Ok(())
     }
 

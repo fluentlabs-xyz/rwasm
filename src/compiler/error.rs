@@ -7,6 +7,8 @@ pub enum CompilationError {
     BlockFuelOutOfBounds,
     /// A syscall fuel policy points at a parameter the imported function does not have.
     InvalidSyscallFuelParam,
+    /// A constant syscall fuel cost does not fit the `ConsumeFuel` immediate.
+    SyscallFuelOutOfBounds,
     NotSupportedExtension,
     DropKeepOutOfBounds,
     BranchTableTargetsOutOfBounds,
@@ -77,6 +79,9 @@ impl core::fmt::Display for CompilationError {
         match self {
             CompilationError::BranchOffsetOutOfBounds => write!(f, "branch offset out of bounds"),
             CompilationError::BlockFuelOutOfBounds => write!(f, "block fuel out of bounds"),
+            CompilationError::SyscallFuelOutOfBounds => {
+                write!(f, "syscall fuel constant out of bounds")
+            }
             CompilationError::InvalidSyscallFuelParam => {
                 write!(f, "syscall fuel parameter index is out of range")
             }

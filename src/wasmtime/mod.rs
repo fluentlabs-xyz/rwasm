@@ -17,7 +17,7 @@ pub use self::{
 };
 use crate::{
     wasmtime::context::WrappedContext, CompilationConfig, CompilationError, ImportName,
-    ModuleParser, N_MAX_TABLE_SIZE,
+    ModuleParser, N_MAX_ALLOWED_MEMORY_PAGES, N_MAX_TABLE_SIZE,
 };
 use lru::LruCache;
 use rwasm_fuel_policy::SyscallFuelParams;
@@ -48,16 +48,41 @@ pub struct WasmtimeModule {
     /// Syscall fuel of every import the compiling config's linker knew, by import name, when the
     /// config enabled `builtins_consume_fuel`; empty otherwise.
     syscall_fuel: Arc<HashMap<ImportName, SyscallFuelParams>>,
+    /// The compiling config's `max_allowed_memory_pages`.
+    ///
+    /// The rwasm compiler bakes this cap into every `memory.grow`, so the instance memory never
+    /// exceeds it whatever the store allows. Wasmtime has no such code, so the executor applies
+    /// the cap through its store limiter instead.
+    max_allowed_memory_pages: u32,
+    /// The compiling config's `default_imported_global_value`.
+    ///
+    /// The rwasm compiler turns every imported global into a global of the module with this
+    /// value; the executor defines the imports with it so the module links here as well.
+    default_imported_global_value: Option<i64>,
 }
 
 impl WasmtimeModule {
     /// Pairs a module compiled by `compilation_config`'s engine with that config's syscall fuel
-    /// schedule.
+    /// schedule and memory page cap.
     pub fn new(module: wasmtime::Module, compilation_config: &CompilationConfig) -> Self {
         Self {
             module,
             syscall_fuel: Arc::new(syscall_fuel_schedule(compilation_config)),
+            max_allowed_memory_pages: compilation_config.max_allowed_memory_pages,
+            default_imported_global_value: compilation_config.default_imported_global_value,
         }
+    }
+
+    /// The value the compiling config gave every imported global; see
+    /// [`CompilationConfig::default_imported_global_value`].
+    pub fn default_imported_global_value(&self) -> Option<i64> {
+        self.default_imported_global_value
+    }
+
+    /// The compile-time cap on the instance memory, in pages; see
+    /// [`CompilationConfig::max_allowed_memory_pages`].
+    pub fn max_allowed_memory_pages(&self) -> u32 {
+        self.max_allowed_memory_pages
     }
 
     /// The underlying Wasmtime module.
@@ -84,12 +109,15 @@ impl Deref for WasmtimeModule {
     }
 }
 
-/// A bare module charges no syscall fuel, like a config with `builtins_consume_fuel` off.
+/// A bare module charges no syscall fuel, like a config with `builtins_consume_fuel` off, and
+/// leaves the memory cap to the store.
 impl From<wasmtime::Module> for WasmtimeModule {
     fn from(module: wasmtime::Module) -> Self {
         Self {
             module,
             syscall_fuel: Arc::default(),
+            max_allowed_memory_pages: N_MAX_ALLOWED_MEMORY_PAGES,
+            default_imported_global_value: None,
         }
     }
 }

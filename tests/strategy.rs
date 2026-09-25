@@ -365,6 +365,40 @@ mod accepted_language {
         ));
     }
 
+    /// A named entrypoint that takes or returns a reference is rejected everywhere: the typed
+    /// API marshals numbers only, and the Wasmtime executor used to panic on such an export
+    /// while the rwasm VM ran it.
+    #[test]
+    fn reference_typed_entrypoint_is_rejected_on_every_constructor() {
+        for wat in [
+            r#"(module (func (export "main") (result funcref) ref.null func))"#,
+            r#"(module (func (export "main") (param externref)))"#,
+        ] {
+            let wasm = wat::parse_str(wat).unwrap();
+            assert!(matches!(
+                StrategyDefinition::new_as_rwasm(strategy_config(), &wasm),
+                Err(CompilationError::MalformedFuncType)
+            ));
+            assert!(matches!(
+                StrategyDefinition::new_as_wasmtime(strategy_config(), &wasm, None),
+                Err(CompilationError::MalformedFuncType)
+            ));
+            let routed = CompilationConfig::default_strategy_compatible()
+                .with_allow_malformed_entrypoint_func_type(true)
+                .with_state_router(rwasm::StateRouterConfig {
+                    states: Box::new([("main".into(), 0u32)]),
+                    opcode: None,
+                });
+            assert!(matches!(
+                StrategyDefinition::new_as_rwasm(routed, &wasm),
+                Err(CompilationError::MalformedFuncType)
+            ));
+            // the spec harness opts in through the same flag that admits reference-typed imports
+            let allowed = strategy_config().with_allow_func_ref_function_types(true);
+            assert!(StrategyDefinition::new_as_rwasm(allowed, &wasm).is_ok());
+        }
+    }
+
     /// `compile_wasmtime_module_cached` validates with Wasmtime only. A module it primed under a
     /// key must not satisfy `new_as_wasmtime` under the same key, or the constructor's rwasm
     /// validation could be skipped.
@@ -523,5 +557,228 @@ mod memory_export {
             StrategyDefinition::new_as_wasmtime(config, &wasm, None),
             Err(rwasm::CompilationError::MissingMemoryExport)
         ));
+    }
+}
+
+mod missing_memory {
+    //! A module that declares no memory: the rwasm VM runs it with a memory of zero pages, so
+    //! host access to an empty range at offset 0 succeeds and everything else traps. The
+    //! Wasmtime executor used to fail every access, and the snapshot, with `MemoryOutOfBounds`.
+
+    use super::*;
+    use rwasm::for_each_strategy;
+
+    fn probe(
+        caller: &mut TypedCaller<'_, ()>,
+        _sys_func_idx: u32,
+        params: &[Value],
+        result: &mut [Value],
+    ) -> Result<(), TrapCode> {
+        let offset = params[0].i32().unwrap() as usize;
+        let length = params[1].i32().unwrap() as usize;
+        caller.memory_read_into_vec(offset, length)?;
+        caller.memory_write(offset, &vec![0; length])?;
+        caller.memory_read(offset, &mut vec![0; length])?;
+        result[0] = Value::I32(1);
+        Ok(())
+    }
+
+    /// The result of `main` and the memory snapshot taken after it.
+    type Outcome = (Result<Value, TrapCode>, Result<Vec<u8>, TrapCode>);
+
+    /// Runs `main(offset, length)` on both strategies, where the host probes the range from
+    /// inside the call and the test probes it again through the executor, and returns the
+    /// outcomes with the memory snapshots, checking that the two strategies agree.
+    fn run(offset: i32, length: i32) -> Vec<Outcome> {
+        let wasm = wat::parse_str(
+            r#"(module
+                (import "env" "probe" (func $probe (param i32 i32) (result i32)))
+                (func (export "main") (param i32 i32) (result i32)
+                    (call $probe (local.get 0) (local.get 1))))"#,
+        )
+        .unwrap();
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("env", "probe"),
+            1,
+            SyscallFuelParams::default(),
+            &[ValType::I32, ValType::I32],
+            &[ValType::I32],
+        );
+        let import_linker = Arc::new(import_linker);
+        let outcomes = for_each_strategy(
+            |strategy| {
+                let mut executor =
+                    strategy.create_executor(import_linker.clone(), (), probe, None, None)?;
+                let mut result = [Value::I32(0)];
+                let outcome = executor
+                    .execute(
+                        "main",
+                        &[Value::I32(offset), Value::I32(length)],
+                        &mut result,
+                    )
+                    .map(|()| result[0].clone());
+                // the executor answers the same way the caller did inside the call
+                let (offset, length) = (offset as usize, length as usize);
+                let from_executor = executor
+                    .memory_read_into_vec(offset, length)
+                    .and_then(|_| executor.memory_write(offset, &vec![0; length]))
+                    .and_then(|()| executor.memory_read(offset, &mut vec![0; length]));
+                assert_eq!(from_executor, outcome.as_ref().map(|_| ()).map_err(|e| *e));
+                Ok((outcome, executor.snapshot_memory()))
+            },
+            strategy_config().with_import_linker(import_linker.clone()),
+            &wasm,
+        )
+        .unwrap();
+        assert_eq!(outcomes.len(), 2);
+        assert_eq!(outcomes[0], outcomes[1], "rwasm and wasmtime diverged");
+        outcomes
+    }
+
+    #[test]
+    fn empty_access_at_offset_zero_succeeds_on_both_strategies() {
+        let outcomes = run(0, 0);
+        assert_eq!(outcomes[0], (Ok(Value::I32(1)), Ok(Vec::new())));
+    }
+
+    #[test]
+    fn any_other_range_is_out_of_bounds_on_both_strategies() {
+        for (offset, length) in [(1, 0), (0, 1), (4, 4)] {
+            let outcomes = run(offset, length);
+            assert_eq!(
+                outcomes[0],
+                (Err(TrapCode::MemoryOutOfBounds), Ok(Vec::new())),
+                "offset {offset}, length {length}"
+            );
+        }
+    }
+}
+
+mod imported_globals {
+    //! An imported global takes `default_imported_global_value` on the rwasm strategy, where the
+    //! compiler turns it into a global of the module. The Wasmtime linker only defined functions,
+    //! so the same module failed to instantiate there with `UnknownExternalFunction`.
+
+    use super::*;
+    use rwasm::for_each_strategy;
+
+    fn run(wat: &str) -> Vec<Result<Value, TrapCode>> {
+        let wasm = wat::parse_str(wat).unwrap();
+        // the modules also import `env.noop`, which the linker knows; only globals get a default
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("env", "noop"),
+            1,
+            SyscallFuelParams::default(),
+            &[],
+            &[],
+        );
+        let import_linker = Arc::new(import_linker);
+        let outcomes = for_each_strategy(
+            |strategy| {
+                let mut executor = strategy.create_executor(
+                    import_linker.clone(),
+                    (),
+                    always_failing_syscall_handler,
+                    None,
+                    None,
+                )?;
+                let mut result = [Value::I32(0)];
+                Ok(executor
+                    .execute("main", &[], &mut result)
+                    .map(|()| result[0].clone()))
+            },
+            strategy_config()
+                .with_import_linker(import_linker.clone())
+                .with_default_imported_global_value(7),
+            &wasm,
+        )
+        .unwrap();
+        assert_eq!(outcomes.len(), 2);
+        assert_eq!(outcomes[0], outcomes[1], "rwasm and wasmtime diverged");
+        outcomes
+    }
+
+    #[test]
+    fn numeric_imports_take_the_default_on_both_strategies() {
+        let outcomes = run(r#"(module
+                (import "env" "noop" (func))
+                (import "env" "a" (global i32))
+                (import "env" "b" (global (mut i64)))
+                (import "env" "c" (global f32))
+                (import "env" "d" (global f64))
+                (func (export "main") (result i32)
+                    (global.set 1 (i64.add (global.get 1) (i64.const 100)))
+                    (i32.add
+                        (i32.add (global.get 0) (i32.wrap_i64 (global.get 1)))
+                        (i32.add
+                            (i32.reinterpret_f32 (global.get 2))
+                            (i32.wrap_i64 (i64.reinterpret_f64 (global.get 3)))))))"#);
+        assert_eq!(outcomes[0], Ok(Value::I32(7 + 107 + 7 + 7)));
+    }
+
+    /// A module may import the same name as a function and as a global: valid Wasm that the rwasm
+    /// compiler accepts, resolving the function from the linker and making the global. The
+    /// Wasmtime executor used to link through a `Linker`, which has one entry per name, so the
+    /// global shadowed the function and the module failed to instantiate there.
+    #[test]
+    fn the_same_name_imported_as_function_and_global_links_on_both_strategies() {
+        fn answer_42(
+            _caller: &mut TypedCaller<'_, ()>,
+            _sys_func_idx: u32,
+            _params: &[Value],
+            result: &mut [Value],
+        ) -> Result<(), TrapCode> {
+            result[0] = Value::I32(42);
+            Ok(())
+        }
+        let wasm = wat::parse_str(
+            r#"(module
+                (import "env" "same" (func $same (result i32)))
+                (import "env" "same" (global i32))
+                (func (export "main") (result i32)
+                    (i32.add (call $same) (global.get 0))))"#,
+        )
+        .unwrap();
+        let mut import_linker = ImportLinker::default();
+        import_linker.insert_function(
+            ImportName::new("env", "same"),
+            1,
+            SyscallFuelParams::default(),
+            &[],
+            &[ValType::I32],
+        );
+        let import_linker = Arc::new(import_linker);
+        let outcomes = for_each_strategy(
+            |strategy| {
+                let mut executor =
+                    strategy.create_executor(import_linker.clone(), (), answer_42, None, None)?;
+                let mut result = [Value::I32(0)];
+                executor.execute("main", &[], &mut result)?;
+                Ok(result[0].clone())
+            },
+            strategy_config()
+                .with_import_linker(import_linker.clone())
+                .with_default_imported_global_value(7),
+            &wasm,
+        )
+        .unwrap();
+        assert_eq!(outcomes, [Value::I32(42 + 7), Value::I32(42 + 7)]);
+    }
+
+    /// A reference global starts null whatever the default. The rwasm compiler used to take the
+    /// default for a function index, which panicked in the `RefFunc` remapping once it exceeded
+    /// the function count (two functions here, default 7).
+    #[test]
+    fn reference_imports_start_null_on_both_strategies() {
+        let outcomes = run(r#"(module
+                (import "env" "noop" (func))
+                (import "env" "f" (global funcref))
+                (import "env" "e" (global externref))
+                (func $unused)
+                (func (export "main") (result i32)
+                    (i32.add (ref.is_null (global.get 0)) (ref.is_null (global.get 1)))))"#);
+        assert_eq!(outcomes[0], Ok(Value::I32(2)));
     }
 }
