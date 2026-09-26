@@ -505,6 +505,44 @@ mod stack_limits {
         .unwrap()
     }
 
+    /// `main(n)` recurses `n` deep through `return_call`, after a plain `call` in every frame:
+    /// the call leaves the callee's counters in the store, the tail call must publish the
+    /// caller's own again.
+    fn call_then_tail_recursion() -> Vec<u8> {
+        wat::parse_str(
+            r#"(module
+                (memory (export "memory") 1)
+                (func $g (result i32) (i32.const 1))
+                (func $f (param i32) (result i32)
+                  (drop (call $g))
+                  (if (result i32) (i32.eqz (local.get 0))
+                    (then (i32.const 0))
+                    (else (return_call $f (i32.sub (local.get 0) (i32.const 1))))))
+                (func (export "main") (param i32) (result i32) (call $f (local.get 0))))"#,
+        )
+        .unwrap()
+    }
+
+    /// The same chain through `return_call_indirect`.
+    fn call_then_tail_indirect_recursion() -> Vec<u8> {
+        wat::parse_str(
+            r#"(module
+                (memory (export "memory") 1)
+                (type $t (func (param i32) (result i32)))
+                (table 1 funcref)
+                (elem (i32.const 0) $f)
+                (func $g (result i32) (i32.const 1))
+                (func $f (type $t)
+                  (drop (call $g))
+                  (if (result i32) (i32.eqz (local.get 0))
+                    (then (i32.const 0))
+                    (else (return_call_indirect (type $t)
+                      (i32.sub (local.get 0) (i32.const 1)) (i32.const 0)))))
+                (func (export "main") (param i32) (result i32) (call $f (local.get 0))))"#,
+        )
+        .unwrap()
+    }
+
     /// `main(n)` recurses `n` deep and runs `91 op 7` in the innermost frame, returning the
     /// result's low word.
     fn recursion_then_snippet(op: &str) -> Vec<u8> {
@@ -592,6 +630,28 @@ mod stack_limits {
                 .all(|(_, outcome)| *outcome == Ok(Value::I32(0))),
             "a tail-recursive chain must run on both strategies: {outcomes:?}"
         );
+    }
+
+    /// A tail call after a plain call in the same frame still replaces that frame. On Wasmtime
+    /// the plain call publishes the callee's depth and base to the store and nothing restores
+    /// them, so the tail call has to publish the caller's own counters again; before
+    /// `wasmtime-rwasm` 45.0.0-rwasm.4 it did not, and every iteration of such a loop counted
+    /// as one more frame until the depth limit trapped.
+    #[test]
+    fn tail_calls_after_a_call_do_not_count_towards_the_recursion_limit() {
+        let depth = 100 * N_MAX_RECURSION_DEPTH as i32;
+        for (kind, wasm) in [
+            ("return_call", call_then_tail_recursion()),
+            ("return_call_indirect", call_then_tail_indirect_recursion()),
+        ] {
+            let outcomes = both(&wasm, &[Value::I32(depth)], Value::I32(-1));
+            assert!(
+                outcomes
+                    .iter()
+                    .all(|(_, outcome)| *outcome == Ok(Value::I32(0))),
+                "{kind} after a call must run on both strategies: {outcomes:?}"
+            );
+        }
     }
 
     /// An `i64` operator compiled to a snippet runs in a hidden frame (two for div/rem, which
