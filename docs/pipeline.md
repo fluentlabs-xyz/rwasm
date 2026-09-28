@@ -132,7 +132,9 @@ call chain traps `StackOverflow` at the same frame on both (`wasmtime::RwasmStac
   window, like `StackCheck` on rwasm;
 - a call site traps when the call stack is full, then publishes the callee's depth and frame base
   (the caller's base plus its parameters, locals and the operands below the arguments) to the
-  store and restores its own after the call; a tail call keeps both, like `ReturnCallInternal`;
+  store; nothing is restored after the call, the caller keeps its own counters in registers, so a
+  tail call publishes the caller's own depth and base again, like `ReturnCallInternal`, in case
+  an earlier call of the same frame left the callee's in the store;
 - an `i64` operator that rwasm runs in a hidden snippet frame checks that frame's depth (two frames
   for div/rem, which call the shared `UDivMod64` core) and height before the operator runs;
 - the host trampolines check the import trampoline's frame (the parameters plus the temporaries of

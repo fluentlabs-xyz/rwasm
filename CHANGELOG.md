@@ -7,6 +7,18 @@ minor version moves only when the instruction set changes (a module compiled by 
 not run on an older VM), the patch version for everything else. The rule and the release procedure
 are in `.claude/skills/bump-version/SKILL.md`.
 
+## [Unreleased]
+
+No new opcodes, no change to the emitted bytes or the fuel schedule.
+
+### Fixed
+- Wasmtime backend: a `return_call` or `return_call_indirect` made after a plain call in the same
+  frame read the stack counters that call had published for its callee, so a tail-recursive loop
+  with a call in its body trapped `StackOverflow` after `N_MAX_RECURSION_DEPTH` iterations on
+  Wasmtime while the rwasm VM ran it. A tail call now publishes the caller's own depth and base
+  again, like `ReturnCallInternal`. Needs `wasmtime-rwasm` 45.0.0-rwasm.4; pinned by
+  `tests/stack-overflow.rs`.
+
 ## [0.7.1] - 2026-09-25
 
 No new opcodes. The bytes emitted for the same wasm change (a smaller `StackCheck` for a function
