@@ -212,6 +212,7 @@ charged and checked, which is what makes a trap reproducible across engines.
 | `tracing`                  |         | Execution tracing. Implies `serde`.                                                                                |
 | `debug-print`              |         | Debug printing from the VM.                                                                                        |
 | `pooling-allocator`        |         | Pooling allocator hooks.                                                                                           |
+| `memory-pool`              |         | **Experimental.** mmap-backed pool of linear-memory slots for instance reuse, Unix hosts only. Implies `std`.     |
 | `full-wasm-mode`           |         | Full Wasm mode in the Wasmtime backend. Execution equivalence between backends is not guaranteed.                  |
 | `fpu`                      |         | **Test and fuzz only.** Emits and executes float opcodes, which changes emitted bytecode and module hashes.        |
 | `e2e`                      |         | **Test only.** Relaxations required by the spec test suite.                                                        |
@@ -243,6 +244,7 @@ identity. [security-considerations.md](./docs/security-considerations.md) covers
 | [VM, Fuel, and Tracing](./docs/vm-and-fuel.md)                  | Runtime objects, fuel model, traps, resumable execution         |
 | [Opcode Specification](./docs/opcodes.md)                       | The complete opcode catalog                                     |
 | [Security Considerations](./docs/security-considerations.md)    | Validation, runtime safety, host boundary, DoS                  |
+| [Memory pool research](./docs/research/flu-1501-mmap-cow-memory-pool.md) | FLU-1501: mmap-backed slots, dirty-page reset, measurements |
 | [Contributor Guide](./docs/contributor-guide.md)                | Setup, canonical commands, change policy, PR checklist          |
 
 API reference: [docs.rs/rwasm](https://docs.rs/rwasm).

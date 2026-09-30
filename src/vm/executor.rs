@@ -489,20 +489,20 @@ impl<'a, T> RwasmExecutor<'a, T> {
             offset: u32,
             value: UntypedValue,
         ) -> Result<(), TrapCode>,
-        #[allow(unused_variables)] len: u32,
+        len: u32,
     ) -> Result<(), TrapCode> {
         let (address, value) = self.sp.pop2();
-        let memory = self.store.global_memory.data_mut();
-        store_wrap(memory, address, offset, value)?;
+        // the memory hands out exactly the bytes this store writes and marks them; the store
+        // itself then addresses the window from zero
+        let window =
+            self.store
+                .global_memory
+                .store_window(u32::from(address), offset, len as usize)?;
+        store_wrap(window, UntypedValue::default(), 0, value)?;
         #[cfg(feature = "tracing")]
-        {
-            let base_address = offset + u32::from(address);
-            self.store.tracer.memory_change(
-                base_address,
-                len,
-                &memory[base_address as usize..(base_address + len) as usize],
-            );
-        }
+        self.store
+            .tracer
+            .memory_change(offset + u32::from(address), len, window);
         self.ip.add(1);
         Ok(())
     }
