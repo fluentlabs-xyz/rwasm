@@ -98,6 +98,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 &memory[base_address as usize..(base_address + 4) as usize],
             );
         }
+        self.store
+            .global_memory
+            .mark_dirty((address_offset + u32::from(address)) as usize, 4);
         self.ip.add(1);
         Ok(())
     }
@@ -111,6 +114,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let address = self.sp.pop_i32();
         let memory = self.store.global_memory.data_mut();
         UntypedValue::store_typed(memory, address as u32, address_offset, value)?;
+        self.store
+            .global_memory
+            .mark_dirty((address_offset + address as u32) as usize, 8);
         self.ip.add(1);
         Ok(())
     }

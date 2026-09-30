@@ -212,6 +212,7 @@ charged and checked, which is what makes a trap reproducible across engines.
 | `tracing`                  |         | Execution tracing. Implies `serde`.                                                                                |
 | `debug-print`              |         | Debug printing from the VM.                                                                                        |
 | `pooling-allocator`        |         | Pooling allocator hooks.                                                                                           |
+| `memory-pool`              |         | **Research prototype** (FLU-1501). mmap-backed pool of linear-memory slots, Unix hosts only. Implies `std`.       |
 | `full-wasm-mode`           |         | Full Wasm mode in the Wasmtime backend. Execution equivalence between backends is not guaranteed.                  |
 | `fpu`                      |         | **Test and fuzz only.** Emits and executes float opcodes, which changes emitted bytecode and module hashes.        |
 | `e2e`                      |         | **Test only.** Relaxations required by the spec test suite.                                                        |

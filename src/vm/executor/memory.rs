@@ -98,6 +98,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.store
             .tracer
             .memory_change(offset as u32, n as u32, memory);
+        self.store.global_memory.mark_dirty(offset, n);
         self.ip.add(1);
         Ok(())
     }
@@ -123,6 +124,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
             n as u32,
             &data[dst_offset..(dst_offset + n)],
         );
+        self.store.global_memory.mark_dirty(dst_offset, n);
         self.ip.add(1);
         Ok(())
     }
@@ -163,12 +165,16 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.store
             .tracer
             .global_memory(dst_offset as u32, n as u32, memory);
+        self.store.global_memory.mark_dirty(dst_offset, n);
         self.ip.add(1);
         Ok(())
     }
 
     #[inline(always)]
-    pub(crate) fn visit_data_drop(&mut self, data_segment_idx: DataSegmentIdx) -> Result<(), TrapCode> {
+    pub(crate) fn visit_data_drop(
+        &mut self,
+        data_segment_idx: DataSegmentIdx,
+    ) -> Result<(), TrapCode> {
         // The compiler adds one to Wasm's zero-based segment index, reserving zero for the
         // flattened blob. The highest translated index is therefore `N_MAX_DATA_SEGMENTS`.
         // Larger indices cannot name a real segment and must not size the bitset.

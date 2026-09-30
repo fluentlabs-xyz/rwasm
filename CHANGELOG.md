@@ -7,6 +7,19 @@ minor version moves only when the instruction set changes (a module compiled by 
 not run on an older VM), the patch version for everything else. The rule and the release procedure
 are in `.claude/skills/bump-version/SKILL.md`.
 
+## [Unreleased]
+
+No new opcodes, no change to the emitted bytes or the fuel schedule.
+
+### Added
+- `memory-pool` feature (research prototype, FLU-1501): a `MemoryPool` of mmap-backed linear
+  memory slots that `RwasmStore::with_memory_pool` leases one per instance and resets on release
+  by dirty host pages, so a fresh instance costs a reset of what the previous one touched instead
+  of a zeroed allocation of what it declared. Unix hosts only, off by default, inert in `no_std`
+  builds; the design, the reset policies and the Linux/macOS measurements are in
+  `docs/research/flu-1501-mmap-cow-memory-pool.md`. The VM's write paths call
+  `GlobalMemory::mark_dirty`, a no-op without the feature.
+
 ## [0.7.2] - 2026-09-28
 
 No new opcodes, no change to the emitted bytes or the fuel schedule. Downstreams only move the

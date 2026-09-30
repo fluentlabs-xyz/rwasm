@@ -503,6 +503,10 @@ impl<'a, T> RwasmExecutor<'a, T> {
                 &memory[base_address as usize..(base_address + len) as usize],
             );
         }
+        // the store succeeded, so `offset + address` did not overflow
+        self.store
+            .global_memory
+            .mark_dirty((offset + u32::from(address)) as usize, len as usize);
         self.ip.add(1);
         Ok(())
     }
