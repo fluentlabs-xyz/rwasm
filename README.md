@@ -244,6 +244,7 @@ identity. [security-considerations.md](./docs/security-considerations.md) covers
 | [VM, Fuel, and Tracing](./docs/vm-and-fuel.md)                  | Runtime objects, fuel model, traps, resumable execution         |
 | [Opcode Specification](./docs/opcodes.md)                       | The complete opcode catalog                                     |
 | [Security Considerations](./docs/security-considerations.md)    | Validation, runtime safety, host boundary, DoS                  |
+| [Memory pool research](./docs/research/flu-1501-mmap-cow-memory-pool.md) | FLU-1501: mmap-backed slots, dirty-page reset, measurements |
 | [Contributor Guide](./docs/contributor-guide.md)                | Setup, canonical commands, change policy, PR checklist          |
 
 API reference: [docs.rs/rwasm](https://docs.rs/rwasm).
