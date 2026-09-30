@@ -86,19 +86,12 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let n = bulk_operand(n);
         let offset = bulk_operand(d);
         let byte = u8::from(val);
-        let memory = self
-            .store
-            .global_memory
-            .data_mut()
-            .get_mut(offset..)
-            .and_then(|memory| memory.get_mut(..n))
-            .ok_or(TrapCode::MemoryOutOfBounds)?;
+        let memory = self.store.global_memory.tracked_mut(offset, n)?;
         memory.fill(byte);
         #[cfg(feature = "tracing")]
         self.store
             .tracer
             .memory_change(offset as u32, n as u32, memory);
-        self.store.global_memory.mark_dirty(offset, n);
         self.ip.add(1);
         Ok(())
     }
@@ -109,22 +102,16 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let n = bulk_operand(n);
         let src_offset = bulk_operand(s);
         let dst_offset = bulk_operand(d);
-        // these accesses just perform the bound checks required by the Wasm spec.
-        let data = self.store.global_memory.data_mut();
-        data.get(src_offset..)
-            .and_then(|memory| memory.get(..n))
-            .ok_or(TrapCode::MemoryOutOfBounds)?;
-        data.get(dst_offset..)
-            .and_then(|memory| memory.get(..n))
-            .ok_or(TrapCode::MemoryOutOfBounds)?;
-        data.copy_within(src_offset..src_offset.wrapping_add(n), dst_offset);
+        // both ranges are bounds-checked before anything is copied, as the Wasm spec requires
+        self.store
+            .global_memory
+            .copy_within(src_offset, dst_offset, n)?;
         #[cfg(feature = "tracing")]
         self.store.tracer.memory_change(
             dst_offset as u32,
             n as u32,
-            &data[dst_offset..(dst_offset + n)],
+            &self.store.global_memory.data()[dst_offset..(dst_offset + n)],
         );
-        self.store.global_memory.mark_dirty(dst_offset, n);
         self.ip.add(1);
         Ok(())
     }
@@ -145,13 +132,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
         let n = bulk_operand(n);
         let src_offset = bulk_operand(s);
         let dst_offset = bulk_operand(d);
-        let memory = self
-            .store
-            .global_memory
-            .data_mut()
-            .get_mut(dst_offset..)
-            .and_then(|memory| memory.get_mut(..n))
-            .ok_or(TrapCode::MemoryOutOfBounds)?;
+        let memory = self.store.global_memory.tracked_mut(dst_offset, n)?;
         let mut memory_section = self.module.data_section.as_slice();
         if is_empty_data_segment {
             memory_section = &[];
@@ -165,7 +146,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
         self.store
             .tracer
             .global_memory(dst_offset as u32, n as u32, memory);
-        self.store.global_memory.mark_dirty(dst_offset, n);
         self.ip.add(1);
         Ok(())
     }

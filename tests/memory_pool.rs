@@ -9,8 +9,8 @@
 
 use rwasm::{
     CompilationConfig, ExecutionEngine, ImportLinker, ImportName, MemoryPool, MemoryPoolConfig,
-    ResetPolicy, RwasmInstance, RwasmModule, RwasmStore, StoreTr, SyscallFuelParams, TrapCode,
-    TypedCaller, ValType, Value,
+    ResetPolicy, RwasmInstance, RwasmModule, RwasmStore, StoreTr, StrategyDefinition,
+    SyscallFuelParams, TrapCode, TypedCaller, ValType, Value,
 };
 use std::sync::Arc;
 
@@ -136,7 +136,7 @@ fn compile(linker: &Arc<ImportLinker>) -> RwasmModule {
     .0
 }
 
-const FUEL: u64 = 1_000_000;
+const FUEL: u64 = 300_000;
 const MAX_PAGES: u32 = 64;
 
 fn vec_store(linker: &Arc<ImportLinker>, interrupt: bool) -> RwasmStore<Host> {
@@ -161,14 +161,33 @@ fn pooled_store(
 }
 
 fn pool(reset_policy: ResetPolicy, track_dirty: bool) -> MemoryPool {
+    pool_with_prefix(reset_policy, track_dirty, usize::MAX)
+}
+
+fn pool_with_prefix(
+    reset_policy: ResetPolicy,
+    track_dirty: bool,
+    small_page_prefix: usize,
+) -> MemoryPool {
     MemoryPool::new(MemoryPoolConfig {
         slot_pages: MAX_PAGES,
         max_free_slots: 4,
         reset_policy,
         track_dirty,
         verify_reset: true,
-        no_huge_pages: true,
+        small_page_prefix,
     })
+}
+
+/// The slot layouts worth testing on this host: small pages only, and, where the host has
+/// transparent huge pages, a slot whose upper part (from 2 MiB of the 4 MiB slot) is huge-page
+/// eligible, which the growing priors and probes reach into.
+fn prefixes() -> Vec<usize> {
+    if rwasm::huge_page_size() > 0 {
+        vec![usize::MAX, 1]
+    } else {
+        vec![usize::MAX]
+    }
 }
 
 const POLICIES: [ResetPolicy; 6] = [
@@ -360,6 +379,11 @@ fn probe_sequence() -> Vec<(i32, i32)> {
         (2, 0),
         (1, 3),
         (6, 1114111 - 8192),
+        // grow past 2 MiB, where a split slot switches to huge pages, and look around there
+        (1, 40),
+        (6, 3_000_000),
+        (6, 60 * 65536 - 8193),
+        (0, 7),
         (5, 8),
         (7, 0),
         (3, 0),
@@ -372,12 +396,17 @@ fn recycled_slot_is_indistinguishable_from_a_fresh_instance() {
     let linker = linker();
     let module = compile(&linker);
     let engine = ExecutionEngine::new();
-    for policy in POLICIES {
-        for track_dirty in [true, false] {
+    for (policy, track_dirty, prefix) in POLICIES.into_iter().flat_map(|policy| {
+        [true, false]
+            .into_iter()
+            .flat_map(move |track| prefixes().into_iter().map(move |p| (policy, track, p)))
+    }) {
+        {
             for prior in PRIORS {
-                let pool = pool(policy, track_dirty);
+                let pool = pool_with_prefix(policy, track_dirty, prefix);
                 dirty_the_pool(&linker, &module, &pool, prior);
-                let context = format!("{policy:?} track_dirty={track_dirty} after {prior:?}");
+                let context =
+                    format!("{policy:?} track_dirty={track_dirty} prefix={prefix} after {prior:?}");
                 assert_eq!(
                     pool.stats()
                         .reset_failures
@@ -527,5 +556,75 @@ fn replacing_the_instance_returns_the_previous_slot() {
         let expected = observe(&mut fresh, &fresh_instance, op, arg);
         let actual = observe(&mut store, &second, op, arg);
         assert_same(&actual, &expected, &format!("main({op}, {arg})"));
+    }
+}
+
+/// The strategy layer leases from the pool too, and the executor it returns is indistinguishable
+/// from an unpooled one.
+#[test]
+fn strategy_executor_leases_from_the_pool() {
+    let linker = linker();
+    let definition = StrategyDefinition::new_as_rwasm(
+        CompilationConfig::default_strategy_compatible()
+            .with_entrypoint_name("main".into())
+            .with_import_linker(linker.clone()),
+        wat::parse_str(CONTRACT).unwrap(),
+    )
+    .unwrap();
+    let pool = pool(ResetPolicy::Memset, true);
+    let answering = || Host {
+        interrupt: false,
+        answer: 41,
+    };
+    for round in 0..3 {
+        let mut pooled = definition
+            .create_executor_with_memory_pool(
+                linker.clone(),
+                answering(),
+                host,
+                Some(FUEL),
+                Some(MAX_PAGES),
+                &pool,
+            )
+            .unwrap();
+        let mut plain = definition
+            .create_executor(
+                linker.clone(),
+                answering(),
+                host,
+                Some(FUEL),
+                Some(MAX_PAGES),
+            )
+            .unwrap();
+        for (op, arg) in [(0, 3 + round), (2, 0), (1, 5), (5, 9), (7, 0), (3, 0)] {
+            let params = [Value::I32(op), Value::I32(arg)];
+            let (mut a, mut b) = ([Value::I32(0)], [Value::I32(0)]);
+            assert_eq!(
+                pooled.execute("main", &params, &mut a),
+                plain.execute("main", &params, &mut b),
+                "round {round}: main({op}, {arg})"
+            );
+            assert_eq!(a[0].i32(), b[0].i32(), "round {round}: main({op}, {arg})");
+            assert_eq!(pooled.remaining_fuel(), plain.remaining_fuel());
+            assert!(
+                pooled.snapshot_memory().unwrap() == plain.snapshot_memory().unwrap(),
+                "round {round}: memory after main({op}, {arg})"
+            );
+        }
+        drop(pooled);
+        // one slot serves every round
+        assert_eq!(pool.free_slots(), 1);
+        assert_eq!(
+            pool.stats()
+                .slots_reserved
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
+        assert_eq!(
+            pool.stats()
+                .reset_failures
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
     }
 }

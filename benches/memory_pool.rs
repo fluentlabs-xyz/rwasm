@@ -16,9 +16,9 @@
 //! `getrusage`) and the process RSS after the loop.
 
 use rwasm::{
-    always_failing_syscall_handler, host_page_size, CompilationConfig, ExecutionEngine,
-    ImportLinker, MemoryPool, MemoryPoolConfig, MemorySlot, ResetPolicy, RwasmModule, RwasmStore,
-    Value, N_BYTES_PER_MEMORY_PAGE,
+    always_failing_syscall_handler, host_page_size, huge_page_size, CompilationConfig,
+    ExecutionEngine, ImportLinker, MemoryPool, MemoryPoolConfig, MemorySlot, ResetPolicy,
+    RwasmModule, RwasmStore, Value, N_BYTES_PER_MEMORY_PAGE,
 };
 use std::{
     sync::Arc,
@@ -214,7 +214,8 @@ fn section_slot_reset(quick: bool) {
             let faults = minor_faults();
             for _ in 0..iters {
                 let t0 = Instant::now();
-                let mut slot = MemorySlot::reserve(workload.logical_len, false, true).unwrap();
+                let mut slot =
+                    MemorySlot::reserve(workload.logical_len, false, usize::MAX).unwrap();
                 let t1 = Instant::now();
                 touch(slot.as_mut_slice(workload.logical_len), &workload.writes);
                 let t2 = Instant::now();
@@ -229,9 +230,19 @@ fn section_slot_reset(quick: bool) {
                 workload.name, us(touch_time, iters), us(alloc_time, iters), faults, rss_bytes() as f64 / MIB as f64
             );
         }
-        // the pooled slot under every reset policy
-        for policy in policies() {
-            let mut slot = MemorySlot::reserve(slot_len, true, true).unwrap();
+        // the pooled slot: every reset policy on a small-page slot, then the default layout
+        // (huge pages above the small-page prefix) with the default policy
+        let mut rows: Vec<(String, ResetPolicy, usize)> = policies()
+            .into_iter()
+            .map(|policy| (format!("pool {}", policy_name(policy)), policy, usize::MAX))
+            .collect();
+        rows.push((
+            "pool default (split slot)".to_string(),
+            MemoryPoolConfig::default_reset_policy(),
+            MemoryPoolConfig::DEFAULT_SMALL_PAGE_PREFIX,
+        ));
+        for (name, policy, prefix) in rows {
+            let mut slot = MemorySlot::reserve(slot_len, true, prefix).unwrap();
             let mut touch_time = Duration::ZERO;
             let mut reset_time = Duration::ZERO;
             let mut stats = Default::default();
@@ -258,9 +269,9 @@ fn section_slot_reset(quick: bool) {
                 "{policy:?} left dirty bytes"
             );
             println!(
-                "| {} | pool {} | {} | {:.2} | {:.2} | {:.1} | {} | {} | {:.1} |",
+                "| {} | {} | {} | {:.2} | {:.2} | {:.1} | {} | {} | {:.1} |",
                 workload.name,
-                policy_name(policy),
+                name,
                 dirty,
                 us(touch_time, iters),
                 us(reset_time, iters),
@@ -376,28 +387,30 @@ fn section_vm(quick: bool) {
         (4, "E contract: whole 1 MiB stack"),
         (8, "F instantiate only (no call)"),
     ];
-    let backends: Vec<(String, Option<MemoryPool>)> =
-        std::iter::once(("Vec (today)".to_string(), None))
-            .chain(
-                [
-                    ResetPolicy::Discard,
-                    ResetPolicy::DiscardDirty,
-                    ResetPolicy::Memset,
-                    MemoryPoolConfig::default_reset_policy(),
-                ]
-                .into_iter()
-                .map(|policy| {
-                    (
-                        format!("pool {}", policy_name(policy)),
-                        Some(MemoryPool::new(MemoryPoolConfig {
-                            slot_pages: SLOT_PAGES,
-                            reset_policy: policy,
-                            ..MemoryPoolConfig::default()
-                        })),
-                    )
-                }),
-            )
-            .collect();
+    let pool = |reset_policy: ResetPolicy, small_page_prefix: usize| {
+        Some(MemoryPool::new(MemoryPoolConfig {
+            slot_pages: SLOT_PAGES,
+            reset_policy,
+            small_page_prefix,
+            verify_reset: false,
+            ..MemoryPoolConfig::default()
+        }))
+    };
+    let default_policy = MemoryPoolConfig::default_reset_policy();
+    let default_prefix = MemoryPoolConfig::DEFAULT_SMALL_PAGE_PREFIX;
+    let backends: Vec<(&str, Option<MemoryPool>)> = vec![
+        ("Vec (today)", None),
+        ("pool default", pool(default_policy, default_prefix)),
+        ("pool, small pages only", pool(default_policy, usize::MAX)),
+        (
+            "pool, Discard only",
+            pool(ResetPolicy::Discard, default_prefix),
+        ),
+        (
+            "pool, Memset only",
+            pool(ResetPolicy::Memset, default_prefix),
+        ),
+    ];
     for (op, name) in calls {
         for (backend, pool) in &backends {
             let iters = if op == 2 { 20 } else { 400 } / if quick { 4 } else { 1 };
@@ -449,14 +462,17 @@ fn section_tracking(quick: bool) {
     let engine = ExecutionEngine::new();
     let linker = Arc::new(ImportLinker::default());
     let n: i32 = if quick { 500_000 } else { 5_000_000 };
+    let rounds = if quick { 5 } else { 25 };
     let untracked = MemoryPool::new(MemoryPoolConfig {
         slot_pages: SLOT_PAGES,
         track_dirty: false,
+        verify_reset: false,
         ..MemoryPoolConfig::default()
     });
     let tracked = MemoryPool::new(MemoryPoolConfig {
         slot_pages: SLOT_PAGES,
         track_dirty: true,
+        verify_reset: false,
         ..MemoryPoolConfig::default()
     });
     for (op, name) in [
@@ -464,30 +480,34 @@ fn section_tracking(quick: bool) {
         (6, "i32.store on a new page each time"),
         (7, "integer loop, no memory access"),
     ] {
-        let mut ns = Vec::new();
-        for pool in [None, Some(&untracked), Some(&tracked)] {
-            let mut store = new_store(pool);
-            let instance = linker
-                .instantiate(&mut store, engine, module.clone())
-                .unwrap();
-            // warm up, then take the best of five
-            instance
-                .execute(
-                    &mut store,
-                    &[Value::I32(op), Value::I32(n / 10)],
-                    &mut [],
-                )
-                .unwrap();
-            let mut best = Duration::MAX;
-            for _ in 0..5 {
+        // one instance per backing, measured in interleaved rounds so that frequency drift and
+        // noise hit all three alike; the best round of each is reported
+        let mut runs: Vec<_> = [None, Some(&untracked), Some(&tracked)]
+            .into_iter()
+            .map(|pool| {
+                let mut store = new_store(pool);
+                let instance = linker
+                    .instantiate(&mut store, engine, module.clone())
+                    .unwrap();
+                instance
+                    .execute(&mut store, &[Value::I32(op), Value::I32(n / 10)], &mut [])
+                    .unwrap();
+                (store, instance, Duration::MAX)
+            })
+            .collect();
+        for _ in 0..rounds {
+            for (store, instance, best) in runs.iter_mut() {
                 let t0 = Instant::now();
                 instance
-                    .execute(&mut store, &[Value::I32(op), Value::I32(n)], &mut [])
+                    .execute(store, &[Value::I32(op), Value::I32(n)], &mut [])
                     .unwrap();
-                best = best.min(t0.elapsed());
+                *best = (*best).min(t0.elapsed());
             }
-            ns.push(best.as_secs_f64() * 1e9 / n as f64);
         }
+        let ns: Vec<f64> = runs
+            .iter()
+            .map(|(_, _, best)| best.as_secs_f64() * 1e9 / n as f64)
+            .collect();
         println!(
             "| {} | {:.2} | {:.2} | {:.2} | {:+.1}% |",
             name,
@@ -502,10 +522,11 @@ fn section_tracking(quick: bool) {
 fn main() {
     let quick = std::env::args().any(|arg| arg == "--quick");
     println!(
-        "# memory pool measurements\n\nos={} arch={} host_page={} thp={} quick={}",
+        "# memory pool measurements\n\nos={} arch={} host_page={} huge_page={} thp={} quick={}",
         std::env::consts::OS,
         std::env::consts::ARCH,
         host_page_size(),
+        huge_page_size(),
         thp_setting(),
         quick
     );

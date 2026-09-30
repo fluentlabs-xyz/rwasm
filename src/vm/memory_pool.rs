@@ -1,4 +1,4 @@
-//! Prototype of an mmap-backed pool of linear-memory slots (FLU-1501).
+//! An mmap-backed pool of linear-memory slots (FLU-1501).
 //!
 //! A [`MemorySlot`] is one anonymous, private, read-write mapping of the whole address range a
 //! store may ever grow its memory to (`slot_pages` Wasm pages). The mapping is reserved once and
@@ -10,10 +10,16 @@
 //! driven only by host-owned metadata (the dirty bitmap and the high-water mark), never by guest
 //! state, so a trap, an `OutOfFuel` or a halt in the middle of a store leaves nothing behind.
 //!
-//! Dirty host pages are tracked explicitly at every write path of the VM
-//! ([`MemorySlot::mark_dirty`]); see the research note in `docs/research/` for the design and the
-//! measurements. The module is a research prototype behind the `memory-pool` feature and is
-//! compiled on Unix hosts only; the `no_std` build (the zkVM path) keeps the `Vec` memory.
+//! Dirty host pages are tracked explicitly: [`crate::GlobalMemory`] hands out every write window
+//! itself and marks it ([`MemorySlot::mark_dirty`]), so no write path can skip the tracking. The
+//! design and the measurements are in `docs/research/flu-1501-mmap-cow-memory-pool.md`. The
+//! module sits behind the `memory-pool` feature and is compiled on Unix hosts only; the `no_std`
+//! build (the zkVM path) keeps the `Vec` memory.
+//!
+//! On Linux a slot is split: the first [`MemoryPoolConfig::small_page_prefix`] bytes, where every
+//! contract keeps its stack and data, are opted out of transparent huge pages so that a sparse
+//! write set costs 4 KiB pages; the rest, which only a memory-hungry call grows into, is
+//! huge-page eligible so that filling it costs a fault per 2 MiB and not per 4 KiB.
 
 use crate::N_DEFAULT_MAX_MEMORY_PAGES;
 use std::{
@@ -42,11 +48,33 @@ pub fn host_page_size() -> usize {
     })
 }
 
+/// The transparent huge page size of the host in bytes, or 0 where there is none (every
+/// non-Linux host, and a Linux kernel built without THP).
+pub fn huge_page_size() -> usize {
+    #[cfg(target_os = "linux")]
+    {
+        static HUGE_PAGE_SIZE: OnceLock<usize> = OnceLock::new();
+        return *HUGE_PAGE_SIZE.get_or_init(|| {
+            std::fs::read_to_string("/sys/kernel/mm/transparent_hugepage/hpage_pmd_size")
+                .ok()
+                .and_then(|size| size.trim().parse::<usize>().ok())
+                .filter(|size| size.is_power_of_two() && *size > host_page_size())
+                .unwrap_or(0)
+        });
+    }
+    #[allow(unreachable_code)]
+    0
+}
+
 /// How a released slot is brought back to all zeros.
 ///
 /// Every policy resets the *reachable* range only: `[0, high_water)`, where the high-water mark
 /// is the largest memory size the lease reached through `memory.grow`. Nothing beyond it was ever
 /// accessible to the guest.
+///
+/// The policy governs the small-page part of a slot. The huge-page part (see
+/// [`MemoryPoolConfig::small_page_prefix`]) is always given back with one kernel call when the
+/// lease reached into it: keeping it resident would pin 2 MiB per touched page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResetPolicy {
     /// One kernel call over the reachable range: `madvise(MADV_DONTNEED)` on Linux,
@@ -96,16 +124,25 @@ pub struct MemoryPoolConfig {
     /// range policies do not, and turning it off removes the tracking from the VM's store paths.
     pub track_dirty: bool,
     /// Read the reachable range back after every reset and refuse to pool a slot that is not all
-    /// zeros. Costs a pass over the range; meant for tests and experiments.
+    /// zeros. Costs a pass over the range; on by default in debug builds only.
     pub verify_reset: bool,
-    /// Exclude slots from transparent huge pages (Linux), so that a sparse write set costs 4 KiB
-    /// pages and not 2 MiB ones.
-    pub no_huge_pages: bool,
+    /// Bytes at the start of a slot that never use transparent huge pages (Linux), rounded up to
+    /// the huge page size; the rest of the slot is huge-page eligible (`MADV_HUGEPAGE`).
+    /// `usize::MAX` keeps the whole slot on small pages, `0` makes all of it eligible. Ignored
+    /// where there are no transparent huge pages.
+    pub small_page_prefix: usize,
 }
 
 impl MemoryPoolConfig {
     /// Dirty bytes up to which the default policy zeroes pages by hand and keeps them resident.
-    pub const DEFAULT_MEMSET_UP_TO_BYTES: usize = 4 * 1024 * 1024;
+    /// Equal to the default small-page prefix, so that on a split slot the small-page part is
+    /// always zeroed in place and never faulted in again; it is also the most memory a pooled
+    /// slot keeps resident.
+    pub const DEFAULT_MEMSET_UP_TO_BYTES: usize = Self::DEFAULT_SMALL_PAGE_PREFIX;
+
+    /// The default [`MemoryPoolConfig::small_page_prefix`]: room for a contract's 1 MiB shadow
+    /// stack, its data and a heap of a few megabytes.
+    pub const DEFAULT_SMALL_PAGE_PREFIX: usize = 8 * 1024 * 1024;
 
     /// The default reset policy: `memset` up to [`Self::DEFAULT_MEMSET_UP_TO_BYTES`] of dirty
     /// pages, discard the reachable range beyond that.
@@ -123,8 +160,9 @@ impl Default for MemoryPoolConfig {
             max_free_slots: 8,
             reset_policy: Self::default_reset_policy(),
             track_dirty: true,
-            verify_reset: false,
-            no_huge_pages: true,
+            // debug builds check every reset; a slot that is not all zeros is never pooled
+            verify_reset: cfg!(debug_assertions),
+            small_page_prefix: Self::DEFAULT_SMALL_PAGE_PREFIX,
         }
     }
 }
@@ -164,7 +202,11 @@ pub struct MemorySlot {
     /// Largest accessible length since the last reset, in bytes.
     high_water: usize,
     track_dirty: bool,
-    no_huge_pages: bool,
+    /// First byte of the huge-page eligible part; `capacity` when the slot has none. A multiple
+    /// of the huge page size, so also of 64 host pages (a whole number of bitmap words).
+    split: usize,
+    /// The host's huge page size, 0 when the slot has no huge-page part.
+    huge_page: usize,
 }
 
 // SAFETY: the slot exclusively owns its mapping; nothing else aliases it.
@@ -174,44 +216,69 @@ unsafe impl Sync for MemorySlot {}
 
 impl MemorySlot {
     /// Maps `capacity` bytes of anonymous private memory, rounded up to the host page size.
-    pub fn reserve(capacity: usize, track_dirty: bool, no_huge_pages: bool) -> io::Result<Self> {
+    ///
+    /// The first `small_page_prefix` bytes (rounded up to the huge page size) never use
+    /// transparent huge pages; the rest is huge-page eligible. A slot with a huge-page part is
+    /// aligned to the huge page size.
+    pub fn reserve(
+        capacity: usize,
+        track_dirty: bool,
+        small_page_prefix: usize,
+    ) -> io::Result<Self> {
         let page_size = host_page_size();
+        let invalid = || io::Error::from(io::ErrorKind::InvalidInput);
         let capacity = capacity
+            .max(page_size)
             .checked_add(page_size - 1)
-            .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?
+            .ok_or_else(invalid)?
             & !(page_size - 1);
-        let capacity = capacity.max(page_size);
-        // SAFETY: an anonymous mapping at an address of the kernel's choice has no preconditions.
-        let ptr = unsafe {
-            libc::mmap(
-                std::ptr::null_mut(),
-                capacity,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_PRIVATE | libc::MAP_ANON | libc::MAP_NORESERVE,
-                -1,
-                0,
-            )
+        let huge_page = huge_page_size();
+        let split = if huge_page > 0 && small_page_prefix < capacity {
+            (small_page_prefix.div_ceil(huge_page) * huge_page).min(capacity)
+        } else {
+            capacity
         };
-        if ptr == libc::MAP_FAILED {
-            return Err(io::Error::last_os_error());
-        }
+        let huge_page = if split < capacity { huge_page } else { 0 };
+        let base = map_aligned(capacity, huge_page.max(page_size))?;
         #[cfg(target_os = "linux")]
-        if no_huge_pages {
+        {
             // Advisory: a kernel without THP reports EINVAL, which changes nothing.
-            // SAFETY: the range was just mapped.
-            unsafe { libc::madvise(ptr, capacity, libc::MADV_NOHUGEPAGE) };
+            // SAFETY: both ranges lie inside the mapping just created.
+            unsafe {
+                if split > 0 {
+                    libc::madvise(base.cast(), split, libc::MADV_NOHUGEPAGE);
+                }
+                if split < capacity {
+                    libc::madvise(
+                        base.add(split).cast(),
+                        capacity - split,
+                        libc::MADV_HUGEPAGE,
+                    );
+                }
+            }
         }
         let pages = capacity >> page_size.trailing_zeros();
         Ok(Self {
-            base: NonNull::new(ptr.cast()).expect("mmap returned null"),
+            base: NonNull::new(base).expect("mmap returned null"),
             capacity,
             page_shift: page_size.trailing_zeros(),
             dirty: vec![0; pages.div_ceil(64)],
             dirty_pages: 0,
             high_water: 0,
             track_dirty,
-            no_huge_pages,
+            split,
+            huge_page,
         })
+    }
+
+    /// The first byte of the mapping.
+    pub(crate) fn base_ptr(&self) -> NonNull<u8> {
+        self.base
+    }
+
+    /// The offset the huge-page eligible part of the slot starts at, if it has one.
+    pub fn huge_pages_from(&self) -> Option<usize> {
+        (self.split < self.capacity).then_some(self.split)
     }
 
     /// Bytes this slot can serve.
@@ -288,9 +355,14 @@ impl MemorySlot {
     ///
     /// Skips clean words of the bitmap (64 pages each), so a sparse bitmap over a 64 MiB slot is
     /// scanned in a few hundred nanoseconds.
-    pub fn for_each_dirty_run(&self, mut f: impl FnMut(usize, usize)) {
+    pub fn for_each_dirty_run(&self, f: impl FnMut(usize, usize)) {
+        self.dirty_runs_in(self.dirty.len(), f)
+    }
+
+    /// [`Self::for_each_dirty_run`] over the first `words` words of the bitmap.
+    fn dirty_runs_in(&self, words: usize, mut f: impl FnMut(usize, usize)) {
         let mut run_start: Option<usize> = None;
-        for (index, &word) in self.dirty.iter().enumerate() {
+        for (index, &word) in self.dirty[..words].iter().enumerate() {
             if word == 0 {
                 if let Some(start) = run_start.take() {
                     f(start, index * 64 - start);
@@ -314,90 +386,107 @@ impl MemorySlot {
             }
         }
         if let Some(start) = run_start {
-            f(start, self.dirty.len() * 64 - start);
+            f(start, words * 64 - start);
+        }
+    }
+
+    /// Bitmap words that cover the small-page part of the slot.
+    fn small_page_words(&self) -> usize {
+        if self.split < self.capacity {
+            // `split` is a multiple of the huge page size, hence of 64 host pages
+            (self.split >> self.page_shift) / 64
+        } else {
+            self.dirty.len()
         }
     }
 
     /// Returns the reachable range to all zeros and clears the tracking metadata.
     ///
+    /// The huge-page part, if the lease reached into it, is discarded with one kernel call; the
+    /// small-page part follows `policy`.
+    ///
     /// # Errors
     ///
-    /// A failed kernel call. The slot is then in an unknown state and must be unmapped, never
-    /// pooled.
+    /// A failed kernel call, or non-zero bytes found by `verify`. The slot is then in an unknown
+    /// state and must be unmapped, never pooled.
     pub fn reset(&mut self, policy: ResetPolicy, verify: bool) -> io::Result<ResetStats> {
         let page_size = 1usize << self.page_shift;
-        let reach = (self.high_water + page_size - 1) & !(page_size - 1);
-        let reach = reach.min(self.capacity);
-        let dirty_pages = self.dirty_pages;
+        let reach = ((self.high_water + page_size - 1) & !(page_size - 1)).min(self.capacity);
         let base = self.base.as_ptr();
-        let stats = match policy {
-            ResetPolicy::Discard => ResetStats {
-                method: discard_range(base, reach)?,
-                pages: reach >> self.page_shift,
-                calls: usize::from(reach > 0),
-                dirty_pages,
-            },
-            ResetPolicy::Remap => ResetStats {
-                method: remap_range(base, reach, self.no_huge_pages)?,
-                pages: reach >> self.page_shift,
-                calls: usize::from(reach > 0),
-                dirty_pages,
-            },
-            ResetPolicy::Adaptive { memset_up_to_pages }
-                if !self.track_dirty || dirty_pages > memset_up_to_pages =>
+        let mut stats = ResetStats {
+            method: "none",
+            pages: 0,
+            calls: 0,
+            dirty_pages: self.dirty_pages,
+        };
+
+        // the huge-page part: whole huge pages, up to the one holding the last reachable byte
+        if reach > self.split {
+            let end = (reach.div_ceil(self.huge_page) * self.huge_page).min(self.capacity);
+            let len = end - self.split;
+            stats.method = discard_range(base.wrapping_add(self.split), len)?;
+            stats.pages += len >> self.page_shift;
+            stats.calls += 1;
+        }
+
+        // the small-page part
+        let reach = reach.min(self.split);
+        let words = self.small_page_words();
+        let policy = match policy {
+            ResetPolicy::Adaptive { memset_up_to_pages } => {
+                let dirty: usize = self.dirty[..words]
+                    .iter()
+                    .map(|word| word.count_ones() as usize)
+                    .sum();
+                if self.track_dirty && dirty <= memset_up_to_pages {
+                    ResetPolicy::Memset
+                } else {
+                    ResetPolicy::Discard
+                }
+            }
+            // without a bitmap the whole reachable range has to go
+            ResetPolicy::DiscardDirty | ResetPolicy::RemapDirty | ResetPolicy::Memset
+                if !self.track_dirty =>
             {
-                ResetStats {
-                    method: discard_range(base, reach)?,
-                    pages: reach >> self.page_shift,
-                    calls: usize::from(reach > 0),
-                    dirty_pages,
-                }
+                ResetPolicy::Discard
             }
-            ResetPolicy::DiscardDirty | ResetPolicy::RemapDirty if !self.track_dirty => {
-                // without a bitmap the whole reachable range has to go
-                ResetStats {
-                    method: discard_range(base, reach)?,
-                    pages: reach >> self.page_shift,
-                    calls: usize::from(reach > 0),
-                    dirty_pages,
-                }
+            policy => policy,
+        };
+        match policy {
+            ResetPolicy::Discard | ResetPolicy::Remap if reach == 0 => {}
+            ResetPolicy::Discard => {
+                stats.method = discard_range(base, reach)?;
+                stats.pages += reach >> self.page_shift;
+                stats.calls += 1;
             }
-            ResetPolicy::Memset if !self.track_dirty => ResetStats {
-                method: discard_range(base, reach)?,
-                pages: reach >> self.page_shift,
-                calls: usize::from(reach > 0),
-                dirty_pages,
-            },
-            ResetPolicy::DiscardDirty
-            | ResetPolicy::RemapDirty
-            | ResetPolicy::Memset
-            | ResetPolicy::Adaptive { .. } => {
+            ResetPolicy::Remap => {
+                stats.method = remap_range(base, reach)?;
+                stats.pages += reach >> self.page_shift;
+                stats.calls += 1;
+            }
+            ResetPolicy::DiscardDirty | ResetPolicy::RemapDirty | ResetPolicy::Memset => {
                 let mut runs = Vec::new();
-                self.for_each_dirty_run(|first, count| runs.push((first, count)));
-                let mut method = "none";
-                let mut pages = 0;
-                for (first, count) in &runs {
+                self.dirty_runs_in(words, |first, count| runs.push((first, count)));
+                for (first, count) in runs {
                     let ptr = base.wrapping_add(first << self.page_shift);
                     let len = count << self.page_shift;
-                    method = match policy {
+                    stats.method = match policy {
                         ResetPolicy::DiscardDirty => discard_range(ptr, len)?,
-                        ResetPolicy::RemapDirty => remap_range(ptr, len, self.no_huge_pages)?,
+                        ResetPolicy::RemapDirty => remap_range(ptr, len)?,
                         _ => {
                             // SAFETY: the run is inside the mapping owned by `self`.
                             unsafe { std::ptr::write_bytes(ptr, 0, len) };
                             "memset"
                         }
                     };
-                    pages += count;
-                }
-                ResetStats {
-                    method,
-                    pages,
-                    calls: runs.len(),
-                    dirty_pages,
+                    stats.pages += count;
+                    stats.calls += 1;
                 }
             }
-        };
+            ResetPolicy::Adaptive { .. } => unreachable!("resolved above"),
+        }
+
+        let reach = ((self.high_water + page_size - 1) & !(page_size - 1)).min(self.capacity);
         if self.dirty_pages > 0 {
             self.dirty.fill(0);
             self.dirty_pages = 0;
@@ -466,19 +555,19 @@ fn discard_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
         }
         MADV_ZERO_SUPPORTED.store(false, Ordering::Relaxed);
     }
-    remap_range(ptr, len, false)
+    remap_range(ptr, len)
 }
 
 #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
 fn discard_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
-    remap_range(ptr, len, false)
+    remap_range(ptr, len)
 }
 
 /// Replaces `[ptr, ptr + len)` with a fresh anonymous mapping.
 ///
-/// `MAP_FIXED` is only ever applied inside a slot's own reservation. The new mapping is a new
-/// VMA, so the huge page opt-out has to be applied again (`no_huge_pages`).
-fn remap_range(ptr: *mut u8, len: usize, no_huge_pages: bool) -> io::Result<&'static str> {
+/// `MAP_FIXED` is only ever applied inside the small-page part of a slot's own reservation. The
+/// new mapping is a new VMA, so the huge page opt-out is applied again.
+fn remap_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
     if len == 0 {
         return Ok("mmap(MAP_FIXED)");
     }
@@ -499,13 +588,54 @@ fn remap_range(ptr: *mut u8, len: usize, no_huge_pages: bool) -> io::Result<&'st
     }
     assert_eq!(mapped.cast::<u8>(), ptr, "MAP_FIXED moved the mapping");
     #[cfg(target_os = "linux")]
-    if no_huge_pages {
-        // SAFETY: the range was just mapped.
-        unsafe { libc::madvise(mapped, len, libc::MADV_NOHUGEPAGE) };
+    // SAFETY: the range was just mapped.
+    unsafe {
+        libc::madvise(mapped, len, libc::MADV_NOHUGEPAGE);
     }
-    #[cfg(not(target_os = "linux"))]
-    let _ = no_huge_pages;
     Ok("mmap(MAP_FIXED)")
+}
+
+/// Maps `len` bytes of anonymous private read-write memory at an address that is a multiple of
+/// `align` (a power of two, at least the host page size).
+fn map_aligned(len: usize, align: usize) -> io::Result<*mut u8> {
+    let map = |len: usize| -> io::Result<*mut u8> {
+        // SAFETY: an anonymous mapping at an address of the kernel's choice has no preconditions.
+        let ptr = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                len,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_PRIVATE | libc::MAP_ANON | libc::MAP_NORESERVE,
+                -1,
+                0,
+            )
+        };
+        if ptr == libc::MAP_FAILED {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(ptr.cast())
+    };
+    if align <= host_page_size() {
+        return map(len);
+    }
+    // over-reserve by the alignment and give the unused head and tail back
+    let total = len
+        .checked_add(align)
+        .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let ptr = map(total)?;
+    let head = ptr.align_offset(align);
+    let tail = total - head - len;
+    // SAFETY: the head and the tail are page-aligned sub-ranges of the mapping just created and
+    // nothing refers to them.
+    unsafe {
+        if head > 0 {
+            libc::munmap(ptr.cast(), head);
+        }
+        if tail > 0 {
+            libc::munmap(ptr.add(head + len).cast(), tail);
+        }
+    }
+    Ok(ptr.wrapping_add(head))
 }
 
 struct PoolInner {
@@ -590,7 +720,7 @@ impl MemoryPool {
                 MemorySlot::reserve(
                     self.slot_capacity(),
                     self.inner.config.track_dirty,
-                    self.inner.config.no_huge_pages,
+                    self.inner.config.small_page_prefix,
                 )?
             }
         };
@@ -656,8 +786,19 @@ mod tests {
     use super::*;
 
     fn slot(pages: usize) -> MemorySlot {
-        MemorySlot::reserve(pages * host_page_size(), true, true).unwrap()
+        MemorySlot::reserve(pages * host_page_size(), true, usize::MAX).unwrap()
     }
+
+    const POLICIES: [ResetPolicy; 6] = [
+        ResetPolicy::Discard,
+        ResetPolicy::Remap,
+        ResetPolicy::DiscardDirty,
+        ResetPolicy::RemapDirty,
+        ResetPolicy::Memset,
+        ResetPolicy::Adaptive {
+            memset_up_to_pages: 1,
+        },
+    ];
 
     #[test]
     fn marks_host_pages_of_a_write() {
@@ -675,16 +816,7 @@ mod tests {
     #[test]
     fn every_policy_returns_the_reachable_range_to_zero() {
         let page = host_page_size();
-        for policy in [
-            ResetPolicy::Discard,
-            ResetPolicy::Remap,
-            ResetPolicy::DiscardDirty,
-            ResetPolicy::RemapDirty,
-            ResetPolicy::Memset,
-            ResetPolicy::Adaptive {
-                memset_up_to_pages: 1,
-            },
-        ] {
+        for policy in POLICIES {
             let mut slot = slot(16);
             slot.note_accessible(page * 12);
             for offset in [0, page * 3 + 7, page * 11 + page - 1] {
@@ -713,10 +845,46 @@ mod tests {
         assert_eq!(slot.dirty_pages(), 72);
     }
 
+    /// A slot with a huge-page part: aligned, and both parts come back as zeros under every
+    /// policy whether the lease reached into the huge-page part or not. Without transparent huge
+    /// pages (macOS) the slot has no such part and the same writes go through the policy alone.
+    #[test]
+    fn split_slot_resets_both_parts() {
+        let page = host_page_size();
+        let huge = huge_page_size();
+        let capacity = if huge > 0 { huge * 4 } else { page * 512 };
+        for policy in POLICIES {
+            for reach in [capacity / 8, capacity] {
+                let mut slot = MemorySlot::reserve(capacity, true, 1).unwrap();
+                if huge > 0 {
+                    assert_eq!(slot.huge_pages_from(), Some(huge));
+                    assert_eq!(slot.base_ptr().as_ptr() as usize % huge, 0);
+                } else {
+                    assert_eq!(slot.huge_pages_from(), None);
+                }
+                slot.note_accessible(reach);
+                for offset in [0, reach / 2 + 3, reach - 1] {
+                    slot.as_mut_slice(reach)[offset] = 0xCD;
+                    slot.mark_dirty(offset, 1);
+                }
+                let stats = slot.reset(policy, true).unwrap();
+                assert!(stats.calls > 0, "{policy:?} reach={reach}: {stats:?}");
+                assert!(slot.is_zeroed(capacity), "{policy:?} reach={reach}");
+                assert_eq!(slot.dirty_pages(), 0);
+                // and again: a reset slot is reusable
+                slot.note_accessible(capacity);
+                slot.as_mut_slice(capacity)[capacity - 1] = 1;
+                slot.mark_dirty(capacity - 1, 1);
+                slot.reset(policy, true).unwrap();
+                assert!(slot.is_zeroed(capacity), "{policy:?} second reset");
+            }
+        }
+    }
+
     #[test]
     fn untracked_slot_still_resets_the_reachable_range() {
         let page = host_page_size();
-        let mut slot = MemorySlot::reserve(page * 4, false, true).unwrap();
+        let mut slot = MemorySlot::reserve(page * 4, false, usize::MAX).unwrap();
         slot.note_accessible(page * 4);
         slot.as_mut_slice(page * 4)[page * 3] = 1;
         slot.mark_dirty(page * 3, 1);

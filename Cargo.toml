@@ -35,7 +35,7 @@ lru = { version = "0.18.4", optional = true }
 # rwasm fuel policy
 rwasm-fuel-policy = { version = "0.0.2", default-features = false }
 
-# memory-pool (research prototype, FLU-1501)
+# memory-pool (FLU-1501)
 libc = { version = "0.2", optional = true }
 
 [dev-dependencies]
@@ -75,8 +75,8 @@ cache-compiled-artifacts = ["wasmtime", "dep:directories"]
 # Test-only, never for production builds.
 e2e = []
 pooling-allocator = []
-# Research prototype (FLU-1501): mmap-backed pool of linear-memory slots with dirty-page reset.
-# Unix hosts only; the feature is inert on other targets and in `no_std` builds.
+# Experimental (FLU-1501): mmap-backed pool of linear-memory slots for instance reuse, reset by
+# dirty host pages. Unix hosts only; the feature is inert on other targets and in `no_std` builds.
 memory-pool = ["std", "dep:libc"]
 # Using of full WASM mode doesn't guarantee execution equvivalence between rWasm and Wasmtime
 full-wasm-mode = ["wasmtime?/full-wasm-mode"]
