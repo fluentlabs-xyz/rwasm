@@ -5,7 +5,6 @@ use crate::{
 };
 use alloc::vec::Vec;
 use core::fmt::Debug;
-use smallvec::{smallvec, SmallVec};
 use wasmparser::ValType;
 
 /// The value stack used to execute Wasm bytecode.
@@ -14,10 +13,21 @@ use wasmparser::ValType;
 ///
 /// The [`ValueStack`] implementation heavily relies on the prior
 /// validation of the executed Wasm bytecode for correct execution.
+///
+/// # Storage
+///
+/// The cells live in a heap allocation of their own, never inline in this struct. The interpreter
+/// works through a [`ValueStackPtr`], a raw pointer into the cells, while it keeps calling
+/// `&mut self` methods such as [`ValueStack::sync_stack_ptr`] on the stack that handed the pointer
+/// out. Under Stacked Borrows every one of those calls retags the whole struct, which invalidates
+/// every raw pointer into it: with the cells stored inline (the stack used to be a `SmallVec`) each
+/// such call was undefined behavior, and Miri rejected the interpreter's `return` and `call` paths.
+/// A separate allocation is untouched by borrows of the struct, so a [`ValueStackPtr`] stays valid
+/// until [`ValueStack::reserve`] reallocates the cells; see the validity rules on [`ValueStackPtr`].
 #[derive(Clone)]
 pub struct ValueStack {
     /// All currently live stack entries.
-    entries: SmallVec<[UntypedValue; N_DEFAULT_STACK_SIZE]>,
+    entries: Vec<UntypedValue>,
     /// Index of the first free place in the stack.
     stack_ptr: usize,
     /// The maximum value stack height.
@@ -89,7 +99,7 @@ impl ValueStack {
     /// proper stack with an inexpensive fake one.
     pub fn empty() -> Self {
         Self {
-            entries: SmallVec::new(),
+            entries: Vec::new(),
             stack_ptr: 0,
             maximum_len: 0,
             max_stack_height: 0,
@@ -153,6 +163,9 @@ impl ValueStack {
     #[inline]
     fn base_ptr(&mut self) -> ValueStackPtr {
         let capacity = self.entries.len();
+        // `Vec::as_mut_ptr` hands out the allocation's own pointer without going through a `&mut`
+        // slice, so every pointer derived here carries the same tag and none of them is
+        // invalidated by a later `&mut` borrow of the cells or of `self`.
         let mut base = ValueStackPtr::new(self.entries.as_mut_ptr(), capacity);
         if self.out_of_bounds {
             base.mark_out_of_bounds();
@@ -202,7 +215,7 @@ impl ValueStack {
             initial_len <= maximum_len,
             "the initial value stack length is greater than the maximum value stack length",
         );
-        let entries = smallvec![UntypedValue::default(); initial_len];
+        let entries = alloc::vec![UntypedValue::default(); initial_len];
         Self {
             entries,
             stack_ptr: 0,
@@ -373,6 +386,14 @@ impl ValueStack {
 /// nor writes memory: the pointer is parked on the stack base and [`ValueStackPtr::
 /// is_out_of_bounds`] starts reporting `true`, which the interpreter turns into a
 /// [`TrapCode::StackOverflow`] before the next instruction runs.
+///
+/// # Validity
+///
+/// A [`ValueStackPtr`] addresses the cells the [`ValueStack`] owned when it was derived. It stays
+/// valid across every `&mut` method of that stack, [`ValueStack::sync_stack_ptr`] and direct pushes
+/// and pops included, with one exception: [`ValueStack::reserve`] may reallocate the cells, so the
+/// interpreter derives a fresh pointer with [`ValueStack::stack_ptr`] right after each call to it.
+/// Using a pointer after the stack was reserved past its capacity, or dropped, is a use after free.
 ///
 /// [`ValueStack`]: super::ValueStack
 #[derive(Debug, Copy, Clone)]
@@ -837,5 +858,72 @@ mod tests {
         let mut sp = stack.stack_ptr();
         sp.push(UntypedValue::from(0u32));
         let _ = sp.pop_value(ValType::Ref(RefType::FUNC));
+    }
+
+    fn val(x: u32) -> UntypedValue {
+        UntypedValue::from(x)
+    }
+
+    /// The interpreter keeps a [`ValueStackPtr`] across `&mut self` calls on the stack it was
+    /// derived from: `visit_return` and `visit_call` sync the pointer back and keep popping through
+    /// it, and the debug loop re-measures the height after every instruction. Under Stacked
+    /// Borrows every such call retags the whole `ValueStack`, so the cells must not live inside the
+    /// struct. This is the exact sequence Miri reported on `devel`, and it is what pins the stack
+    /// to heap storage: run it with `cargo miri test --lib value_stack`.
+    #[test]
+    fn stack_ptr_survives_mutable_borrows_of_the_stack() {
+        let mut stack = ValueStack::default();
+        let mut sp = stack.stack_ptr();
+        sp.push(val(1));
+        sp.push(val(2));
+
+        // every accounting entry point the executor calls while `sp` is live
+        stack.sync_stack_ptr(sp);
+        assert_eq!(stack.stack_len(sp), 2);
+        assert!(!stack.has_stack_overflowed(sp));
+        stack.reserve(1).unwrap(); // fits the capacity, so the cells stay where they are
+        #[cfg(debug_assertions)]
+        stack.check_max_stack_height(sp);
+
+        // direct accesses through the stack and through a `&mut` slice of its cells
+        stack.push(val(3));
+        stack.peek_as_slice_mut(1)[0] = val(30);
+        assert_eq!(stack.pop(), val(30));
+        assert_eq!(stack.dump_stack(), alloc::vec![val(1), val(2)]);
+
+        // the pointer handed out before all of that is still usable
+        sp.push(val(4));
+        assert_eq!(sp.nth_back(1), val(4));
+        assert_eq!(sp.nth_back(3), val(1));
+        stack.sync_stack_ptr(sp);
+        assert_eq!(sp.pop(), val(4));
+        assert_eq!(sp.pop(), val(2));
+        assert_eq!(sp.pop(), val(1));
+        assert!(!sp.is_out_of_bounds());
+        stack.sync_stack_ptr(sp);
+        assert!(stack.is_empty());
+    }
+
+    /// `reserve` is the one call that may move the cells; the executor derives a fresh pointer
+    /// right after it and the fresh pointer must see everything written through the old one.
+    #[test]
+    fn stack_ptr_re_derived_after_a_growing_reserve_sees_the_values() {
+        let mut stack = ValueStack::new(2, 64);
+        let mut sp = stack.stack_ptr();
+        sp.push(val(1));
+        sp.push(val(2));
+        stack.sync_stack_ptr(sp);
+        assert_eq!(stack.capacity(), 2);
+
+        stack.reserve(32).unwrap();
+        assert!(stack.capacity() >= 34);
+
+        let mut sp = stack.stack_ptr();
+        assert_eq!(stack.stack_len(sp), 2);
+        sp.push(val(3));
+        assert_eq!(sp.pop(), val(3));
+        assert_eq!(sp.pop(), val(2));
+        assert_eq!(sp.pop(), val(1));
+        assert!(!sp.is_out_of_bounds());
     }
 }
