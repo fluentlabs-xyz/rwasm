@@ -7,6 +7,8 @@ mod import_linker;
 mod instance;
 mod instr_ptr;
 mod memory;
+#[cfg(all(feature = "memory-pool", unix))]
+mod memory_pool;
 mod store;
 mod table_entity;
 #[cfg(feature = "tracing")]
@@ -22,6 +24,8 @@ pub use import_linker::*;
 pub use instance::*;
 pub(crate) use instr_ptr::*;
 pub use memory::*;
+#[cfg(all(feature = "memory-pool", unix))]
+pub use memory_pool::*;
 pub use store::*;
 pub use table_entity::*;
 #[cfg(feature = "tracing")]

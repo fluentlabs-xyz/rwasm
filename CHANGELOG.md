@@ -7,6 +7,32 @@ minor version moves only when the instruction set changes (a module compiled by 
 not run on an older VM), the patch version for everything else. The rule and the release procedure
 are in `.claude/skills/bump-version/SKILL.md`.
 
+## [Unreleased]
+
+No new opcodes, no change to the emitted bytes or the fuel schedule.
+
+### Added
+- `memory-pool` feature (FLU-1501, experimental): a `MemoryPool` of mmap-backed linear memory
+  slots. `RwasmStore::with_memory_pool` and `StrategyDefinition::create_executor_with_memory_pool`
+  lease one slot per instance and return it, reset, when the instance goes away, however its last
+  execution ended; a fresh instance then costs a reset of the pages the previous one wrote instead
+  of a zeroed allocation of what it declared (a typical 17-page contract call goes from about
+  5 µs to under 2 µs of instantiation overhead, a 64 MiB sparse memory from 860 µs to about
+  1 µs). The reset is driven by a dirty bitmap at host-page granularity and a high-water mark:
+  `memset` of the dirty pages up to 4 MiB, `madvise(MADV_DONTNEED)` (Linux) or
+  `madvise(MADV_ZERO)` (macOS) beyond that. On Linux the upper part of a slot is huge-page
+  eligible. Unix hosts only, off by default, inert in `no_std` builds. Design and measurements:
+  `docs/research/flu-1501-mmap-cow-memory-pool.md`.
+
+### Changed
+- `GlobalMemory` no longer hands out its buffer for writing. The `shared_memory` field and
+  `data_mut()` are gone; reads go through `data()`, writes through the windows the memory itself
+  bounds-checks and records (`tracked_mut`, `store_window`, `copy_within`, `write`). Every VM
+  write path uses them, so a pooled slot cannot be written without its pages being marked for
+  the reset. Downstreams that reached into the buffer adapt; Fluentbase does not.
+- CI runs the test suite a second time with `memory-pool` enabled, and the `resume_equivalence`
+  fuzz target runs every module on pooled, recycled memory as well and checks each reset.
+
 ## [0.7.2] - 2026-09-28
 
 No new opcodes, no change to the emitted bytes or the fuel schedule. Downstreams only move the

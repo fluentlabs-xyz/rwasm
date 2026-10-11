@@ -87,17 +87,15 @@ impl<'a, T> RwasmExecutor<'a, T> {
         address_offset: AddressOffset,
     ) -> Result<(), TrapCode> {
         let (address, value) = self.sp.pop2();
-        let memory = self.store.global_memory.data_mut();
-        UntypedValue::f32_store(memory, address, address_offset, value)?;
+        let window =
+            self.store
+                .global_memory
+                .store_window(u32::from(address), address_offset, 4)?;
+        UntypedValue::f32_store(window, UntypedValue::default(), 0, value)?;
         #[cfg(feature = "tracing")]
-        {
-            let base_address = address_offset + u32::from(address);
-            self.store.tracer.memory_change(
-                base_address,
-                4,
-                &memory[base_address as usize..(base_address + 4) as usize],
-            );
-        }
+        self.store
+            .tracer
+            .memory_change(address_offset + u32::from(address), 4, window);
         self.ip.add(1);
         Ok(())
     }
@@ -109,8 +107,11 @@ impl<'a, T> RwasmExecutor<'a, T> {
     ) -> Result<(), TrapCode> {
         let value = self.sp.pop_f64();
         let address = self.sp.pop_i32();
-        let memory = self.store.global_memory.data_mut();
-        UntypedValue::store_typed(memory, address as u32, address_offset, value)?;
+        let window = self
+            .store
+            .global_memory
+            .store_window(address as u32, address_offset, 8)?;
+        UntypedValue::store_typed(window, 0, 0, value)?;
         self.ip.add(1);
         Ok(())
     }

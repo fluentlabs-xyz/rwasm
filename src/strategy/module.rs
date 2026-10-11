@@ -189,6 +189,52 @@ impl StrategyDefinition {
         fuel_limit: Option<u64>,
         max_allowed_memory_pages: Option<u32>,
     ) -> Result<StrategyExecutor<T>, TrapCode> {
+        self.create_executor_on(
+            import_linker,
+            context,
+            syscall_handler,
+            fuel_limit,
+            max_allowed_memory_pages,
+            |store| store,
+        )
+    }
+
+    /// [`Self::create_executor`] with the instance's linear memory leased from `memory_pool`.
+    ///
+    /// The executor behaves exactly like one created by [`Self::create_executor`]; only where the
+    /// memory comes from differs. The slot goes back to the pool, reset, when the executor is
+    /// dropped, however its last execution ended. The pool's slots should hold at least
+    /// `max_allowed_memory_pages`. The Wasmtime strategy manages its own memories and ignores the
+    /// pool.
+    #[cfg(all(feature = "memory-pool", unix))]
+    pub fn create_executor_with_memory_pool<T>(
+        &self,
+        import_linker: Arc<ImportLinker>,
+        context: T,
+        syscall_handler: SyscallHandler<T>,
+        fuel_limit: Option<u64>,
+        max_allowed_memory_pages: Option<u32>,
+        memory_pool: &crate::MemoryPool,
+    ) -> Result<StrategyExecutor<T>, TrapCode> {
+        self.create_executor_on(
+            import_linker,
+            context,
+            syscall_handler,
+            fuel_limit,
+            max_allowed_memory_pages,
+            |store| store.with_memory_pool(memory_pool.clone()),
+        )
+    }
+
+    fn create_executor_on<T>(
+        &self,
+        import_linker: Arc<ImportLinker>,
+        context: T,
+        syscall_handler: SyscallHandler<T>,
+        fuel_limit: Option<u64>,
+        max_allowed_memory_pages: Option<u32>,
+        configure_store: impl FnOnce(RwasmStore<T>) -> RwasmStore<T>,
+    ) -> Result<StrategyExecutor<T>, TrapCode> {
         match self {
             StrategyDefinition::Rwasm {
                 engine,
@@ -196,13 +242,13 @@ impl StrategyDefinition {
                 entrypoint_name,
                 entrypoint_type,
             } => {
-                let mut store = RwasmStore::new(
+                let mut store = configure_store(RwasmStore::new(
                     import_linker.clone(),
                     context,
                     syscall_handler,
                     fuel_limit,
                     max_allowed_memory_pages,
-                );
+                ));
                 let instance = import_linker
                     .instantiate(&mut store, *engine, module.clone())?
                     .with_entrypoint_name(entrypoint_name.clone())
