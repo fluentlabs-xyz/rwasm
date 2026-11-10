@@ -75,8 +75,9 @@ impl GlobalMemory {
     /// Creates a zero-page memory backed by a pooled slot.
     ///
     /// The memory grows inside the slot without zeroing anything: a slot is all zeros when it is
-    /// leased. A `memory.grow` past the slot's capacity fails like an allocation failure, so the
-    /// pool's `slot_pages` should not be smaller than `max_allowed_memory_pages`.
+    /// leased. The slot has to hold `max_allowed_memory_pages`, which a lease from
+    /// [`crate::MemoryPool::lease_for`] does and which is how the store leases; a `memory.grow`
+    /// past the capacity of a smaller slot fails like an allocation failure.
     #[cfg(all(feature = "memory-pool", unix))]
     pub fn pooled(lease: crate::MemoryLease, max_allowed_memory_pages: Pages) -> Self {
         Self {

@@ -203,9 +203,10 @@ impl StrategyDefinition {
     ///
     /// The executor behaves exactly like one created by [`Self::create_executor`]; only where the
     /// memory comes from differs. The slot goes back to the pool, reset, when the executor is
-    /// dropped, however its last execution ended. The pool's slots should hold at least
-    /// `max_allowed_memory_pages`. The Wasmtime strategy manages its own memories and ignores the
-    /// pool.
+    /// dropped, however its last execution ended. A pool whose slots are smaller than
+    /// `max_allowed_memory_pages` is not used, and the executor then runs on a `Vec` memory like
+    /// one made by [`Self::create_executor`]. The Wasmtime strategy manages its own memories and
+    /// ignores the pool.
     #[cfg(all(feature = "memory-pool", unix))]
     pub fn create_executor_with_memory_pool<T>(
         &self,

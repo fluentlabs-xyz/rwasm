@@ -474,8 +474,10 @@ fn slot_serves_the_post_instantiation_image_without_growing_memory_by_hand() {
     assert_eq!(store.memory_dirty_host_pages(), Some(data_pages + 3));
 }
 
+/// A page cap below the module's initial memory fails instantiation on pooled memory exactly as
+/// it does on a `Vec`, and the slot leased for the attempt goes back to the pool.
 #[test]
-fn a_slot_too_small_for_the_module_fails_instantiation_like_a_small_store() {
+fn a_page_cap_below_the_initial_memory_fails_instantiation_on_pooled_memory_too() {
     let linker = linker();
     let module = compile(&linker);
     let pool = MemoryPool::new(MemoryPoolConfig {
@@ -483,10 +485,11 @@ fn a_slot_too_small_for_the_module_fails_instantiation_like_a_small_store() {
         verify_reset: true,
         ..MemoryPoolConfig::default()
     });
-    let mut pooled = pooled_store(&linker, &pool, false);
-    let mut small = RwasmStore::new(linker.clone(), Host::default(), host, Some(FUEL), Some(4));
+    let small = || RwasmStore::new(linker.clone(), Host::default(), host, Some(FUEL), Some(4));
+    let mut pooled = small().with_memory_pool(pool.clone());
+    let mut plain = small();
     let engine = ExecutionEngine::new();
-    let expected = linker.instantiate(&mut small, engine, module.clone()).err();
+    let expected = linker.instantiate(&mut plain, engine, module.clone()).err();
     assert_eq!(expected, Some(TrapCode::MemoryOutOfBounds));
     assert_eq!(
         linker.instantiate(&mut pooled, engine, module).err(),
@@ -509,6 +512,45 @@ fn a_slot_too_small_for_the_module_fails_instantiation_like_a_small_store() {
     );
     drop(pooled);
     assert_eq!(pool.free_slots(), 1);
+}
+
+/// A pool whose slots are smaller than the store's page cap is not used. Inside such a slot a
+/// `memory.grow` would stop at the slot's capacity, where the `Vec` memory (and the Wasmtime
+/// backend) keep growing up to the cap, so the same call would end differently depending on
+/// where the memory came from.
+#[test]
+fn a_pool_with_slots_below_the_page_cap_is_not_used() {
+    let linker = linker();
+    let module = compile(&linker);
+    let engine = ExecutionEngine::new();
+    // room for the 17 initial pages and three more; the probes grow the memory to 60
+    let pool = MemoryPool::new(MemoryPoolConfig {
+        slot_pages: 20,
+        verify_reset: true,
+        ..MemoryPoolConfig::default()
+    });
+    let mut pooled = pooled_store(&linker, &pool, false);
+    let mut fresh = vec_store(&linker, false);
+    let pooled_instance = linker
+        .instantiate(&mut pooled, engine, module.clone())
+        .unwrap();
+    let fresh_instance = linker.instantiate(&mut fresh, engine, module).unwrap();
+    assert_eq!(
+        pooled.memory_dirty_host_pages(),
+        None,
+        "the store runs on a `Vec` memory"
+    );
+    for (op, arg) in probe_sequence() {
+        let expected = observe(&mut fresh, &fresh_instance, op, arg);
+        let actual = observe(&mut pooled, &pooled_instance, op, arg);
+        assert_same(&actual, &expected, &format!("main({op}, {arg})"));
+    }
+    let stats = pool.stats();
+    let count =
+        |counter: &std::sync::atomic::AtomicU64| counter.load(std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(count(&stats.leases), 0);
+    assert_eq!(count(&stats.leases_declined), 1);
+    assert_eq!(count(&stats.slots_reserved), 0);
 }
 
 #[test]

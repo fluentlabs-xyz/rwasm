@@ -172,9 +172,10 @@ impl<T: 'static> RwasmStore<T> {
     /// Backs the memory of every instance created on this store by a slot leased from `pool`.
     ///
     /// Each instantiation leases a fresh slot and returns the previous instance's slot to the
-    /// pool; dropping the store returns the last one. The pool's slots should hold at least the
-    /// store's `max_allowed_memory_pages`, or growth fails early. A module run on the store
-    /// without [`crate::RwasmInstance`] keeps the store's own `Vec` memory.
+    /// pool; dropping the store returns the last one. A pool whose slots are smaller than the
+    /// store's `max_allowed_memory_pages` is not used: the instances keep a `Vec` memory, so
+    /// pooling never changes how far a memory can grow. A module run on the store without
+    /// [`crate::RwasmInstance`] keeps the store's own `Vec` memory as well.
     #[cfg(all(feature = "memory-pool", unix))]
     pub fn with_memory_pool(mut self, pool: crate::MemoryPool) -> Self {
         self.memory_pool = Some(pool);
@@ -193,8 +194,8 @@ impl<T: 'static> RwasmStore<T> {
         self.global_memory.dirty_host_pages()
     }
 
-    /// A zero-page memory for a new instance: a pooled slot when the store has a pool, a `Vec`
-    /// otherwise.
+    /// A zero-page memory for a new instance: a pooled slot when the store has a pool whose
+    /// slots hold the store's page cap, a `Vec` otherwise.
     ///
     /// A lease that cannot be mapped is reported as [`TrapCode::MemoryOutOfBounds`], the trap the
     /// entrypoint prologue raises when the initial memory cannot be allocated.
@@ -202,8 +203,13 @@ impl<T: 'static> RwasmStore<T> {
         let max_allowed_memory_pages = self.global_memory.max_allowed_memory_pages;
         #[cfg(all(feature = "memory-pool", unix))]
         if let Some(pool) = &self.memory_pool {
-            let lease = pool.lease().map_err(|_| TrapCode::MemoryOutOfBounds)?;
-            return Ok(GlobalMemory::pooled(lease, max_allowed_memory_pages));
+            let lease = pool
+                .lease_for(max_allowed_memory_pages.into())
+                .map_err(|_| TrapCode::MemoryOutOfBounds)?;
+            // `None`: the memory could outgrow a slot of this pool, so it stays a `Vec`
+            if let Some(lease) = lease {
+                return Ok(GlobalMemory::pooled(lease, max_allowed_memory_pages));
+            }
         }
         Ok(GlobalMemory::new(
             Pages::new_unchecked(0),

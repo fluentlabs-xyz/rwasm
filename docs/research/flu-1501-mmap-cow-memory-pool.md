@@ -175,6 +175,12 @@ bounds are enforced by the interpreter, not by page protection; `reset` takes a 
 dirty bitmap lives in the slot. `MemoryPool::stats()` and `last_reset()` expose counters for the
 host and for the harness.
 
+The pool is an optimization and never changes what a guest observes. The store leases through
+`MemoryPool::lease_for(max_allowed_memory_pages)`, which declines when a slot is smaller than the
+store's page cap: inside a slot it could outgrow, a `memory.grow` would stop at the slot's
+capacity, while the `Vec` memory, the zkVM guest and the Wasmtime backend keep growing to the cap.
+The instance then runs on a `Vec` memory, and `MemoryPoolStats::leases_declined` counts it.
+
 ## 2. Linux design: `mmap` and `madvise`
 
 **Reservation.** One `mmap(NULL, slot_pages * 64 KiB, PROT_READ | PROT_WRITE, MAP_PRIVATE |
@@ -184,7 +190,8 @@ protection would add a syscall per `memory.grow` and buy nothing. `MAP_NORESERVE
 slots out of the overcommit accounting; the Docker VM runs with `overcommit_memory = 1` anyway.
 
 **Growth.** `GlobalMemory::grow` checks the store's `max_allowed_memory_pages` (as today), then
-the slot's capacity, then sets the accessible length. No zeroing, no syscall. Untouched pages
+the slot's capacity (which a slot the store leased always covers), then sets the accessible
+length. No zeroing, no syscall. Untouched pages
 cost nothing until written; a read of an untouched page maps the shared zero page.
 
 **Reset.** Measured over a 64 MiB slot (table 1 in appendix A, Linux). Each cell is the reset

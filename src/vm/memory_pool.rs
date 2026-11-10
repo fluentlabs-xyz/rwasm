@@ -113,8 +113,10 @@ pub struct ResetStats {
 /// Configuration of a [`MemoryPool`].
 #[derive(Debug, Clone)]
 pub struct MemoryPoolConfig {
-    /// Capacity of every slot, in Wasm pages. A store using the pool must not allow more pages
-    /// than this: a `memory.grow` past the slot capacity fails like an allocation failure.
+    /// Capacity of every slot, in Wasm pages. The pool serves a memory only if a slot holds its
+    /// whole page cap: a store that allows more pages than this keeps its `Vec` memory (see
+    /// [`MemoryPool::lease_for`]), because a slot it could outgrow would fail a `memory.grow`
+    /// that the `Vec` memory and the Wasmtime backend both serve.
     pub slot_pages: u32,
     /// Reset slots kept for reuse; a released slot beyond this is unmapped.
     pub max_free_slots: usize,
@@ -172,6 +174,9 @@ impl Default for MemoryPoolConfig {
 pub struct MemoryPoolStats {
     /// Leases handed out.
     pub leases: AtomicU64,
+    /// Leases declined because a slot cannot hold the requested page cap
+    /// ([`MemoryPool::lease_for`]); the store ran those instances on a `Vec` memory.
+    pub leases_declined: AtomicU64,
     /// Slots mapped because the free list was empty.
     pub slots_reserved: AtomicU64,
     /// Slots returned to the free list after a successful reset.
@@ -729,6 +734,24 @@ impl MemoryPool {
             slot: ManuallyDrop::new(slot),
             pool: self.inner.clone(),
         })
+    }
+
+    /// Leases an all-zero slot for a memory that may grow to `max_pages` Wasm pages.
+    ///
+    /// Returns `None`, and counts the lease as declined, when the pool's slots are smaller than
+    /// that. The caller then backs the memory some other way: a memory growing inside a slot it
+    /// can outgrow stops at the slot's capacity instead of at `max_pages`, which the guest sees
+    /// as a `memory.grow` that returns `-1` early.
+    ///
+    /// # Errors
+    ///
+    /// The `mmap` of a new slot failed.
+    pub fn lease_for(&self, max_pages: u32) -> io::Result<Option<MemoryLease>> {
+        if max_pages > self.inner.config.slot_pages {
+            MemoryPoolStats::bump(&self.inner.stats.leases_declined);
+            return Ok(None);
+        }
+        self.lease().map(Some)
     }
 }
 
