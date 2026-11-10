@@ -647,7 +647,10 @@ fn map_aligned(len: usize, align: usize) -> io::Result<*mut u8> {
         .checked_add(align)
         .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
     let ptr = map(total)?;
-    let head = ptr.align_offset(align);
+    // The bytes up to the next multiple of `align`, computed from the address. This is not
+    // `pointer::align_offset`: that method may return `usize::MAX` instead of an offset, and
+    // the ranges unmapped below have to be exact.
+    let head = ptr.addr().wrapping_neg() & (align - 1);
     let tail = total - head - len;
     // SAFETY: the head and the tail are page-aligned sub-ranges of the mapping just created and
     // nothing refers to them.
@@ -943,6 +946,30 @@ mod tests {
             slot.reset(policy, true)
                 .unwrap_or_else(|err| panic!("{policy:?}: {err}"));
             assert!(slot.is_zeroed(capacity), "{policy:?}");
+        }
+    }
+
+    /// A slot with a huge-page part starts on a multiple of the huge page size and is mapped
+    /// over exactly its capacity. Built through `reserve_with_huge_page`, so the aligned mapping
+    /// is covered on hosts without transparent huge pages as well.
+    #[test]
+    fn split_slots_are_aligned_and_mapped_over_their_whole_capacity() {
+        let page = host_page_size();
+        for align_pages in [2, 8, 64, 512] {
+            let align = page * align_pages;
+            let capacity = align * 3;
+            // several slots at once, so that the kernel hands out different addresses
+            let mut slots: Vec<MemorySlot> = (0..8)
+                .map(|_| MemorySlot::reserve_with_huge_page(capacity, true, 1, align).unwrap())
+                .collect();
+            for slot in &mut slots {
+                assert_eq!(slot.base_ptr().as_ptr() as usize % align, 0, "{align}");
+                assert_eq!(slot.capacity(), capacity);
+                let bytes = slot.as_mut_slice(capacity);
+                bytes[0] = 1;
+                bytes[capacity - 1] = 1;
+                assert_eq!((bytes[0], bytes[capacity - 1]), (1, 1));
+            }
         }
     }
 
