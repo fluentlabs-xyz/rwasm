@@ -17,14 +17,15 @@ No new opcodes, no change to the emitted bytes or the fuel schedule.
   lease one slot per instance and return it, reset, when the instance goes away, however its last
   execution ended; a fresh instance then costs a reset of the pages the previous one wrote instead
   of a zeroed allocation of what it declared (a typical 17-page contract call goes from about
-  5 µs to under 2 µs of instantiation overhead, a 64 MiB sparse memory from 860 µs to about
-  1 µs). The reset is driven by a dirty bitmap at host-page granularity and a high-water mark:
-  `memset` of the dirty pages up to 4 MiB, `madvise(MADV_DONTNEED)` (Linux) or
-  `madvise(MADV_ZERO)` (macOS) beyond that. On Linux the upper part of a slot is huge-page
-  eligible. Pooling does not change what a guest observes: a store whose page cap exceeds the
-  pool's `slot_pages` keeps its `Vec` memory (`MemoryPoolStats::leases_declined` counts those),
-  and so does an instance whose slot cannot be mapped (`map_failures`). Unix hosts only, off by default, inert in `no_std` builds. Design and measurements:
-  `docs/research/flu-1501-mmap-cow-memory-pool.md`.
+  5 µs to under 2 µs of instantiation overhead; a sparse 64 MiB memory from 886 µs to 22 µs on
+  Linux and from 317 µs to about 1 µs on macOS). The reset is driven by a dirty bitmap at
+  host-page granularity and a high-water mark: `memset` of the dirty pages up to 8 MiB,
+  `madvise(MADV_DONTNEED)` (Linux) or `madvise(MADV_ZERO)` (macOS) beyond that. On Linux the
+  upper part of a slot is huge-page eligible. Pooling does not change what a guest observes: a
+  store whose page cap exceeds the pool's `slot_pages` keeps its `Vec` memory
+  (`MemoryPoolStats::leases_declined` counts those), and so does an instance whose slot cannot be
+  mapped (`map_failures`). Unix hosts only, off by default, inert in `no_std` builds. Design and
+  measurements: `docs/research/flu-1501-mmap-cow-memory-pool.md`.
 
 ### Changed
 - `GlobalMemory` no longer hands out its buffer for writing. The `shared_memory` field and
