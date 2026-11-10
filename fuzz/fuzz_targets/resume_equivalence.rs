@@ -8,19 +8,25 @@
 //! result values. The two runs must end with the same outcome, the same results, the same
 //! remaining fuel and the same memory — a host implements cross-contract calls on this path, so
 //! any state the resumed run gets wrong is a consensus bug with no Wasmtime oracle to catch it.
+//!
+//! A third executor runs the same calls on memory leased from a process-wide [`MemoryPool`]. Its
+//! slots are handed from one fuzz iteration to the next, so every module runs in memory an
+//! earlier, unrelated module wrote to, trapped in or grew. It must observe exactly what the
+//! reference observes, and every reset is read back: a slot that does not come back as zeros, or
+//! a pooled run that sees a stray byte, is one instance leaking into another.
 
 use libfuzzer_sys::{
     arbitrary::{self, Result, Unstructured},
     fuzz_target,
 };
 use rwasm::{
-    CompilationConfig, ImportLinker, ImportName, StoreTr, StrategyDefinition, StrategyExecutor,
-    SyscallFuelParams, TrapCode, TypedCaller, Value,
+    CompilationConfig, ImportLinker, ImportName, MemoryPool, MemoryPoolConfig, ResetPolicy,
+    StoreTr, StrategyDefinition, StrategyExecutor, SyscallFuelParams, TrapCode, TypedCaller, Value,
 };
 use rwasm_fuel_policy::{LinearFuelParams, QuadraticFuelParams};
 use std::{
     cell::RefCell,
-    sync::{Arc, Once},
+    sync::{atomic::Ordering, Arc, Once, OnceLock},
 };
 use wasm_smith as smith;
 use wasmparser::{Parser, Payload, TypeRef, ValType};
@@ -183,6 +189,34 @@ fn interrupting_handler(
     Err(TrapCode::InterruptionCalled)
 }
 
+/// One pool per reset policy, shared by every iteration of the process. Slots hold exactly the
+/// fuzzed page cap, start using huge pages at the first opportunity (so growth crosses the
+/// boundary) and are verified after every reset.
+fn pools() -> &'static [MemoryPool] {
+    static POOLS: OnceLock<Vec<MemoryPool>> = OnceLock::new();
+    POOLS.get_or_init(|| {
+        [
+            MemoryPoolConfig::default_reset_policy(),
+            ResetPolicy::Memset,
+            ResetPolicy::DiscardDirty,
+            ResetPolicy::Discard,
+            ResetPolicy::RemapDirty,
+        ]
+        .into_iter()
+        .map(|reset_policy| {
+            MemoryPool::new(MemoryPoolConfig {
+                slot_pages: MAX_MEMORY_PAGES,
+                max_free_slots: 2,
+                reset_policy,
+                track_dirty: true,
+                verify_reset: true,
+                small_page_prefix: 1,
+            })
+        })
+        .collect()
+    })
+}
+
 static SETUP: Once = Once::new();
 
 fuzz_target!(|data: &[u8]| {
@@ -325,8 +359,27 @@ fn execute_one(data: &[u8]) -> Result<()> {
             Some(FUEL_LIMIT),
             Some(MAX_MEMORY_PAGES),
         );
-        let (mut reference, mut resumed) = match (reference, resumed) {
-            (Ok(a), Ok(b)) => (a, b),
+        // picked from the module, not from the input stream, so existing corpus entries decode
+        // to the same calls as before
+        let pool = &pools()[hash(&wasm) as usize % pools().len()];
+        let pooled = definition.create_executor_with_memory_pool(
+            linker(),
+            (),
+            inline_handler,
+            Some(FUEL_LIMIT),
+            Some(MAX_MEMORY_PAGES),
+            pool,
+        );
+        if reference.as_ref().err() != pooled.as_ref().err() {
+            panic!(
+                "pool divergence at instantiation of `{name}`: vec={:?} pooled={:?}\nwasm={}",
+                reference.as_ref().err(),
+                pooled.as_ref().err(),
+                hex::encode(&wasm)
+            );
+        }
+        let (mut reference, mut resumed, mut pooled) = match (reference, resumed, pooled) {
+            (Ok(a), Ok(b), Ok(c)) => (a, b, c),
             _ => continue,
         };
         let calls = 1 + u.int_in_range(0..=MAX_CALLS_PER_EXPORT as u32 - 1)? as usize;
@@ -341,6 +394,21 @@ fn execute_one(data: &[u8]) -> Result<()> {
                 .collect::<Result<Vec<_>>>();
             let Ok(args) = args else { break };
             let lhs = run_inline(&mut reference, &name, &args, &results);
+            let leased = run_inline(&mut pooled, &name, &args, &results);
+            if lhs != leased {
+                panic!(
+                    "pool divergence on `{name}` call #{call} args={args:?}\n  vec    = {:?} fuel={:?} mem_len={} mem_hash={:x}\n  pooled = {:?} fuel={:?} mem_len={} mem_hash={:x}\nwasm={}",
+                    lhs.outcome,
+                    lhs.fuel,
+                    lhs.memory.len(),
+                    hash(&lhs.memory),
+                    leased.outcome,
+                    leased.fuel,
+                    leased.memory.len(),
+                    hash(&leased.memory),
+                    hex::encode(&wasm)
+                );
+            }
             let Some(rhs) = run_resumed(&mut resumed, &name, &args, &results) else {
                 break;
             };
@@ -362,6 +430,15 @@ fn execute_one(data: &[u8]) -> Result<()> {
             if lhs.outcome.is_err() {
                 break;
             }
+        }
+        // releasing the slot resets and verifies it
+        drop(pooled);
+        let failures = pool.stats().reset_failures.load(Ordering::Relaxed);
+        if failures != 0 {
+            panic!(
+                "a pooled slot was not all zeros after its reset ({failures} failures) after `{name}`\nwasm={}",
+                hex::encode(&wasm)
+            );
         }
     }
     Ok(())

@@ -1293,6 +1293,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "hex",
  "hex-literal",
+ "libc",
  "libm",
  "lru",
  "num-derive",

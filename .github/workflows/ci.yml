@@ -53,3 +53,9 @@ jobs:
       # build would otherwise catch with an assertion).
       - name: Run tests (release)
         run: cargo test --release --no-fail-fast --manifest-path Cargo.toml
+
+      # `memory-pool` is off by default, so the suites above never lease a slot. Run the whole
+      # suite once more with the feature on (every VM write then goes through the dirty-tracking
+      # build), which includes the fresh-versus-recycled equivalence tests.
+      - name: Run tests (memory pool)
+        run: cargo test --release --no-fail-fast --features memory-pool --manifest-path Cargo.toml

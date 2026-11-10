@@ -47,6 +47,9 @@ pub struct RwasmStore<T: 'static> {
     /// Execution tracer used when the `tracing` feature is enabled.
     #[cfg(feature = "tracing")]
     pub tracer: crate::Tracer,
+    /// Pool the instance memories are leased from; `None` allocates `Vec` memories.
+    #[cfg(all(feature = "memory-pool", unix))]
+    memory_pool: Option<crate::MemoryPool>,
 }
 
 pub(crate) struct ReusableContext {
@@ -161,7 +164,56 @@ impl<T: 'static> RwasmStore<T> {
             import_linker,
             resumable_context: None,
             fuel_limit,
+            #[cfg(all(feature = "memory-pool", unix))]
+            memory_pool: None,
         }
+    }
+
+    /// Backs the memory of every instance created on this store by a slot leased from `pool`.
+    ///
+    /// Each instantiation leases a fresh slot and returns the previous instance's slot to the
+    /// pool; dropping the store returns the last one. A pool whose slots are smaller than the
+    /// store's `max_allowed_memory_pages` is not used: the instances keep a `Vec` memory, so
+    /// pooling never changes how far a memory can grow. An instance whose slot cannot be mapped
+    /// runs on a `Vec` memory too, instead of failing. A module run on the store without
+    /// [`crate::RwasmInstance`] keeps the store's own `Vec` memory as well.
+    #[cfg(all(feature = "memory-pool", unix))]
+    pub fn with_memory_pool(mut self, pool: crate::MemoryPool) -> Self {
+        self.memory_pool = Some(pool);
+        self
+    }
+
+    /// The pool the store leases its memories from, if any.
+    #[cfg(all(feature = "memory-pool", unix))]
+    pub fn memory_pool(&self) -> Option<&crate::MemoryPool> {
+        self.memory_pool.as_ref()
+    }
+
+    /// Host pages of the current memory written since its slot was leased, when the memory is
+    /// pooled with dirty tracking.
+    pub fn memory_dirty_host_pages(&self) -> Option<usize> {
+        self.global_memory.dirty_host_pages()
+    }
+
+    /// A zero-page memory for a new instance: a pooled slot when the store has a pool that can
+    /// serve one, a `Vec` otherwise.
+    ///
+    /// The pool is an optimization and never decides how an instantiation ends. A pool whose
+    /// slots are smaller than the store's page cap is not used, and neither is one that cannot
+    /// map a new slot: reporting that as a trap would turn a shortage of address space on this
+    /// host into a guest failure no other host sees, raised even for a module without a memory.
+    /// The `Vec` memory then succeeds or fails exactly as on a store without a pool.
+    fn fresh_memory(&self) -> GlobalMemory {
+        let max_allowed_memory_pages = self.global_memory.max_allowed_memory_pages;
+        #[cfg(all(feature = "memory-pool", unix))]
+        if let Some(lease) = self.memory_pool.as_ref().and_then(|pool| {
+            pool.lease_for(max_allowed_memory_pages.into())
+                .ok()
+                .flatten()
+        }) {
+            return GlobalMemory::pooled(lease, max_allowed_memory_pages);
+        }
+        GlobalMemory::new(Pages::new_unchecked(0), max_allowed_memory_pages)
     }
 
     /// Starts replacement with empty instance state, retaining the old allocations for rollback.
@@ -174,10 +226,7 @@ impl<T: 'static> RwasmStore<T> {
         if self.resumable_context.is_some() || self.pending_instance.is_some() {
             return Err(TrapCode::IllegalOpcode);
         }
-        let memory = GlobalMemory::new(
-            Pages::new_unchecked(0),
-            self.global_memory.max_allowed_memory_pages,
-        );
+        let memory = self.fresh_memory();
         self.pending_instance = Some(InstanceState {
             identity: self.active_instance.replace(identity),
             module: self.active_module.replace(module.clone()),
