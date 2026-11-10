@@ -553,6 +553,59 @@ fn a_pool_with_slots_below_the_page_cap_is_not_used() {
     assert_eq!(count(&stats.slots_reserved), 0);
 }
 
+/// A pool that cannot map a slot does not fail the instantiation: the instance runs on a `Vec`
+/// memory, as it would on a store without a pool. The failed lease used to surface as
+/// `TrapCode::MemoryOutOfBounds`, a guest trap for a shortage of address space on one host, and
+/// it was raised even for a module that has no memory.
+#[test]
+fn an_unmappable_slot_falls_back_to_a_vec_memory() {
+    let linker = linker();
+    let module = compile(&linker);
+    let engine = ExecutionEngine::new();
+    // 256 TiB per slot, more than the user address space of a 64-bit host
+    let pool = MemoryPool::new(MemoryPoolConfig {
+        slot_pages: u32::MAX,
+        ..MemoryPoolConfig::default()
+    });
+    assert!(
+        pool.lease().is_err(),
+        "a 256 TiB slot is expected not to map"
+    );
+
+    let mut pooled = pooled_store(&linker, &pool, false);
+    let mut fresh = vec_store(&linker, false);
+    let pooled_instance = linker
+        .instantiate(&mut pooled, engine, module.clone())
+        .unwrap();
+    let fresh_instance = linker.instantiate(&mut fresh, engine, module).unwrap();
+    assert_eq!(pooled.memory_dirty_host_pages(), None);
+    for (op, arg) in probe_sequence() {
+        let expected = observe(&mut fresh, &fresh_instance, op, arg);
+        let actual = observe(&mut pooled, &pooled_instance, op, arg);
+        assert_same(&actual, &expected, &format!("main({op}, {arg})"));
+    }
+
+    // a module without a memory never needed the slot in the first place
+    let no_memory = RwasmModule::compile(
+        CompilationConfig::default_strategy_compatible().with_entrypoint_name("main".into()),
+        &wat::parse_str(r#"(module (func (export "main")))"#).unwrap(),
+    )
+    .unwrap()
+    .0;
+    let mut store = pooled_store(&linker, &pool, false);
+    let instance = linker.instantiate(&mut store, engine, no_memory).unwrap();
+    assert_eq!(instance.execute(&mut store, &[], &mut []), Ok(()));
+
+    let stats = pool.stats();
+    let count =
+        |counter: &std::sync::atomic::AtomicU64| counter.load(std::sync::atomic::Ordering::Relaxed);
+    // the direct lease above and the two instantiations
+    assert_eq!(count(&stats.map_failures), 3);
+    assert_eq!(count(&stats.slots_reserved), 0);
+    assert_eq!(count(&stats.leases), 0);
+    assert_eq!(count(&stats.leases_declined), 0);
+}
+
 #[test]
 fn replacing_the_instance_returns_the_previous_slot() {
     let linker = linker();

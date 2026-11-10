@@ -179,7 +179,9 @@ The pool is an optimization and never changes what a guest observes. The store l
 `MemoryPool::lease_for(max_allowed_memory_pages)`, which declines when a slot is smaller than the
 store's page cap: inside a slot it could outgrow, a `memory.grow` would stop at the slot's
 capacity, while the `Vec` memory, the zkVM guest and the Wasmtime backend keep growing to the cap.
-The instance then runs on a `Vec` memory, and `MemoryPoolStats::leases_declined` counts it.
+The instance then runs on a `Vec` memory, and `MemoryPoolStats::leases_declined` counts it. A
+slot that cannot be mapped ends the same way (`map_failures`): a shortage of address space on one
+host must not become a trap that other hosts do not raise.
 
 ## 2. Linux design: `mmap` and `madvise`
 

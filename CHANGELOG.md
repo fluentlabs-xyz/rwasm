@@ -21,9 +21,9 @@ No new opcodes, no change to the emitted bytes or the fuel schedule.
   1 µs). The reset is driven by a dirty bitmap at host-page granularity and a high-water mark:
   `memset` of the dirty pages up to 4 MiB, `madvise(MADV_DONTNEED)` (Linux) or
   `madvise(MADV_ZERO)` (macOS) beyond that. On Linux the upper part of a slot is huge-page
-  eligible. Pooling does not change how far a memory grows: a store whose page cap exceeds the
-  pool's `slot_pages` keeps its `Vec` memory (`MemoryPoolStats::leases_declined` counts those).
-  Unix hosts only, off by default, inert in `no_std` builds. Design and measurements:
+  eligible. Pooling does not change what a guest observes: a store whose page cap exceeds the
+  pool's `slot_pages` keeps its `Vec` memory (`MemoryPoolStats::leases_declined` counts those),
+  and so does an instance whose slot cannot be mapped (`map_failures`). Unix hosts only, off by default, inert in `no_std` builds. Design and measurements:
   `docs/research/flu-1501-mmap-cow-memory-pool.md`.
 
 ### Changed

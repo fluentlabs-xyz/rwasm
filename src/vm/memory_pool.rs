@@ -177,6 +177,9 @@ pub struct MemoryPoolStats {
     /// Leases declined because a slot cannot hold the requested page cap
     /// ([`MemoryPool::lease_for`]); the store ran those instances on a `Vec` memory.
     pub leases_declined: AtomicU64,
+    /// Leases that failed because a new slot could not be mapped; the store ran those instances
+    /// on a `Vec` memory as well.
+    pub map_failures: AtomicU64,
     /// Slots mapped because the free list was empty.
     pub slots_reserved: AtomicU64,
     /// Slots returned to the free list after a successful reset.
@@ -701,9 +704,11 @@ impl MemoryPool {
             .len()
     }
 
-    /// Capacity of a slot in bytes.
+    /// Capacity of a slot in bytes, saturating where the target's address space cannot express
+    /// it (such a slot never maps).
     pub fn slot_capacity(&self) -> usize {
-        self.inner.config.slot_pages as usize * crate::N_BYTES_PER_MEMORY_PAGE as usize
+        (self.inner.config.slot_pages as usize)
+            .saturating_mul(crate::N_BYTES_PER_MEMORY_PAGE as usize)
     }
 
     /// Leases an all-zero slot.
@@ -720,14 +725,13 @@ impl MemoryPool {
             .pop();
         let slot = match free {
             Some(slot) => slot,
-            None => {
-                MemoryPoolStats::bump(&self.inner.stats.slots_reserved);
-                MemorySlot::reserve(
-                    self.slot_capacity(),
-                    self.inner.config.track_dirty,
-                    self.inner.config.small_page_prefix,
-                )?
-            }
+            None => MemorySlot::reserve(
+                self.slot_capacity(),
+                self.inner.config.track_dirty,
+                self.inner.config.small_page_prefix,
+            )
+            .inspect(|_| MemoryPoolStats::bump(&self.inner.stats.slots_reserved))
+            .inspect_err(|_| MemoryPoolStats::bump(&self.inner.stats.map_failures))?,
         };
         MemoryPoolStats::bump(&self.inner.stats.leases);
         Ok(MemoryLease {

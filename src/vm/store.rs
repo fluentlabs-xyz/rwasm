@@ -174,7 +174,8 @@ impl<T: 'static> RwasmStore<T> {
     /// Each instantiation leases a fresh slot and returns the previous instance's slot to the
     /// pool; dropping the store returns the last one. A pool whose slots are smaller than the
     /// store's `max_allowed_memory_pages` is not used: the instances keep a `Vec` memory, so
-    /// pooling never changes how far a memory can grow. A module run on the store without
+    /// pooling never changes how far a memory can grow. An instance whose slot cannot be mapped
+    /// runs on a `Vec` memory too, instead of failing. A module run on the store without
     /// [`crate::RwasmInstance`] keeps the store's own `Vec` memory as well.
     #[cfg(all(feature = "memory-pool", unix))]
     pub fn with_memory_pool(mut self, pool: crate::MemoryPool) -> Self {
@@ -194,27 +195,25 @@ impl<T: 'static> RwasmStore<T> {
         self.global_memory.dirty_host_pages()
     }
 
-    /// A zero-page memory for a new instance: a pooled slot when the store has a pool whose
-    /// slots hold the store's page cap, a `Vec` otherwise.
+    /// A zero-page memory for a new instance: a pooled slot when the store has a pool that can
+    /// serve one, a `Vec` otherwise.
     ///
-    /// A lease that cannot be mapped is reported as [`TrapCode::MemoryOutOfBounds`], the trap the
-    /// entrypoint prologue raises when the initial memory cannot be allocated.
-    fn fresh_memory(&self) -> Result<GlobalMemory, TrapCode> {
+    /// The pool is an optimization and never decides how an instantiation ends. A pool whose
+    /// slots are smaller than the store's page cap is not used, and neither is one that cannot
+    /// map a new slot: reporting that as a trap would turn a shortage of address space on this
+    /// host into a guest failure no other host sees, raised even for a module without a memory.
+    /// The `Vec` memory then succeeds or fails exactly as on a store without a pool.
+    fn fresh_memory(&self) -> GlobalMemory {
         let max_allowed_memory_pages = self.global_memory.max_allowed_memory_pages;
         #[cfg(all(feature = "memory-pool", unix))]
-        if let Some(pool) = &self.memory_pool {
-            let lease = pool
-                .lease_for(max_allowed_memory_pages.into())
-                .map_err(|_| TrapCode::MemoryOutOfBounds)?;
-            // `None`: the memory could outgrow a slot of this pool, so it stays a `Vec`
-            if let Some(lease) = lease {
-                return Ok(GlobalMemory::pooled(lease, max_allowed_memory_pages));
-            }
+        if let Some(lease) = self.memory_pool.as_ref().and_then(|pool| {
+            pool.lease_for(max_allowed_memory_pages.into())
+                .ok()
+                .flatten()
+        }) {
+            return GlobalMemory::pooled(lease, max_allowed_memory_pages);
         }
-        Ok(GlobalMemory::new(
-            Pages::new_unchecked(0),
-            max_allowed_memory_pages,
-        ))
+        GlobalMemory::new(Pages::new_unchecked(0), max_allowed_memory_pages)
     }
 
     /// Starts replacement with empty instance state, retaining the old allocations for rollback.
@@ -227,7 +226,7 @@ impl<T: 'static> RwasmStore<T> {
         if self.resumable_context.is_some() || self.pending_instance.is_some() {
             return Err(TrapCode::IllegalOpcode);
         }
-        let memory = self.fresh_memory()?;
+        let memory = self.fresh_memory();
         self.pending_instance = Some(InstanceState {
             identity: self.active_instance.replace(identity),
             module: self.active_module.replace(module.clone()),
