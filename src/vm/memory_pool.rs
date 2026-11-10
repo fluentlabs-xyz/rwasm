@@ -211,7 +211,8 @@ pub struct MemorySlot {
     high_water: usize,
     track_dirty: bool,
     /// First byte of the huge-page eligible part; `capacity` when the slot has none. A multiple
-    /// of the huge page size, so also of 64 host pages (a whole number of bitmap words).
+    /// of the huge page size, which on the hosts measured is a whole number of bitmap words
+    /// (64 host pages); the reset does not depend on that, see `small_page_words`.
     split: usize,
     /// The host's huge page size, 0 when the slot has no huge-page part.
     huge_page: usize,
@@ -233,6 +234,17 @@ impl MemorySlot {
         track_dirty: bool,
         small_page_prefix: usize,
     ) -> io::Result<Self> {
+        Self::reserve_with_huge_page(capacity, track_dirty, small_page_prefix, huge_page_size())
+    }
+
+    /// [`Self::reserve`] for a host whose transparent huge pages are `huge_page` bytes: a power
+    /// of two above the host page size, or 0 for a host without them.
+    fn reserve_with_huge_page(
+        capacity: usize,
+        track_dirty: bool,
+        small_page_prefix: usize,
+        huge_page: usize,
+    ) -> io::Result<Self> {
         let page_size = host_page_size();
         let invalid = || io::Error::from(io::ErrorKind::InvalidInput);
         let capacity = capacity
@@ -240,7 +252,6 @@ impl MemorySlot {
             .checked_add(page_size - 1)
             .ok_or_else(invalid)?
             & !(page_size - 1);
-        let huge_page = huge_page_size();
         let split = if huge_page > 0 && small_page_prefix < capacity {
             (small_page_prefix.div_ceil(huge_page) * huge_page).min(capacity)
         } else {
@@ -399,10 +410,14 @@ impl MemorySlot {
     }
 
     /// Bitmap words that cover the small-page part of the slot.
+    ///
+    /// Rounded up: when the split is not a whole number of words, the last word also holds
+    /// pages of the huge-page part. Resetting those by the bitmap as well is harmless, they are
+    /// given back whenever the lease reached them. Rounding down would leave the small pages
+    /// of that word out of every bitmap-driven reset and hand their bytes to the next lease.
     fn small_page_words(&self) -> usize {
         if self.split < self.capacity {
-            // `split` is a multiple of the huge page size, hence of 64 host pages
-            (self.split >> self.page_shift) / 64
+            (self.split >> self.page_shift).div_ceil(64)
         } else {
             self.dirty.len()
         }
@@ -573,8 +588,9 @@ fn discard_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
 
 /// Replaces `[ptr, ptr + len)` with a fresh anonymous mapping.
 ///
-/// `MAP_FIXED` is only ever applied inside the small-page part of a slot's own reservation. The
-/// new mapping is a new VMA, so the huge page opt-out is applied again.
+/// `MAP_FIXED` is only ever applied inside a slot's own reservation, to pages the reset of its
+/// small-page part covers. The new mapping is a new VMA, so the huge page opt-out is applied
+/// again.
 fn remap_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
     if len == 0 {
         return Ok("mmap(MAP_FIXED)");
@@ -905,6 +921,28 @@ mod tests {
                 slot.reset(policy, true).unwrap();
                 assert!(slot.is_zeroed(capacity), "{policy:?} second reset");
             }
+        }
+    }
+
+    /// The reset must not depend on the huge page being a whole number of bitmap words. With a
+    /// huge page of four host pages the split lands inside the first word; rounding the
+    /// small-page words down then left the small pages out of every bitmap-driven reset.
+    #[test]
+    fn small_page_part_is_reset_when_the_split_is_inside_a_bitmap_word() {
+        let page = host_page_size();
+        let capacity = page * 256;
+        for policy in POLICIES {
+            let mut slot = MemorySlot::reserve_with_huge_page(capacity, true, 1, page * 4).unwrap();
+            assert_eq!(slot.huge_pages_from(), Some(page * 4), "{policy:?}");
+            slot.note_accessible(capacity);
+            // two small pages, the first page past the split and two pages further up
+            for offset in [page + 5, page * 3, page * 4, page * 100, capacity - 1] {
+                slot.as_mut_slice(capacity)[offset] = 0xEE;
+                slot.mark_dirty(offset, 1);
+            }
+            slot.reset(policy, true)
+                .unwrap_or_else(|err| panic!("{policy:?}: {err}"));
+            assert!(slot.is_zeroed(capacity), "{policy:?}");
         }
     }
 
