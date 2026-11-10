@@ -488,22 +488,38 @@ impl MemorySlot {
                 stats.calls += 1;
             }
             ResetPolicy::DiscardDirty | ResetPolicy::RemapDirty | ResetPolicy::Memset => {
-                let mut runs = Vec::new();
-                self.dirty_runs_in(words, |first, count| runs.push((first, count)));
-                for (first, count) in runs {
-                    let ptr = base.wrapping_add(first << self.page_shift);
-                    let len = count << self.page_shift;
-                    stats.method = match policy {
-                        ResetPolicy::DiscardDirty => discard_range(ptr, len)?,
-                        ResetPolicy::RemapDirty => remap_range(ptr, len)?,
+                // Each run is reset as the bitmap scan finds it; collecting the runs first cost
+                // an allocation per reset, on a path that takes a few hundred nanoseconds.
+                let page_shift = self.page_shift;
+                // the first failed kernel call; the runs after it are left as they are
+                let mut failure = None;
+                self.dirty_runs_in(words, |first, count| {
+                    if failure.is_some() {
+                        return;
+                    }
+                    let ptr = base.wrapping_add(first << page_shift);
+                    let len = count << page_shift;
+                    let method = match policy {
+                        ResetPolicy::DiscardDirty => discard_range(ptr, len),
+                        ResetPolicy::RemapDirty => remap_range(ptr, len),
                         _ => {
-                            // SAFETY: the run is inside the mapping owned by `self`.
+                            // SAFETY: the run is inside the mapping owned by `self`; the bitmap
+                            // the scan reads is not part of that mapping.
                             unsafe { std::ptr::write_bytes(ptr, 0, len) };
-                            "memset"
+                            Ok("memset")
                         }
                     };
-                    stats.pages += count;
-                    stats.calls += 1;
+                    match method {
+                        Ok(method) => {
+                            stats.method = method;
+                            stats.pages += count;
+                            stats.calls += 1;
+                        }
+                        Err(err) => failure = Some(err),
+                    }
+                });
+                if let Some(err) = failure {
+                    return Err(err);
                 }
             }
             ResetPolicy::Adaptive { .. } => unreachable!("resolved above"),
@@ -779,8 +795,17 @@ impl MemoryPool {
 }
 
 impl PoolInner {
-    /// Resets `slot` and pools it, or unmaps it when the reset cannot vouch for it.
+    /// Resets `slot` and pools it, or unmaps it when the free list has no room for it or the
+    /// reset cannot vouch for it.
     fn release(&self, mut slot: MemorySlot) {
+        // A slot the free list has no room for is unmapped as it is: `munmap` gives every page
+        // back, so a reset first would be wasted work. The list can fill up between this check
+        // and the push below, which is why the push checks again.
+        let free_slots = self.free.lock().unwrap_or_else(|e| e.into_inner()).len();
+        if free_slots >= self.config.max_free_slots {
+            MemoryPoolStats::bump(&self.stats.slots_unmapped);
+            return;
+        }
         match slot.reset(self.config.reset_policy, self.config.verify_reset) {
             Ok(stats) => {
                 *self.last_reset.lock().unwrap_or_else(|e| e.into_inner()) = Some(stats);
@@ -1004,6 +1029,9 @@ mod tests {
         assert_eq!(pool.stats().slots_reserved.load(Ordering::Relaxed), 2);
         assert_eq!(pool.stats().slots_recycled.load(Ordering::Relaxed), 1);
         assert_eq!(pool.stats().slots_unmapped.load(Ordering::Relaxed), 1);
+        // the slot the free list had no room for was unmapped as it was: the last reset is
+        // still the one of the first slot, with its dirty page
+        assert_eq!(pool.last_reset().map(|stats| stats.dirty_pages), Some(1));
         let reused = pool.lease().unwrap();
         assert_eq!(pool.stats().slots_reserved.load(Ordering::Relaxed), 2);
         assert!(reused.slot().is_zeroed(64));
