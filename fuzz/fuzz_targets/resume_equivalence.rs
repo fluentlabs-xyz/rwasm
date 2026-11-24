@@ -272,7 +272,16 @@ mod pooled {
                 "the pooled executor did not get a slot: {declined} leases declined, {unmapped} slots not mapped"
             );
         }
-        executor.ok().map(|executor| Pooled { pool, executor })
+        let executor = executor.ok()?;
+        match &executor {
+            StrategyExecutor::Rwasm { store, .. } => assert!(
+                store.memory_is_pooled(),
+                "the pooled executor runs on a `Vec` memory"
+            ),
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("the definition is an rwasm one"),
+        }
+        Some(Pooled { pool, executor })
     }
 
     impl Pooled {

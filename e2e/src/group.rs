@@ -88,6 +88,11 @@ impl TestingInstanceRwasm {
             store = store.with_memory_pool(pooled_memory());
         }
         let instance = import_linker.instantiate(&mut store, engine, module)?;
+        #[cfg(all(feature = "memory-pool", unix))]
+        assert!(
+            store.memory_is_pooled(),
+            "the suite is meant to run on pooled memory"
+        );
         Ok(TestingInstanceRwasm {
             store,
             instance,

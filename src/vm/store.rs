@@ -189,6 +189,14 @@ impl<T: 'static> RwasmStore<T> {
         self.memory_pool.as_ref()
     }
 
+    /// Whether the current memory lives in a slot leased from the pool. `false` on a store
+    /// without a pool, before the first instantiation, and for an instance whose lease the pool
+    /// declined or could not map; those run on a `Vec` memory.
+    #[cfg(all(feature = "memory-pool", unix))]
+    pub fn memory_is_pooled(&self) -> bool {
+        self.global_memory.is_pooled()
+    }
+
     /// Host pages of the current memory written since its slot was leased, when the memory is
     /// pooled with dirty tracking.
     #[cfg(all(feature = "memory-pool", unix))]

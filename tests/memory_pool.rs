@@ -418,7 +418,14 @@ fn recycled_slot_is_indistinguishable_from_a_fresh_instance() {
 
                 let mut recycled = pooled_store(&linker, &pool, false);
                 let mut fresh = vec_store(&linker, false);
-                // the recycled store took the slot back: nothing new was mapped
+                let recycled_instance = linker
+                    .instantiate(&mut recycled, engine, module.clone())
+                    .unwrap();
+                // The instantiation took the recycled slot off the free list and mapped nothing
+                // new. Without this the rest of the test would also pass on a store that quietly
+                // fell back to a `Vec` memory, comparing two fresh memories.
+                assert!(recycled.memory_is_pooled(), "{context}");
+                assert_eq!(pool.free_slots(), 0, "{context}");
                 assert_eq!(
                     pool.stats()
                         .slots_reserved
@@ -426,9 +433,6 @@ fn recycled_slot_is_indistinguishable_from_a_fresh_instance() {
                     1,
                     "{context}"
                 );
-                let recycled_instance = linker
-                    .instantiate(&mut recycled, engine, module.clone())
-                    .unwrap();
                 let fresh_instance = linker
                     .instantiate(&mut fresh, engine, module.clone())
                     .unwrap();
@@ -695,6 +699,12 @@ fn strategy_executor_leases_from_the_pool() {
                 Some(MAX_PAGES),
             )
             .unwrap();
+        // the pooled executor holds the one slot; the plain one never touches the pool
+        let rwasm::StrategyExecutor::Rwasm { store, .. } = &pooled else {
+            unreachable!("the definition is an rwasm one")
+        };
+        assert!(store.memory_is_pooled(), "round {round}");
+        assert_eq!(pool.free_slots(), 0, "round {round}");
         for (op, arg) in [(0, 3 + round), (2, 0), (1, 5), (5, 9), (7, 0), (3, 0)] {
             let params = [Value::I32(op), Value::I32(arg)];
             let (mut a, mut b) = ([Value::I32(0)], [Value::I32(0)]);
