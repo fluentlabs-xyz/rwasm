@@ -7,12 +7,14 @@ minor version moves only when the instruction set changes (a module compiled by 
 not run on an older VM), the patch version for everything else. The rule and the release procedure
 are in `.claude/skills/bump-version/SKILL.md`.
 
-## [Unreleased]
+## [0.7.3] - 2026-11-24
 
-No new opcodes, no change to the emitted bytes or the fuel schedule.
+No new opcodes, no change to the emitted bytes or the fuel schedule. The new `memory-pool` feature
+is off by default, so downstreams only move the version pin, unless they wrote through
+`GlobalMemory::data_mut()` or the `shared_memory` field, which are gone.
 
 ### Added
-- `memory-pool` feature (FLU-1501, experimental): a `MemoryPool` of mmap-backed linear memory
+- `memory-pool` feature (#227, FLU-1501, experimental): a `MemoryPool` of mmap-backed linear memory
   slots. `RwasmStore::with_memory_pool` and `StrategyDefinition::create_executor_with_memory_pool`
   lease one slot per instance and return it, reset, when the instance goes away, however its last
   execution ended; a fresh instance then costs a reset of the pages the previous one wrote instead
@@ -28,13 +30,20 @@ No new opcodes, no change to the emitted bytes or the fuel schedule.
   measurements: `docs/research/flu-1501-mmap-cow-memory-pool.md`.
 
 ### Changed
-- `GlobalMemory` no longer hands out its buffer for writing. The `shared_memory` field and
+- `GlobalMemory` no longer hands out its buffer for writing (#227). The `shared_memory` field and
   `data_mut()` are gone; reads go through `data()`, writes through the windows the memory itself
   bounds-checks and records (`tracked_mut`, `store_window`, `copy_within`, `write`). Every VM
   write path uses them, so a pooled slot cannot be written without its pages being marked for
   the reset. Downstreams that reached into the buffer adapt; Fluentbase does not.
 - CI runs the test suite a second time with `memory-pool` enabled, and the `resume_equivalence`
-  fuzz target runs every module on pooled, recycled memory as well and checks each reset.
+  fuzz target runs every module on pooled, recycled memory as well and checks each reset (#227).
+
+### Fixed
+- The value stack keeps its cells in a heap `Vec` instead of inline in `ValueStack` (#232). The
+  executor holds a raw `ValueStackPtr` into the cells while it calls `&mut self` methods on the
+  stack; with the cells inside the struct every such call invalidated the pointer under Stacked
+  Borrows, and Miri rejected the interpreter. VM semantics, bytecode and fuel are unchanged; the
+  default stack costs one 128-byte allocation per host call.
 
 ## [0.7.2] - 2026-09-28
 
@@ -331,6 +340,9 @@ Published as `fluent-rwasm`.
 - The 32-bit translator for ZK-friendly execution (#1), the executor integrated with the
   fluentbase runtime (#6), fuel procedures for builtins (#8), `no_std` builds.
 
+[0.7.3]: https://github.com/fluentlabs-xyz/rwasm/compare/v0.7.2...v0.7.3
+[0.7.2]: https://github.com/fluentlabs-xyz/rwasm/compare/v0.7.1...v0.7.2
+[0.7.1]: https://github.com/fluentlabs-xyz/rwasm/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/fluentlabs-xyz/rwasm/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/fluentlabs-xyz/rwasm/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/fluentlabs-xyz/rwasm/compare/v0.4.8...v0.5.0
