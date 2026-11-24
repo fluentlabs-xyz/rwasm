@@ -929,9 +929,9 @@ checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 
 [[package]]
 name = "lru"
-version = "0.18.5"
+version = "0.19.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef9ac18847474e638e3702b76c65d4eb93428471a74778ef0f1be711717f89b5"
+checksum = "d4e2a1b977b42ee8b53a2a4adbd1183431c493f1d1960b7ccd893e2f0b9407ba"
 dependencies = [
  "hashbrown 0.17.1",
 ]
@@ -1281,7 +1281,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "rwasm"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "bincode",
