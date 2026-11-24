@@ -364,6 +364,16 @@ mod tests {
         assert!(memory.copy_within(65536, 65536, 0).is_ok());
     }
 
+    /// A `Vec` memory is not pooled and has no dirty-page count, with or without the
+    /// `memory-pool` feature.
+    #[test]
+    fn a_vec_memory_is_not_pooled() {
+        let mut memory = memory(1);
+        memory.write(0, &[1]).unwrap();
+        assert!(!memory.is_pooled());
+        assert_eq!(memory.dirty_host_pages(), None);
+    }
+
     #[test]
     fn a_zero_page_memory_has_no_bytes() {
         let mut memory = GlobalMemory::new(Pages::new_unchecked(0), Pages::new_unchecked(1));

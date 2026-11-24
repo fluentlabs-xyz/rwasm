@@ -427,6 +427,13 @@ mod tests {
         );
     }
 
+    /// A store without a pool runs on a `Vec` memory, which has no dirty-page count.
+    #[test]
+    fn a_store_without_a_pool_reports_no_dirty_pages() {
+        let store = RwasmStore::<()>::default();
+        assert_eq!(store.memory_dirty_host_pages(), None);
+    }
+
     /// `reset(false)` forgets every dropped segment whether the bitset fits in one word or not;
     /// the wide case swaps the allocation out instead of clearing it in place. `reset(true)`
     /// keeps the flags either way.
