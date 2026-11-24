@@ -479,6 +479,40 @@ impl<'a, T> RwasmExecutor<'a, T> {
         Ok(())
     }
 
+    #[cfg(not(all(feature = "memory-pool", unix)))]
+    #[inline(always)]
+    pub(crate) fn execute_store_wrap(
+        &mut self,
+        offset: AddressOffset,
+        store_wrap: fn(
+            memory: &mut [u8],
+            address: UntypedValue,
+            offset: u32,
+            value: UntypedValue,
+        ) -> Result<(), TrapCode>,
+        #[allow(unused_variables)] len: u32,
+    ) -> Result<(), TrapCode> {
+        let (address, value) = self.sp.pop2();
+        let memory = self.store.global_memory.data_mut();
+        store_wrap(memory, address, offset, value)?;
+        #[cfg(feature = "tracing")]
+        {
+            let base_address = offset + u32::from(address);
+            self.store.tracer.memory_change(
+                base_address,
+                len,
+                &memory[base_address as usize..(base_address + len) as usize],
+            );
+        }
+        self.ip.add(1);
+        Ok(())
+    }
+
+    /// [`Self::execute_store_wrap`] in a build with the `memory-pool` feature. The memory hands
+    /// out exactly the bytes the store writes and records their host pages, and the store then
+    /// addresses that window from zero. The bounds checks and the trap are those of the
+    /// function above.
+    #[cfg(all(feature = "memory-pool", unix))]
     #[inline(always)]
     pub(crate) fn execute_store_wrap(
         &mut self,
@@ -492,8 +526,6 @@ impl<'a, T> RwasmExecutor<'a, T> {
         len: u32,
     ) -> Result<(), TrapCode> {
         let (address, value) = self.sp.pop2();
-        // the memory hands out exactly the bytes this store writes and marks them; the store
-        // itself then addresses the window from zero
         let window =
             self.store
                 .global_memory

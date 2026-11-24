@@ -191,6 +191,7 @@ impl<T: 'static> RwasmStore<T> {
 
     /// Host pages of the current memory written since its slot was leased, when the memory is
     /// pooled with dirty tracking.
+    #[cfg(all(feature = "memory-pool", unix))]
     pub fn memory_dirty_host_pages(&self) -> Option<usize> {
         self.global_memory.dirty_host_pages()
     }
@@ -203,9 +204,9 @@ impl<T: 'static> RwasmStore<T> {
     /// map a new slot: reporting that as a trap would turn a shortage of address space on this
     /// host into a guest failure no other host sees, raised even for a module without a memory.
     /// The `Vec` memory then succeeds or fails exactly as on a store without a pool.
+    #[cfg(all(feature = "memory-pool", unix))]
     fn fresh_memory(&self) -> GlobalMemory {
         let max_allowed_memory_pages = self.global_memory.max_allowed_memory_pages;
-        #[cfg(all(feature = "memory-pool", unix))]
         if let Some(lease) = self.memory_pool.as_ref().and_then(|pool| {
             pool.lease_for(max_allowed_memory_pages.into())
                 .ok()
@@ -226,6 +227,12 @@ impl<T: 'static> RwasmStore<T> {
         if self.resumable_context.is_some() || self.pending_instance.is_some() {
             return Err(TrapCode::IllegalOpcode);
         }
+        #[cfg(not(all(feature = "memory-pool", unix)))]
+        let memory = GlobalMemory::new(
+            Pages::new_unchecked(0),
+            self.global_memory.max_allowed_memory_pages,
+        );
+        #[cfg(all(feature = "memory-pool", unix))]
         let memory = self.fresh_memory();
         self.pending_instance = Some(InstanceState {
             identity: self.active_instance.replace(identity),
@@ -428,6 +435,7 @@ mod tests {
     }
 
     /// A store without a pool runs on a `Vec` memory, which has no dirty-page count.
+    #[cfg(all(feature = "memory-pool", unix))]
     #[test]
     fn a_store_without_a_pool_reports_no_dirty_pages() {
         let store = RwasmStore::<()>::default();

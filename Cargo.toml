@@ -35,7 +35,9 @@ lru = { version = "0.19.0", optional = true }
 # rwasm fuel policy
 rwasm-fuel-policy = { version = "0.0.2", default-features = false }
 
-# memory-pool (FLU-1501)
+# memory-pool (FLU-1501). The pool is compiled on Unix hosts only, so the dependency is declared
+# for those only and the feature pulls nothing in elsewhere.
+[target.'cfg(unix)'.dependencies]
 libc = { version = "0.2", optional = true }
 
 [dev-dependencies]

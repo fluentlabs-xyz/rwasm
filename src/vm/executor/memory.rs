@@ -80,6 +80,100 @@ impl<'a, T> RwasmExecutor<'a, T> {
         Ok(())
     }
 
+    #[cfg(not(all(feature = "memory-pool", unix)))]
+    #[inline(always)]
+    pub(crate) fn visit_memory_fill(&mut self) -> Result<(), TrapCode> {
+        let (d, val, n) = self.sp.pop3();
+        let n = bulk_operand(n);
+        let offset = bulk_operand(d);
+        let byte = u8::from(val);
+        let memory = self
+            .store
+            .global_memory
+            .data_mut()
+            .get_mut(offset..)
+            .and_then(|memory| memory.get_mut(..n))
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
+        memory.fill(byte);
+        #[cfg(feature = "tracing")]
+        self.store
+            .tracer
+            .memory_change(offset as u32, n as u32, memory);
+        self.ip.add(1);
+        Ok(())
+    }
+
+    #[cfg(not(all(feature = "memory-pool", unix)))]
+    #[inline(always)]
+    pub(crate) fn visit_memory_copy(&mut self) -> Result<(), TrapCode> {
+        let (d, s, n) = self.sp.pop3();
+        let n = bulk_operand(n);
+        let src_offset = bulk_operand(s);
+        let dst_offset = bulk_operand(d);
+        // these accesses just perform the bound checks required by the Wasm spec.
+        let data = self.store.global_memory.data_mut();
+        data.get(src_offset..)
+            .and_then(|memory| memory.get(..n))
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
+        data.get(dst_offset..)
+            .and_then(|memory| memory.get(..n))
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
+        data.copy_within(src_offset..src_offset.wrapping_add(n), dst_offset);
+        #[cfg(feature = "tracing")]
+        self.store.tracer.memory_change(
+            dst_offset as u32,
+            n as u32,
+            &data[dst_offset..(dst_offset + n)],
+        );
+        self.ip.add(1);
+        Ok(())
+    }
+
+    #[cfg(not(all(feature = "memory-pool", unix)))]
+    #[inline(always)]
+    pub(crate) fn visit_memory_init(
+        &mut self,
+        data_segment_idx: DataSegmentIdx,
+    ) -> Result<(), TrapCode> {
+        let is_empty_data_segment = self
+            .store
+            .empty_data_segments
+            .get(data_segment_idx as usize)
+            .as_deref()
+            .copied()
+            .unwrap_or(false);
+        let (d, s, n) = self.sp.pop3();
+        let n = bulk_operand(n);
+        let src_offset = bulk_operand(s);
+        let dst_offset = bulk_operand(d);
+        let memory = self
+            .store
+            .global_memory
+            .data_mut()
+            .get_mut(dst_offset..)
+            .and_then(|memory| memory.get_mut(..n))
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
+        let mut memory_section = self.module.data_section.as_slice();
+        if is_empty_data_segment {
+            memory_section = &[];
+        }
+        let data = memory_section
+            .get(src_offset..)
+            .and_then(|data| data.get(..n))
+            .ok_or(TrapCode::MemoryOutOfBounds)?;
+        memory.copy_from_slice(data);
+        #[cfg(feature = "tracing")]
+        self.store
+            .tracer
+            .global_memory(dst_offset as u32, n as u32, memory);
+        self.ip.add(1);
+        Ok(())
+    }
+
+    /// [`Self::visit_memory_fill`] in a build with the `memory-pool` feature: the memory hands out
+    /// the destination range itself, which is what records its host pages for the slot's reset.
+    /// The bounds check and the trap are those of the function above.
+    #[cfg(all(feature = "memory-pool", unix))]
     #[inline(always)]
     pub(crate) fn visit_memory_fill(&mut self) -> Result<(), TrapCode> {
         let (d, val, n) = self.sp.pop3();
@@ -96,13 +190,15 @@ impl<'a, T> RwasmExecutor<'a, T> {
         Ok(())
     }
 
+    /// [`Self::visit_memory_copy`] in a build with the `memory-pool` feature. Both ranges are
+    /// bounds-checked before anything is copied, as in the function above.
+    #[cfg(all(feature = "memory-pool", unix))]
     #[inline(always)]
     pub(crate) fn visit_memory_copy(&mut self) -> Result<(), TrapCode> {
         let (d, s, n) = self.sp.pop3();
         let n = bulk_operand(n);
         let src_offset = bulk_operand(s);
         let dst_offset = bulk_operand(d);
-        // both ranges are bounds-checked before anything is copied, as the Wasm spec requires
         self.store
             .global_memory
             .copy_within(src_offset, dst_offset, n)?;
@@ -116,6 +212,9 @@ impl<'a, T> RwasmExecutor<'a, T> {
         Ok(())
     }
 
+    /// [`Self::visit_memory_init`] in a build with the `memory-pool` feature. The destination is
+    /// checked before the source, as in the function above.
+    #[cfg(all(feature = "memory-pool", unix))]
     #[inline(always)]
     pub(crate) fn visit_memory_init(
         &mut self,
@@ -151,10 +250,7 @@ impl<'a, T> RwasmExecutor<'a, T> {
     }
 
     #[inline(always)]
-    pub(crate) fn visit_data_drop(
-        &mut self,
-        data_segment_idx: DataSegmentIdx,
-    ) -> Result<(), TrapCode> {
+    pub(crate) fn visit_data_drop(&mut self, data_segment_idx: DataSegmentIdx) -> Result<(), TrapCode> {
         // The compiler adds one to Wasm's zero-based segment index, reserving zero for the
         // flattened blob. The highest translated index is therefore `N_MAX_DATA_SEGMENTS`.
         // Larger indices cannot name a real segment and must not size the bitset.

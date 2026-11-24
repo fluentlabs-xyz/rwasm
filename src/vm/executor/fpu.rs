@@ -81,6 +81,45 @@ impl<'a, T> RwasmExecutor<'a, T> {
         Ok(())
     }
 
+    #[cfg(not(all(feature = "memory-pool", unix)))]
+    #[inline(always)]
+    pub(crate) fn visit_f32_store(
+        &mut self,
+        address_offset: AddressOffset,
+    ) -> Result<(), TrapCode> {
+        let (address, value) = self.sp.pop2();
+        let memory = self.store.global_memory.data_mut();
+        UntypedValue::f32_store(memory, address, address_offset, value)?;
+        #[cfg(feature = "tracing")]
+        {
+            let base_address = address_offset + u32::from(address);
+            self.store.tracer.memory_change(
+                base_address,
+                4,
+                &memory[base_address as usize..(base_address + 4) as usize],
+            );
+        }
+        self.ip.add(1);
+        Ok(())
+    }
+
+    #[cfg(not(all(feature = "memory-pool", unix)))]
+    #[inline(always)]
+    pub(crate) fn visit_f64_store(
+        &mut self,
+        address_offset: AddressOffset,
+    ) -> Result<(), TrapCode> {
+        let value = self.sp.pop_f64();
+        let address = self.sp.pop_i32();
+        let memory = self.store.global_memory.data_mut();
+        UntypedValue::store_typed(memory, address as u32, address_offset, value)?;
+        self.ip.add(1);
+        Ok(())
+    }
+
+    /// [`Self::visit_f32_store`] in a build with the `memory-pool` feature; see
+    /// `execute_store_wrap` for the write window.
+    #[cfg(all(feature = "memory-pool", unix))]
     #[inline(always)]
     pub(crate) fn visit_f32_store(
         &mut self,
@@ -100,6 +139,8 @@ impl<'a, T> RwasmExecutor<'a, T> {
         Ok(())
     }
 
+    /// [`Self::visit_f64_store`] in a build with the `memory-pool` feature.
+    #[cfg(all(feature = "memory-pool", unix))]
     #[inline(always)]
     pub(crate) fn visit_f64_store(
         &mut self,

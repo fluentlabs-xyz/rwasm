@@ -6,6 +6,7 @@ mod handler;
 mod import_linker;
 mod instance;
 mod instr_ptr;
+#[cfg(not(all(feature = "memory-pool", unix)))]
 mod memory;
 #[cfg(all(feature = "memory-pool", unix))]
 mod memory_pool;
@@ -23,6 +24,7 @@ pub use handler::*;
 pub use import_linker::*;
 pub use instance::*;
 pub(crate) use instr_ptr::*;
+#[cfg(not(all(feature = "memory-pool", unix)))]
 pub use memory::*;
 #[cfg(all(feature = "memory-pool", unix))]
 pub use memory_pool::*;

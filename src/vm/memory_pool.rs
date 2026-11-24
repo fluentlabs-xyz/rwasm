@@ -21,7 +21,10 @@
 //! write set costs 4 KiB pages; the rest, which only a memory-hungry call grows into, is
 //! huge-page eligible so that filling it costs a fault per 2 MiB and not per 4 KiB.
 
+mod global_memory;
+
 use crate::N_DEFAULT_MAX_MEMORY_PAGES;
+pub use global_memory::GlobalMemory;
 use std::{
     io,
     mem::ManuallyDrop,
