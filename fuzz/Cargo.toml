@@ -19,7 +19,7 @@ hex = "0.4.3"
 log = "0.4.26"
 env_logger = "0.11.8"
 anyhow = "1.0"
-rwasm = { path = "..", default-features = false, features = ["std", "fpu", "full-wasm-mode", "wasmtime", "memory-pool"] }
+rwasm = { path = "..", default-features = false, features = ["std", "fpu", "full-wasm-mode", "wasmtime"] }
 rwasm-fuel-policy = { version = "0.0.2", default-features = false }
 wat = "1.230.0"
 
@@ -60,5 +60,9 @@ default = ["disable-signals"]
 # before wasmtime can handle them, causing false "deadly signal" crashes.
 # Enabled by default on macOS.
 disable-signals = []
+# Runs `resume_equivalence` a third time on memory leased from a `MemoryPool` (rwasm's
+# `memory-pool` feature). Off by default: that feature swaps the VM's memory type and its write
+# paths, and the targets must by default fuzz the ones a build without it ships.
+memory-pool = ["rwasm/memory-pool"]
 
 [workspace]

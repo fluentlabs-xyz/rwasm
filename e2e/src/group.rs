@@ -19,6 +19,33 @@ pub(crate) struct TestingInstanceGroup {
     extern_types: HashMap<String, FuncType>,
 }
 
+/// The pool the rwasm instances of the suite lease their memories from when the `memory-pool`
+/// feature is on. There is one per process, so slots are handed from one module of the suite to
+/// the next, across the test threads, and every reset is read back.
+#[cfg(all(feature = "memory-pool", unix))]
+fn pooled_memory() -> rwasm::MemoryPool {
+    use rwasm::{MemoryPool, MemoryPoolConfig};
+    use std::sync::{atomic::Ordering, OnceLock};
+    static POOL: OnceLock<MemoryPool> = OnceLock::new();
+    let pool = POOL.get_or_init(|| {
+        MemoryPool::new(MemoryPoolConfig {
+            verify_reset: true,
+            ..MemoryPoolConfig::default()
+        })
+    });
+    let stats = pool.stats();
+    // a slot that did not come back as zeros is unmapped, not pooled; the suite fails all the same
+    assert_eq!(
+        stats.reset_failures.load(Ordering::Relaxed),
+        0,
+        "a pooled slot was not all zeros after its reset"
+    );
+    // a declined or unmappable lease would quietly run the suite on `Vec` memories
+    assert_eq!(stats.leases_declined.load(Ordering::Relaxed), 0);
+    assert_eq!(stats.map_failures.load(Ordering::Relaxed), 0);
+    pool.clone()
+}
+
 struct TestingInstanceRwasm {
     store: RwasmStore<TestingContext>,
     instance: RwasmInstance,
@@ -56,6 +83,10 @@ impl TestingInstanceRwasm {
             Some(u64::MAX),
             None,
         );
+        #[cfg(all(feature = "memory-pool", unix))]
+        {
+            store = store.with_memory_pool(pooled_memory());
+        }
         let instance = import_linker.instantiate(&mut store, engine, module)?;
         Ok(TestingInstanceRwasm {
             store,

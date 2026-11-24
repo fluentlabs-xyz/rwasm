@@ -11,3 +11,7 @@ wast = "252.0.0"
 [features]
 default = ["rwasm/full-wasm-mode"]
 debug-print = ["rwasm/debug-print"]
+# Runs the rwasm side of the suite on memory leased from a `MemoryPool`, with every reset read
+# back. This is rwasm's `memory-pool` feature, which also swaps the VM's memory type and write
+# paths, so the suite then checks those against the spec as well.
+memory-pool = ["rwasm/memory-pool"]

@@ -9,24 +9,27 @@
 //! remaining fuel and the same memory — a host implements cross-contract calls on this path, so
 //! any state the resumed run gets wrong is a consensus bug with no Wasmtime oracle to catch it.
 //!
-//! A third executor runs the same calls on memory leased from a process-wide [`MemoryPool`]. Its
-//! slots are handed from one fuzz iteration to the next, so every module runs in memory an
-//! earlier, unrelated module wrote to, trapped in or grew. It must observe exactly what the
-//! reference observes, and every reset is read back: a slot that does not come back as zeros, or
-//! a pooled run that sees a stray byte, is one instance leaking into another.
+//! With the `memory-pool` feature of this crate (`cargo fuzz run --features memory-pool
+//! resume_equivalence`) a third executor runs the same calls on memory leased from a process-wide
+//! `MemoryPool`. Its slots are handed from one fuzz iteration to the next, so every module runs
+//! in memory an earlier, unrelated module wrote to, trapped in or grew. It must observe exactly
+//! what the reference observes, and every reset is read back: a slot that does not come back as
+//! zeros, or a pooled run that sees a stray byte, is one instance leaking into another. The
+//! feature also switches rwasm to the memory type and write paths of its own `memory-pool`
+//! feature, for all three executors.
 
 use libfuzzer_sys::{
     arbitrary::{self, Result, Unstructured},
     fuzz_target,
 };
 use rwasm::{
-    CompilationConfig, ImportLinker, ImportName, MemoryPool, MemoryPoolConfig, ResetPolicy,
-    StoreTr, StrategyDefinition, StrategyExecutor, SyscallFuelParams, TrapCode, TypedCaller, Value,
+    CompilationConfig, ImportLinker, ImportName, StoreTr, StrategyDefinition, StrategyExecutor,
+    SyscallFuelParams, TrapCode, TypedCaller, Value,
 };
 use rwasm_fuel_policy::{LinearFuelParams, QuadraticFuelParams};
 use std::{
     cell::RefCell,
-    sync::{atomic::Ordering, Arc, Once, OnceLock},
+    sync::{Arc, Once},
 };
 use wasm_smith as smith;
 use wasmparser::{Parser, Payload, TypeRef, ValType};
@@ -189,32 +192,130 @@ fn interrupting_handler(
     Err(TrapCode::InterruptionCalled)
 }
 
-/// One pool per reset policy, shared by every iteration of the process. Slots hold exactly the
-/// fuzzed page cap, start using huge pages at the first opportunity (so growth crosses the
-/// boundary) and are verified after every reset.
-fn pools() -> &'static [MemoryPool] {
-    static POOLS: OnceLock<Vec<MemoryPool>> = OnceLock::new();
-    POOLS.get_or_init(|| {
-        [
-            MemoryPoolConfig::default_reset_policy(),
-            ResetPolicy::Memset,
-            ResetPolicy::DiscardDirty,
-            ResetPolicy::Discard,
-            ResetPolicy::RemapDirty,
-        ]
-        .into_iter()
-        .map(|reset_policy| {
-            MemoryPool::new(MemoryPoolConfig {
-                slot_pages: MAX_MEMORY_PAGES,
-                max_free_slots: 2,
-                reset_policy,
-                track_dirty: true,
-                verify_reset: true,
-                small_page_prefix: 1,
+/// The third executor: the reference run repeated on pooled, recycled memory.
+#[cfg(all(feature = "memory-pool", unix))]
+mod pooled {
+    use super::{
+        hash, inline_handler, linker, run_inline, Observation, StrategyDefinition,
+        StrategyExecutor, TrapCode, Value, FUEL_LIMIT, MAX_MEMORY_PAGES,
+    };
+    use rwasm::{MemoryPool, MemoryPoolConfig, ResetPolicy};
+    use std::sync::{atomic::Ordering, OnceLock};
+    use wasmparser::ValType;
+
+    /// One pool per reset policy, shared by every iteration of the process. Slots hold exactly
+    /// the fuzzed page cap, start using huge pages at the first opportunity (so growth crosses
+    /// the boundary) and are verified after every reset.
+    fn pools() -> &'static [MemoryPool] {
+        static POOLS: OnceLock<Vec<MemoryPool>> = OnceLock::new();
+        POOLS.get_or_init(|| {
+            [
+                MemoryPoolConfig::default_reset_policy(),
+                ResetPolicy::Memset,
+                ResetPolicy::DiscardDirty,
+                ResetPolicy::Discard,
+                ResetPolicy::RemapDirty,
+            ]
+            .into_iter()
+            .map(|reset_policy| {
+                MemoryPool::new(MemoryPoolConfig {
+                    slot_pages: MAX_MEMORY_PAGES,
+                    max_free_slots: 2,
+                    reset_policy,
+                    track_dirty: true,
+                    verify_reset: true,
+                    small_page_prefix: 1,
+                })
             })
+            .collect()
         })
-        .collect()
-    })
+    }
+
+    pub struct Pooled {
+        pool: &'static MemoryPool,
+        executor: StrategyExecutor<()>,
+    }
+
+    /// Instantiates the module on a pooled store. That has to end the way the reference
+    /// instantiation did; `None` when both failed.
+    pub fn instantiate(
+        definition: &StrategyDefinition,
+        wasm: &[u8],
+        name: &str,
+        reference: Option<TrapCode>,
+    ) -> Option<Pooled> {
+        // the pool is picked from the module, not from the input stream, so existing corpus
+        // entries decode to the same calls as before
+        let pool = &pools()[hash(wasm) as usize % pools().len()];
+        let executor = definition.create_executor_with_memory_pool(
+            linker(),
+            (),
+            inline_handler,
+            Some(FUEL_LIMIT),
+            Some(MAX_MEMORY_PAGES),
+            pool,
+        );
+        if reference != executor.as_ref().err().copied() {
+            panic!(
+                "pool divergence at instantiation of `{name}`: vec={reference:?} pooled={:?}\nwasm={}",
+                executor.as_ref().err(),
+                hex::encode(wasm)
+            );
+        }
+        // A pool that declines the lease, or cannot map a slot, leaves the store on a `Vec`
+        // memory; the comparisons below would then compare two `Vec` runs and prove nothing.
+        let stats = pool.stats();
+        let declined = stats.leases_declined.load(Ordering::Relaxed);
+        let unmapped = stats.map_failures.load(Ordering::Relaxed);
+        if declined != 0 || unmapped != 0 {
+            panic!(
+                "the pooled executor did not get a slot: {declined} leases declined, {unmapped} slots not mapped"
+            );
+        }
+        executor.ok().map(|executor| Pooled { pool, executor })
+    }
+
+    impl Pooled {
+        /// Repeats a call of the reference executor; outcome, fuel and memory have to match.
+        pub fn check_call(
+            &mut self,
+            reference: &Observation,
+            name: &str,
+            call: usize,
+            args: &[Value],
+            results: &[ValType],
+            wasm: &[u8],
+        ) {
+            let leased = run_inline(&mut self.executor, name, args, results);
+            if *reference != leased {
+                panic!(
+                    "pool divergence on `{name}` call #{call} args={args:?}\n  vec    = {:?} fuel={:?} mem_len={} mem_hash={:x}\n  pooled = {:?} fuel={:?} mem_len={} mem_hash={:x}\nwasm={}",
+                    reference.outcome,
+                    reference.fuel,
+                    reference.memory.len(),
+                    hash(&reference.memory),
+                    leased.outcome,
+                    leased.fuel,
+                    leased.memory.len(),
+                    hash(&leased.memory),
+                    hex::encode(wasm)
+                );
+            }
+        }
+
+        /// Returns the slot to the pool, which resets it and reads the reset back.
+        pub fn release(self, name: &str, wasm: &[u8]) {
+            let Self { pool, executor } = self;
+            drop(executor);
+            let failures = pool.stats().reset_failures.load(Ordering::Relaxed);
+            if failures != 0 {
+                panic!(
+                    "a pooled slot was not all zeros after its reset ({failures} failures) after `{name}`\nwasm={}",
+                    hex::encode(wasm)
+                );
+            }
+        }
+    }
 }
 
 static SETUP: Once = Once::new();
@@ -359,28 +460,17 @@ fn execute_one(data: &[u8]) -> Result<()> {
             Some(FUEL_LIMIT),
             Some(MAX_MEMORY_PAGES),
         );
-        // picked from the module, not from the input stream, so existing corpus entries decode
-        // to the same calls as before
-        let pool = &pools()[hash(&wasm) as usize % pools().len()];
-        let pooled = definition.create_executor_with_memory_pool(
-            linker(),
-            (),
-            inline_handler,
-            Some(FUEL_LIMIT),
-            Some(MAX_MEMORY_PAGES),
-            pool,
-        );
-        if reference.as_ref().err() != pooled.as_ref().err() {
-            panic!(
-                "pool divergence at instantiation of `{name}`: vec={:?} pooled={:?}\nwasm={}",
-                reference.as_ref().err(),
-                pooled.as_ref().err(),
-                hex::encode(&wasm)
-            );
-        }
-        let (mut reference, mut resumed, mut pooled) = match (reference, resumed, pooled) {
-            (Ok(a), Ok(b), Ok(c)) => (a, b, c),
+        #[cfg(all(feature = "memory-pool", unix))]
+        let pooled =
+            pooled::instantiate(&definition, &wasm, &name, reference.as_ref().err().copied());
+        let (mut reference, mut resumed) = match (reference, resumed) {
+            (Ok(a), Ok(b)) => (a, b),
             _ => continue,
+        };
+        #[cfg(all(feature = "memory-pool", unix))]
+        let Some(mut pooled) = pooled
+        else {
+            continue;
         };
         let calls = 1 + u.int_in_range(0..=MAX_CALLS_PER_EXPORT as u32 - 1)? as usize;
         for call in 0..calls {
@@ -394,21 +484,8 @@ fn execute_one(data: &[u8]) -> Result<()> {
                 .collect::<Result<Vec<_>>>();
             let Ok(args) = args else { break };
             let lhs = run_inline(&mut reference, &name, &args, &results);
-            let leased = run_inline(&mut pooled, &name, &args, &results);
-            if lhs != leased {
-                panic!(
-                    "pool divergence on `{name}` call #{call} args={args:?}\n  vec    = {:?} fuel={:?} mem_len={} mem_hash={:x}\n  pooled = {:?} fuel={:?} mem_len={} mem_hash={:x}\nwasm={}",
-                    lhs.outcome,
-                    lhs.fuel,
-                    lhs.memory.len(),
-                    hash(&lhs.memory),
-                    leased.outcome,
-                    leased.fuel,
-                    leased.memory.len(),
-                    hash(&leased.memory),
-                    hex::encode(&wasm)
-                );
-            }
+            #[cfg(all(feature = "memory-pool", unix))]
+            pooled.check_call(&lhs, &name, call, &args, &results, &wasm);
             let Some(rhs) = run_resumed(&mut resumed, &name, &args, &results) else {
                 break;
             };
@@ -431,15 +508,8 @@ fn execute_one(data: &[u8]) -> Result<()> {
                 break;
             }
         }
-        // releasing the slot resets and verifies it
-        drop(pooled);
-        let failures = pool.stats().reset_failures.load(Ordering::Relaxed);
-        if failures != 0 {
-            panic!(
-                "a pooled slot was not all zeros after its reset ({failures} failures) after `{name}`\nwasm={}",
-                hex::encode(&wasm)
-            );
-        }
+        #[cfg(all(feature = "memory-pool", unix))]
+        pooled.release(&name, &wasm);
     }
     Ok(())
 }
