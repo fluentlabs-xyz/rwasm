@@ -54,8 +54,12 @@ jobs:
       - name: Run tests (release)
         run: cargo test --release --no-fail-fast --manifest-path Cargo.toml
 
-      # `memory-pool` is off by default, so the suites above never lease a slot. Run the whole
-      # suite once more with the feature on (every VM write then goes through the dirty-tracking
-      # build), which includes the fresh-versus-recycled equivalence tests.
+      # `memory-pool` is off by default, and a build without it compiles none of the pool: the
+      # memory type and the VM's memory write paths are the ones above. The feature swaps both,
+      # so the unit and integration suites (with the fresh-versus-recycled equivalence tests) and
+      # the spec suite run once more with it on; the spec suite then leases every rwasm memory
+      # from a pool and reads every reset back.
       - name: Run tests (memory pool)
-        run: cargo test --release --no-fail-fast --features memory-pool --manifest-path Cargo.toml
+        run: |
+          cargo test --release --no-fail-fast --features memory-pool --manifest-path Cargo.toml
+          cargo test --release --no-fail-fast --features memory-pool --manifest-path e2e/Cargo.toml

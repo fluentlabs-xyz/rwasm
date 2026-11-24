@@ -28,6 +28,9 @@ test: build
 
 .PHONY: clippy
 clippy: ensure-wasm-targets
+	# `--all-features` compiles the `memory-pool` memory paths in place of the default ones, so
+	# the default build is linted on its own
+	cargo clippy --all-targets
 	cargo clippy --all-targets --all-features
 	cargo clippy --manifest-path=./e2e/Cargo.toml --all-targets --all-features
 	cargo +nightly-2025-09-20 clippy --manifest-path=./snippets/Cargo.toml --lib --all-features

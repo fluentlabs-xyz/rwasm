@@ -52,3 +52,41 @@ jobs:
       - name: Run a bounded differential session
         run: cargo +nightly fuzz run differential -- -max_total_time=600 -max_len=1048576 -rss_limit_mb=4096
         working-directory: fuzz
+
+  memory-pool:
+    name: Memory pool fuzz (pooled vs fresh memory)
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install clang and build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev pkg-config
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Setup cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+          key: memory-pool
+
+      # The `memory-pool` feature swaps the VM's memory type and write paths, which no other
+      # job fuzzes: the differential target above runs the default build. This target runs every
+      # generated module on a fresh memory and on a pooled slot that earlier, unrelated modules
+      # wrote to, compares what the two observe, and reads every slot reset back.
+      - name: Build the fuzz target
+        run: cargo +nightly fuzz build --features memory-pool resume_equivalence
+        working-directory: fuzz
+
+      - name: Run a bounded session
+        run: cargo +nightly fuzz run --features memory-pool resume_equivalence -- -max_total_time=300 -rss_limit_mb=4096
+        working-directory: fuzz
