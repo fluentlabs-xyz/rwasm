@@ -14,9 +14,10 @@ is off by default, and a build without it compiles the memory code of 0.7.2, so 
 move the version pin.
 
 ### Added
-- `memory-pool` feature (#227, #240, FLU-1501, experimental): a `MemoryPool` of mmap-backed linear memory
-  slots. `RwasmStore::with_memory_pool` and `StrategyDefinition::create_executor_with_memory_pool`
-  lease one slot per instance and return it, reset, when the instance goes away, however its last
+- `memory-pool` feature (#227, #240, FLU-1501, experimental): a `MemoryPool` of mmap-backed
+  linear memory slots. `RwasmStore::with_memory_pool` and
+  `StrategyDefinition::create_executor_with_memory_pool` lease one slot per instance and return
+  it, reset, when the instance goes away, however its last
   execution ended; a fresh instance then costs a reset of the pages the previous one wrote instead
   of a zeroed allocation of what it declared (a typical 17-page contract call goes from about
   5 µs to under 2 µs of instantiation overhead; a sparse 64 MiB memory from 886 µs to 22 µs on

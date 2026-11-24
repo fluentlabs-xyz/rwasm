@@ -364,11 +364,11 @@ into the `no_std` prover build for a feature neither can use, so a follow-up und
 The claim is checked mechanically rather than by reading the diff: the `cfg`-expanded source of
 the crate (`rustc -Zunpretty=expanded`) for the `no_std` build, the `std` build and the default
 build (`std` and `wasmtime`) is byte-identical to the source before the pool was added
-(appendix B has the command). The price is that the window-based paths are only compiled, and so only tested, with
-the feature on. CI therefore runs the unit and integration suites and the spec suite a second
-time with it (the spec suite, 93 files, then leases every rwasm memory from a pool and reads
-each reset back), lints both builds, and fuzzes the pooled build in a job of its own
-(section 11.3).
+(appendix B has the command). The price is that the window-based paths are only compiled, and
+so only tested, with the feature on. CI therefore runs the unit and integration suites and the
+spec suite a second time with it (the spec suite, 93 files, then leases every rwasm memory from
+a pool and reads each reset back), lints both builds, and fuzzes the pooled build in a job of
+its own (section 11.3).
 
 Both backings are reached through one base pointer and length, so loads and stores do not
 branch on where the memory lives; only the mark itself checks for a lease. The unit tests of
@@ -558,9 +558,9 @@ slot (`munmap` + `mmap`, the "mmap+munmap per instance" rows) is never cheaper t
 
 The surface: `MemoryPool`, `MemoryPoolConfig`, `ResetPolicy`,
 `StrategyDefinition::create_executor_with_memory_pool`, `RwasmStore::with_memory_pool`,
-`RwasmStore::memory_dirty_host_pages`, `MemoryPool::stats`. `create_executor` is unchanged, so
-existing callers are not touched; the Wasmtime strategy ignores the pool, its memories are
-Wasmtime's.
+`RwasmStore::memory_is_pooled`, `RwasmStore::memory_dirty_host_pages`, `MemoryPool::stats`.
+`create_executor` is unchanged, so existing callers are not touched; the Wasmtime strategy
+ignores the pool, its memories are Wasmtime's.
 
 The feature stays optional and Unix-only. The `no_std` build (the zkVM guest, where there is no
 `mmap` and instantiation happens once per proof) cannot enable it and compiles the memory code
@@ -656,6 +656,10 @@ turned on. What was done about each item:
 |---|---|
 | A write path that forgets to mark its pages leaks one instance into the next | Closed by construction: the `GlobalMemory` of a build with the feature has no `data_mut` and no public buffer, every write goes through a window the memory bounds-checks and marks (section 5). |
 | The memory rewrite reached builds without the feature | Closed: a build without `memory-pool` compiles the memory type and write paths it had before; the `cfg`-expanded source of the `no_std`, `std` and default builds is identical to the one before the pool was added (section 5.1). |
+| A test could pass on a store that had quietly fallen back to a `Vec` memory | Closed: `RwasmStore::memory_is_pooled`, asserted after instantiation by the equivalence and strategy tests, the fuzz target and the e2e harness. Found by mutation in the pre-merge review of 2026-11-24, as were the next three. |
+| No store crossed a host-page boundary on pooled memory, and nothing used an 8-byte window | Closed: a unit test of the write windows (1, 2, 4 and 8 bytes, on, across and behind a boundary) and the same through the VM under every reset policy. |
+| A host leasing a slot itself could return it with unrecorded writes | Closed: `MemoryLease::slot_mut` is crate-private and `MemorySlot::as_mut_slice` counts what it hands out as reached. The VM was not affected. |
+| A failed `mmap(MAP_FIXED)` can leave a hole that the slot later unmapped | Closed: the slot records the range and never unmaps it. Only the remapping policies, which are not the default. |
 | Coverage was eight hand-written scenarios | The `resume_equivalence` fuzz target, built with `--features memory-pool`, runs every module on pooled memory recycled across iterations, five reset policies, verified resets, and fails when a lease was declined; CI runs it in a job of its own. CI also runs the unit, integration and spec suites a second time with the feature on. Debug builds verify every reset. |
 | Not reachable from the strategy layer | `StrategyDefinition::create_executor_with_memory_pool`; `create_executor` is unchanged. |
 | Dense memory use 4x slower on Linux | Split slots; the dense fill is now faster than today and no measured workload is slower on Linux. |
