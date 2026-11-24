@@ -352,12 +352,19 @@ impl MemorySlot {
         unsafe { std::slice::from_raw_parts(self.base.as_ptr(), len.min(self.capacity)) }
     }
 
-    /// The first `len` bytes of the slot, mutably, clamped to the capacity. Writes made through
-    /// this slice are not tracked; callers mark them with [`MemorySlot::mark_dirty`].
+    /// The first `len` bytes of the slot, mutably, clamped to the capacity.
+    ///
+    /// Handing the bytes out counts them as reached ([`MemorySlot::note_accessible`]), so every
+    /// reset that works on the reached range covers what is written through the slice. The
+    /// writes themselves are not tracked: a caller that resets by the dirty bitmap marks them
+    /// with [`MemorySlot::mark_dirty`]. The VM does not use this accessor; its memory goes
+    /// through the write windows of [`crate::GlobalMemory`], which mark what they hand out.
     #[inline(always)]
     pub fn as_mut_slice(&mut self, len: usize) -> &mut [u8] {
+        let len = len.min(self.capacity);
+        self.note_accessible(len);
         // SAFETY: as in `as_slice`; `&mut self` makes the access exclusive.
-        unsafe { std::slice::from_raw_parts_mut(self.base.as_ptr(), len.min(self.capacity)) }
+        unsafe { std::slice::from_raw_parts_mut(self.base.as_ptr(), len) }
     }
 
     /// Records that `[0, len)` is (or was) accessible to the guest.
@@ -868,9 +875,11 @@ impl MemoryLease {
         &self.slot
     }
 
-    /// The leased slot, mutably.
+    /// The leased slot, mutably. Crate-private: a slot that goes back to the pool must have
+    /// every write recorded, which [`crate::GlobalMemory::pooled`] guarantees for the holder of
+    /// a lease and the raw accessors of [`MemorySlot`] do not.
     #[inline(always)]
-    pub fn slot_mut(&mut self) -> &mut MemorySlot {
+    pub(crate) fn slot_mut(&mut self) -> &mut MemorySlot {
         &mut self.slot
     }
 }
@@ -1076,6 +1085,36 @@ mod tests {
         assert!(pool.lease_for(1).is_err());
         assert_eq!(pool.stats().map_failures.load(Ordering::Relaxed), 2);
         assert_eq!(pool.stats().slots_reserved.load(Ordering::Relaxed), 0);
+    }
+
+    /// A write through the raw slice is reset by the range policies even when the caller never
+    /// told the slot how far it reached: handing the slice out did.
+    #[test]
+    fn raw_slice_writes_are_inside_the_reset_range() {
+        for policy in POLICIES {
+            let pool = MemoryPool::new(MemoryPoolConfig {
+                slot_pages: 1,
+                reset_policy: policy,
+                verify_reset: true,
+                ..MemoryPoolConfig::default()
+            });
+            let mut lease = pool.lease().unwrap();
+            lease.slot_mut().as_mut_slice(16)[3] = 0xAA;
+            lease.slot_mut().mark_dirty(3, 1);
+            assert_eq!(lease.slot().high_water(), 16);
+            drop(lease);
+            assert_eq!(
+                pool.stats().reset_failures.load(Ordering::Relaxed),
+                0,
+                "{policy:?}"
+            );
+            let lease = pool.lease().unwrap();
+            assert_eq!(pool.stats().slots_reserved.load(Ordering::Relaxed), 1);
+            assert!(
+                lease.slot().is_zeroed(lease.slot().capacity()),
+                "{policy:?}"
+            );
+        }
     }
 
     #[test]
