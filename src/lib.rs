@@ -21,6 +21,9 @@ use anyhow as _;
 #[cfg(test)]
 use hex_literal as _;
 pub use isa::*;
+// the pool is compiled on Unix hosts only; elsewhere `memory-pool` pulls `libc` in unused
+#[cfg(all(feature = "memory-pool", not(unix)))]
+use libc as _;
 use libm as _;
 pub use module::*;
 pub use rwasm_fuel_policy::*;
