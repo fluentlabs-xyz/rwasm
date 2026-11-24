@@ -737,3 +737,95 @@ fn strategy_executor_leases_from_the_pool() {
         );
     }
 }
+
+/// Scalar stores that straddle a host-page boundary, through the VM: each marks both pages, and
+/// the slot they dirtied comes back clean. Every store of `CONTRACT` is aligned or one byte wide,
+/// so none of the tests above crosses a boundary with a single store.
+#[test]
+fn stores_across_a_host_page_boundary_mark_both_pages() {
+    const STORES: &str = r#"(module
+      (memory 8)
+      (func (export "main") (param $width i32) (param $addr i32) (result i32)
+        (if (i32.eq (local.get $width) (i32.const 1)) (then
+          (i32.store8 (local.get $addr) (i32.const -1))))
+        (if (i32.eq (local.get $width) (i32.const 2)) (then
+          (i32.store16 (local.get $addr) (i32.const -1))))
+        (if (i32.eq (local.get $width) (i32.const 4)) (then
+          (i32.store (local.get $addr) (i32.const -1))))
+        (if (i32.eq (local.get $width) (i32.const 8)) (then
+          (i64.store (local.get $addr) (i64.const -1))))
+        (if (i32.eq (local.get $width) (i32.const 16)) (then
+          (i64.store32 (local.get $addr) (i64.const -1))))
+        (i32.load8_u (local.get $addr))))"#;
+    let linker = linker();
+    let module = RwasmModule::compile(
+        CompilationConfig::default_strategy_compatible()
+            .with_entrypoint_name("main".into())
+            .with_import_linker(linker.clone()),
+        &wat::parse_str(STORES).unwrap(),
+    )
+    .unwrap()
+    .0;
+    let page = rwasm::host_page_size() as i32;
+    let engine = ExecutionEngine::new();
+    for policy in POLICIES {
+        let pool = pool(policy, true);
+        let mut store = pooled_store(&linker, &pool, false);
+        let instance = linker
+            .instantiate(&mut store, engine, module.clone())
+            .unwrap();
+        assert!(store.memory_is_pooled());
+        assert_eq!(store.memory_dirty_host_pages(), Some(0));
+        let mut expected = 0;
+        let mut boundary = page;
+        // (the `main` selector, the bytes the store writes)
+        for (selector, width) in [(1, 1), (2, 2), (4, 4), (8, 8), (16, 4)] {
+            // ending on a boundary, straddling it (but for one byte), and just behind it; every
+            // case gets the two host pages around a boundary of its own
+            for placement in 0..3 {
+                let addr = match placement {
+                    0 => boundary - width,
+                    1 => boundary - 1,
+                    _ => boundary + 1,
+                };
+                let mut result = [Value::I32(0)];
+                instance
+                    .execute(
+                        &mut store,
+                        &[Value::I32(selector), Value::I32(addr)],
+                        &mut result,
+                    )
+                    .unwrap();
+                assert_eq!(result[0].i32(), Some(0xff));
+                expected += ((addr + width - 1) / page - addr / page + 1) as usize;
+                assert_eq!(
+                    store.memory_dirty_host_pages(),
+                    Some(expected),
+                    "{policy:?}: a {width}-byte store at {addr} (host page {page})"
+                );
+                boundary += 2 * page;
+            }
+        }
+        // 15 cases; the straddling one of each width above 1 covers two pages
+        assert_eq!(expected, 15 + 4);
+        drop(store);
+        assert_eq!(
+            pool.stats()
+                .reset_failures
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0,
+            "{policy:?}"
+        );
+        // the next instance on the recycled slot starts from zeros
+        let mut recycled = pooled_store(&linker, &pool, false);
+        linker
+            .instantiate(&mut recycled, engine, module.clone())
+            .unwrap();
+        assert!(recycled.memory_is_pooled());
+        assert_eq!(pool.free_slots(), 0, "{policy:?}");
+        assert!(
+            recycled.memory_snapshot().iter().all(|byte| *byte == 0),
+            "{policy:?}"
+        );
+    }
+}

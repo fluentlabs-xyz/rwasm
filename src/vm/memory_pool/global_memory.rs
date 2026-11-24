@@ -351,6 +351,101 @@ mod tests {
         assert!(memory.copy_within(65536, 65536, 0).is_ok());
     }
 
+    /// A pooled memory of 16 Wasm pages on a slot whose resets are bitmap-driven and read back.
+    fn pooled_memory() -> (crate::MemoryPool, GlobalMemory) {
+        use crate::{MemoryPool, MemoryPoolConfig, ResetPolicy};
+        let pool = MemoryPool::new(MemoryPoolConfig {
+            slot_pages: 16,
+            reset_policy: ResetPolicy::Memset,
+            verify_reset: true,
+            ..MemoryPoolConfig::default()
+        });
+        let mut memory = GlobalMemory::pooled(pool.lease().unwrap(), Pages::new_unchecked(16));
+        memory.grow(Pages::new(16).unwrap()).unwrap();
+        (pool, memory)
+    }
+
+    /// Host pages `[offset, offset + len)` touches.
+    fn pages_of(offset: usize, len: usize) -> usize {
+        let page = crate::host_page_size();
+        (offset + len - 1) / page - offset / page + 1
+    }
+
+    /// Every window marks all the host pages it covers: inside a page, ending exactly on a page
+    /// boundary, and straddling one, for each width a scalar store uses (8 bytes is `f64.store`,
+    /// which nothing else in the test suite runs on a pooled memory). A window that marked only
+    /// its first page, or no page at all, would leave the bytes on the unmarked page in the
+    /// slot for the next lease, since the reset here zeroes by the bitmap alone.
+    #[test]
+    fn windows_mark_every_host_page_they_cover() {
+        let page = crate::host_page_size();
+        let (pool, mut memory) = pooled_memory();
+        assert!(memory.is_pooled());
+        assert_eq!(memory.dirty_host_pages(), Some(0));
+        let mut expected = 0;
+        // every case gets the two host pages around a boundary of its own
+        let mut boundary = page;
+        for width in [1usize, 2, 4, 8] {
+            // ending on the boundary, straddling it (but for one byte), and just behind it
+            for placement in 0..3 {
+                let start = match placement {
+                    0 => boundary - width,
+                    1 => boundary - 1,
+                    _ => boundary + 1,
+                };
+                let window = memory.store_window(start as u32, 0, width).unwrap();
+                window.fill(0xEE);
+                expected += pages_of(start, width);
+                assert_eq!(
+                    memory.dirty_host_pages(),
+                    Some(expected),
+                    "a {width}-byte store at {start} (host page {page})"
+                );
+                boundary += 2 * page;
+            }
+        }
+        // 12 cases; the straddling one of each width above 1 covers two pages
+        assert_eq!(expected, 12 + 3);
+        // a store with a split address marks the same pages as one at the sum
+        memory.store_window(1, (boundary - 2) as u32, 4).unwrap()[0] = 1;
+        expected += 2;
+        assert_eq!(memory.dirty_host_pages(), Some(expected));
+        boundary += 2 * page;
+        // a host write across two boundaries
+        memory.write(boundary - 1, &vec![7; page + 2]).unwrap();
+        expected += 3;
+        assert_eq!(memory.dirty_host_pages(), Some(expected));
+        boundary += 4 * page;
+        // an empty window marks nothing, a bulk window marks what it covers
+        memory.tracked_mut(boundary - 1, 0).unwrap();
+        assert_eq!(memory.dirty_host_pages(), Some(expected));
+        memory.tracked_mut(boundary - 1, 2).unwrap().fill(9);
+        expected += 2;
+        assert_eq!(memory.dirty_host_pages(), Some(expected));
+        boundary += 2 * page;
+        // a copy marks its destination only (the source is a page that is dirty already)
+        memory.copy_within(page - 1, boundary - 1, 2).unwrap();
+        expected += 2;
+        assert_eq!(memory.dirty_host_pages(), Some(expected));
+        assert!(
+            boundary + page <= memory.data().len(),
+            "the cases fit the memory"
+        );
+
+        // the slot goes back through a bitmap-driven reset that is read back in full
+        drop(memory);
+        let stats = pool.stats();
+        assert_eq!(
+            stats
+                .reset_failures
+                .load(core::sync::atomic::Ordering::Relaxed),
+            0
+        );
+        assert_eq!(pool.free_slots(), 1);
+        let lease = pool.lease().unwrap();
+        assert!(lease.slot().is_zeroed(lease.slot().capacity()));
+    }
+
     /// A `Vec` memory is not pooled and has no dirty-page count.
     #[test]
     fn a_vec_memory_is_not_pooled() {
