@@ -715,6 +715,11 @@ os=linux arch=aarch64 host_page=4096 huge_page=2097152 thp=[always] madvise neve
 
 ### A.2 macOS 26.5, Apple M5 Max (16 KiB pages)
 
+The `RSS after` column of table 1 was measured again on 2026-11-24 on the same machine, after the
+harness was changed to sample RSS before its zero check. The check reads the whole slot, and on
+macOS a read of an untouched anonymous page makes it resident, which had put 130 MiB into every
+pool row whatever the workload. The other columns, and tables 2 and 3, are from the original run.
+
 # memory pool measurements
 
 os=macos arch=aarch64 host_page=16384 huge_page=0 thp=n/a quick=false
@@ -724,55 +729,55 @@ os=macos arch=aarch64 host_page=16384 huge_page=0 thp=n/a quick=false
 | workload | backend / policy | dirty pages | touch µs | alloc+reset µs | faults/iter | reset method | calls | RSS after MiB |
 |---|---|---:|---:|---:|---:|---|---:|---:|
 | A sparse: 4 pages of 64 MiB | Vec resize (today) | - | 0.02 | 310.23 | 8.2 | alloc+drop | - | 65.9 |
-| A sparse: 4 pages of 64 MiB | Vec calloc | - | 0.01 | 251.37 | 0.0 | alloc+drop | - | 65.9 |
-| A sparse: 4 pages of 64 MiB | mmap+munmap per instance | - | 5.87 | 28.73 | 4.0 | mmap/munmap | - | 65.9 |
-| A sparse: 4 pages of 64 MiB | pool Discard | 4 | 0.03 | 17.86 | 0.0 | madvise(MADV_ZERO) | 1 | 130.0 |
-| A sparse: 4 pages of 64 MiB | pool Remap | 4 | 5.04 | 27.83 | 4.0 | mmap(MAP_FIXED) | 1 | 130.0 |
-| A sparse: 4 pages of 64 MiB | pool DiscardDirty | 4 | 0.04 | 1.27 | 0.0 | madvise(MADV_ZERO) | 4 | 130.0 |
-| A sparse: 4 pages of 64 MiB | pool RemapDirty | 4 | 5.49 | 7.14 | 4.0 | mmap(MAP_FIXED) | 4 | 130.0 |
-| A sparse: 4 pages of 64 MiB | pool Memset | 4 | 0.04 | 0.78 | 0.0 | memset | 4 | 130.0 |
-| A sparse: 4 pages of 64 MiB | pool Adaptive(512) | 4 | 0.03 | 0.76 | 0.0 | memset | 4 | 130.0 |
-| A sparse: 4 pages of 64 MiB | pool default (split slot) | 4 | 0.03 | 0.76 | 0.0 | memset | 4 | 130.0 |
+| A sparse: 4 pages of 64 MiB | Vec calloc | - | 0.01 | 251.37 | 0.0 | alloc+drop | - | 66.0 |
+| A sparse: 4 pages of 64 MiB | mmap+munmap per instance | - | 5.87 | 28.73 | 4.0 | mmap/munmap | - | 66.0 |
+| A sparse: 4 pages of 64 MiB | pool Discard | 4 | 0.03 | 17.86 | 0.0 | madvise(MADV_ZERO) | 1 | 66.1 |
+| A sparse: 4 pages of 64 MiB | pool Remap | 4 | 5.04 | 27.83 | 4.0 | mmap(MAP_FIXED) | 1 | 66.0 |
+| A sparse: 4 pages of 64 MiB | pool DiscardDirty | 4 | 0.04 | 1.27 | 0.0 | madvise(MADV_ZERO) | 4 | 66.1 |
+| A sparse: 4 pages of 64 MiB | pool RemapDirty | 4 | 5.49 | 7.14 | 4.0 | mmap(MAP_FIXED) | 4 | 66.0 |
+| A sparse: 4 pages of 64 MiB | pool Memset | 4 | 0.04 | 0.78 | 0.0 | memset | 4 | 66.1 |
+| A sparse: 4 pages of 64 MiB | pool Adaptive(512) | 4 | 0.03 | 0.76 | 0.0 | memset | 4 | 66.1 |
+| A sparse: 4 pages of 64 MiB | pool default (split slot) | 4 | 0.03 | 0.76 | 0.0 | memset | 4 | 66.1 |
 | B spread: 1 MiB in 256 KiB strides of 64 MiB | Vec resize (today) | - | 13.33 | 253.40 | 0.0 | alloc+drop | - | 66.0 |
 | B spread: 1 MiB in 256 KiB strides of 64 MiB | Vec calloc | - | 14.12 | 270.41 | 0.0 | alloc+drop | - | 66.0 |
 | B spread: 1 MiB in 256 KiB strides of 64 MiB | mmap+munmap per instance | - | 44.34 | 25.65 | 64.0 | mmap/munmap | - | 66.0 |
-| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool Discard | 64 | 10.14 | 24.14 | 0.1 | madvise(MADV_ZERO) | 1 | 130.0 |
-| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool Remap | 64 | 47.70 | 25.21 | 64.0 | mmap(MAP_FIXED) | 1 | 130.0 |
-| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool DiscardDirty | 64 | 10.17 | 17.79 | 0.1 | madvise(MADV_ZERO) | 64 | 130.1 |
-| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool RemapDirty | 64 | 48.96 | 53.76 | 64.0 | mmap(MAP_FIXED) | 64 | 130.1 |
-| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool Memset | 64 | 9.74 | 10.29 | 0.1 | memset | 64 | 130.1 |
-| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool Adaptive(512) | 64 | 10.21 | 10.80 | 0.1 | memset | 64 | 130.1 |
-| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool default (split slot) | 64 | 9.96 | 10.55 | 0.1 | memset | 64 | 130.1 |
-| C dense: every page of 64 MiB | Vec resize (today) | - | 19.17 | 251.22 | 0.0 | alloc+drop | - | 66.1 |
-| C dense: every page of 64 MiB | Vec calloc | - | 16.71 | 253.98 | 0.0 | alloc+drop | - | 66.1 |
-| C dense: every page of 64 MiB | mmap+munmap per instance | - | 2155.67 | 299.86 | 4096.0 | mmap/munmap | - | 66.1 |
-| C dense: every page of 64 MiB | pool Discard | 4096 | 63.97 | 292.40 | 81.9 | madvise(MADV_ZERO) | 1 | 130.1 |
-| C dense: every page of 64 MiB | pool Remap | 4096 | 2151.59 | 284.05 | 4096.0 | mmap(MAP_FIXED) | 1 | 130.1 |
-| C dense: every page of 64 MiB | pool DiscardDirty | 4096 | 68.41 | 309.35 | 81.9 | madvise(MADV_ZERO) | 1 | 130.1 |
-| C dense: every page of 64 MiB | pool RemapDirty | 4096 | 2355.03 | 358.00 | 4096.0 | mmap(MAP_FIXED) | 1 | 130.1 |
-| C dense: every page of 64 MiB | pool Memset | 4096 | 77.65 | 256.92 | 81.9 | memset | 1 | 130.1 |
-| C dense: every page of 64 MiB | pool Adaptive(512) | 4096 | 69.44 | 327.18 | 81.9 | madvise(MADV_ZERO) | 1 | 130.1 |
-| C dense: every page of 64 MiB | pool default (split slot) | 4096 | 72.29 | 324.45 | 81.9 | madvise(MADV_ZERO) | 1 | 130.1 |
-| D contract: 64 KiB of stack + 8 KiB of data | Vec resize (today) | - | 0.62 | 4.59 | 0.1 | alloc+drop | - | 67.1 |
-| D contract: 64 KiB of stack + 8 KiB of data | Vec calloc | - | 0.56 | 5.28 | 0.0 | alloc+drop | - | 67.1 |
-| D contract: 64 KiB of stack + 8 KiB of data | mmap+munmap per instance | - | 3.21 | 1.86 | 5.0 | mmap/munmap | - | 67.2 |
-| D contract: 64 KiB of stack + 8 KiB of data | pool Discard | 5 | 0.57 | 0.86 | 0.0 | madvise(MADV_ZERO) | 1 | 68.2 |
-| D contract: 64 KiB of stack + 8 KiB of data | pool Remap | 5 | 4.45 | 3.05 | 5.0 | mmap(MAP_FIXED) | 1 | 68.2 |
-| D contract: 64 KiB of stack + 8 KiB of data | pool DiscardDirty | 5 | 0.57 | 0.73 | 0.0 | madvise(MADV_ZERO) | 1 | 68.2 |
-| D contract: 64 KiB of stack + 8 KiB of data | pool RemapDirty | 5 | 4.33 | 2.53 | 5.0 | mmap(MAP_FIXED) | 1 | 68.2 |
-| D contract: 64 KiB of stack + 8 KiB of data | pool Memset | 5 | 0.56 | 0.71 | 0.0 | memset | 1 | 68.2 |
-| D contract: 64 KiB of stack + 8 KiB of data | pool Adaptive(512) | 5 | 0.58 | 0.73 | 0.0 | memset | 1 | 68.2 |
-| D contract: 64 KiB of stack + 8 KiB of data | pool default (split slot) | 5 | 0.58 | 0.72 | 0.0 | memset | 1 | 68.2 |
-| E contract: whole 1 MiB stack | Vec resize (today) | - | 7.64 | 4.30 | 0.0 | alloc+drop | - | 67.2 |
-| E contract: whole 1 MiB stack | Vec calloc | - | 7.83 | 5.20 | 0.0 | alloc+drop | - | 67.2 |
-| E contract: whole 1 MiB stack | mmap+munmap per instance | - | 41.48 | 4.91 | 65.0 | mmap/munmap | - | 67.2 |
-| E contract: whole 1 MiB stack | pool Discard | 65 | 7.99 | 4.78 | 0.1 | madvise(MADV_ZERO) | 1 | 68.2 |
-| E contract: whole 1 MiB stack | pool Remap | 65 | 41.93 | 6.12 | 65.0 | mmap(MAP_FIXED) | 1 | 68.2 |
-| E contract: whole 1 MiB stack | pool DiscardDirty | 65 | 7.85 | 4.78 | 0.1 | madvise(MADV_ZERO) | 1 | 68.2 |
-| E contract: whole 1 MiB stack | pool RemapDirty | 65 | 42.42 | 6.32 | 65.0 | mmap(MAP_FIXED) | 1 | 68.2 |
-| E contract: whole 1 MiB stack | pool Memset | 65 | 7.71 | 4.14 | 0.1 | memset | 1 | 68.2 |
-| E contract: whole 1 MiB stack | pool Adaptive(512) | 65 | 8.30 | 4.49 | 0.1 | memset | 1 | 68.2 |
-| E contract: whole 1 MiB stack | pool default (split slot) | 65 | 7.56 | 4.14 | 0.1 | memset | 1 | 68.2 |
+| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool Discard | 64 | 10.14 | 24.14 | 0.1 | madvise(MADV_ZERO) | 1 | 67.0 |
+| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool Remap | 64 | 47.70 | 25.21 | 64.0 | mmap(MAP_FIXED) | 1 | 66.0 |
+| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool DiscardDirty | 64 | 10.17 | 17.79 | 0.1 | madvise(MADV_ZERO) | 64 | 67.0 |
+| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool RemapDirty | 64 | 48.96 | 53.76 | 64.0 | mmap(MAP_FIXED) | 64 | 66.0 |
+| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool Memset | 64 | 9.74 | 10.29 | 0.1 | memset | 64 | 67.0 |
+| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool Adaptive(512) | 64 | 10.21 | 10.80 | 0.1 | memset | 64 | 67.0 |
+| B spread: 1 MiB in 256 KiB strides of 64 MiB | pool default (split slot) | 64 | 9.96 | 10.55 | 0.1 | memset | 64 | 67.0 |
+| C dense: every page of 64 MiB | Vec resize (today) | - | 19.17 | 251.22 | 0.0 | alloc+drop | - | 66.0 |
+| C dense: every page of 64 MiB | Vec calloc | - | 16.71 | 253.98 | 0.0 | alloc+drop | - | 66.0 |
+| C dense: every page of 64 MiB | mmap+munmap per instance | - | 2155.67 | 299.86 | 4096.0 | mmap/munmap | - | 66.0 |
+| C dense: every page of 64 MiB | pool Discard | 4096 | 63.97 | 292.40 | 81.9 | madvise(MADV_ZERO) | 1 | 130.0 |
+| C dense: every page of 64 MiB | pool Remap | 4096 | 2151.59 | 284.05 | 4096.0 | mmap(MAP_FIXED) | 1 | 66.0 |
+| C dense: every page of 64 MiB | pool DiscardDirty | 4096 | 68.41 | 309.35 | 81.9 | madvise(MADV_ZERO) | 1 | 130.0 |
+| C dense: every page of 64 MiB | pool RemapDirty | 4096 | 2355.03 | 358.00 | 4096.0 | mmap(MAP_FIXED) | 1 | 66.0 |
+| C dense: every page of 64 MiB | pool Memset | 4096 | 77.65 | 256.92 | 81.9 | memset | 1 | 130.0 |
+| C dense: every page of 64 MiB | pool Adaptive(512) | 4096 | 69.44 | 327.18 | 81.9 | madvise(MADV_ZERO) | 1 | 130.0 |
+| C dense: every page of 64 MiB | pool default (split slot) | 4096 | 72.29 | 324.45 | 81.9 | madvise(MADV_ZERO) | 1 | 130.0 |
+| D contract: 64 KiB of stack + 8 KiB of data | Vec resize (today) | - | 0.62 | 4.59 | 0.1 | alloc+drop | - | 67.0 |
+| D contract: 64 KiB of stack + 8 KiB of data | Vec calloc | - | 0.56 | 5.28 | 0.0 | alloc+drop | - | 67.0 |
+| D contract: 64 KiB of stack + 8 KiB of data | mmap+munmap per instance | - | 3.21 | 1.86 | 5.0 | mmap/munmap | - | 67.0 |
+| D contract: 64 KiB of stack + 8 KiB of data | pool Discard | 5 | 0.57 | 0.86 | 0.0 | madvise(MADV_ZERO) | 1 | 67.1 |
+| D contract: 64 KiB of stack + 8 KiB of data | pool Remap | 5 | 4.45 | 3.05 | 5.0 | mmap(MAP_FIXED) | 1 | 67.0 |
+| D contract: 64 KiB of stack + 8 KiB of data | pool DiscardDirty | 5 | 0.57 | 0.73 | 0.0 | madvise(MADV_ZERO) | 1 | 67.1 |
+| D contract: 64 KiB of stack + 8 KiB of data | pool RemapDirty | 5 | 4.33 | 2.53 | 5.0 | mmap(MAP_FIXED) | 1 | 67.0 |
+| D contract: 64 KiB of stack + 8 KiB of data | pool Memset | 5 | 0.56 | 0.71 | 0.0 | memset | 1 | 67.1 |
+| D contract: 64 KiB of stack + 8 KiB of data | pool Adaptive(512) | 5 | 0.58 | 0.73 | 0.0 | memset | 1 | 67.1 |
+| D contract: 64 KiB of stack + 8 KiB of data | pool default (split slot) | 5 | 0.58 | 0.72 | 0.0 | memset | 1 | 67.1 |
+| E contract: whole 1 MiB stack | Vec resize (today) | - | 7.64 | 4.30 | 0.0 | alloc+drop | - | 67.0 |
+| E contract: whole 1 MiB stack | Vec calloc | - | 7.83 | 5.20 | 0.0 | alloc+drop | - | 67.0 |
+| E contract: whole 1 MiB stack | mmap+munmap per instance | - | 41.48 | 4.91 | 65.0 | mmap/munmap | - | 67.0 |
+| E contract: whole 1 MiB stack | pool Discard | 65 | 7.99 | 4.78 | 0.1 | madvise(MADV_ZERO) | 1 | 68.0 |
+| E contract: whole 1 MiB stack | pool Remap | 65 | 41.93 | 6.12 | 65.0 | mmap(MAP_FIXED) | 1 | 67.0 |
+| E contract: whole 1 MiB stack | pool DiscardDirty | 65 | 7.85 | 4.78 | 0.1 | madvise(MADV_ZERO) | 1 | 68.0 |
+| E contract: whole 1 MiB stack | pool RemapDirty | 65 | 42.42 | 6.32 | 65.0 | mmap(MAP_FIXED) | 1 | 67.0 |
+| E contract: whole 1 MiB stack | pool Memset | 65 | 7.71 | 4.14 | 0.1 | memset | 1 | 68.0 |
+| E contract: whole 1 MiB stack | pool Adaptive(512) | 65 | 8.30 | 4.49 | 0.1 | memset | 1 | 68.0 |
+| E contract: whole 1 MiB stack | pool default (split slot) | 65 | 7.56 | 4.14 | 0.1 | memset | 1 | 68.0 |
 
 ## 2. VM path: new store + instantiate + one call + drop
 

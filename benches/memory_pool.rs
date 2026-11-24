@@ -264,6 +264,10 @@ fn section_slot_reset(quick: bool) {
                 reset_time += t2 - t1;
             }
             let faults = (minor_faults() - faults) as f64 / iters as f64;
+            // Sampled before the zero check: the check reads the whole logical range, and on
+            // macOS a read of an untouched anonymous page makes it resident, which used to put
+            // the full slot into every `RSS after` of this section.
+            let rss = rss_bytes();
             assert!(
                 slot.is_zeroed(workload.logical_len),
                 "{policy:?} left dirty bytes"
@@ -278,7 +282,7 @@ fn section_slot_reset(quick: bool) {
                 faults,
                 stats.method,
                 stats.calls,
-                rss_bytes() as f64 / MIB as f64
+                rss as f64 / MIB as f64
             );
         }
     }
