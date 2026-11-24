@@ -143,8 +143,13 @@ pub struct MemoryPoolConfig {
 impl MemoryPoolConfig {
     /// Dirty bytes up to which the default policy zeroes pages by hand and keeps them resident.
     /// Equal to the default small-page prefix, so that on a split slot the small-page part is
-    /// always zeroed in place and never faulted in again; it is also the most memory a pooled
-    /// slot keeps resident.
+    /// always zeroed in place and never faulted in again.
+    ///
+    /// This bounds what one reset zeroes, not what a slot keeps resident: zeroed pages stay
+    /// resident and successive leases can dirty different ranges. On a split slot the residency
+    /// is bounded by the prefix, since the rest is discarded on every release; a slot without a
+    /// huge-page part can accumulate up to everything its leases have reached. A recycled slot
+    /// takes those resident pages along to its next lease.
     pub const DEFAULT_MEMSET_UP_TO_BYTES: usize = Self::DEFAULT_SMALL_PAGE_PREFIX;
 
     /// The default [`MemoryPoolConfig::small_page_prefix`]: room for a contract's 1 MiB shadow

@@ -25,8 +25,8 @@ with 16 KiB pages; one contract call = new store, instantiation, the call, relea
 | F: instantiate a 17-page contract, no call | 4.55 / 4.52 µs | 0.39 / 0.54 µs |
 | D: typical call, 64 KiB of stack + 8 KiB of data | 5.54 / 5.21 µs | 1.83 / 1.59 µs |
 | E: a call that writes its whole 1 MiB stack | 18.1 / 12.2 µs | 18.6 / 12.4 µs |
-| A: grow to 64 MiB, write 4 pages | 886 / 317 µs | 22.0 / 1.15 µs |
-| B: grow to 64 MiB, write 256 pages 256 KiB apart | 750 / 331 µs | 389 / 50.6 µs |
+| A: grow to 64 MiB, 4 one-byte writes on distant pages | 886 / 317 µs | 22.0 / 1.15 µs |
+| B: grow to 64 MiB, 256 one-byte writes 256 KiB apart | 750 / 331 µs | 389 / 50.6 µs |
 | C: grow to 64 MiB, fill all of it | 1694 / 801 µs | 1340 / 1007 µs |
 
 - Today's cost is `memset` of the *declared* memory (`GlobalMemory::grow` reserves and
@@ -224,7 +224,10 @@ kernel calls (or `memset` runs):
   about 1 µs, bitmap scan included, and keeps them resident, so the next call pays nothing.
 - Hence the default policy, `Adaptive { memset_up_to_pages }`: zero the dirty pages by hand
   while the dirty set is at most 8 MiB (2048 pages here), otherwise one `MADV_DONTNEED` over the
-  reachable range. Resident memory per pooled slot is bounded by the threshold.
+  reachable range. The threshold bounds what one reset zeroes by hand, not what a slot keeps
+  resident: a zeroed page stays resident, and successive leases can dirty different ranges. What
+  bounds the residency of a slot is the small-page prefix described next, which the threshold
+  equals by default.
 
 **Split slots and transparent huge pages.** The VM runs with THP `always`. A `Vec` of 64 MiB is
 populated with 2 MiB pages (33 faults for the whole `memory.fill`), a slot on 4 KiB pages with
@@ -295,9 +298,10 @@ used. Two primitives return a range to zeros (cells as in the Linux table: reset
   policy, and the resident size reported by `proc_pidinfo` did not move. The numbers come from
   a harness run with that variant; the code path is gone.
 - Default policy as on Linux: `memset` up to 8 MiB of dirty pages (512 pages here), the range
-  `MADV_ZERO` above. Resident memory of a pooled slot is then bounded by the threshold under
-  `memset` and by the dirty set under `MADV_ZERO`; a host that needs a hard bound after a dense
-  call can lower `max_free_slots` or use the remap fallback for that tier.
+  `MADV_ZERO` above. Neither tier gives pages back here: both zero in place, and without a
+  huge-page part nothing is discarded, so a pooled slot stays resident up to everything its
+  leases have dirtied so far, the whole slot after a dense call. A host that needs a hard bound
+  can lower `max_free_slots` or use the remap fallback for that tier.
 
 The `Vec` baseline behaves differently on macOS: `malloc` recycles a freed 64 MiB block, so the
 `Vec` path pays no page faults on the next call, only the `memset` (270 to 330 µs per 64 MiB), and
@@ -468,8 +472,8 @@ in its default configuration:
 | F: instantiate a 17-page contract, no call | 4.55 | 0.39 | 0.52 | 4.52 | 0.54 |
 | D: typical call, 64 KiB of stack + 8 KiB of data | 5.54 | 1.83 | 1.98 | 5.21 | 1.59 |
 | E: a call that writes its whole 1 MiB stack | 18.1 | 18.6 | 19.3 | 12.2 | 12.4 |
-| A: grow to 64 MiB, write 4 pages | 886 | 22.0 | 0.78 | 317 | 1.15 |
-| B: grow to 64 MiB, write 256 pages 256 KiB apart | 750 | 389 | 24.5 | 331 | 50.6 |
+| A: grow to 64 MiB, 4 one-byte writes on distant pages | 886 | 22.0 | 0.78 | 317 | 1.15 |
+| B: grow to 64 MiB, 256 one-byte writes 256 KiB apart | 750 | 389 | 24.5 | 331 | 50.6 |
 | C: grow to 64 MiB, fill all of it | 1694 | 1340 | 7825 | 801 | 1007 |
 
 Reading the rows: F and D are the cases every call goes through and the pool removes the `memset`
@@ -490,19 +494,27 @@ slot (`munmap` + `mmap`, the "mmap+munmap per instance" rows) is never cheaper t
 
 - **Virtual address space.** One slot reserves `slot_pages × 64 KiB` (64 MiB at the Fluentbase
   cap) with `MAP_NORESERVE`. A process with `max_free_slots = 8` and `n` live frames reserves
-  `(8 + n) × 64 MiB`; at Fluentbase's transaction-wide bound of 1.5 GiB of in-flight logical
-  memory that is at most 24 live slots, 2 GiB of address space, which is nothing on a 48-bit
-  host.
-- **Resident memory.** A pooled slot keeps at most the `memset` threshold resident, 8 MiB, and
-  only if an instance dirtied that much; the huge-page part is always released. The `RSS after`
-  columns of appendix A show it: on Linux the process stays at 2.3 to 4 MiB through the sparse
-  and contract workloads and ends at 10 MiB after the dense one (the 8 MiB prefix), with no
-  growth across 400 leases per row. `max_free_slots = 8` therefore bounds idle RSS at 64 MiB. On
-  macOS the `Vec` rows sit at 66 MiB because `malloc` keeps the freed 64 MiB block; the pool rows
-  add one 64 MiB slot per pool (four pools in section 2, hence 325 MiB at the end), resident
-  after the dense row because `MADV_ZERO` zeroes in place. That is the one place where macOS
-  needs the remap fallback or a small free list to give memory back; `MADV_FREE_REUSABLE` is
-  not the answer (section 3).
+  `(8 + n) × 64 MiB`. Fluentbase's bound of 1.5 GiB on in-flight logical memory does not limit
+  `n`: a frame reserves a whole slot however little of it is accessible, and 1024 frames of
+  17 pages are 1.06 GiB of logical memory. What limits `n` is the call depth,
+  `CALL_STACK_LIMIT` = 1024 per transaction, so one transaction reserves at most 1032 slots:
+  64.5 GiB of address space in one or two mappings per slot, against a user address space of
+  128 TiB or more and a default `vm.max_map_count` of 65530.
+- **Resident memory.** On a split slot only the small-page prefix stays resident across leases:
+  8 MiB by default, reached once the leases of a slot have dirtied all of it, since zeroing in
+  place keeps a page and successive leases can dirty different ranges. The huge-page part is
+  always released. The `RSS after` columns of appendix A show it: on Linux the process stays at
+  2.3 to 4 MiB through the sparse and contract workloads and ends at 10 MiB after the dense one
+  (the 8 MiB prefix), with no growth across 400 leases per row. `max_free_slots = 8` therefore
+  bounds idle RSS at 64 MiB. A recycled slot takes its resident prefix along to its next frame,
+  whatever that frame's own memory size, so the frames in flight can hold more resident memory
+  than their logical memory (section 11.2). On macOS the `Vec` rows sit at 66 MiB because
+  `malloc` keeps the freed 64 MiB block. The pool rows stay within 2 MiB of that through the
+  sparse and contract workloads and add one whole 64 MiB slot per pool after the dense one
+  (130 MiB in table 1, except under the remap policies, which give the pages back; four pools in
+  table 2, hence 325 MiB at the end), because `MADV_ZERO` zeroes in place. That is the one
+  place where macOS needs the remap fallback or a small free list to give memory back;
+  `MADV_FREE_REUSABLE` is not the answer (section 3).
 - **Page faults.** `faults/iter` and `faults/call` are `getrusage` minor faults. The pool in its
   default configuration faults 0 times per typical call (rows D, E, F); today's `Vec` path faults
   0 for small memories (the allocator recycles the block) and 544 per 64 MiB memory on Linux (the
@@ -536,15 +548,24 @@ to nothing there.
   `create_executor`. That is the whole change: leases follow the store's
   lifetime, nested frames are separate stores, a suspended frame keeps its slot while parked,
   and `frame_memory_size_bytes()` keeps reporting the logical size, so the transaction-wide
-  in-flight bound (`MAX_IN_FLIGHT_MEMORY_BYTES`, FLU-1047/FLU-935) is unchanged and remains an
-  upper bound on resident memory.
+  in-flight bound (`MAX_IN_FLIGHT_MEMORY_BYTES`, FLU-1047/FLU-935) is unchanged.
+- That bound no longer limits resident memory on its own. With a `Vec` a frame's resident
+  memory is its logical memory. A recycled slot also carries what earlier leases left resident
+  in its small-page prefix, and a call chain that alternates a sibling call dirtying the prefix
+  with the next nested call puts such a slot under every live frame: up to 8 MiB per frame on
+  top of the logical memory, 8 GiB at the full call depth against the 1.5 GiB the bound stands
+  for (on a host without the split, up to a whole slot per frame). This is open and has to be
+  settled before the switch: either the pool caps what it keeps resident (a pool-wide budget
+  beyond which a release discards instead of zeroing in place), or the frame accounting counts
+  a pooled frame at no less than the prefix.
 - Fluentbase never sees dirty pages, policies or platform calls. It may read
   `pool.stats()` for metrics (`slots_reserved`, `reset_failures`).
 - Threads: the pool is a `Mutex<Vec<MemorySlot>>` behind an `Arc`; lease and release are two
   short critical sections per call. Per-thread pools (as `COMPILED_RUNTIMES` is thread-local)
   would remove even that if it ever shows up.
-- Pool sizing: `max_free_slots` bounds idle address space and idle RSS (≤ 4 MiB each under the
-  default policy); slots in flight are bounded by the frame limit that already exists.
+- Pool sizing: `max_free_slots` bounds idle address space and idle RSS (≤ 8 MiB each on a split
+  slot under the default policy); the number of slots in flight is bounded by the call depth
+  that already exists.
 
 ### 11.3 What must not change
 
@@ -606,6 +627,7 @@ turned on. What was done about each item:
 | The `e2e` suite was not run | Run: 93 of 93 spec files pass on the new write paths. |
 | No Linux x86-64 numbers | Open. `madvise` on x86-64 flushes TLBs with cross-CPU interrupts where arm64 broadcasts in hardware, so the kernel-call costs and the multi-threaded behaviour have to be re-measured there before the defaults are final. |
 | Fluentbase does not use it yet | Open, in the Fluentbase repository: one pool in the runtime executor and `create_executor_with_memory_pool` in `ContractRuntime::new`. |
+| Resident memory in flight can exceed the in-flight bound | Open, found in review: a recycled slot brings its resident prefix (up to 8 MiB) to its next frame, so `MAX_IN_FLIGHT_MEMORY_BYTES` alone no longer bounds resident memory (section 11.2). Needs a pool-wide residency budget or frame accounting by slot before the Fluentbase switch. |
 
 ## Appendix A. Raw harness output
 
