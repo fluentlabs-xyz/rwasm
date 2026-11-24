@@ -10,11 +10,11 @@ are in `.claude/skills/bump-version/SKILL.md`.
 ## [0.7.3] - 2026-11-24
 
 No new opcodes, no change to the emitted bytes or the fuel schedule. The new `memory-pool` feature
-is off by default, so downstreams only move the version pin, unless they wrote through
-`GlobalMemory::data_mut()` or the `shared_memory` field, which are gone.
+is off by default, and a build without it compiles the memory code of 0.7.2, so downstreams only
+move the version pin.
 
 ### Added
-- `memory-pool` feature (#227, FLU-1501, experimental): a `MemoryPool` of mmap-backed linear memory
+- `memory-pool` feature (#227, #240, FLU-1501, experimental): a `MemoryPool` of mmap-backed linear memory
   slots. `RwasmStore::with_memory_pool` and `StrategyDefinition::create_executor_with_memory_pool`
   lease one slot per instance and return it, reset, when the instance goes away, however its last
   execution ended; a fresh instance then costs a reset of the pages the previous one wrote instead
@@ -29,14 +29,26 @@ is off by default, so downstreams only move the version pin, unless they wrote t
   mapped (`map_failures`). Unix hosts only, off by default, inert in `no_std` builds. Design and
   measurements: `docs/research/flu-1501-mmap-cow-memory-pool.md`.
 
+  All of it sits behind the feature (#240). A build without `memory-pool` (the default, and
+  every `no_std` build) compiles the same `GlobalMemory` and the same memory write paths as
+  0.7.2: with the feature off the crate's source, after `cfg` expansion, is identical to the one
+  before the pool was added. With the feature on, `GlobalMemory` is another type
+  (`src/vm/memory_pool/`): it reaches a `Vec` or a leased slot through one base pointer, has no
+  `shared_memory` field and no `data_mut()`, and hands out writes only as windows it
+  bounds-checks and records (`tracked_mut`, `store_window`, `copy_within`, `write`), so a pooled
+  slot cannot be written without its pages being marked for the reset. The six VM write paths
+  (scalar and float stores, `memory.fill`, `memory.copy`, `memory.init`) have a second
+  implementation on those windows that the feature selects. Enabling the feature therefore
+  removes `shared_memory` and `data_mut()` from `GlobalMemory`; a store's memory is not reachable
+  from outside the crate, so this only concerns code that builds a `GlobalMemory` of its own.
+
 ### Changed
-- `GlobalMemory` no longer hands out its buffer for writing (#227). The `shared_memory` field and
-  `data_mut()` are gone; reads go through `data()`, writes through the windows the memory itself
-  bounds-checks and records (`tracked_mut`, `store_window`, `copy_within`, `write`). Every VM
-  write path uses them, so a pooled slot cannot be written without its pages being marked for
-  the reset. Downstreams that reached into the buffer adapt; Fluentbase does not.
-- CI runs the test suite a second time with `memory-pool` enabled, and the `resume_equivalence`
-  fuzz target runs every module on pooled, recycled memory as well and checks each reset (#227).
+- CI covers both builds (#240): the unit, integration and spec suites run a second time with
+  `memory-pool` enabled (the spec suite then leases every rwasm memory from a pool and reads
+  each reset back), clippy lints the default build next to `--all-features`, and a second fuzz
+  job runs `resume_equivalence --features memory-pool`, which repeats every generated module on
+  pooled, recycled memory and checks each reset. The differential fuzz job keeps running the
+  default build.
 
 ### Fixed
 - The value stack keeps its cells in a heap `Vec` instead of inline in `ValueStack` (#232). The

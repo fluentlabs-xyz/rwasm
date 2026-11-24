@@ -1,12 +1,14 @@
 # mmap-backed memory pools for rwasm instance reuse (FLU-1501)
 
 Research report and implementation, 2026-09-30, revised 2026-10-01 after the hardening pass
-(section 13). The implementation is the `memory-pool` cargo feature: `src/vm/memory_pool.rs`, the
-pooled backing and the tracked-write API in `src/vm/memory.rs`, the lease plumbing in
+and 2026-11-24 when everything was put behind the feature (section 13). The implementation is
+the `memory-pool` cargo feature: `src/vm/memory_pool.rs`, the pooled memory type with its
+tracked-write API in `src/vm/memory_pool/global_memory.rs`, the lease plumbing in
 `src/vm/store.rs` and `src/strategy/module.rs`, the equivalence tests in `tests/memory_pool.rs`,
 the pooled executor in the `resume_equivalence` fuzz target and the measurement harness in
-`benches/memory_pool.rs`. The pool is inert without the feature, on non-Unix targets and in
-`no_std` builds.
+`benches/memory_pool.rs`. A build without the feature, on a non-Unix target or for `no_std`
+compiles none of it: its memory type and write paths are the ones the crate had before
+(section 5.1).
 
 ## 0. Summary and recommendation
 
@@ -320,10 +322,11 @@ sizes; the harness prints the size it ran with.
 
 ## 5. Dirty-page tracking coverage
 
-Tracking is not something a write path can forget. `GlobalMemory` no longer hands out its buffer
-for writing: the `shared_memory` field and `data_mut()` are gone, and the only way to write is a
-window the memory returns for an exact range, after bounds-checking it and marking its host
-pages. A caller cannot reach a byte outside its window, and a window cannot exist unmarked.
+Tracking is not something a write path can forget. In a build with the feature, `GlobalMemory`
+(`src/vm/memory_pool/global_memory.rs`) does not hand out its buffer for writing: it has no
+`shared_memory` field and no `data_mut()`, and the only way to write is a window the memory
+returns for an exact range, after bounds-checking it and marking its host pages. A caller cannot
+reach a byte outside its window, and a window cannot exist unmarked.
 
 | path | where | window |
 |---|---|---|
@@ -332,15 +335,40 @@ pages. A caller cannot reach a byte outside its window, and a window cannot exis
 | `memory.fill` | `src/vm/executor/memory.rs` | `tracked_mut(d, n)` |
 | `memory.copy` | same | `copy_within(src, dst, n)`, which marks `[dst, dst + n)` |
 | `memory.init` | same | `tracked_mut(dst, n)` |
-| host writes: `StoreTr::memory_write` on `RwasmStore` and `RwasmCaller`, syscall handlers, `TypedCaller` | `GlobalMemory::write`, `src/vm/memory.rs` | `tracked_mut(offset, len)` |
+| host writes: `StoreTr::memory_write` on `RwasmStore` and `RwasmCaller`, syscall handlers, `TypedCaller` | `GlobalMemory::write`, `src/vm/memory_pool/global_memory.rs` | `tracked_mut(offset, len)` |
 | `memory.grow` | `GlobalMemory::grow` | none: the new pages are zero; the high-water mark moves |
 
 Reads (`data()`, `memory_read`, the tracer, `memory_snapshot`) do not mark. Table and global
 operations do not touch memory. A window that ends up unwritten (the write fails afterwards, for
 example `memory.init` from a dropped segment) is marked all the same, which costs a reset of
-clean pages and nothing else. The bounds checks and trap codes are the ones the old paths had;
-the whole test suite, the spec suite (`e2e`, 93 files) and the fuzzers run on the new paths in
-every build, since the window API is not feature-gated.
+clean pages and nothing else. The bounds checks and trap codes are the ones the default paths
+have.
+
+### 5.1 What a build without the feature compiles
+
+Nothing of the above. The first version of this work, merged as #227, replaced `GlobalMemory`
+and the six write paths in every build, on the argument that the whole test suite then
+exercises them. That put new `unsafe` code and a rewritten store path into the default build and
+into the `no_std` prover build for a feature neither can use, so a follow-up undid it:
+
+- `src/vm/memory.rs` is the file it was before the pool; `src/vm/mod.rs` compiles it when the
+  feature is off and `src/vm/memory_pool.rs` (which brings its own `GlobalMemory`) when it is
+  on.
+- Each of the six write paths exists twice, as two functions of the same name next to each
+  other: the original under `#[cfg(not(all(feature = "memory-pool", unix)))]`, untouched, and
+  the window-based one under the opposite `cfg`.
+- `RwasmStore::begin_instantiation` picks its memory by the same pair of `cfg`s, and everything
+  else in the store and the strategy layer that mentions the pool is compiled with the feature
+  only.
+
+The claim is checked mechanically rather than by reading the diff: the `cfg`-expanded source of
+the crate (`rustc -Zunpretty=expanded`) for the `no_std` build, the `std` build and the default
+build (`std` and `wasmtime`) is byte-identical to the source before the pool was added
+(appendix B has the command). The price is that the window-based paths are only compiled, and so only tested, with
+the feature on. CI therefore runs the unit and integration suites and the spec suite a second
+time with it (the spec suite, 93 files, then leases every rwasm memory from a pool and reads
+each reset back), lints both builds, and fuzzes the pooled build in a job of its own
+(section 11.3).
 
 Both backings are reached through one base pointer and length, so loads and stores do not
 branch on where the memory lives; only the mark itself checks for a lease. The unit tests of
@@ -535,8 +563,14 @@ existing callers are not touched; the Wasmtime strategy ignores the pool, its me
 Wasmtime's.
 
 The feature stays optional and Unix-only. The `no_std` build (the zkVM guest, where there is no
-`mmap` and instantiation happens once per proof) keeps the `Vec` backing, and marking compiles
-to nothing there.
+`mmap` and instantiation happens once per proof) cannot enable it and compiles the memory code
+it compiled before (section 5.1).
+
+Enabling the feature changes the public `GlobalMemory` type (no `shared_memory`, no
+`data_mut()`), which Cargo features should not do. It is accepted here because a store's memory
+cannot be reached from outside the crate (`RwasmStore::global_memory` is crate-private), so the
+only code affected is code that builds a `GlobalMemory` of its own, and none of the Fluent
+repositories does.
 
 ### 11.2 Fluentbase
 
@@ -571,11 +605,13 @@ to nothing there.
 
 Fuel: the prologue runs as before and charges what it charged. Bytecode: untouched. Observable
 semantics: the equivalence tests are the contract. They run in CI (the suite runs a second time
-with the feature on), and the `resume_equivalence` fuzz target now runs every generated module a
+with the feature on, and so does the spec suite, on pooled memory), and the `resume_equivalence`
+fuzz target, built with the fuzz crate's `memory-pool` feature, runs every generated module a
 third time on memory leased from process-wide pools, one per reset policy, whose slots are handed
 from one fuzz iteration to the next. The pooled run must observe what the `Vec` run observes
-(outcome, fuel, memory after every call), and every reset is read back; a stray byte or a
-non-zero slot aborts the fuzzer.
+(outcome, fuel, memory after every call), and every reset is read back; a stray byte, a
+non-zero slot or a lease the pool declined aborts the fuzzer. CI runs that build in a fuzz job of
+its own; the differential job keeps fuzzing the default build, which is the one that ships.
 
 ### 11.4 The Wasmtime side
 
@@ -618,13 +654,14 @@ turned on. What was done about each item:
 
 | item | state |
 |---|---|
-| A write path that forgets to mark its pages leaks one instance into the next | Closed by construction: `GlobalMemory::data_mut` and the public buffer are gone, every write goes through a window the memory bounds-checks and marks (section 5). |
-| Coverage was eight hand-written scenarios | The `resume_equivalence` fuzz target runs every module on pooled memory recycled across iterations, five reset policies, verified resets; the 6281-entry corpus and ten more minutes of fuzzing (11380 runs) pass. CI runs the whole suite a second time with the feature on. Debug builds verify every reset. |
+| A write path that forgets to mark its pages leaks one instance into the next | Closed by construction: the `GlobalMemory` of a build with the feature has no `data_mut` and no public buffer, every write goes through a window the memory bounds-checks and marks (section 5). |
+| The memory rewrite reached builds without the feature | Closed: a build without `memory-pool` compiles the memory type and write paths it had before; the `cfg`-expanded source of the `no_std`, `std` and default builds is identical to the one before the pool was added (section 5.1). |
+| Coverage was eight hand-written scenarios | The `resume_equivalence` fuzz target, built with `--features memory-pool`, runs every module on pooled memory recycled across iterations, five reset policies, verified resets, and fails when a lease was declined; CI runs it in a job of its own. CI also runs the unit, integration and spec suites a second time with the feature on. Debug builds verify every reset. |
 | Not reachable from the strategy layer | `StrategyDefinition::create_executor_with_memory_pool`; `create_executor` is unchanged. |
 | Dense memory use 4x slower on Linux | Split slots; the dense fill is now faster than today and no measured workload is slower on Linux. |
 | 5% to 10% slower store loops on macOS | One base pointer for both backings; within noise now. |
 | New `unsafe` code not audited | Narrowed and documented; the `Vec` path passes Miri (section 5). The mmap code cannot run under Miri and still wants a reviewer. |
-| The `e2e` suite was not run | Run: 93 of 93 spec files pass on the new write paths. |
+| The `e2e` suite was not run | Run in both builds: 93 of 93 spec files pass without the feature, and with it, where every rwasm memory of the suite is a pooled slot shared across the test threads and every reset is read back. |
 | No Linux x86-64 numbers | Open. `madvise` on x86-64 flushes TLBs with cross-CPU interrupts where arm64 broadcasts in hardware, so the kernel-call costs and the multi-threaded behaviour have to be re-measured there before the defaults are final. |
 | Fluentbase does not use it yet | Open, in the Fluentbase repository: one pool in the runtime executor and `create_executor_with_memory_pool` in `ContractRuntime::new`. |
 | Resident memory in flight can exceed the in-flight bound | Open, found in review: a recycled slot brings its resident prefix (up to 8 MiB) to its next frame, so `MAX_IN_FLIGHT_MEMORY_BYTES` alone no longer bounds resident memory (section 11.2). Needs a pool-wide residency budget or frame accounting by slot before the Fluentbase switch. |
@@ -861,12 +898,21 @@ docker run --rm --platform linux/arm64 -v "$PWD":/src -v rwasm-linux-target:/tar
            cargo test --release --no-default-features --features memory-pool --test memory_pool && \
            cargo bench --bench memory_pool --no-default-features --features memory-pool"
 
-# fuzzing: pooled, recycled memory against the Vec reference (needs a nightly of rustc 1.93+)
-cd fuzz && cargo +nightly fuzz run resume_equivalence -- -max_total_time=600
+# the spec suite with every rwasm memory leased from a pool and every reset read back
+cargo test --manifest-path e2e/Cargo.toml --features memory-pool
 
-# Miri over the Vec path of the memory (the nested wasm build of the fib example is skipped)
-BUILD_RS_WASM_INNER=1 cargo +nightly miri test --no-default-features --features std \
-  --lib vm::memory::tests
+# fuzzing: pooled, recycled memory against the Vec reference (needs a nightly of rustc 1.93+)
+cd fuzz && cargo +nightly fuzz run --features memory-pool resume_equivalence -- -max_total_time=600
+
+# Miri over the Vec path of the pooled memory type (the nested wasm build of the fib example is
+# skipped)
+BUILD_RS_WASM_INNER=1 cargo +nightly miri test --no-default-features --features memory-pool \
+  --lib vm::memory_pool::global_memory
+
+# a build without the feature compiles what it compiled before: expand the crate at the commit
+# before the pool (842cdd101) and at this one and compare (repeat with `--no-default-features`
+# and with `--no-default-features --features std`)
+cargo +nightly rustc --lib -- -Zunpretty=expanded > expanded.rs
 ```
 
 ## Appendix C. File map
@@ -874,11 +920,13 @@ BUILD_RS_WASM_INNER=1 cargo +nightly miri test --no-default-features --features 
 | file | what |
 |---|---|
 | `src/vm/memory_pool.rs` | `host_page_size`, `huge_page_size`, `MemorySlot` (reserve, split layout, `mark_dirty`, `for_each_dirty_run`, `reset`, `is_zeroed`), `ResetPolicy`, `MemoryPool`, `MemoryLease`, platform `discard_range`/`remap_range`/`map_aligned`, unit tests |
-| `src/vm/memory.rs` | `GlobalMemory`: base pointer for both backings, `pooled`, the tracked-write API (`tracked_mut`, `store_window`, `copy_within`, `write`), `dirty_host_pages`, unit tests |
+| `src/vm/memory_pool/global_memory.rs` | the `GlobalMemory` of a build with the feature: base pointer for both backings, `pooled`, the tracked-write API (`tracked_mut`, `store_window`, `copy_within`, `write`), `dirty_host_pages`, unit tests |
+| `src/vm/memory.rs`, `src/vm/mod.rs` | unchanged `GlobalMemory` of a build without the feature; the `cfg` that picks one of the two |
 | `src/vm/store.rs` | `with_memory_pool`, `memory_pool`, `memory_dirty_host_pages`, `fresh_memory` used by `begin_instantiation` |
 | `src/strategy/module.rs` | `create_executor_with_memory_pool` |
-| `src/vm/executor.rs`, `src/vm/executor/fpu.rs`, `src/vm/executor/memory.rs` | stores and bulk operations on write windows |
+| `src/vm/executor.rs`, `src/vm/executor/fpu.rs`, `src/vm/executor/memory.rs` | the original stores and bulk operations under `cfg(not(...))` and their window-based twins under the feature |
 | `tests/memory_pool.rs` | equivalence, image, capacity, replacement and strategy-layer tests |
-| `fuzz/fuzz_targets/resume_equivalence.rs` | the pooled third executor and the reset check |
-| `.github/workflows/ci.yml` | the second test run with the feature on |
+| `fuzz/fuzz_targets/resume_equivalence.rs`, `fuzz/Cargo.toml` | the pooled third executor and the reset check, behind the fuzz crate's `memory-pool` feature |
+| `e2e/src/group.rs`, `e2e/Cargo.toml` | the spec suite on pooled memory, behind the e2e crate's `memory-pool` feature |
+| `.github/workflows/` | `ci.yml`: the second test run with the feature on; `clippy.yml`: the default build linted next to `--all-features`; `fuzz.yml`: the pooled fuzz job |
 | `benches/memory_pool.rs` | the harness behind appendix A |

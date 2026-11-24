@@ -58,6 +58,9 @@ Current cargo features (`Cargo.toml`):
 - `debug-print`: debug print surface
 - `cache-compiled-artifacts`: enables artifact cache helpers (depends on `wasmtime`)
 - `pooling-allocator`: optional allocator mode hooks
+- `memory-pool`: experimental mmap-backed pool of linear-memory slots for instance reuse (Unix hosts,
+  implies `std`). It selects another `GlobalMemory` and another set of memory write paths in the VM;
+  a build without it compiles neither (see `docs/research/flu-1501-mmap-cow-memory-pool.md`)
 - `e2e`: e2e feature flag surface
 
 Treat feature combinations as part of the runtime surface: always test the exact feature set you ship.
