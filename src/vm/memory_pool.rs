@@ -229,6 +229,9 @@ pub struct MemorySlot {
     split: usize,
     /// The host's huge page size, 0 when the slot has no huge-page part.
     huge_page: usize,
+    /// Byte range `[start, end)` that a failed `mmap(MAP_FIXED)` of a reset may have left
+    /// unmapped, and that `Drop` therefore leaves alone; see `remap_range`.
+    hole: Option<(usize, usize)>,
 }
 
 // SAFETY: the slot exclusively owns its mapping; nothing else aliases it.
@@ -311,6 +314,7 @@ impl MemorySlot {
             track_dirty,
             split,
             huge_page,
+            hole: None,
         })
     }
 
@@ -485,7 +489,10 @@ impl MemorySlot {
         if reach > self.split {
             let end = (reach.div_ceil(self.huge_page) * self.huge_page).min(self.capacity);
             let len = end - self.split;
-            stats.method = discard_range(base.wrapping_add(self.split), len)?;
+            match discard_range(base.wrapping_add(self.split), len) {
+                Ok(method) => stats.method = method,
+                Err(failure) => return Err(self.failed(self.split, len, failure)),
+            }
             stats.pages += len >> self.page_shift;
             stats.calls += 1;
         }
@@ -516,12 +523,18 @@ impl MemorySlot {
         match policy {
             ResetPolicy::Discard | ResetPolicy::Remap if reach == 0 => {}
             ResetPolicy::Discard => {
-                stats.method = discard_range(base, reach)?;
+                match discard_range(base, reach) {
+                    Ok(method) => stats.method = method,
+                    Err(failure) => return Err(self.failed(0, reach, failure)),
+                }
                 stats.pages += reach >> self.page_shift;
                 stats.calls += 1;
             }
             ResetPolicy::Remap => {
-                stats.method = remap_range(base, reach)?;
+                match remap_range(base, reach) {
+                    Ok(method) => stats.method = method,
+                    Err(failure) => return Err(self.failed(0, reach, failure)),
+                }
                 stats.pages += reach >> self.page_shift;
                 stats.calls += 1;
             }
@@ -553,11 +566,11 @@ impl MemorySlot {
                             stats.pages += count;
                             stats.calls += 1;
                         }
-                        Err(err) => failure = Some(err),
+                        Err(err) => failure = Some((first << page_shift, len, err)),
                     }
                 });
-                if let Some(err) = failure {
-                    return Err(err);
+                if let Some((offset, len, err)) = failure {
+                    return Err(self.failed(offset, len, err));
                 }
             }
             ResetPolicy::Adaptive { .. } => unreachable!("resolved above"),
@@ -577,6 +590,14 @@ impl MemorySlot {
         Ok(stats)
     }
 
+    /// Takes note of what a failed reset step leaves behind and returns its error.
+    fn failed(&mut self, offset: usize, len: usize, failure: ResetFailure) -> io::Error {
+        if failure.remap {
+            self.hole = Some((offset, offset + len));
+        }
+        failure.error
+    }
+
     /// Whether the first `len` bytes are all zero.
     pub fn is_zeroed(&self, len: usize) -> bool {
         let bytes = self.as_slice(len.min(self.capacity));
@@ -589,20 +610,51 @@ impl MemorySlot {
 
 impl Drop for MemorySlot {
     fn drop(&mut self) {
-        // SAFETY: the mapping was created by `reserve` with exactly this base and length.
-        unsafe { libc::munmap(self.base.as_ptr().cast(), self.capacity) };
+        // A range a failed `mmap(MAP_FIXED)` may have unmapped is not this slot's any more:
+        // another thread can have mapped something of its own there since. It is left alone,
+        // which leaks it if the kernel kept the old pages, and the rest of the slot is given
+        // back around it. Without a hole the two bounds are the capacity and this is one call.
+        let (hole_start, hole_end) = self.hole.unwrap_or((self.capacity, self.capacity));
+        let base = self.base.as_ptr();
+        // SAFETY: the mapping was created by `reserve` with exactly this base and length, and
+        // both ranges lie inside it and outside the hole.
+        unsafe {
+            if hole_start > 0 {
+                libc::munmap(base.cast(), hole_start);
+            }
+            if hole_end < self.capacity {
+                libc::munmap(base.add(hole_end).cast(), self.capacity - hole_end);
+            }
+        }
+    }
+}
+
+/// A failed kernel call of a reset.
+struct ResetFailure {
+    error: io::Error,
+    /// The call was a `mmap(MAP_FIXED)`, which may have removed the old pages of its range
+    /// before it failed.
+    remap: bool,
+}
+
+impl ResetFailure {
+    fn last_os_error(remap: bool) -> Self {
+        Self {
+            error: io::Error::last_os_error(),
+            remap,
+        }
     }
 }
 
 /// Drops the physical pages of `[ptr, ptr + len)`; the next access reads zeros.
 #[cfg(target_os = "linux")]
-fn discard_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
+fn discard_range(ptr: *mut u8, len: usize) -> Result<&'static str, ResetFailure> {
     if len == 0 {
         return Ok("madvise(MADV_DONTNEED)");
     }
     // SAFETY: the caller passes a sub-range of a live anonymous private mapping.
     if unsafe { libc::madvise(ptr.cast(), len, libc::MADV_DONTNEED) } != 0 {
-        return Err(io::Error::last_os_error());
+        return Err(ResetFailure::last_os_error(false));
     }
     Ok("madvise(MADV_DONTNEED)")
 }
@@ -615,7 +667,7 @@ fn discard_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
 /// 48 µs instead of 17 µs and a sparse touch afterwards 3 µs instead of 0.03 µs. macOS
 /// `MADV_DONTNEED` is a hint that keeps the contents, so it is never used here.
 #[cfg(target_vendor = "apple")]
-fn discard_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
+fn discard_range(ptr: *mut u8, len: usize) -> Result<&'static str, ResetFailure> {
     use std::sync::atomic::AtomicBool;
     static MADV_ZERO_SUPPORTED: AtomicBool = AtomicBool::new(true);
     if len == 0 {
@@ -626,9 +678,13 @@ fn discard_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
         if unsafe { libc::madvise(ptr.cast(), len, libc::MADV_ZERO) } == 0 {
             return Ok("madvise(MADV_ZERO)");
         }
-        let err = io::Error::last_os_error();
-        if err.raw_os_error() != Some(libc::EINVAL) && err.raw_os_error() != Some(libc::ENOTSUP) {
-            return Err(err);
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::EINVAL) && error.raw_os_error() != Some(libc::ENOTSUP)
+        {
+            return Err(ResetFailure {
+                error,
+                remap: false,
+            });
         }
         MADV_ZERO_SUPPORTED.store(false, Ordering::Relaxed);
     }
@@ -636,7 +692,7 @@ fn discard_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
 }
 
 #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
-fn discard_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
+fn discard_range(ptr: *mut u8, len: usize) -> Result<&'static str, ResetFailure> {
     remap_range(ptr, len)
 }
 
@@ -645,7 +701,12 @@ fn discard_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
 /// `MAP_FIXED` is only ever applied inside a slot's own reservation, to pages the reset of its
 /// small-page part covers. The new mapping is a new VMA, so the huge page opt-out is applied
 /// again.
-fn remap_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
+///
+/// A fixed mapping is not atomic: the kernel removes what the range held and can still fail to
+/// put the new mapping there, which leaves the range unmapped and free for any other `mmap` of
+/// the process. A failure is therefore reported as a possible hole, and the slot never unmaps
+/// that range again (`MemorySlot::drop`).
+fn remap_range(ptr: *mut u8, len: usize) -> Result<&'static str, ResetFailure> {
     if len == 0 {
         return Ok("mmap(MAP_FIXED)");
     }
@@ -662,7 +723,7 @@ fn remap_range(ptr: *mut u8, len: usize) -> io::Result<&'static str> {
         )
     };
     if mapped == libc::MAP_FAILED {
-        return Err(io::Error::last_os_error());
+        return Err(ResetFailure::last_os_error(true));
     }
     assert_eq!(mapped.cast::<u8>(), ptr, "MAP_FIXED moved the mapping");
     #[cfg(target_os = "linux")]
@@ -1115,6 +1176,51 @@ mod tests {
                 "{policy:?}"
             );
         }
+    }
+
+    /// A slot that lost a range to a failed remap gives back the pages around it and leaves the
+    /// range itself alone: by then it may hold a mapping of someone else.
+    #[test]
+    fn drop_leaves_a_possible_hole_alone() {
+        let page = host_page_size();
+        // a failed call that cannot leave a hole records nothing
+        let mut intact = slot(1);
+        intact.failed(
+            0,
+            page,
+            ResetFailure {
+                error: io::Error::from(io::ErrorKind::InvalidInput),
+                remap: false,
+            },
+        );
+        assert!(intact.hole.is_none());
+        drop(intact);
+
+        // what `reset` records when the remap of pages 2 to 4 fails
+        let mut holed = slot(8);
+        let base = holed.base_ptr().as_ptr();
+        let failure = ResetFailure {
+            error: io::Error::from(io::ErrorKind::OutOfMemory),
+            remap: true,
+        };
+        let error = holed.failed(2 * page, 3 * page, failure);
+        assert_eq!(error.kind(), io::ErrorKind::OutOfMemory);
+        assert_eq!(holed.hole, Some((2 * page, 5 * page)));
+        drop(holed);
+        // The kernel kept the old pages here, so the range is still mapped (and is this test's
+        // to give back). `mincore` fails with ENOMEM on a range that is not fully mapped.
+        let mut residency = vec![0u8; 3];
+        // SAFETY: `mincore` only inspects the page tables of the range.
+        let mapped = unsafe {
+            libc::mincore(
+                base.add(2 * page).cast(),
+                3 * page,
+                residency.as_mut_ptr().cast(),
+            )
+        };
+        assert_eq!(mapped, 0, "{}", io::Error::last_os_error());
+        // SAFETY: the range is the part of the slot's mapping its drop left alone.
+        unsafe { libc::munmap(base.add(2 * page).cast(), 3 * page) };
     }
 
     #[test]
