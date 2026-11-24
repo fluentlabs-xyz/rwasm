@@ -346,15 +346,22 @@ impl MemorySlot {
 
     /// Marks the host pages covering `[offset, offset + len)` dirty.
     ///
-    /// The range must lie inside the accessible memory; the caller has bounds-checked the write
-    /// it describes. A scalar store covers one page, or two when it straddles a page boundary.
+    /// The range is clamped to the mapping. The bitmap is padded to whole words, so a page past
+    /// the mapping can still have a bit, and a set bit there would make the bitmap-driven resets
+    /// zero or remap memory the slot does not own. The VM only marks ranges it has bounds-checked
+    /// against the accessible memory, so nothing is clamped on its path. A scalar store covers
+    /// one page, or two when it straddles a page boundary.
     #[inline(always)]
     pub fn mark_dirty(&mut self, offset: usize, len: usize) {
-        if !self.track_dirty || len == 0 {
+        if !self.track_dirty {
+            return;
+        }
+        let end = offset.saturating_add(len).min(self.capacity);
+        if offset >= end {
             return;
         }
         let first = offset >> self.page_shift;
-        let last = (offset + len - 1) >> self.page_shift;
+        let last = (end - 1) >> self.page_shift;
         let mut page = first;
         loop {
             let word = &mut self.dirty[page >> 6];
@@ -882,6 +889,30 @@ mod tests {
         let mut runs = Vec::new();
         slot.for_each_dirty_run(|first, count| runs.push((first, count)));
         assert_eq!(runs, [(2, 1), (5, 2)]);
+    }
+
+    /// `mark_dirty` is a safe function, so a range outside the mapping has to be harmless. A
+    /// one-page slot still has a 64-bit bitmap word; a mark of the page after the mapping used
+    /// to stick there and send the bitmap-driven resets past the slot.
+    #[test]
+    fn marks_outside_the_mapping_are_ignored() {
+        let page = host_page_size();
+        let mut slot = slot(1);
+        slot.mark_dirty(page, 1); // the page right after the mapping
+        slot.mark_dirty(page * 63, page); // the last bit of the bitmap word
+        slot.mark_dirty(usize::MAX, 2); // a range that overflows
+        slot.mark_dirty(usize::MAX - 1, usize::MAX);
+        assert_eq!(slot.dirty_pages(), 0);
+        // a range that starts inside the mapping is cut at its end
+        slot.mark_dirty(page - 1, page * 10);
+        assert_eq!(slot.dirty_pages(), 1);
+        let mut runs = Vec::new();
+        slot.for_each_dirty_run(|first, count| runs.push((first, count)));
+        assert_eq!(runs, [(0, 1)]);
+        slot.note_accessible(page);
+        slot.as_mut_slice(page)[page - 1] = 7;
+        slot.reset(ResetPolicy::Memset, true).unwrap();
+        assert!(slot.is_zeroed(page));
     }
 
     #[test]
