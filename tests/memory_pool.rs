@@ -557,19 +557,23 @@ fn a_pool_with_slots_below_the_page_cap_is_not_used() {
 /// memory, as it would on a store without a pool. The failed lease used to surface as
 /// `TrapCode::MemoryOutOfBounds`, a guest trap for a shortage of address space on one host, and
 /// it was raised even for a module that has no memory.
+///
+/// The failure is injected with a slot larger than any Wasm memory, which `MemorySlot::reserve`
+/// refuses before asking the kernel. The lease therefore fails on every host, whatever its
+/// address space, and nothing is mapped or allocated on the way.
 #[test]
 fn an_unmappable_slot_falls_back_to_a_vec_memory() {
     let linker = linker();
     let module = compile(&linker);
     let engine = ExecutionEngine::new();
-    // 256 TiB per slot, more than the user address space of a 64-bit host
     let pool = MemoryPool::new(MemoryPoolConfig {
         slot_pages: u32::MAX,
         ..MemoryPoolConfig::default()
     });
-    assert!(
-        pool.lease().is_err(),
-        "a 256 TiB slot is expected not to map"
+    assert_eq!(
+        pool.lease().err().map(|err| err.kind()),
+        Some(std::io::ErrorKind::InvalidInput),
+        "a slot larger than any Wasm memory is refused, not mapped"
     );
 
     let mut pooled = pooled_store(&linker, &pool, false);

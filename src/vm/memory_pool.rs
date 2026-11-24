@@ -32,6 +32,10 @@ use std::{
     },
 };
 
+/// The largest linear memory a Wasm module can have, in bytes: 65536 pages of 64 KiB. No slot
+/// is larger than this.
+const MAX_SLOT_BYTES: u64 = 65536 * crate::N_BYTES_PER_MEMORY_PAGE as u64;
+
 /// The host page size in bytes, read from the OS once.
 ///
 /// Dirtiness is tracked at this granularity, not per 64 KiB Wasm page: a one-byte store marks one
@@ -116,7 +120,8 @@ pub struct MemoryPoolConfig {
     /// Capacity of every slot, in Wasm pages. The pool serves a memory only if a slot holds its
     /// whole page cap: a store that allows more pages than this keeps its `Vec` memory (see
     /// [`MemoryPool::lease_for`]), because a slot it could outgrow would fail a `memory.grow`
-    /// that the `Vec` memory and the Wasmtime backend both serve.
+    /// that the `Vec` memory and the Wasmtime backend both serve. More than 65536 pages, the
+    /// largest Wasm memory, is a slot that never maps (see [`MemorySlot::reserve`]).
     pub slot_pages: u32,
     /// Reset slots kept for reuse; a released slot beyond this is unmapped.
     pub max_free_slots: usize,
@@ -177,8 +182,8 @@ pub struct MemoryPoolStats {
     /// Leases declined because a slot cannot hold the requested page cap
     /// ([`MemoryPool::lease_for`]); the store ran those instances on a `Vec` memory.
     pub leases_declined: AtomicU64,
-    /// Leases that failed because a new slot could not be mapped; the store ran those instances
-    /// on a `Vec` memory as well.
+    /// Leases that failed because a new slot could not be mapped, or was refused as larger than
+    /// any Wasm memory; the store ran those instances on a `Vec` memory as well.
     pub map_failures: AtomicU64,
     /// Slots mapped because the free list was empty.
     pub slots_reserved: AtomicU64,
@@ -229,6 +234,11 @@ impl MemorySlot {
     /// The first `small_page_prefix` bytes (rounded up to the huge page size) never use
     /// transparent huge pages; the rest is huge-page eligible. A slot with a huge-page part is
     /// aligned to the huge page size.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidInput` for a capacity above the largest Wasm memory (65536 pages, 4 GiB), which
+    /// is refused without a mapping attempt; otherwise the error of the failed `mmap`.
     pub fn reserve(
         capacity: usize,
         track_dirty: bool,
@@ -252,6 +262,12 @@ impl MemorySlot {
             .checked_add(page_size - 1)
             .ok_or_else(invalid)?
             & !(page_size - 1);
+        // A slot larger than the largest Wasm memory is never needed. Where the address space is
+        // wide enough for the kernel to grant such a mapping, its dirty bitmap alone would take
+        // gigabytes, so the request is refused before the kernel sees it.
+        if capacity as u64 > MAX_SLOT_BYTES {
+            return Err(invalid());
+        }
         let split = if huge_page > 0 && small_page_prefix < capacity {
             (small_page_prefix.div_ceil(huge_page) * huge_page).min(capacity)
         } else {
@@ -1027,6 +1043,31 @@ mod tests {
                 assert_eq!((bytes[0], bytes[capacity - 1]), (1, 1));
             }
         }
+    }
+
+    /// A slot larger than the largest Wasm memory is refused without asking the kernel, on every
+    /// host: a wide address space could grant the mapping, and the bitmap for it would follow.
+    #[test]
+    fn a_slot_larger_than_any_wasm_memory_is_refused() {
+        // a 32-bit target cannot even express the size
+        if let Ok(largest) = usize::try_from(MAX_SLOT_BYTES) {
+            let err = MemorySlot::reserve(largest + host_page_size(), true, usize::MAX)
+                .err()
+                .expect("the slot must not map");
+            assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        }
+
+        let pool = MemoryPool::new(MemoryPoolConfig {
+            slot_pages: 65537,
+            ..MemoryPoolConfig::default()
+        });
+        assert_eq!(
+            pool.lease().err().map(|err| err.kind()),
+            Some(io::ErrorKind::InvalidInput)
+        );
+        assert!(pool.lease_for(1).is_err());
+        assert_eq!(pool.stats().map_failures.load(Ordering::Relaxed), 2);
+        assert_eq!(pool.stats().slots_reserved.load(Ordering::Relaxed), 0);
     }
 
     #[test]
